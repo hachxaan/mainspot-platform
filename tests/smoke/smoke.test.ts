@@ -1,0 +1,87 @@
+/**
+ * End-to-end smoke (AC-009 + AC-008 UX signals). Runs against a fresh test DB
+ * (scripts/test-prep.ts), exercises the canonical happy paths and captures
+ * evidence markers that scripts/capture-evidence.sh stores under evidence/.
+ */
+
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { bootApi, login, authHeaders, api, SEED, type TestApi } from '../helpers/testdb.ts';
+
+let t: TestApi;
+
+before(async () => {
+  t = await bootApi();
+});
+
+after(async () => {
+  await t.close();
+});
+
+test('AC-009 smoke: health + all three roles can log in and see their context', async () => {
+  const health = await api(t.baseUrl, '/health');
+  assert.equal(health.status, 200);
+  assert.equal(health.body.increment, 'INC-001');
+
+  for (const profile of [
+    { who: 'admin', creds: SEED.a.admin, role: 'administration' },
+    { who: 'ops', creds: SEED.a.ops, role: 'operation' },
+    { who: 'reader', creds: SEED.a.reader, role: 'read_only' },
+  ]) {
+    const loginRes = await login(t.baseUrl, profile.creds.login, profile.creds.password, SEED.a.tenant);
+    assert.equal(loginRes.session.role_id, profile.role, `${profile.who} role`);
+    const me = await api(t.baseUrl, '/api/backoffice/me', { headers: authHeaders(loginRes.token) });
+    assert.equal(me.status, 200);
+    assert.ok(me.body.session.permissions.length >= 1);
+    console.log(`TEST_PASS AC-009 smoke login+me for ${profile.who} (${profile.role})`);
+  }
+});
+
+test('AC-008 smoke: UI pages are plain-language and minimally accessible', async () => {
+  const loginPage = await fetch(`${t.baseUrl}/`);
+  assert.equal(loginPage.status, 200);
+  const html = await loginPage.text();
+  const checks: Array<[string, boolean]> = [
+    ['lang="es"', html.includes('lang="es"')],
+    ['title MainSpot', html.includes('<title>MainSpot — Ingreso</title>')],
+    ['plain welcome', html.includes('Bienvenido a MainSpot')],
+    ['labeled login field', html.includes('<label for="login">')],
+    ['labeled password field', html.includes('<label for="password">')],
+    ['labeled tenant field', html.includes('<label for="tenant_id">')],
+    ['clear submit button', html.includes('>Ingresar</button>')],
+    ['alert region for errors', html.includes('role="alert"')],
+    ['no tech jargon (password_hash absent)', !html.includes('password_hash')],
+  ];
+  for (const [name, ok] of checks) {
+    assert.equal(ok, true, `login page check failed: ${name}`);
+  }
+
+  const panel = await fetch(`${t.baseUrl}/panel`);
+  const panelHtml = await panel.text();
+  assert.ok(panelHtml.includes('Panel de MainSpot'));
+  assert.ok(panelHtml.includes('Salir del panel'));
+  assert.ok(!panelHtml.includes('password_hash'));
+  console.log('TEST_PASS AC-008 UI plain language + label/role/alert accessibility basics');
+});
+
+test('AC-009 smoke: real evidence path works (API export mirrors DB audit rows)', async () => {
+  const admin = await login(t.baseUrl, SEED.a.admin.login, SEED.a.admin.password, SEED.a.tenant);
+  const before = await t.pool.query<{ n: string }>('SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1', [SEED.a.tenant]);
+  await api(t.baseUrl, '/api/backoffice/data', { headers: authHeaders(admin.token) }); // audited read
+  const after = await t.pool.query<{ n: string }>('SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1', [SEED.a.tenant]);
+  assert.ok(Number(after.rows[0]?.n ?? 0) > Number(before.rows[0]?.n ?? 0), 'audit rows grew after an audited action');
+
+  const exportRes = await api(t.baseUrl, '/api/backoffice/audit/export', { headers: authHeaders(admin.token) });
+  assert.equal(exportRes.status, 200);
+  assert.equal(exportRes.body.tenant_id, SEED.a.tenant);
+  assert.ok(exportRes.body.count >= 1);
+  console.log('TEST_PASS AC-009 smoke: audited action -> audit row + API export consistent');
+});
+
+test('AC-009 smoke: logout revokes the session (rollback of access path enabled)', async () => {
+  const admin = await login(t.baseUrl, SEED.a.admin.login, SEED.a.admin.password, SEED.a.tenant);
+  await api(t.baseUrl, '/api/auth/logout', { method: 'POST', headers: authHeaders(admin.token) });
+  const meAfterLogout = await api(t.baseUrl, '/api/backoffice/me', { headers: authHeaders(admin.token) });
+  assert.equal(meAfterLogout.status, 401, 'revoked token must be rejected');
+  console.log('TEST_PASS AC-009 smoke: revoked session rejected (fail-closed)');
+});

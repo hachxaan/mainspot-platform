@@ -1,0 +1,38 @@
+{
+  "name": "mainspot-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MainSpot platform — INC-001: Client identity, tenant isolation and audit foundation (TypeScript + PostgreSQL + Docker)",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "start": "node src/api/server.ts",
+    "dev": "node --watch src/api/server.ts",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "migrate": "node scripts/migrate.ts",
+    "seed": "node scripts/seed.ts",
+    "db:setup": "node scripts/db-setup.ts",
+    "test:unit": "node --test --test-concurrency=1 tests/unit/*.test.ts",
+    "test:integration": "node scripts/test-prep.ts && node --test --test-concurrency=1 tests/integration/*.test.ts",
+    "test:smoke": "node scripts/test-prep.ts && node --test --test-concurrency=1 tests/smoke/*.test.ts",
+    "test": "npm run typecheck && npm run test:unit && npm run test:integration && npm run test:smoke",
+    "evidence": "bash scripts/capture-evidence.sh",
+    "matrix": "node scripts/print-matrix.ts",
+    "export:audit": "node scripts/export-audit.ts",
+    "rollback:simulate": "node scripts/simulate-rollback.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.9.2"
+  }
+}

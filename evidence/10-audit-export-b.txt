@@ -1,0 +1,9 @@
+
+> mainspot-platform@0.1.0 export:audit
+> node scripts/export-audit.ts --tenant client_b --url postgres://mainspot:***@localhost:5432/mainspot_test --out evidence/audit-export-client-b.json
+
+{
+  "count": 3,
+  "target": "evidence/audit-export-client-b.json"
+}
+{"ts":"2026-08-20T05:14:52.473Z","level":"info","event":"audit.exported","msg":"exported 3 events to evidence/audit-export-client-b.json","request_id":"42a42729-b07b-4b2a-8a39-72f9a39604cf","tenant_id":"client_b","count":3}

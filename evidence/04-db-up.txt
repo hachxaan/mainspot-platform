@@ -1,0 +1,15 @@
+ Container mainspot-platform-postgres-1 Running 
+postgres up
+postgres ready after 1s
+ Container mainspot-platform-postgres-1 Running 
+postgres up
+postgres ready after 1s
+ Container mainspot-platform-postgres-1 Running 
+postgres up
+postgres ready after 1s
+ Container mainspot-platform-postgres-1 Running 
+postgres up
+postgres ready after 1s
+ Container mainspot-platform-postgres-1 Running 
+postgres up
+postgres ready after 1s

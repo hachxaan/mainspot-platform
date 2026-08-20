@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment (never commit real secrets; .env.example is the reference)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Test artifacts (evidence/ IS committed on purpose: it is the AC-009 deliverable)
+coverage/
+.nyc_output/

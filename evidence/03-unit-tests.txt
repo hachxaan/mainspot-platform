@@ -1,0 +1,34 @@
+
+> mainspot-platform@0.1.0 test:unit
+> node --test --test-concurrency=1 tests/unit/*.test.ts
+
+✔ AC-003 unit: normalizeEvent fills event_id/ts/created_by_system and keeps all contract fields (1.565985ms)
+✔ AC-003 unit: required fields enforced (0.200957ms)
+✔ AC-003 unit: decision is allow|deny only (0.064706ms)
+✔ INVARIANT unit: audit never accepts secret-like fields (0.186592ms)
+✔ AC-003 unit: sensitive action set contains write/approve/execute verbs (0.066873ms)
+✔ unit: newEventId unique (0.064557ms)
+✔ unit: JWT roundtrip sign/verify (0.771323ms)
+✔ unit: JWT tampered payload is rejected (0.840514ms)
+✔ unit: JWT wrong secret is rejected (0.11489ms)
+✔ unit: JWT expired token is rejected (0.108506ms)
+✔ unit: extractBearerToken parses Authorization header (0.1424ms)
+✔ unit: logger refuses sensitive-looking keys (never logs secrets) (1.570048ms)
+✔ unit: logger accepts ordinary fields (0.138609ms)
+✔ AC-001 unit: administration can do every declared action (0.588483ms)
+✔ AC-001 unit: operation only creates/executes ops and reads/writes data (0.100081ms)
+✔ AC-001 unit: read_only can only read data (0.07641ms)
+✔ AC-001 unit: deny cases (user.manage / audit.read / data.write by role) (0.154855ms)
+✔ AC-001 unit: fail-closed default deny for unknown action (0.081715ms)
+✔ AC-001 unit: fail-closed default deny for unknown/missing role (0.062428ms)
+✔ AC-001 unit: authorize() returns structured reasons (0.425213ms)
+✔ AC-001 unit: matrix is complete (every declared ACTION is declared for at least one role) (0.091736ms)
+✔ AC-001 unit: role labels are plain language for UX (AC-008) (0.114728ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 246.759097

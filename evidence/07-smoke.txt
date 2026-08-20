@@ -1,0 +1,56 @@
+
+> mainspot-platform@0.1.0 test:smoke
+> node scripts/test-prep.ts && node --test --test-concurrency=1 tests/smoke/*.test.ts
+
+{"ts":"2026-08-20T05:14:52.696Z","level":"info","event":"test.prep.created","msg":"recreated test database mainspot_test","request_id":"bf3c5344-8ce5-46e1-9106-a1cd7b051500"}
+{"ts":"2026-08-20T05:14:53.343Z","level":"info","event":"test.prep.done","msg":"test database ready","request_id":"bf3c5344-8ce5-46e1-9106-a1cd7b051500","applied":"0001_schema.sql,0002_seed.sql"}
+{"ts":"2026-08-20T05:14:53.498Z","level":"info","event":"http.request","msg":"GET /health -> 200","request_id":"a2618778-c430-4fd4-bff6-6545c5543cdb","method":"GET","path":"/health","status":200,"duration_ms":2}
+{"ts":"2026-08-20T05:14:53.567Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"8d89db16-1580-45b6-9fc6-076cf766441c","action":"auth.login","decision":"allow","result":"success","actor_id":"user_a_admin","tenant_id":"client_a"}
+{"ts":"2026-08-20T05:14:53.567Z","level":"info","event":"auth.login.ok","msg":"user logged in","request_id":"8d89db16-1580-45b6-9fc6-076cf766441c","tenant_id":"client_a","actor_id":"user_a_admin","actor_role":"administration"}
+{"ts":"2026-08-20T05:14:53.567Z","level":"info","event":"http.request","msg":"POST /login -> 200","request_id":"8d89db16-1580-45b6-9fc6-076cf766441c","method":"POST","path":"/login","status":200,"duration_ms":59}
+{"ts":"2026-08-20T05:14:53.571Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"52f7a3e7-26b1-401d-a8ff-388f763e314f","tenant_id":"client_a","actor_id":"user_a_admin","actor_role":"administration","action":"session.me","decision":"allow","result":"success"}
+{"ts":"2026-08-20T05:14:53.572Z","level":"info","event":"http.request","msg":"GET /me -> 200","request_id":"52f7a3e7-26b1-401d-a8ff-388f763e314f","tenant_id":"client_a","actor_id":"user_a_admin","actor_role":"administration","method":"GET","path":"/me","status":200,"duration_ms":4}
+TEST_PASS AC-009 smoke login+me for admin (administration)
+{"ts":"2026-08-20T05:14:53.620Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"edbd3348-3747-4795-8852-7b3510dcba61","action":"auth.login","decision":"allow","result":"success","actor_id":"user_a_ops","tenant_id":"client_a"}
+{"ts":"2026-08-20T05:14:53.620Z","level":"info","event":"auth.login.ok","msg":"user logged in","request_id":"edbd3348-3747-4795-8852-7b3510dcba61","tenant_id":"client_a","actor_id":"user_a_ops","actor_role":"operation"}
+{"ts":"2026-08-20T05:14:53.621Z","level":"info","event":"http.request","msg":"POST /login -> 200","request_id":"edbd3348-3747-4795-8852-7b3510dcba61","method":"POST","path":"/login","status":200,"duration_ms":48}
+{"ts":"2026-08-20T05:14:53.625Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"eb7ad1a8-473a-494e-9689-68e29e066b09","tenant_id":"client_a","actor_id":"user_a_ops","actor_role":"operation","action":"session.me","decision":"allow","result":"success"}
+{"ts":"2026-08-20T05:14:53.625Z","level":"info","event":"http.request","msg":"GET /me -> 200","request_id":"eb7ad1a8-473a-494e-9689-68e29e066b09","tenant_id":"client_a","actor_id":"user_a_ops","actor_role":"operation","method":"GET","path":"/me","status":200,"duration_ms":3}
+TEST_PASS AC-009 smoke login+me for ops (operation)
+{"ts":"2026-08-20T05:14:53.673Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"36a99c54-4f99-447c-afc3-5797d3c4f873","action":"auth.login","decision":"allow","result":"success","actor_id":"user_a_reader","tenant_id":"client_a"}
+{"ts":"2026-08-20T05:14:53.673Z","level":"info","event":"auth.login.ok","msg":"user logged in","request_id":"36a99c54-4f99-447c-afc3-5797d3c4f873","tenant_id":"client_a","actor_id":"user_a_reader","actor_role":"read_only"}
+{"ts":"2026-08-20T05:14:53.673Z","level":"info","event":"http.request","msg":"POST /login -> 200","request_id":"36a99c54-4f99-447c-afc3-5797d3c4f873","method":"POST","path":"/login","status":200,"duration_ms":46}
+{"ts":"2026-08-20T05:14:53.677Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"1870052e-3387-4a27-9863-4677a46124d6","tenant_id":"client_a","actor_id":"user_a_reader","actor_role":"read_only","action":"session.me","decision":"allow","result":"success"}
+{"ts":"2026-08-20T05:14:53.677Z","level":"info","event":"http.request","msg":"GET /me -> 200","request_id":"1870052e-3387-4a27-9863-4677a46124d6","tenant_id":"client_a","actor_id":"user_a_reader","actor_role":"read_only","method":"GET","path":"/me","status":200,"duration_ms":3}
+TEST_PASS AC-009 smoke login+me for reader (read_only)
+✔ AC-009 smoke: health + all three roles can log in and see their context (200.694475ms)
+{"ts":"2026-08-20T05:14:53.679Z","level":"info","event":"http.request","msg":"GET / -> 200","request_id":"7294be76-e1e3-432c-977d-06d903fdb72b","method":"GET","path":"/","status":200,"duration_ms":0}
+{"ts":"2026-08-20T05:14:53.680Z","level":"info","event":"http.request","msg":"GET /panel -> 200","request_id":"7f43fcb7-4bdd-485a-9b72-12744c20dc9f","method":"GET","path":"/panel","status":200,"duration_ms":1}
+TEST_PASS AC-008 UI plain language + label/role/alert accessibility basics
+✔ AC-008 smoke: UI pages are plain-language and minimally accessible (2.276004ms)
+{"ts":"2026-08-20T05:14:53.725Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"bd2f6860-b1f8-48f1-b873-2f1c30ceb600","action":"auth.login","decision":"allow","result":"success","actor_id":"user_a_admin","tenant_id":"client_a"}
+{"ts":"2026-08-20T05:14:53.725Z","level":"info","event":"auth.login.ok","msg":"user logged in","request_id":"bd2f6860-b1f8-48f1-b873-2f1c30ceb600","tenant_id":"client_a","actor_id":"user_a_admin","actor_role":"administration"}
+{"ts":"2026-08-20T05:14:53.725Z","level":"info","event":"http.request","msg":"POST /login -> 200","request_id":"bd2f6860-b1f8-48f1-b873-2f1c30ceb600","method":"POST","path":"/login","status":200,"duration_ms":44}
+{"ts":"2026-08-20T05:14:53.731Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"fb5631e9-53c9-440b-b0b1-c027fb367f8c","tenant_id":"client_a","actor_id":"user_a_admin","actor_role":"administration","action":"data.read","decision":"allow","result":"success"}
+{"ts":"2026-08-20T05:14:53.731Z","level":"info","event":"http.request","msg":"GET /data -> 200","request_id":"fb5631e9-53c9-440b-b0b1-c027fb367f8c","tenant_id":"client_a","actor_id":"user_a_admin","actor_role":"administration","method":"GET","path":"/data","status":200,"duration_ms":4}
+{"ts":"2026-08-20T05:14:53.736Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"eb34289d-188a-4204-976e-868b26b43c9d","tenant_id":"client_a","actor_id":"user_a_admin","actor_role":"administration","action":"audit.export","decision":"allow","result":"success"}
+{"ts":"2026-08-20T05:14:53.736Z","level":"info","event":"http.request","msg":"GET /audit/export -> 200","request_id":"eb34289d-188a-4204-976e-868b26b43c9d","tenant_id":"client_a","actor_id":"user_a_admin","actor_role":"administration","method":"GET","path":"/audit/export","status":200,"duration_ms":3}
+TEST_PASS AC-009 smoke: audited action -> audit row + API export consistent
+✔ AC-009 smoke: real evidence path works (API export mirrors DB audit rows) (56.625975ms)
+{"ts":"2026-08-20T05:14:53.792Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"d597024d-ea30-4851-9f8a-98b7f987008e","action":"auth.login","decision":"allow","result":"success","actor_id":"user_a_admin","tenant_id":"client_a"}
+{"ts":"2026-08-20T05:14:53.792Z","level":"info","event":"auth.login.ok","msg":"user logged in","request_id":"d597024d-ea30-4851-9f8a-98b7f987008e","tenant_id":"client_a","actor_id":"user_a_admin","actor_role":"administration"}
+{"ts":"2026-08-20T05:14:53.792Z","level":"info","event":"http.request","msg":"POST /login -> 200","request_id":"d597024d-ea30-4851-9f8a-98b7f987008e","method":"POST","path":"/login","status":200,"duration_ms":54}
+{"ts":"2026-08-20T05:14:53.798Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"f006025b-9730-46ad-9575-9420cb222641","action":"auth.logout","decision":"allow","result":"success","actor_id":"user_a_admin","tenant_id":"client_a"}
+{"ts":"2026-08-20T05:14:53.798Z","level":"info","event":"http.request","msg":"POST /logout -> 200","request_id":"f006025b-9730-46ad-9575-9420cb222641","method":"POST","path":"/logout","status":200,"duration_ms":5}
+{"ts":"2026-08-20T05:14:53.801Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"cb68cb9b-1a57-41a2-b3a7-0c99e2d3e35d","action":"session.resolve","decision":"deny","result":"session_revoked","actor_id":"unknown","tenant_id":"unknown"}
+{"ts":"2026-08-20T05:14:53.801Z","level":"info","event":"http.request","msg":"GET /me -> 401","request_id":"cb68cb9b-1a57-41a2-b3a7-0c99e2d3e35d","method":"GET","path":"/me","status":401,"duration_ms":2}
+TEST_PASS AC-009 smoke: revoked session rejected (fail-closed)
+✔ AC-009 smoke: logout revokes the session (rollback of access path enabled) (64.600203ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 446.401516

@@ -1,0 +1,51 @@
+{
+  "exported_at": "2026-08-20T05:14:52.471Z",
+  "tenant_id": "client_b",
+  "source_database": "mainspot_test",
+  "correlation": null,
+  "count": 3,
+  "events": [
+    {
+      "event_id": "evt_7f181dec-e11a-4a78-8554-f9ae7ab35b98",
+      "ts": "2026-08-20T05:14:51.393Z",
+      "tenant_id": "client_b",
+      "actor_id": "user_b_admin",
+      "actor_role": "administration",
+      "action": "operation.create",
+      "resource": "demo_action/action_b812fad3-bc3d-4f28-9f60-c01cc1e64f58",
+      "request_id": "cc6cc67a-cfe9-4ada-9b94-e74aa1f74b06",
+      "decision": "allow",
+      "result": "success",
+      "evidence_ref": null,
+      "created_by_system": "mainspot-backoffice-api"
+    },
+    {
+      "event_id": "evt_5724b244-795d-4839-bfe1-de299b176a20",
+      "ts": "2026-08-20T05:14:51.386Z",
+      "tenant_id": "client_b",
+      "actor_id": "user_b_admin",
+      "actor_role": "administration",
+      "action": "auth.login",
+      "resource": "/api/auth/login",
+      "request_id": "635289c5-fb9d-4ffc-be3f-32f70c11ce55",
+      "decision": "allow",
+      "result": "success",
+      "evidence_ref": null,
+      "created_by_system": "mainspot-backoffice-api"
+    },
+    {
+      "event_id": "evt_c68f4c6f-973f-4db7-8a5f-14a83e49b065",
+      "ts": "2026-08-20T05:14:50.913Z",
+      "tenant_id": "client_b",
+      "actor_id": "user_b_admin",
+      "actor_role": "administration",
+      "action": "received",
+      "resource": "channel:simulated",
+      "request_id": "req_hook_1787202890913",
+      "decision": "allow",
+      "result": "success",
+      "evidence_ref": null,
+      "created_by_system": "mainspot-backoffice-api"
+    }
+  ]
+}
