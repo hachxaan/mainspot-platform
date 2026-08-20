@@ -1,6 +1,6 @@
 # Matriz de permisos del backoffice (INC-001)
 
-> Generado el 2026-08-20T06:33:16.681Z desde `src/rbac/matrix.ts` (fuente de verdad).
+> Generado el 2026-08-20T07:06:51.924Z desde `src/rbac/matrix.ts` (fuente de verdad).
 > Regla fail-closed: toda acción no listada es **deny**; el contexto de cliente siempre aplica sobre el rol.
 
 | Acción (recurso \* = contexto general) | Administración | Operación | Solo lectura |
@@ -20,12 +20,27 @@
 | `conversation.confirm` — Confirmar una propuesta y preparar su vista previa | allow | allow | deny |
 | `website.publish` — Publicar la web del cliente | allow | allow | deny |
 | `website.provision` — Aprovisionar el subdominio del cliente | allow | allow | deny |
+| `reputation.read` — Ver reseñas y casos de reputación | allow | allow | allow |
+| `reputation.respond` — Redactar o editar borradores de respuesta pública | allow | allow | deny |
+| `reputation.escalate` — Escalar una reseña o caso sensible a revisión humana | allow | allow | deny |
+| `reputation.approve` — Aprobar la respuesta pública a una reseña | allow | deny | deny |
+| `reputation.hide_review` — Ocultar o borrar una reseña (BLOQUEADO: sin manipulación de opiniones) | deny | deny | deny |
+| `social.read` — Ver publicaciones y contenido social | allow | allow | allow |
+| `social.create` — Crear borradores de publicaciones sociales | allow | allow | deny |
+| `social.schedule` — Programar publicaciones sociales con aprobación | allow | allow | deny |
+| `social.approve` — Aprobar una publicación social para revisión y vista previa | allow | deny | deny |
+| `social.campaign_advanced` — Crear campañas avanzadas en redes (BLOQUEADO: fuera del MVP) | deny | deny | deny |
+| `subscription.admin` — Asignar el plan de suscripción del cliente y gestionar su facturación | allow | deny | deny |
+| `subscription.read` — Ver el plan y los límites del cliente | allow | allow | allow |
+| `analytics.read` — Ver resúmenes de actividad del cliente | allow | allow | allow |
+| `analytics.export` — Exportar eventos de auditoría del cliente | allow | deny | deny |
+| `analytics.purge` — Aplicar la retención de eventos del cliente | allow | deny | deny |
 
 ## Vista por rol (lenguaje claro, AC-008)
 
-- **Administración**: todas las acciones del panel
-- **Operación**: `operation.create`, `operation.execute`, `data.read`, `data.write`, `conversation.read`, `conversation.send`, `conversation.confirm`, `website.publish`, `website.provision`
-- **Solo lectura**: `data.read`, `conversation.read`
+- **Administración**: `user.manage`, `client.config.manage`, `audit.read`, `audit.export`, `operation.create`, `operation.execute`, `operation.approve`, `operation.reject`, `data.read`, `data.write`, `conversation.read`, `conversation.send`, `conversation.confirm`, `website.publish`, `website.provision`, `reputation.read`, `reputation.respond`, `reputation.escalate`, `reputation.approve`, `social.read`, `social.create`, `social.schedule`, `social.approve`, `subscription.admin`, `subscription.read`, `analytics.read`, `analytics.export`, `analytics.purge`
+- **Operación**: `operation.create`, `operation.execute`, `data.read`, `data.write`, `conversation.read`, `conversation.send`, `conversation.confirm`, `website.publish`, `website.provision`, `reputation.read`, `reputation.respond`, `reputation.escalate`, `social.read`, `social.create`, `social.schedule`, `subscription.read`, `analytics.read`
+- **Solo lectura**: `data.read`, `conversation.read`, `reputation.read`, `social.read`, `subscription.read`, `analytics.read`
 
-Total entradas: 26
+Total entradas: 51
 

@@ -1,28 +1,28 @@
 # Reporte de rollback simulado — INC-001 (AC-009)
 
-> Fecha: 2026-08-20T06:33:26.992Z
+> Fecha: 2026-08-20T07:07:05.960Z
 > Procedimiento del contrato INC-001 §Rollback y PLAN-INC-001 §11.
 
 ## 0. Estado previo (snapshot)
 
 - base de datos objetivo: mainspot_test
-- eventos de auditoría: 11
-- sesiones activas: 2
-- filas role_permission: 26
+- eventos de auditoría: 43
+- sesiones activas: 4
+- filas role_permission: 51
 
 ## 1. Deshabilitar nuevos paths de acceso
 
-- sesiones revocadas: 2
+- sesiones revocadas: 4
 - ningún token emitido con anterioridad sigue siendo válido (fail-closed por sesión).
 
 ## 2. Revertir configuración de roles/permisos
 
-- role_permission re-sincronizado desde la matriz de código (26 entradas).
-- filas role_permission tras revertir: 26 (esperado 26).
+- role_permission re-sincronizado desde la matriz de código (51 entradas).
+- filas role_permission tras revertir: 51 (esperado 51).
 
 ## 3. Preservar datos de auditoría
 
-- eventos antes: 11; después: 11
+- eventos antes: 43; después: 43
 - resultado: PRESERVADO (no se borró ningún evento)
 
 ## 4. Verificar que no queda acceso cruzado

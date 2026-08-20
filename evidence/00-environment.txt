@@ -1,8 +1,10 @@
-run: 2026-08-20T06:33:15Z
+run: 2026-08-20T07:06:50Z
 node: v24.16.0
 npm:  11.13.0
 docker: Docker version 29.5.2, build 79eb04c
 docker compose: Docker Compose version v5.1.4
-git: b29a86c
+git: d333610
  M evidence/00-environment.txt
  M evidence/00-run-meta.txt
+ M evidence/e2e-inc002-inc003.txt
+?? evidence/e2e-inc004-006.txt

@@ -2,4 +2,4 @@
 > mainspot-platform@0.1.0 db:setup
 > node scripts/db-setup.ts
 
-{"ts":"2026-08-20T06:33:18.362Z","level":"info","event":"db.setup.done","msg":"database ready (migrate + seed)","request_id":"374176a4-4648-4e10-a8ef-f03cb8913c8d","applied":"none","skipped":"0001_schema.sql,0002_seed.sql,0003_login_unique_per_tenant.sql,0004_conversation_preview.sql,0005_website_domain.sql,0006_permissions.sql"}
+{"ts":"2026-08-20T07:06:53.756Z","level":"info","event":"db.setup.done","msg":"database ready (migrate + seed)","request_id":"3a57d65b-9b0e-4882-ba8a-646eb604e88a","applied":"none","skipped":"0001_schema.sql,0002_seed.sql,0003_login_unique_per_tenant.sql,0004_conversation_preview.sql,0005_website_domain.sql,0006_permissions.sql,0007_reputation_reviews.sql,0008_social_posts.sql,0009_subscriptions_plans.sql,0010_analytics_summary.sql"}
