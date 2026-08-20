@@ -45,6 +45,13 @@ export const SENSITIVE_ACTIONS = new Set<string>([
   'conversation.publish_attempt',
   'conversation.rejected',
   'website.provisioned',
+  // INC-006 (DEC-024): asignar plan/facturar son acciones de configuración
+  // contractual/administrativa sensibles (fail-closed con auditoría atómica).
+  'subscription.assigned',
+  'subscription.invoice',
+  // INC-007 (DEC-025): la purga elimina datos; el evento debe ser confiable
+  // (fail-closed) para reconstruir la decisión.
+  'analytics.purge',
 ]);
 
 export const READ_ACTIONS = new Set<string>(['data.read', 'audit.read', 'audit.export']);

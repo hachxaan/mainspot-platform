@@ -1,11 +1,15 @@
-# MainSpot Platform — INC-001 · INC-002 · INC-003
+# MainSpot Platform — INC-001 · INC-002 · INC-003 · INC-004 · INC-005 · INC-006 · INC-007(base)
 
-**Identidad/aislamiento/auditoría (INC-001) + ingestión conversacional con preview y aprobación humana (INC-002) + web administrable y dominio subdominio simulado (INC-003).**
+**Identidad/aislamiento/auditoría (INC-001) + ingestión conversacional con preview y aprobación humana (INC-002) + web administrable y dominio subdominio simulado (INC-003) + reputación/reseñas Google (INC-004) + Facebook publicaciones/Ads simulados (INC-005) + suscripciones/planes/límites configurables sin cobro (INC-006) + analítica mínima y export ETL (INC-007 base).**
 
 Implementación de los contratos canónicos:
 - [`INC-001`](https://github.com/hachxaan/mainspot-documentation/blob/main/implementation/increments/INC-001-client-identity-isolation-audit.md) (baseline `CANONICAL_BASE_APPROVED_v0.1`)
 - [`INC-002`](https://github.com/hachxaan/mainspot-documentation/blob/main/implementation/increments/INC-002-conversational-preview-approval.md) — flujo conversacional (canal Telegram/simulado), clasificación de intención, confirmación → preview → aprobación humana → publicación idempotente (AC-004..AC-007).
 - `INC-003` — página web administrable (web en el entorno del cliente, DEC-017) con edición asistida por lenguaje natural (básica) y aprovisionamiento de subdominio MainSpot en modo simulado (DEC-019/DEC-026, FLOW-006).
+- `INC-004` — Google Business Profile y reputación (`DEC-011` respuesta pública = preview/aprobación, `DEC-023` umbral configurable default `<4`, `DEC-026` modo simulado): detección → sugerencia (3 borradores) → escalamiento humano → aprobación → publicación UNA vez; SIN manipulación de opiniones.
+- `INC-005` — Facebook publicaciones y Ads básicos (`DEC-017`, `DEC-026`): crear/adaptar/programar/consultar; publicación SOLO con preview/aprobación; cola programada con tick manual; campañas avanzadas/Instagram FUERA (permiso bloqueado).
+- `INC-006` — suscripciones, planes y límites (`DEC-024`): catálogo CONFIGURABLE sin precios, enforcement de límites en creación (deny 403 `limit_exceeded` auditado), `PaymentProvider` abstracto + simulado (sin cobro).
+- `INC-007` base — analítica mínima (`DEC-025`): export ETL JSON/CSV paginado por tenant, retención configurable (default 90 días) con DRY-RUN seguro, agregados diarios básicos; dashboards/research son fase 2.
 
 Stack (gate humano 2026-08-19): **TypeScript (Node ≥ 24, type-stripping nativo) + PostgreSQL 16 + sesión/JWT propio mínimo + Docker Compose local**. Aislamiento **LÓGICO por cliente** (`DEC-018`: `tenant_id` + contexto + fail-closed). Integraciones externas bajo `DEC-026`: interfaz de adaptador + implementación real opcional + **modo simulado funcional** (E2E y piloto sin credenciales externas).
 
@@ -20,21 +24,26 @@ mainspot-platform/
 ├── src/
 │   ├── identity/    C1  modelo de cliente/tenant, usuario interno, rol, sesión
 │   ├── boundary/    C2  resolución tenant+actor, middleware fail-closed, capa de datos con scope forzado
-│   ├── rbac/        C3  matriz declarativa rol×contexto×acción + motor de chequeo
+│   ├── rbac/        C3  matriz declarativa rol×contexto×acción + motor de chequeo (incluye acciones INC-004..007 y bloqueadas `reputation.hide_review`/`social.campaign_advanced`)
 │   ├── audit/       C4  evento mínimo, sink fail-closed, consulta/export con correlación
 │   ├── hooks/       C5  contratos INC-001 (resolve_identity / check_authorization / audit_sink)
 │   ├── channels/    INC-002 adaptador de canal (Telegram real opcional + SimulatedChannel funcional, DEC-026)
 │   ├── conversation/INC-002 clasificador determinista (TENTATIVA), pipeline de ingesta, repos, state machine FLOW-002
-│   ├── publishing/  contrato Publisher genérico (reutilizable INC-003/005) + StubPublisher + WebsitePublisher
+│   ├── publishing/  contrato Publisher genérico (reutilizable INC-003/004/005) + Stub/Website/Reputation/Social publishers
 │   ├── website/     INC-003 plantilla de sitio (XSS-safe), editor asistido por LN (básico), repositorio
 │   ├── domain/      INC-003 DomainProvider (Hostinger real opcional + SimulatedHostinger, DEC-019/026)
-│   ├── api/         API HTTP mínima + UX + rutas conversacionales + preview público
+│   ├── reputation/  INC-004 ReputationProvider (GBP real opcional + SimulatedReviews determinista), engine FLOW-004, publisher
+│   ├── social/      INC-005 SocialProvider (Meta real opcional + SimulatedMeta determinista), servicio + cola de programación, publisher
+│   ├── subscriptions/ INC-006 catálogo de planes/límites (EntitlementService/checkLimit), PaymentProvider abstracto + simulado
+│   ├── analytics/   INC-007 base ExportService (JSON/CSV paginado), RetentionService (DRY-RUN), AnalyticsService (agregados diarios)
+│   ├── api/         API HTTP mínima + UX + rutas conversacionales/preview + reputation/social/subscriptions/analytics
 │   ├── db/          pool PostgreSQL
 │   └── shared/      config, logger estructurado, contexto por request (ALS), JWT propio, errores
 ├── migrations/      0001_schema + 0002_seed + 0003_login_unique + 0004_conversation_preview
-│                    0005_website_domain (incluye seed de sitios) + 0006_permissions
+│                    0005_website_domain + 0006_permissions + 0007_reputation_reviews
+│                    0008_social_posts + 0009_subscriptions_plans + 0010_analytics_summary
 ├── scripts/         migrate / seed / db-setup / test-prep / matrix / export-audit / rollback / evidence
-├── tests/           unit (sin DB) · integration (con DB + 2 tenants) · smoke · e2e (canal simulado)
+├── tests/           unit (sin DB) · integration (con DB + 2 tenants) · smoke · e2e (canal simulado + INC-004/005/006)
 ├── evidence/        evidencia real capturada (AC-009)
 └── docker-compose.yml
 ```
@@ -63,7 +72,11 @@ npm run db:setup     # asegura la BD, aplica migraciones + seed (idempotente)
   - `0004_conversation_preview.sql` — `conversation_request`, `action_proposal` (state machine FLOW-002), `preview_session` (token SOLO hasheado), `approval`, `publication` (idempotencia AC-007). FKs a `client` con `ON DELETE RESTRICT`.
   - `0005_website_domain.sql` — `client_website`, `client_domain` (provisión simulada), `website_content` (sitio estático versionado) + **seed idempotente de sitios** de los 2 tenants (`el-sol`, `la-luna`).
   - `0006_permissions.sql` — espejo de la matriz ampliada (acciones `conversation.read/send/confirm`, `website.publish/provision`).
-- El runner registra archivos en `schema_migrations` con advisory lock (replay seguro). Seed 0002 + sección de seed de 0005 idempotentes.
+  - `0007_reputation_reviews.sql` — `review` (estados FLOW-004) + permisos `reputation.*` (mirror de la matriz; `hide_review` queda deny para todos).
+  - `0008_social_posts.sql` — `social_post` + `scheduled_post` (cola de programación) + permisos `social.*` (`campaign_advanced` deny para todos).
+  - `0009_subscriptions_plans.sql` — `plan`, `plan_limit`, `subscription` + **seed de planes sin precio** (`Piloto 1` único) y asignación a los 2 tenants + permisos `subscription.*`.
+  - `0010_analytics_summary.sql` — `analytics_daily_summary` + índice de retención sobre `audit_event(ts)` + permisos `analytics.*`.
+- El runner registra archivos en `schema_migrations` con advisory lock (replay seguro). Seeds 0002/0005/0009 idempotentes (`ON CONFLICT DO NOTHING`).
 
 ### Credenciales de prueba (SIMULADAS — solo dev)
 
@@ -113,6 +126,48 @@ Rutas INC-002/INC-003:
 | `GET /preview/:token` | público | Vista previa con enlace seguro (HTML, AC-007) |
 | `POST /preview/:token/apply` | público (token) | "Aplicar cambios": aprueba y publica UNA vez (single-use + expiración) |
 
+Rutas INC-004 (reputación/reseñas):
+
+| Ruta | Protegida | Acción |
+|---|---|---|
+| `GET /api/backoffice/reputation/reviews` | `reputation.read` | Reseñas del tenant (filtro `?state=`) |
+| `POST /api/backoffice/reputation/reviews/sync` | `reputation.respond` | Ingesta del proveedor (simulado determinista; idempotente; respeta `reviews_managed`) |
+| `POST /api/backoffice/reputation/reviews/:id/escalate` | `reputation.escalate` | Escalamiento humano (FLOW-004) |
+| `POST /api/backoffice/reputation/reviews/:id/response` | `reputation.respond` | Editar borrador de respuesta (solo antes de aprobar) |
+| `POST /api/backoffice/reputation/reviews/:id/approve` | `reputation.approve` | Aprueba respuesta → crea propuesta de preview/publicación (DEC-011) |
+| `POST /api/backoffice/reputation/reviews/:id/reject` | `reputation.respond` | Rechaza el caso (antes de publicar) |
+| `POST /api/backoffice/reputation/reviews/:id/hide` · `DELETE /reputation/reviews/:id` | `reputation.hide_review` | **BLOQUEADO para todos** (no se manipulan opiniones; 403 + audit deny) |
+
+Rutas INC-005 (social):
+
+| Ruta | Protegida | Acción |
+|---|---|---|
+| `POST /api/backoffice/social/posts` | `social.create` | Crear borrador (post o ad básico; verifica límite del plan) |
+| `GET /api/backoffice/social/posts` | `social.read` | Listado (filtro `?status=`) |
+| `POST /api/backoffice/social/posts/:id/schedule` | `social.schedule` | Programar borrador (aprobación posterior) → `awaiting_approval` + cola |
+| `POST /api/backoffice/social/posts/:id/approve` | `social.approve` | Aprobar contenido → propuesta de preview/publicación |
+| `POST /api/backoffice/social/posts/:id/reject` | `social.schedule` | Rechazar (la cola queda `skipped`) |
+| `POST /api/backoffice/social/process-due` | `social.schedule` | Tick manual del worker: publica programaciones vencidas (idempotente) |
+| `POST /api/backoffice/social/campaigns/advanced` | `social.campaign_advanced` | **BLOQUEADO** (campañas avanzadas fuera del MVP; 403 + audit deny) |
+
+Rutas INC-006 (suscripciones):
+
+| Ruta | Protegida | Acción |
+|---|---|---|
+| `POST /api/backoffice/subscriptions/assign` | `subscription.admin` | Asignar plan (una suscripción activa por tenant; idempotente) |
+| `GET /api/backoffice/subscriptions/entitlements` | `subscription.read` | Plan + límites del cliente |
+| `GET /api/backoffice/subscriptions/plans` | `subscription.read` | Catálogo de planes (configurable en BD) |
+| `POST /api/backoffice/subscriptions/invoice` | `subscription.admin` | Facturar; **PROHIBITED** si el plan no tiene precio (piloto sin cobro) |
+
+Rutas INC-007 base (analítica):
+
+| Ruta | Protegida | Acción |
+|---|---|---|
+| `GET /api/backoffice/analytics/export` | `analytics.export` | Export ETL JSON/CSV paginado con filtros `from/to/action/page/page_size` |
+| `GET /api/backoffice/analytics/summary` | `analytics.read` | Agregados diarios por acción/resultado (en vivo) |
+| `POST /api/backoffice/analytics/refresh-summary` | `analytics.export` | Materializa `analytics_daily_summary` (upsert idempotente) |
+| `POST /api/backoffice/analytics/purge` | `analytics.purge` | Retención ON-DEMAND; **default DRY-RUN** (no borra; `dry_run=false` aplica) |
+
 ## 5. INC-002 — Conversational request intake with preview and human approval
 
 Flujo implementado (según `INC-002`, AC-004..AC-007, FLOW-001/002/003):
@@ -132,35 +187,66 @@ Flujo implementado (según `INC-002`, AC-004..AC-007, FLOW-001/002/003):
 - **Dominio** (`src/domain/`): `DomainProvider` + `SimulatedHostinger` (subdominio `<slug>.sim.mainspot.local`, DNS CNAME y certificado simulados, determinista e idempotente) + `HostingerAdapter` (real, SOLO con `HOSTINGER_API_TOKEN`). Al publicar se garantiza la provisión (FLOW-006); también por endpoint.
 - **Preview público**: `GET /preview/:token` renderiza el sitio propuesto; aplicar publica.
 
-## 7. Validaciones (AC-001/002/003/004/005/006/007/009)
+## 7. INC-004 — Reputación y reseñas (CAP-002/CAP-004, DEC-011/023/026)
+
+- **Adaptador** (`src/reputation/provider.ts`, `simulated.ts`, `google.ts`): `ReputationProvider` (listReviews + postPublicResponse). `SimulatedReviews` con dataset determinista por tenant (2+ positivas, 1 neutra, 1 negativa con calificación <4); `GoogleBusinessProfileAdapter` real SOLO con `GOOGLE_GBP_TOKEN` (fetch TENTATIVA; sin token NUNCA se llama).
+- **Engine** (`src/reputation/engine.ts`): ingesta idempotente → clasificación (`>=4 positive`, `==3 neutral`, `≤2 negative`) → enrutamiento por `REVIEW_THRESHOLD` (DEC-023, default 4 ⇒ `<4` escala). Estados FLOW-004: `detected → suggested → awaiting_human → approved → published | rejected`, con `edited` para borradores corregidos y `acknowledged` para positivas (sin publicación). Sugerencia determinista de **3 borradores** (sin inventar descuentos/precios, RULE-005).
+- **Respuesta pública** = cambio visible (DEC-011): al aprobar la respuesta se crea una propuesta `capability_target='reputation'` del flujo INC-002 → **preview → aprobación → publica UNA vez** (publisher idempotente `src/reputation/publisher.ts`). Editar respuesta SOLO en borrador (antes de aprobar); después de publicado ⇒ 409 `prohibited`. **Sin manipulación**: ocultar/borrar reseñas está BLOQUEADO (permiso `reputation.hide_review` deny para todos; 403 + audit deny).
+
+## 8. INC-005 — Facebook publicaciones y Ads (CAP-003, DEC-017/026)
+
+- **Adaptador** (`src/social/`): `SocialProvider` (getPage + publishPost). `SimulatedMeta` determinista (página fija por tenant, external_ref = hash del contenido ⇒ idempotente); `MetaAdapter` real SOLO con `META_GRAPH_TOKEN` (API Graph TENTATIVA; sin token NUNCA se llama).
+- **Servicio** (`src/social/service.ts`): `draft → awaiting_approval → proposer preview → publicado UNA vez`. Crear borrador (límite `social_posts`/`social_ads` verificado), programar (aprobación posterior; cola `scheduled_post` pending), publicar vía FLOW-002 (publisher `src/social/publisher.ts`), listar, tick manual `POST /social/process-due` (simula el worker; publica solo filas vencidas pending, idempotente).
+- **Fuera del MVP**: campañas avanzadas e Instagram (permiso `social.campaign_advanced` deny para todos; intento ⇒ 403 + audit deny).
+
+## 9. INC-006 — Suscripciones y límites (CAP-012, DEC-024)
+
+- **Catálogo CONFIGURABLE en BD** (`plan`, `plan_limit`, `subscription`): plan **"Piloto 1"** único sin precio + planes opcionales sin precio (RULE-006). Una suscripción activa por tenant (seed para los 2 tenants).
+- **EntitlementService** (`src/subscriptions/entitlements.ts`): asignar plan (admin), consultar entitlements (los 3 perfiles), `checkLimit(tenant, capability)` en el punto de creación (website/social/reputation) — exceso ⇒ **403 `limit_exceeded` auditado**; sin plan activo ⇒ 403 `subscription_required` (fail-closed).
+- **Pago** (`src/subscriptions/payment.ts`): `PaymentProvider` abstracto + `SimulatedPaymentProvider` (siempre ok, sin llamadas externas). `POST /subscriptions/invoice` con plan SIN precio ⇒ **PROHIBITED** + audit deny (`no_price_prohibited`). El piloto NO cobra.
+
+## 10. INC-007 base — Analítica mínima + export ETL (CAP-014 base, DEC-025)
+
+- **ExportService** (`src/analytics/export.ts`): exporta eventos de auditoría por tenant con filtros `from/to/action`, formato JSON/CSV, paginación (page/page_size, `has_more`), auditoría del exporte.
+- **RetentionService** (`src/analytics/retention.ts`): retención configurable (`RETENTION_DAYS`, default 90) ON-DEMAND; la operación es **DRY-RUN por defecto** (no borra) y solo con `dry_run=false` elimina (scope por tenant; la retención global de plataforma queda como limitación documentada).
+- **Agregados** (`src/analytics/summary.ts` + `analytics_daily_summary`): contadores por día/acción/resultado con SELECT en vivo; `refresh-summary` materializa (upsert idempotente). **Dashboards completos, ETL externo y research/recomendaciones son INC-007 fase 2 (fuera de este bloque).**
+
+## 11. Validaciones (AC-001/002/003/004/005/006/007/009)
 
 ```bash
 npm run typecheck         # tsc --noEmit
-npm run test:unit         # unit sin DB (RBAC, JWT, audit, classifier, website, publishing, ratelimit)
-npm run test:integration  # recrea mainspot_test + aislamiento, RBAC, auditoría, INC-002 (AC-004..007), INC-003
+npm run test:unit         # unit sin DB (RBAC/engine+matrix ampliada, JWT, audit, classifier, website, publishing, reputation, social, subscriptions, analytics)
+npm run test:integration  # recrea mainspot_test + aislamiento, RBAC, auditoría, INC-002 (AC-004..007), INC-003, INC-004..007
 npm run test:smoke        # smoke AC-009 + señales UX AC-008
-npm run test:e2e          # E2E INC-002+INC-003 canal simulado → evidence/e2e-inc002-inc003.txt
+npm run test:e2e          # E2E INC-002+INC-003 (canal simulado) + INC-004/005/006 (proveedores simulados)
 npm test                  # typecheck + unit + integration + smoke + e2e
 ```
 
-## 8. Evidencia reproducible (AC-009)
+### Correr el E2E simulado (DEC-026, sin credenciales)
+
+```bash
+npm run db:up && npm run db:setup && npm run test:e2e
+# Escribe evidence/e2e-inc002-inc003.txt y evidence/e2e-inc004-006.txt
+```
+
+## 12. Evidencia reproducible (AC-009)
 
 ```bash
 npm run evidence   # bash scripts/capture-evidence.sh
 ```
 
-La salida real queda en `evidence/` (00-13): environment, typecheck, permission matrix, unit, db, integration, denied log, audit exports (por tenant), smoke, **13-e2e-inc002-inc003.txt** (transcript E2E), rollback, summary. Regla `06-ACCEPTANCE-EVIDENCE.md`: la evidencia no se basa en afirmaciones.
+La salida real queda en `evidence/` (00-14): environment, typecheck, permission matrix, unit, db, integration, denied log, audit exports (por tenant), smoke, **13-e2e-inc002-inc003.txt** y **14-e2e-inc004-006.txt** (transcripts E2E), rollback, summary. Regla `06-ACCEPTANCE-EVIDENCE.md`: la evidencia no se basa en afirmaciones.
 
-## 9. Rollback (AC-009)
+## 13. Rollback (AC-009)
 
 1. Deshabilitar aprobaciones/publicaciones: `npm run rollback:simulate` revoca sesiones activas; ningún token previo sigue siendo válido.
 2. Marcar previews pendientes como expired y conservar el intake read-only (rollback mínimo INC-002): `UPDATE preview_session SET status='expired' WHERE status='active'; UPDATE action_proposal SET status='expired' WHERE status IN ('confirmed','preview_ready');` — las consultas `read_only` siguen funcionando (FLOW-003).
-3. Preservar auditoría: nunca se borran `audit_event`.
-4. Revertir código: `git revert` del commit de la tanda. La matriz RBAC vive en `src/rbac/matrix.ts` (migración 0006 en espejo).
+3. Preservar auditoría: nunca se borran `audit_event` (salvo la purga explícita de retención INC-007 con `dry_run=false`).
+4. Revertir código: `git revert` del commit de la tanda. La matriz RBAC vive en `src/rbac/matrix.ts` (migraciones espejo 0006/0007/0008/0009/0010).
 
-## 10. Mapa AC → implementación y evidencia
+## 14. Mapa AC → implementación y evidencia
 
-| AC | Dónde se cumple | Evidencia |
+| AC/INC | Dónde se cumple | Evidencia |
 |---|---|---|
 | **AC-001/002/003** (INC-001) | como en el README original | `tests/integration/*` (aislamiento, RBAC, auditoría) |
 | **AC-004** Sensibles bloqueadas | `classifier.ts` (RULE-004/005) + `state-machine.ts` (approve sólo con `operation.approve`) | `tests/integration/conversation-inc002.test.ts` (sensible + prohibited) |
@@ -168,33 +254,44 @@ La salida real queda en `evidence/` (00-13): environment, typecheck, permission 
 | **AC-006** Confirmación detallada | `pipeline.ts` (confirmationText) + `edit-mapper.ts` (diff conceptual) | AC-006 (estado `awaiting_confirmation` + texto) |
 | **AC-007** Publicar solo desde preview aprobado, idempotente | `state-machine.ts` + `publication.publish_key` UNIQUE + preview single-use | AC-007 + `tests/e2e/inc002-inc003-e2e.test.ts` |
 | **AC-008** UX no técnica | `ui.ts` + mensajes en `errors.ts`/rutas + `previewPageHtml` | `tests/smoke/smoke.test.ts`, `docs/UX-CHECKLIST.md` |
-| **AC-009** Evidencia y rollback | `capture-evidence.sh` (+ 13-e2e) + rollback §9 | `evidence/*` |
+| **AC-009** Evidencia y rollback | `capture-evidence.sh` (13/14-e2e) + rollback §13 | `evidence/*` |
 | **INC-003 REQ-012/REQ-018** | `website/` + `domain/` + `publishing/website.ts` | `tests/integration/website-inc003.test.ts` |
+| **INC-004** (DEC-011/023) | `reputation/` + `publishing/reputation` + preview/aprobación INC-002 | `tests/integration/reputation-inc004.test.ts`, `tests/unit/reputation.test.ts` |
+| **INC-005** (DEC-017/026) | `social/` + `publishing/social` + cola `scheduled_post` | `tests/integration/social-inc005.test.ts`, `tests/unit/social.test.ts` |
+| **INC-006** (DEC-024) | `subscriptions/` (planes/límites/pago simulado) | `tests/integration/subscriptions-inc006.test.ts`, `tests/unit/subscriptions.test.ts` |
+| **INC-007 base** (DEC-025) | `analytics/` (export/retention/summary) | `tests/integration/analytics-inc007.test.ts`, `tests/unit/analytics.test.ts` |
 
-## 11. Decisiones TENTATIVA (a validar/cerrar; el canon no las fija)
+## 15. Decisiones TENTATIVA (a validar/cerrar; el canon no las fija)
 
 | Tema | Decisión tomada | Marca |
 |---|---|---|
 | Clasificador de intención | DETERMINISTA por reglas/keywords en español (sin ML) | TENTATIVA e iterable |
 | Canal Telegram real | `TelegramAdapter` con fetch a Bot API; ingesta por webhook y mapeo canal→cliente SIN implementar (identidad resuelta por sesión) | TENTATIVA |
 | Enlace de preview | token aleatorio alto entropía, hash SHA-256 en BD, expiración configurable, single-use, alcance `proposal_publish` | TENTATIVA (canon 05: audiencia/revocación pendiente) |
-| Publisher | contrato genérico `Publisher` (reutilizable INC-005); `WebsitePublisher` + `StubPublisher`; efecto abstracto para acciones sensibles (descuento ⇒ stub sin efecto externo) | TENTATIVA |
+| Publisher | contrato genérico `Publisher` (reutilizando INC-003/004/005) con `WebsitePublisher`/`ReputationPublisher`/`SocialPublisher`; `StubPublisher` como fallback | TENTATIVA |
 | Subdominio simulado | `<slug>.sim.mainspot.local` determinista; DNS CNAME + certificado simulados; idempotente | TENTATIVA (DEC-026) |
 | Hostinger real | adaptador esqueleto FLOW-006 con fetch; sin credenciales NO se llama; no probado | TENTATIVA |
 | Edición asistida de web | mapeo determinista de comandos comunes (sin generativo) | TENTATIVA e iterable |
-| `website.publish` (permiso) | reservado en matriz para endpoints de publicación operativa de incrementos futuros (INC-005); sin ruta expuesta en esta tanda | TENTATIVA |
-| Aprobaciones | solo `administration` (`operation.approve/reject` admin-only, ya definido en INC-001) | TENTATIVA |
+| Aprobaciones | solo `administration` (`operation.approve/reject`, `reputation.approve`, `social.approve` admin-only) | TENTATIVA |
+| Umbral de reseñas | `REVIEW_THRESHOLD` configurable por env, default `<4` (DEC-023); el valor definitivo queda para investigación con datos (Q-013) | TENTATIVA (decisión con dato diferida) |
+| Sugerencia de respuesta | plantillas deterministas (3 borradores, sin generativo); sin inventar hechos comerciales (RULE-005) | TENTATIVA e iterable |
+| Revisión de Google/API Meta reales | esqueleto con fetch; mapeo exacto a endpoints sin validar; sin credenciales NO se llaman | TENTATIVA |
+| Límites por capacidad | enforcement en el punto de creación (website/social/reputation) con `checkLimit`; TOCTOU entre check e insert aceptado en piloto | TENTATIVA (endurecer con UNIQUE/claims en fase productiva) |
+| Retención/analítica | purge ON-DEMAND DRY-RUN por defecto, scope por tenant; retención global de plataforma y dashboards = fase 2 | TENTATIVA (INC-007 base) |
+| `website.publish` (permiso) | reservado en matriz para endpoints de publicación operativa futura; sin ruta expuesta en esta tanda | TENTATIVA |
 
-## 12. Seguridad y notas operativas (INC-001 + INC-002/003)
+## 16. Seguridad y notas operativas (INC-001 + INC-002..007)
 
-- **Fail-closed**: sin contexto ⇒ deny; **canales no son identidad**; **publicar/confirmar/aprobar requieren permiso**; acciones sensibles y su audit son atómicas (ROLLBACK conjunto).
-- **Anti-oráculo (IR-01)**: propuestas/requests de otro tenant responden 404 idéntico (la ruta de aprobación cross-tenant devuelve 404 igual que inexistente y audita `not_found`).
-- **Auditoría sin secretos**: tokens de preview (hash) y contraseñas nunca se persisten/loguean; el sink y logger rechazan campos con nombre sensible.
+- **Fail-closed**: sin contexto ⇒ deny; **canales no son identidad**; **publicar/confirmar/aprobar requieren permiso**; acciones sensibles y su audit son atómicas (ROLLBACK conjunto). Acciones bloqueadas (`reputation.hide_review`, `social.campaign_advanced`) no se conceden a NINGÚN rol.
+- **Anti-oráculo (IR-01)**: propuestas/requests/reseñas/publicaciones de otro tenant responden 404 idéntico (la ruta de aprobación cross-tenant devuelve 404 igual que inexistente y audita `not_found`).
+- **Auditoría sin secretos**: tokens de preview (hash), contraseñas y credenciales de integraciones jamás se persisten/loguean; el sink y logger rechazan campos con nombre sensible.
+- **Sin llamadas HTTP reales sin token**: los adaptadores Meta/Google/Hostinger solo se instancian con credenciales; por defecto el sistema usa simuladores deterministas (DEC-026).
+- **No manipulación de opiniones**: no existe endpoint efectivo para ocultar/borrar reseñas; el intento se bloquea y audita como deny.
 - **Rate limiting**: login (IR-06) y aprobación/rechazo sensibles (IP + operador + propuesta; `APPROVAL_RATE_LIMIT_*`).
 - **JWT_SECRET (IR-02)**: requerido fuera de `test`; sin default en código/compose.
-- **Modo simulado determinista**: `SimulatedHostinger` y `SimulatedChannel` no usan aleatoriedad (pinned) ⇒ E2E reproducible; la única aleatoriedad es la de tokens/IDs (no afecta el flujo).
+- **Modo simulado determinista**: `SimulatedHostinger`, `SimulatedChannel`, `SimulatedReviews` y `SimulatedMeta` no usan aleatoriedad (pinned) ⇒ E2E reproducible; la única aleatoriedad es la de tokens/IDs (no afecta el flujo).
 - **Nunca subir `.env`**; `.env.example` es referencia con placeholders.
 
-## 13. Out of scope (recordatorio)
+## 17. Out of scope (recordatorio)
 
-No pagos/precios/planes; no redes sociales (INC-005 futuro; pedidos a redes quedan bloqueados con mensaje claro); no Google Business Profile; no webhook real de Telegram (solo envío con token); no Hostinger real sin credenciales; la UI sigue mínima (sustituible por frontend real en incrementos posteriores).
+No pagos/precios/planes aprobados (DEC-024: solo infraestructura sin cobro; `invoice` PROHIBITED); no campañas avanzadas de redes ni Instagram (DEC-017); no Google Business Profile real sin credenciales (simulado determinista); no API Meta real sin token (simulado); no dashboards completos/research de analítica (INC-007 fase 2); no webhook real de Telegram (solo envío con token); no Hostinger real sin credenciales; la UI sigue mínima (sustituible por frontend real en incrementos posteriores).

@@ -10,7 +10,7 @@ export type ActionClass =
   | 'human_approval_required'
   | 'prohibited';
 
-export type CapabilityTarget = 'website' | 'social' | 'domain' | 'unknown';
+export type CapabilityTarget = 'website' | 'social' | 'reputation' | 'domain' | 'unknown';
 
 export type ProposalStatus =
   | 'drafted'

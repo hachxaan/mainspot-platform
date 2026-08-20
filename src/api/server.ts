@@ -30,6 +30,24 @@ import { PublisherRegistry } from '../publishing/publisher.ts';
 import { StubPublisher } from '../publishing/stub.ts';
 import { WebsitePublisher } from '../publishing/website.ts';
 import { createChannelAdapter } from '../channels/registry.ts';
+// INC-004 reputation (CAP-002/CAP-004, DEC-011/023/026)
+import { createReputationProvider } from '../reputation/google.ts';
+import { ReputationEngine } from '../reputation/engine.ts';
+import { ReputationPublisher } from '../reputation/publisher.ts';
+import { reputationRouter } from './reputation-routes.ts';
+// INC-005 social (CAP-003, DEC-017/026)
+import { createSocialProvider } from '../social/meta.ts';
+import { SocialService } from '../social/service.ts';
+import { SocialPublisher } from '../social/publisher.ts';
+import { socialRouter } from './social-routes.ts';
+// INC-006 subscriptions (CAP-012, DEC-024)
+import { EntitlementService, SubscriptionRepository } from '../subscriptions/entitlements.ts';
+import { subscriptionRouter } from './subscription-routes.ts';
+// INC-007 analytics base (CAP-014, DEC-025)
+import { ExportService } from '../analytics/export.ts';
+import { RetentionService } from '../analytics/retention.ts';
+import { AnalyticsService } from '../analytics/summary.ts';
+import { analyticsRouter } from './analytics-routes.ts';
 
 export interface AppHandle {
   app: express.Express;
@@ -74,6 +92,22 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   const publishers = new PublisherRegistry();
   publishers.register(new WebsitePublisher(pool, domainService));
   publishers.register(new StubPublisher());
+  // INC-004/005: publishers de reputación y social (solo tras aprobación humana).
+  const reputationProvider = createReputationProvider(config);
+  publishers.register(new ReputationPublisher(pool, reputationProvider, sink));
+  const socialProvider = createSocialProvider(config);
+  publishers.register(new SocialPublisher(pool, socialProvider, sink));
+  // INC-006: entitlements (límites por plan configurable, DEC-024).
+  const entitlements = new EntitlementService({ pool, sink });
+  const subscriptionRepo = new SubscriptionRepository(pool);
+  // INC-004: reputación (engine)
+  const reputationEngine = new ReputationEngine({ pool, config, sink, provider: reputationProvider, conversationRepo, entitlements });
+  // INC-005: social (service + cola de programación)
+  const socialService = new SocialService({ pool, config, sink, provider: socialProvider, conversationRepo, entitlements });
+  // INC-007: analítica mínima (export/retention/summary)
+  const exporter = new ExportService(pool);
+  const retention = new RetentionService({ pool, retentionDays: config.retentionDays });
+  const analyticsService = new AnalyticsService({ pool });
   const machine: StateMachineDeps = {
     pool,
     sink,
@@ -132,11 +166,15 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   app.use('/api/backoffice', rejectTenantOverride(pool));
   app.use('/api/backoffice', backofficeRouter(deps));
   app.use('/api/backoffice', conversationRouter(conversationDeps));
+  app.use('/api/backoffice', reputationRouter({ pool, config, sink, engine: reputationEngine }));
+  app.use('/api/backoffice', socialRouter({ pool, config, sink, service: socialService }));
+  app.use('/api/backoffice', subscriptionRouter({ pool, config, sink, entitlements, subscriptionRepo }));
+  app.use('/api/backoffice', analyticsRouter({ pool, config, sink, exporter, retention, analytics: analyticsService }));
 
   // Minimal UX pages (AC-008).
   app.get('/', (req, res) => res.type('html').send(loginPageHtml()));
   app.get('/panel', (req, res) => res.type('html').send(panelPageHtml()));
-  app.get('/health', (req, res) => res.json({ ok: true, app: 'mainspot-platform', increments: ['INC-001', 'INC-002', 'INC-003'] }));
+  app.get('/health', (req, res) => res.json({ ok: true, app: 'mainspot-platform', increments: ['INC-001', 'INC-002', 'INC-003', 'INC-004', 'INC-005', 'INC-006', 'INC-007'] }));
 
   // Central error handling: controlled + plain language (AC-008), structured log.
   app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {

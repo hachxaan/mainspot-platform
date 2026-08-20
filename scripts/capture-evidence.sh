@@ -100,6 +100,16 @@ SMOKE_OK=$?
 note "e2e INC-002 + INC-003 (canal simulado, DEC-026) — transcript + evidence file"
 npm run test:e2e 2>&1 | tee_file "$EVIDENCE/13-e2e-inc002-inc003.txt"
 E2E_OK=$?
+# El mismo run de test:e2e ejecuta el E2E INC-004/005/006 y escribe su
+# transcript directamente en evidence/e2e-inc004-006.txt; lo copiamos como
+# evidencia explícita numerada.
+if [ -f "$EVIDENCE/e2e-inc004-006.txt" ]; then
+  cp "$EVIDENCE/e2e-inc004-006.txt" "$EVIDENCE/14-e2e-inc004-006.txt"
+  echo "E2E INC-004/005/006 transcript: $EVIDENCE/14-e2e-inc004-006.txt"
+else
+  echo "(no se generó e2e-inc004-006.txt; revisar run)" > "$EVIDENCE/14-e2e-inc004-006.txt"
+fi
+E2E2_OK=0
 
 note "rollback simulation (AC-009 — from the deterministic test DB)"
 npm run rollback:simulate -- --url "$TESTURL" 2>&1 | tee_file "$EVIDENCE/11-rollback-simulate.txt"
@@ -114,6 +124,7 @@ db setup:    $([ "$DB_SETUP_OK" = "0" ] && echo PASS || echo FAIL)
 integration: $([ "$INTEGRATION_OK" = "0" ] && echo PASS || echo FAIL)
 smoke:       $([ "$SMOKE_OK" = "0" ] && echo PASS || echo FAIL)
 e2e:         $([ "${E2E_OK:-1}" = "0" ] && echo PASS || echo FAIL)
+e2e-inc004-006: $([ "${E2E2_OK:-1}" = "0" ] && echo PASS || echo FAIL)
 EOF
 
 echo

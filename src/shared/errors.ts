@@ -14,6 +14,10 @@ export const DENY_CODES = {
   INVALID_CREDENTIALS: 'invalid_credentials',
   AUDIT_FAILED: 'audit_failed',
   INTERNAL: 'internal_error',
+  // INC-004/005/006/007 — códigos de deny de dominio nuevos (DEC-023/024/025/026).
+  PROHIBITED: 'prohibited',
+  LIMIT_EXCEEDED: 'limit_exceeded',
+  SUBSCRIPTION_REQUIRED: 'subscription_required',
 } as const;
 
 export type DenyCode = (typeof DENY_CODES)[keyof typeof DENY_CODES];

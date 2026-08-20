@@ -176,7 +176,7 @@ export async function approveAndPublish(
     throw new AppError(409, 'validation_error', 'La propuesta no está lista para aprobarse en su estado actual. Para cambios visibles primero se prepara la vista previa.');
   }
 
-  const publisher = deps.publishers.get(proposal.capability_target === 'website' ? 'website' : 'stub');
+  const publisher = deps.publishers.get(publisherNameFor(proposal.capability_target));
   if (!publisher) {
     throw new AppError(500, DENY_CODES.INTERNAL, 'No hay un publicador disponible para este cambio.');
   }
@@ -266,6 +266,18 @@ export async function approveAndPublish(
     });
     return { proposal: outProposal, publication, alreadyPublished: false, published: true };
   });
+}
+
+/** Publisher target genérico por capability_target (INC-003/004/005):
+ *  website → WebsitePublisher, reputation → ReputationPublisher,
+ *  social → SocialPublisher, resto → stub (sin efecto externo). */
+export function publisherNameFor(capabilityTarget: string): string {
+  switch (capabilityTarget) {
+    case 'website': return 'website';
+    case 'reputation': return 'reputation';
+    case 'social': return 'social';
+    default: return 'stub';
+  }
 }
 
 /** Señal de replay: la publicación ya existía (OTRA aprobación ganó la carrera). */

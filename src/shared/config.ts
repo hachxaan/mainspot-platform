@@ -14,12 +14,18 @@ const AUDIT_MODES = ['fail_closed', 'fail_open'] as const;
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 const CHANNEL_PRIMARYS = ['telegram', 'simulated'] as const;
 const DOMAIN_PROVIDERS = ['simulated', 'hostinger'] as const;
+const REPUTATION_PROVIDERS = ['simulated', 'google_business_profile'] as const;
+const SOCIAL_PROVIDERS = ['simulated', 'meta'] as const;
+const PAYMENT_PROVIDERS = ['simulated', 'stripe'] as const;
 
 export type AppEnv = (typeof APP_ENVS)[number];
 export type AuditMode = (typeof AUDIT_MODES)[number];
 export type LogLevelValue = (typeof LOG_LEVELS)[number];
 export type ChannelPrimary = (typeof CHANNEL_PRIMARYS)[number];
 export type DomainProviderName = (typeof DOMAIN_PROVIDERS)[number];
+export type ReputationProviderName = (typeof REPUTATION_PROVIDERS)[number];
+export type SocialProviderName = (typeof SOCIAL_PROVIDERS)[number];
+export type PaymentProviderName = (typeof PAYMENT_PROVIDERS)[number];
 
 export interface AppConfig {
   port: number;
@@ -49,6 +55,19 @@ export interface AppConfig {
   hostingerApiBaseUrl: string;
   hostingerApiToken: string;
   mainspotDomainSuffix: string;
+  // INC-004 reputation/reviews (DEC-023 umbral configurable; DEC-026 simulado)
+  reviewThreshold: number;
+  reputationProvider: ReputationProviderName;
+  googleGbpToken: string;
+  googleGbpBaseUrl: string;
+  // INC-005 social (Meta/Facebook, DEC-017/026)
+  socialProvider: SocialProviderName;
+  metaGraphToken: string;
+  metaGraphBaseUrl: string;
+  // INC-006 subscriptions (DEC-024 catálogo configurable, sin cobro real)
+  paymentProvider: PaymentProviderName;
+  // INC-007 analytics (DEC-025 retención configurable, default 90 días)
+  retentionDays: number;
 }
 
 export interface LoadConfigOptions {
@@ -117,6 +136,22 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     hostingerApiBaseUrl: process.env.HOSTINGER_API_BASE_URL ?? 'https://api.hostinger.com',
     hostingerApiToken: process.env.HOSTINGER_API_TOKEN ?? '',
     mainspotDomainSuffix: process.env.MAINSPOT_DOMAIN_SUFFIX ?? 'sim.mainspot.local',
+    // INC-004: umbral de enrutamiento de reseñas configurable por entorno (DEC-023),
+    // default <4 estrellas; valor definitivo pendiente de investigación con datos (Q-013).
+    reviewThreshold: Number(process.env.REVIEW_THRESHOLD ?? 4),
+    // INC-004: Google Business Profile — simulado salvo GOOGLE_GBP_TOKEN (DEC-026).
+    reputationProvider: enumValue<ReputationProviderName>('REPUTATION_PROVIDER', process.env.REPUTATION_PROVIDER, REPUTATION_PROVIDERS, 'simulated'),
+    googleGbpToken: process.env.GOOGLE_GBP_TOKEN ?? '',
+    googleGbpBaseUrl: process.env.GOOGLE_GBP_BASE_URL ?? 'https://mybusinessbusinessinformation.googleapis.com',
+    // INC-005: Meta/Facebook — simulado salvo META_GRAPH_TOKEN (DEC-017/026).
+    socialProvider: enumValue<SocialProviderName>('SOCIAL_PROVIDER', process.env.SOCIAL_PROVIDER, SOCIAL_PROVIDERS, 'simulated'),
+    metaGraphToken: process.env.META_GRAPH_TOKEN ?? '',
+    metaGraphBaseUrl: process.env.META_GRAPH_BASE_URL ?? 'https://graph.facebook.com',
+    // INC-006: proveedor de pago — SOLO esqueleto simulado en piloto (DEC-024,
+    // sin cobro ni procesador real). 'stripe' es TENTATIVA y requiere token.
+    paymentProvider: enumValue<PaymentProviderName>('PAYMENT_PROVIDER', process.env.PAYMENT_PROVIDER, PAYMENT_PROVIDERS, 'simulated'),
+    // INC-007: retención de auditoría/eventos configurable (DEC-025), default 90 días.
+    retentionDays: Number(process.env.RETENTION_DAYS ?? 90),
   };
 
   return { ...config, ...overrides };

@@ -27,9 +27,38 @@ export const ACTIONS = [
   // INC-003 (CAP-001/CAP-010): publicación web y aprovisionamiento de subdominio.
   'website.publish',
   'website.provision',
+  // INC-004 (CAP-002/CAP-004): reputación y reseñas (DEC-011/023).
+  'reputation.read',
+  'reputation.respond',
+  'reputation.escalate',
+  'reputation.approve',
+  'reputation.hide_review',
+  // INC-005 (CAP-003): redes sociales (Facebook publicaciones/Ads; DEC-017).
+  'social.read',
+  'social.create',
+  'social.schedule',
+  'social.approve',
+  'social.campaign_advanced',
+  // INC-006 (CAP-012): suscripciones, planes y límites (DEC-024).
+  'subscription.admin',
+  'subscription.read',
+  // INC-007 (CAP-014, base): analítica mínima y export ETL (DEC-025).
+  'analytics.read',
+  'analytics.export',
+  'analytics.purge',
 ] as const;
 
 export type ActionName = (typeof ACTIONS)[number];
+
+/**
+ * Acciones que EXISTEN en el catálogo pero están BLOQUEADAS para TODOS los
+ * roles (fail-closed): aun el perfil administration no las recibe. Ejemplos:
+ * manipulación de reseñas (ocultar/borrar opiniones) y campañas avanzadas.
+ */
+export const BLOCKED_ACTIONS: readonly ActionName[] = [
+  'reputation.hide_review',
+  'social.campaign_advanced',
+] as const;
 
 export interface MatrixEntry {
   role: RoleName;
@@ -45,7 +74,7 @@ export interface MatrixEntry {
  * integration test).
  */
 export const MATRIX: Record<RoleName, readonly ActionName[]> = {
-  administration: [...ACTIONS],
+  administration: ACTIONS.filter((a) => !BLOCKED_ACTIONS.includes(a)),
   operation: [
     'operation.create',
     'operation.execute',
@@ -56,8 +85,16 @@ export const MATRIX: Record<RoleName, readonly ActionName[]> = {
     'conversation.confirm',
     'website.publish',
     'website.provision',
+    'reputation.read',
+    'reputation.respond',
+    'reputation.escalate',
+    'social.read',
+    'social.create',
+    'social.schedule',
+    'subscription.read',
+    'analytics.read',
   ],
-  read_only: ['data.read', 'conversation.read'],
+  read_only: ['data.read', 'conversation.read', 'reputation.read', 'social.read', 'subscription.read', 'analytics.read'],
 };
 
 export const ALLOWED_EFFECT = 'allow' as const;
@@ -90,6 +127,21 @@ export const ACTION_LABELS: Record<ActionName, string> = {
   'conversation.confirm': 'Confirmar una propuesta y preparar su vista previa',
   'website.publish': 'Publicar la web del cliente',
   'website.provision': 'Aprovisionar el subdominio del cliente',
+  'reputation.read': 'Ver reseñas y casos de reputación',
+  'reputation.respond': 'Redactar o editar borradores de respuesta pública',
+  'reputation.escalate': 'Escalar una reseña o caso sensible a revisión humana',
+  'reputation.approve': 'Aprobar la respuesta pública a una reseña',
+  'reputation.hide_review': 'Ocultar o borrar una reseña (BLOQUEADO: sin manipulación de opiniones)',
+  'social.read': 'Ver publicaciones y contenido social',
+  'social.create': 'Crear borradores de publicaciones sociales',
+  'social.schedule': 'Programar publicaciones sociales con aprobación',
+  'social.approve': 'Aprobar una publicación social para revisión y vista previa',
+  'social.campaign_advanced': 'Crear campañas avanzadas en redes (BLOQUEADO: fuera del MVP)',
+  'subscription.admin': 'Asignar el plan de suscripción del cliente y gestionar su facturación',
+  'subscription.read': 'Ver el plan y los límites del cliente',
+  'analytics.read': 'Ver resúmenes de actividad del cliente',
+  'analytics.export': 'Exportar eventos de auditoría del cliente',
+  'analytics.purge': 'Aplicar la retención de eventos del cliente',
 };
 
 export const ROLE_LABELS: Record<RoleName, string> = {
@@ -99,7 +151,7 @@ export const ROLE_LABELS: Record<RoleName, string> = {
 };
 
 export const ROLE_DESCRIPTIONS: Record<RoleName, string> = {
-  administration: 'Puede gestionar usuarios, configuración y auditoría, y ejecutar todas las acciones del panel.',
-  operation: 'Puede ver y registrar datos del cliente, y ejecutar operaciones; no gestiona usuarios ni auditoría.',
+  administration: 'Puede gestionar usuarios, configuración y auditoría, y ejecutar todas las acciones del panel (salvo las bloqueadas por diseño).',
+  operation: 'Puede ver y registrar datos del cliente, ejecutar operaciones, gestionar reseñas y contenido social; no gestiona usuarios, auditoría ni aprobaciones finales.',
   read_only: 'Puede ver los datos del cliente que su contexto le permite; no puede modificar nada.',
 };
