@@ -194,3 +194,23 @@ test('INC-004: anti-oracle — review de OTRO tenant responde 404 idéntico', as
   );
   console.log('TEST_PASS INC-004 anti-oracle cross-tenant (404 idéntico)');
 });
+
+test('PR-06: rate limiting en el approve de reputación (IP + operador + recurso → 429)', async () => {
+  const ops = await login(t.baseUrl, SEED.a.ops.login, SEED.a.ops.password, SEED.a.tenant);
+  const admin = await login(t.baseUrl, SEED.a.admin.login, SEED.a.admin.password, SEED.a.tenant);
+  // Crear una reseña negativa fresca en estado 'suggested' para aprobar.
+  const sync = await api(t.baseUrl, '/api/backoffice/reputation/reviews/sync', { method: 'POST', headers: authHeaders(ops.token) });
+  const list = await api(t.baseUrl, '/api/backoffice/reputation/reviews', { headers: authHeaders(ops.token) });
+  const suggested = (list.body.reviews as Array<{ review_id: string; state: string }>).find((r) => r.state === 'suggested') as { review_id: string };
+  // Sin respuesta editable re-aprobamos la misma propuesta: los intentos
+  // posteriores devuelven existing/409; el rate limiter aplica igual (429).
+  let rateLimited = 0;
+  for (let i = 0; i < 12; i += 1) {
+    const res = await api(t.baseUrl, `/api/backoffice/reputation/reviews/${suggested.review_id}/approve`, {
+      method: 'POST', headers: authHeaders(admin.token),
+    });
+    if (res.status === 429) rateLimited += 1;
+  }
+  assert.ok(rateLimited >= 1, `el approve se rate-limita tras N intentos (429 apareció ${rateLimited} veces)`);
+  console.log(`TEST_PASS PR-06 rate limiting approve reputación (429 x${rateLimited})`);
+});

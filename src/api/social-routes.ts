@@ -14,6 +14,7 @@ import { getRequestContext, type SessionSummary } from '../shared/context.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import type { AuditSink } from '../audit/sink.ts';
 import type { SocialService, SocialPostStatus } from '../social/service.ts';
+import type { ActionRateLimiter } from '../boundary/action-ratelimit.ts';
 import { denyAndRespond, type LooseRequest } from '../boundary/middleware.ts';
 import { requirePermission } from '../boundary/middleware.ts';
 
@@ -22,6 +23,12 @@ export interface SocialRouteDeps {
   config: AppConfig;
   sink: AuditSink;
   service: SocialService;
+  approvalRateLimiter: ActionRateLimiter;
+}
+
+function approveAllowed(limiter: ActionRateLimiter, ip: string, actor: string, resource: string): number | null {
+  if (limiter.allow(ip, actor, resource)) return null;
+  return Math.max(1, Math.ceil(limiter.lockRemainingMs(ip, actor, resource) / 1000));
 }
 
 function rcOf(lreq: LooseRequest): { request_id: string; session: SessionSummary | null } {
@@ -109,11 +116,20 @@ export function socialRouter(deps: SocialRouteDeps): Router {
   }));
 
   // Aprobar borrador → genera propuesta de preview/publicación (social.approve).
+  // PR-06: rate limiting de aprobaciones sensibles (IP + operador + recurso).
   router.post('/social/posts/:id/approve', requirePermission('social.approve', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
     const id = req.params.id as string;
+
+    const retryAfter = approveAllowed(deps.approvalRateLimiter, req.ip ?? 'unknown', session.user_id, id);
+    if (retryAfter != null) {
+      res.set('Retry-After', String(retryAfter));
+      return res.status(429).json({ error: { code: 'too_many_attempts', message: 'Hubo demasiados intentos de aprobación. Espera un momento y vuelve a intentarlo.' } });
+    }
+    deps.approvalRateLimiter.recordAttempt(req.ip ?? 'unknown', session.user_id, id);
+
     try {
       const { post, proposalId } = await deps.service.approvePost(session.tenant_id, session.user_id, rc.request_id, id);
       return res.json({
@@ -157,13 +173,14 @@ export function socialRouter(deps: SocialRouteDeps): Router {
   }));
 
   // Tick manual del worker simple: publica las programaciones vencidas.
-  // Requiere aprobación previa (solo posts 'pending' habilitados por el flujo).
+  // PR-01: solo publica filas con evidencia de aprobación; las que no la
+  // tienen quedan 'blocked' con auditoría deny (NUNCA se auto-publican).
   router.post('/social/process-due', requirePermission('social.schedule', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
-    const { processed, published } = await deps.service.processDueScheduled(session.tenant_id, rc.request_id);
-    return res.json({ processed, published: published.map((p) => ({ post_id: p.post_id, status: p.status, external_ref: p.external_ref })) });
+    const { processed, published, blocked } = await deps.service.processDueScheduled(session.tenant_id, rc.request_id);
+    return res.json({ processed, blocked, published: published.map((p) => ({ post_id: p.post_id, status: p.status, external_ref: p.external_ref })) });
   }));
 
   // CAMPAÑA AVANZADA — PROHIBITED (DEC-017: fuera del MVP). El permiso

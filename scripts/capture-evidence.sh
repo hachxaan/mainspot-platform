@@ -115,8 +115,13 @@ note "rollback simulation (AC-009 — from the deterministic test DB)"
 npm run rollback:simulate -- --url "$TESTURL" 2>&1 | tee_file "$EVIDENCE/11-rollback-simulate.txt"
 
 note "summary"
+HEAD_PIN="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo 'no-commit')"
+STATUS_SHORT="$(git -C "$ROOT" status --short 2>/dev/null || echo '(sin git)')"
 cat <<EOF | tee_file "$EVIDENCE/12-summary.txt"
 run: $STAMP
+head: $HEAD_PIN
+git status:
+$STATUS_SHORT
 typecheck:   $([ "$TYPECHECK_OK" = "0" ] && echo PASS || echo FAIL)
 unit:        $([ "$UNIT_OK" = "0" ] && echo PASS || echo FAIL)
 db up:       $([ "${DB_UP_OK:-1}" = "0" ] && echo PASS || echo FAIL-or-skipped)

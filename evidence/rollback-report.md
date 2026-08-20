@@ -1,6 +1,6 @@
 # Reporte de rollback simulado — INC-001 (AC-009)
 
-> Fecha: 2026-08-20T07:07:05.960Z
+> Fecha: 2026-08-20T07:33:21.470Z
 > Procedimiento del contrato INC-001 §Rollback y PLAN-INC-001 §11.
 
 ## 0. Estado previo (snapshot)

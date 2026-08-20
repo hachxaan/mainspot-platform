@@ -4,7 +4,7 @@
 
 # Matriz de permisos del backoffice (INC-001)
 
-> Generado el 2026-08-20T07:06:51.924Z desde `src/rbac/matrix.ts` (fuente de verdad).
+> Generado el 2026-08-20T07:33:06.536Z desde `src/rbac/matrix.ts` (fuente de verdad).
 > Regla fail-closed: toda acción no listada es **deny**; el contexto de cliente siempre aplica sobre el rol.
 
 | Acción (recurso \* = contexto general) | Administración | Operación | Solo lectura |
@@ -48,4 +48,4 @@
 
 Total entradas: 51
 
-{"ts":"2026-08-20T07:06:51.927Z","level":"info","event":"matrix.saved","msg":"permission matrix saved to evidence/permission-matrix.md","request_id":"328fe910-4943-4ca8-ac50-baa9ce21a037"}
+{"ts":"2026-08-20T07:33:06.538Z","level":"info","event":"matrix.saved","msg":"permission matrix saved to evidence/permission-matrix.md","request_id":"6aa0996f-49cb-47a9-b3a4-00e950e83955"}

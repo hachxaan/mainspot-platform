@@ -76,7 +76,9 @@ npm run db:setup     # asegura la BD, aplica migraciones + seed (idempotente)
   - `0008_social_posts.sql` — `social_post` + `scheduled_post` (cola de programación) + permisos `social.*` (`campaign_advanced` deny para todos).
   - `0009_subscriptions_plans.sql` — `plan`, `plan_limit`, `subscription` + **seed de planes sin precio** (`Piloto 1` único) y asignación a los 2 tenants + permisos `subscription.*`.
   - `0010_analytics_summary.sql` — `analytics_daily_summary` + índice de retención sobre `audit_event(ts)` + permisos `analytics.*`.
+  - `0011_social_approval_gate.sql` — PR-01 (Reviewer): la cola `scheduled_post` SOLO existe tras aprobación humana. Amplía el CHECK de estado (`scheduled`/`blocked`), añade `scheduled_post.proposal_id → action_proposal` (FK RESTRICT + índice) y **backfill** de filas legacy: con evidencia de aprobación → `scheduled`; huérfanas → `blocked` (nunca auto-publicadas).
 - El runner registra archivos en `schema_migrations` con advisory lock (replay seguro). Seeds 0002/0005/0009 idempotentes (`ON CONFLICT DO NOTHING`).
+- **Regeneración de BD dev/test**: `npm run db:setup` (dev) o `npm run test:integration`/`test:e2e` (recrean `mainspot_test` desde cero con `scripts/test-prep.ts`). Si una BD existente ya tiene datos, `npm run migrate` aplica 0011 y convierte los legacy de `scheduled_post` automáticamente (no se pierde la intención de las filas aprobadas).
 
 ### Credenciales de prueba (SIMULADAS — solo dev)
 
@@ -196,13 +198,21 @@ Flujo implementado (según `INC-002`, AC-004..AC-007, FLOW-001/002/003):
 ## 8. INC-005 — Facebook publicaciones y Ads (CAP-003, DEC-017/026)
 
 - **Adaptador** (`src/social/`): `SocialProvider` (getPage + publishPost). `SimulatedMeta` determinista (página fija por tenant, external_ref = hash del contenido ⇒ idempotente); `MetaAdapter` real SOLO con `META_GRAPH_TOKEN` (API Graph TENTATIVA; sin token NUNCA se llama).
-- **Servicio** (`src/social/service.ts`): `draft → awaiting_approval → proposer preview → publicado UNA vez`. Crear borrador (límite `social_posts`/`social_ads` verificado), programar (aprobación posterior; cola `scheduled_post` pending), publicar vía FLOW-002 (publisher `src/social/publisher.ts`), listar, tick manual `POST /social/process-due` (simula el worker; publica solo filas vencidas pending, idempotente).
+- **Servicio** (`src/social/service.ts`): `draft → awaiting_approval → proposal FLOW-002 → publicado UNA vez`. Crear borrador (límite `social_posts`/`social_ads` verificado), programar (**PR-01**: `schedule()` SOLO registra la intención `scheduled_at`; la cola `scheduled_post` se materializa cuando la aprobación humana genera la publicación), publicar vía FLOW-002 (publisher `src/social/publisher.ts` crea la fila de cola con `status='scheduled'` y `proposal_id`), listar, tick manual `POST /social/process-due`.
+- **Gate de aprobación (PR-01, Reviewer)**: el tick SOLO publica filas con evidencia de aprobación (propuesta `published`/`approved_for_publish` + fila de `publication`); sin aprobación marca la fila `blocked` con auditoría deny (`social.published`/`not_approved`) y NUNCA publica. `updateStatus()` impide llegar a `published` desde un estado no aprobado (exige `scheduled`). Endpoints `approve` con rate limiting (PR-06).
 - **Fuera del MVP**: campañas avanzadas e Instagram (permiso `social.campaign_advanced` deny para todos; intento ⇒ 403 + audit deny).
 
 ## 9. INC-006 — Suscripciones y límites (CAP-012, DEC-024)
 
 - **Catálogo CONFIGURABLE en BD** (`plan`, `plan_limit`, `subscription`): plan **"Piloto 1"** único sin precio + planes opcionales sin precio (RULE-006). Una suscripción activa por tenant (seed para los 2 tenants).
-- **EntitlementService** (`src/subscriptions/entitlements.ts`): asignar plan (admin), consultar entitlements (los 3 perfiles), `checkLimit(tenant, capability)` en el punto de creación (website/social/reputation) — exceso ⇒ **403 `limit_exceeded` auditado**; sin plan activo ⇒ 403 `subscription_required` (fail-closed).
+- **EntitlementService** (`src/subscriptions/entitlements.ts`): asignar plan (admin), consultar entitlements (los 3 perfiles), `checkLimit(tenant, capability)` en el punto de creación — exceso ⇒ **403 `limit_exceeded` auditado**; sin plan activo ⇒ 403 `subscription_required` (fail-closed). `remainingQuota(tenant, capability)` permite validar LOTES antes de insertar (PR-03).
+- **Enforcement por capacidad (PR-02, Reviewer)**:
+  - `conversations` — verificado en `pipeline.ingest()` (todo mensaje entrante exige plan activo y cuota; deny 403 + audit en la ruta).
+  - `website` — verificado en `POST /website` (creación del sitio, INC-003/PR-02): sin plan ⇒ 403 `subscription_required`; uso completo ⇒ 403 `limit_exceeded`; un sitio por tenant (UNIQUE) + 409 si ya existe. La provisión de dominio/publicación NO cuenta como creación (no rompe el flujo de tenants con sitio de seed).
+  - `social_posts`/`social_ads` — verificado en `social.createDraft`.
+  - `reviews_managed` — verificado en `reputation` sync/ingesta con validación de LOTE atómica (PR-03).
+  - `agents` — SIN enforcement en esta tanda (no existe creación de agentes todavía; solo lectura del límite). Ver §15.
+- **Política sin plan (PR-02, decisión del owner)**: **DENY 403 `subscription_required`** en toda operación que CREA recursos (mensajes, posts, reseñas, sitios, facturación); las lecturas (entitlements, data.read, listados, analítica de lectura) siguen permitidas. Documentada en §15.
 - **Pago** (`src/subscriptions/payment.ts`): `PaymentProvider` abstracto + `SimulatedPaymentProvider` (siempre ok, sin llamadas externas). `POST /subscriptions/invoice` con plan SIN precio ⇒ **PROHIBITED** + audit deny (`no_price_prohibited`). El piloto NO cobra.
 
 ## 10. INC-007 base — Analítica mínima + export ETL (CAP-014 base, DEC-025)
@@ -221,6 +231,16 @@ npm run test:smoke        # smoke AC-009 + señales UX AC-008
 npm run test:e2e          # E2E INC-002+INC-003 (canal simulado) + INC-004/005/006 (proveedores simulados)
 npm test                  # typecheck + unit + integration + smoke + e2e
 ```
+
+### Remedios PR-01..PR-06 (tanda de remediación full review)
+
+| Hallazgo | Cobertura |
+|---|---|
+| **PR-01** gate de aprobación social | `tests/integration/social-inc005.test.ts` — "programar sin aprobar ⇒ tick NO publica + audit deny + fila blocked"; "programar con aprobación → cola SOLO tras aprobar → tick publica UNA vez" |
+| **PR-02** enforcement de límites | `tests/integration/subscriptions-inc006.test.ts` — conversaciones (403 en ingesta), creación de sitio sin plan (403 `subscription_required`) y con plan (201); límites sociales previos |
+| **PR-03** sync de reseñas transaccional | `tests/integration/subscriptions-inc006.test.ts` — lote que excede ⇒ 403 sin estado parcial (cero reseñas insertadas) |
+| **PR-04** pin de commit en evidencia | `scripts/capture-evidence.sh` — HEAD + `git status --short` en `evidence/12-summary.txt` |
+| **PR-06** rate limiting en approves | `tests/integration/reputation-inc004.test.ts` y `social-inc005.test.ts` — approve repetido ⇒ 429 tras el umbral |
 
 ### Correr el E2E simulado (DEC-026, sin credenciales)
 
@@ -257,9 +277,10 @@ La salida real queda en `evidence/` (00-14): environment, typecheck, permission 
 | **AC-009** Evidencia y rollback | `capture-evidence.sh` (13/14-e2e) + rollback §13 | `evidence/*` |
 | **INC-003 REQ-012/REQ-018** | `website/` + `domain/` + `publishing/website.ts` | `tests/integration/website-inc003.test.ts` |
 | **INC-004** (DEC-011/023) | `reputation/` + `publishing/reputation` + preview/aprobación INC-002 | `tests/integration/reputation-inc004.test.ts`, `tests/unit/reputation.test.ts` |
-| **INC-005** (DEC-017/026) | `social/` + `publishing/social` + cola `scheduled_post` | `tests/integration/social-inc005.test.ts`, `tests/unit/social.test.ts` |
-| **INC-006** (DEC-024) | `subscriptions/` (planes/límites/pago simulado) | `tests/integration/subscriptions-inc006.test.ts`, `tests/unit/subscriptions.test.ts` |
+| **INC-005** (DEC-017/026) | `social/` + `publishing/social` + cola `scheduled_post` (gate PR-01) | `tests/integration/social-inc005.test.ts`, `tests/unit/social.test.ts` |
+| **INC-006** (DEC-024) | `subscriptions/` (planes/límites/pago simulado) + enforcement conversaciones/sitios (PR-02) | `tests/integration/subscriptions-inc006.test.ts`, `tests/unit/subscriptions.test.ts` |
 | **INC-007 base** (DEC-025) | `analytics/` (export/retention/summary) | `tests/integration/analytics-inc007.test.ts`, `tests/unit/analytics.test.ts` |
+| **PR-03** sync atomic | `reputation/engine.ts` (capacidad de lote + transacción) + `entitlements.remainingQuota` | `tests/integration/subscriptions-inc006.test.ts` |
 
 ## 15. Decisiones TENTATIVA (a validar/cerrar; el canon no las fija)
 
@@ -276,18 +297,22 @@ La salida real queda en `evidence/` (00-14): environment, typecheck, permission 
 | Umbral de reseñas | `REVIEW_THRESHOLD` configurable por env, default `<4` (DEC-023); el valor definitivo queda para investigación con datos (Q-013) | TENTATIVA (decisión con dato diferida) |
 | Sugerencia de respuesta | plantillas deterministas (3 borradores, sin generativo); sin inventar hechos comerciales (RULE-005) | TENTATIVA e iterable |
 | Revisión de Google/API Meta reales | esqueleto con fetch; mapeo exacto a endpoints sin validar; sin credenciales NO se llaman | TENTATIVA |
-| Límites por capacidad | enforcement en el punto de creación (website/social/reputation) con `checkLimit`; TOCTOU entre check e insert aceptado en piloto | TENTATIVA (endurecer con UNIQUE/claims en fase productiva) |
+| Límites por capacidad | enforcement en el punto de creación: `conversations` (ingesta), `website` (creación de sitio), `social_posts`/`social_ads` (crear borrador), `reviews_managed` (ingesta con validación de lote); TOCTOU entre check e insert aceptado en piloto | TENTATIVA (endurecer con UNIQUE/claims en fase productiva) |
+| `agents` sin enforcement | no existe creación de agentes en esta tanda: el límite se muestra en entitlements pero no se verifica en ninguna operación (futuro INC agente) | TENTATIVA (deuda registrada) |
+| Política sin plan | **DENY 403 `subscription_required`** en toda operación que CREA recursos (mensajes/posts/reseñas/sitios/facturación); lecturas permitidas — decisión PR-02 de owner | TENTATIVA (configurable con plan "libre" si el piloto lo pide) |
+| Sync de reseñas (PR-03) | validación de capacidad del LOTE antes de insertar + ingesta y auditoría en UNA transacción (sin estado parcial) | TENTATIVA (mejora del ítem anterior) |
 | Retención/analítica | purge ON-DEMAND DRY-RUN por defecto, scope por tenant; retención global de plataforma y dashboards = fase 2 | TENTATIVA (INC-007 base) |
 | `website.publish` (permiso) | reservado en matriz para endpoints de publicación operativa futura; sin ruta expuesta en esta tanda | TENTATIVA |
 
 ## 16. Seguridad y notas operativas (INC-001 + INC-002..007)
 
 - **Fail-closed**: sin contexto ⇒ deny; **canales no son identidad**; **publicar/confirmar/aprobar requieren permiso**; acciones sensibles y su audit son atómicas (ROLLBACK conjunto). Acciones bloqueadas (`reputation.hide_review`, `social.campaign_advanced`) no se conceden a NINGÚN rol.
+- **Gate de aprobación social (PR-01)**: la cola `scheduled_post` solo existe tras aprobación humana (`proposal_id` + `status='scheduled'`); el tick verifica evidencia de publicación por fila y bloquea las que no la tengan (audit deny `not_approved`). `updateStatus` impide `→ published` sin estado previo `scheduled`.
 - **Anti-oráculo (IR-01)**: propuestas/requests/reseñas/publicaciones de otro tenant responden 404 idéntico (la ruta de aprobación cross-tenant devuelve 404 igual que inexistente y audita `not_found`).
 - **Auditoría sin secretos**: tokens de preview (hash), contraseñas y credenciales de integraciones jamás se persisten/loguean; el sink y logger rechazan campos con nombre sensible.
 - **Sin llamadas HTTP reales sin token**: los adaptadores Meta/Google/Hostinger solo se instancian con credenciales; por defecto el sistema usa simuladores deterministas (DEC-026).
 - **No manipulación de opiniones**: no existe endpoint efectivo para ocultar/borrar reseñas; el intento se bloquea y audita como deny.
-- **Rate limiting**: login (IR-06) y aprobación/rechazo sensibles (IP + operador + propuesta; `APPROVAL_RATE_LIMIT_*`).
+- **Rate limiting**: login (IR-06) y aprobación/rechazo sensibles (IP + operador + propuesta; `APPROVAL_RATE_LIMIT_*`) — incluye `approve` de reputación y social que generan propuestas (PR-06).
 - **JWT_SECRET (IR-02)**: requerido fuera de `test`; sin default en código/compose.
 - **Modo simulado determinista**: `SimulatedHostinger`, `SimulatedChannel`, `SimulatedReviews` y `SimulatedMeta` no usan aleatoriedad (pinned) ⇒ E2E reproducible; la única aleatoriedad es la de tokens/IDs (no afecta el flujo).
 - **Nunca subir `.env`**; `.env.example` es referencia con placeholders.

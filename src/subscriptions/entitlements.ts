@@ -186,6 +186,27 @@ export class EntitlementService {
     }
   }
 
+  /**
+   * Cuota disponible (max - usage) para una capacidad. Fail-closed: sin plan
+   * activo ⇒ AppError 403 'subscription_required'; sin fila de límite ⇒ 0.
+   * Usado para validar LOTES antes de insertar (PR-03: sync de reseñas).
+   */
+  async remainingQuota(tenantId: string, capability: string): Promise<number> {
+    if (!(KNOWN_CAPABILITIES as readonly string[]).includes(capability)) {
+      throw new AppError(400, 'validation_error', 'La capacidad consultada no está definida en el catálogo de límites.');
+    }
+    const subscription = await this.repo.findByTenant(tenantId);
+    if (!subscription || subscription.status !== 'active') {
+      throw new AppError(403, DENY_CODES.SUBSCRIPTION_REQUIRED,
+        'Este cliente no tiene un plan activo. Consulta con el administrador del plan de MainSpot.');
+    }
+    const limit = await this.repo.limitFor(subscription.plan_id, capability);
+    const max = limit?.max_value ?? null;
+    if (max === null) return 0; // sin límite configurado ⇒ 0 (fail-closed)
+    const usage = await this.countUsage(tenantId, capability as CapabilityName);
+    return max - usage;
+  }
+
   /** Cuenta el uso actual por capacidad (SELECT simple; sin ETL externo). */
   private async countUsage(tenantId: string, capability: CapabilityName): Promise<number> {
     const pool = this.deps.pool;

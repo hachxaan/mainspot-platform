@@ -115,7 +115,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     publishers,
     previewTtlMinutes: config.previewTokenTtlMinutes,
   };
-  const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo });
+  const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo, entitlements });
   const approvalRateLimiter = new ActionRateLimiter(
     config.approvalRateLimitMax,
     config.approvalRateLimitWindowMs,
@@ -144,6 +144,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     websiteRepo,
     domainService,
     channel,
+    entitlements,
   };
 
   const app = express();
@@ -166,8 +167,8 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   app.use('/api/backoffice', rejectTenantOverride(pool));
   app.use('/api/backoffice', backofficeRouter(deps));
   app.use('/api/backoffice', conversationRouter(conversationDeps));
-  app.use('/api/backoffice', reputationRouter({ pool, config, sink, engine: reputationEngine }));
-  app.use('/api/backoffice', socialRouter({ pool, config, sink, service: socialService }));
+  app.use('/api/backoffice', reputationRouter({ pool, config, sink, engine: reputationEngine, approvalRateLimiter }));
+  app.use('/api/backoffice', socialRouter({ pool, config, sink, service: socialService, approvalRateLimiter }));
   app.use('/api/backoffice', subscriptionRouter({ pool, config, sink, entitlements, subscriptionRepo }));
   app.use('/api/backoffice', analyticsRouter({ pool, config, sink, exporter, retention, analytics: analyticsService }));
 

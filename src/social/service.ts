@@ -2,10 +2,19 @@
  * SocialService (INC-005, CAP-003, REQ-014) — crear/adaptar/programar/consultar
  * publicaciones de Facebook y Ads básicos.
  *
- * Flujo: draft → awaiting_approval (con fecha programada) → proposal de preview
- * (FLOW-002, INC-002) → aprobación humana → publicado UNA vez (idempotente).
- * La cola scheduled_post se procesa con un tick manual (worker simple) que
- * "publica" en el simulador al llegar la fecha (sin credenciales, DEC-026).
+ * Flujo: draft → awaiting_approval (con fecha programada SI se agenda) →
+ * proposal de preview (FLOW-002, INC-002) → aprobación humana → SocialPublisher
+ * publica y SOLO entonces crea la fila de cola scheduled_post (status
+ * 'scheduled', PR-01). El tick (worker simple) publica en el simulador al
+ * llegar la fecha y SOLO si existe evidencia de aprobación (proposal publicada
+ * + fila de publication).
+ *
+ * PR-01 (Reviewer): ninguna ruta puede llegar a 'published' sin aprobación:
+ *  - schedule() NO crea scheduled_post (solo registra la intención).
+ *  - processDueScheduled() verifica aprobación por fila; sin aprobación marca
+ *    'blocked' + audit deny, NUNCA publica.
+ *  - updateStatus() con destino 'published' exige estado previo 'scheduled'
+ *    (creada tras aprobación).
  *
  * Fail-closed: scope tenant SIEMPRE de la sesión; anti-oracle 404 idéntico;
  * campaña avanzada = PROHIBITED (permiso social.campaign_advanced bloqueado).
@@ -23,7 +32,7 @@ import type { TenantBoundaryResult } from '../conversation/repositories.ts';
 import type { EntitlementService } from '../subscriptions/entitlements.ts';
 
 export type SocialPostStatus = 'draft' | 'awaiting_approval' | 'scheduled' | 'published' | 'rejected' | 'failed';
-export type ScheduledStatus = 'pending' | 'published' | 'skipped';
+export type ScheduledStatus = 'pending' | 'scheduled' | 'published' | 'skipped' | 'blocked';
 
 export interface SocialPostRow {
   post_id: string;
@@ -46,6 +55,7 @@ export interface ScheduledPostRow {
   scheduled_post_id: string;
   tenant_id: string;
   post_id: string;
+  proposal_id: string | null;
   publish_at: string;
   status: ScheduledStatus;
   external_ref: string | null;
@@ -106,6 +116,8 @@ export class SocialRepository {
   }
 
   /** Guard de transición por estado previo (antiraza / TOCTOU).
+   *  PR-01: destino 'published' SOLO desde 'scheduled' (cola creada tras
+   *  aprobación humana); ninguna ruta publica desde un estado no aprobado.
    *  `db` permite participar en la MISMA transacción (fail-closed). */
   async updateStatus(
     tenantId: string, postId: string, status: SocialPostStatus,
@@ -115,6 +127,10 @@ export class SocialRepository {
     fromStatuses: readonly SocialPostStatus[] = [],
     db: Pool | import('pg').PoolClient = this.pool,
   ): Promise<TenantBoundaryResult<SocialPostRow>> {
+    if (status === 'published' && !(fromStatuses as readonly string[]).includes('scheduled')) {
+      throw new AppError(409, 'validation_error',
+        'No se puede marcar la publicación como publicada sin haber pasado por la aprobación (estado previo "scheduled").');
+    }
     const t = this.assertTenant(tenantId);
     const sets = ['status = $3', 'updated_at = now()'];
     const values: unknown[] = [t, postId, status];
@@ -133,12 +149,25 @@ export class SocialRepository {
     return { found: true, in_tenant: true, row };
   }
 
-  async createScheduled(input: { id: string; tenantId: string; postId: string; publishAt: string }): Promise<void> {
+  /**
+   * Crea/actualiza la fila de cola SOLO tras aprobación humana (PR-01):
+   * invocado por SocialPublisher dentro de la transacción de publicación.
+   * Idempotente: si la fila ya existe (replay), la revive a 'scheduled'.
+   */
+  async upsertScheduledForApproved(input: {
+    id: string; tenantId: string; postId: string; proposalId: string; publishAt: string;
+  }, db: Pool | import('pg').PoolClient = this.pool): Promise<void> {
     const t = this.assertTenant(input.tenantId);
-    await this.pool.query(
-      `INSERT INTO scheduled_post (scheduled_post_id, tenant_id, post_id, publish_at, status)
-       VALUES ($1,$2,$3,$4,'pending') ON CONFLICT (post_id) DO NOTHING`,
-      [input.id, t, input.postId, input.publishAt],
+    await db.query(
+      `INSERT INTO scheduled_post (scheduled_post_id, tenant_id, post_id, proposal_id, publish_at, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,'scheduled', now())
+       ON CONFLICT (post_id) DO UPDATE SET
+         publish_at = EXCLUDED.publish_at,
+         status = 'scheduled',
+         proposal_id = EXCLUDED.proposal_id,
+         external_ref = NULL,
+         processed_at = NULL`,
+      [input.id, t, input.postId, input.proposalId, input.publishAt],
     );
   }
 
@@ -151,29 +180,47 @@ export class SocialRepository {
     return res.rows[0] ?? null;
   }
 
-  /** Due pendientes del tenant (worker/tick manual, scope por tenant). */
+  /** Due aprobadas del tenant (worker/tick manual, scope por tenant).
+   *  PR-01: SOLO procesa filas 'scheduled' (creadas tras aprobación). */
   async dueScheduled(tenantId: string, now: string): Promise<ScheduledPostRow[]> {
     const t = this.assertTenant(tenantId);
     const res = await this.pool.query<ScheduledPostRow>(
-      `SELECT * FROM scheduled_post WHERE tenant_id = $1 AND status = 'pending' AND publish_at <= $2
+      `SELECT * FROM scheduled_post WHERE tenant_id = $1 AND status = 'scheduled' AND publish_at <= $2
        ORDER BY publish_at LIMIT 100`,
       [t, now],
     );
     return res.rows;
   }
 
-  /** Marca la cola como publicada/saltada (transición con guard). */
+  /** Marca la cola (publicada/saltada/bloqueada). Transición con guard: solo
+   *  filas 'scheduled' o legacy 'pending' pasan por aquí (idempotente). */
   async markScheduled(
-    tenantId: string, scheduledId: string, status: Extract<ScheduledStatus, 'published' | 'skipped'>, externalRef: string | null,
+    tenantId: string, scheduledId: string, status: Extract<ScheduledStatus, 'published' | 'skipped' | 'blocked'>,
+    externalRef: string | null,
     db: Pool | import('pg').PoolClient = this.pool,
   ): Promise<boolean> {
     const t = this.assertTenant(tenantId);
     const res = await db.query(
       `UPDATE scheduled_post SET status = $1, external_ref = $2, processed_at = now()
-       WHERE scheduled_post_id = $3 AND tenant_id = $4 AND status = 'pending'`,
+       WHERE scheduled_post_id = $3 AND tenant_id = $4 AND status IN ('scheduled','pending')`,
       [status, externalRef, scheduledId, t],
     );
     return (res.rowCount ?? 0) > 0;
+  }
+
+  /** Evidencia de aprobación para el tick: propuesta publicada/aprobada con
+   *  fila de publication registrada (PR-01). Devuelve el proposal si existe. */
+  async approvalEvidence(tenantId: string, post: SocialPostRow): Promise<boolean> {
+    if (!post.proposal_id) return false;
+    const t = this.assertTenant(tenantId);
+    const res = await this.pool.query<{ n: string }>(
+      `SELECT count(*) AS n FROM action_proposal ap
+        JOIN publication pb ON pb.proposal_id = ap.proposal_id
+       WHERE ap.proposal_id = $1 AND ap.tenant_id = $2
+         AND ap.status IN ('published','approved_for_publish')`,
+      [post.proposal_id, t],
+    );
+    return Number(res.rows[0]?.n ?? 0) > 0;
   }
 }
 
@@ -215,7 +262,10 @@ export class SocialService {
     return post;
   }
 
-  /** Programa una publicación DRAFT (la aprobación llega después; DEC-017). */
+  /** Programa una publicación DRAFT (PR-01).
+   *  SOLO registra la intención (scheduled_at) y pasa a 'awaiting_approval';
+   *  NO crea la fila de cola scheduled_post: la cola se materializa cuando la
+   *  aprobación humana genera la publicación (SocialPublisher). */
   async schedule(tenantId: string, actorId: string, requestId: string, postId: string, publishAt: string): Promise<SocialPostRow> {
     const found = await this.repo.findScoped(tenantId, postId);
     if (!found.found || !found.in_tenant) {
@@ -231,10 +281,6 @@ export class SocialService {
       throw new AppError(400, 'validation_error', 'La fecha de programación no es válida.');
     }
     const updated = await this.repo.updateStatus(tenantId, postId, 'awaiting_approval', { scheduledAt: at.toISOString() }, ['draft']);
-    await this.repo.createScheduled({
-      id: `sp_${crypto.randomUUID()}`,
-      tenantId, postId, publishAt: at.toISOString(),
-    });
     await this.deps.sink.write({
       tenant_id: tenantId, actor_id: actorId, actor_role: null,
       action: 'social.scheduled', resource: `social_post/${postId}`,
@@ -336,15 +382,39 @@ export class SocialService {
 
   /**
    * Procesa la cola de programación VENCIDA del tenant (tick manual del worker
-   * simple): "publica" en el simulador y marca la cola. Idempotente (solo
-   * filas pending se procesan).
+   * simple). PR-01: SOLO publica filas con evidencia de aprobación (proposal
+   * publicada/aprobada + fila de publication); si no hay aprobación marca la
+   * fila 'blocked' con auditoría deny y NUNCA publica. Idempotente.
    */
-  async processDueScheduled(tenantId: string, requestId: string, now = new Date().toISOString()): Promise<{ processed: number; published: SocialPostRow[] }> {
+  async processDueScheduled(tenantId: string, requestId: string, now = new Date().toISOString()): Promise<{ processed: number; published: SocialPostRow[]; blocked: number }> {
     const due = await this.repo.dueScheduled(tenantId, now);
     const published: SocialPostRow[] = [];
+    let blocked = 0;
     for (const s of due) {
-      const post = (await this.repo.findScoped(tenantId, s.post_id)).row as SocialPostRow;
-      if (!post) continue;
+      const post = (await this.repo.findScoped(tenantId, s.post_id)).row as SocialPostRow | null;
+      if (!post) {
+        continue;
+      }
+
+      // Gate de aprobación (PR-01): sin propuesta aprobada/publicación ⇒ deny.
+      const approved = await this.repo.approvalEvidence(tenantId, post);
+      if (!approved) {
+        const marked = await this.repo.markScheduled(tenantId, s.scheduled_post_id, 'blocked', null);
+        if (marked) {
+          blocked += 1;
+          await this.deps.sink.write({
+            tenant_id: tenantId, actor_id: 'social_scheduler', actor_role: null,
+            action: 'social.published', resource: `social_post/${post.post_id}`,
+            request_id: requestId, decision: 'deny', result: 'not_approved',
+            evidence_ref: s.scheduled_post_id,
+          }, this.deps.pool, false).catch(() => undefined);
+          log.warn('social.scheduler.blocked', 'scheduled row without approval evidence blocked', {
+            tenant_id: tenantId, post_id: post.post_id, scheduled_post_id: s.scheduled_post_id,
+          });
+        }
+        continue;
+      }
+
       const result = await this.deps.provider.publishPost({
         tenantId,
         text: post.text,
@@ -356,7 +426,7 @@ export class SocialService {
       if (!marked) continue; // otro tick ganó la carrera (idempotencia)
       const updated = await this.repo.updateStatus(tenantId, post.post_id, 'published', {
         publishedAt: new Date().toISOString(), externalRef: result.external_ref,
-      }, ['scheduled', 'awaiting_approval']);
+      }, ['scheduled']);
       if (updated.found && updated.in_tenant) {
         published.push(updated.row as SocialPostRow);
         await this.deps.sink.write({
@@ -366,10 +436,12 @@ export class SocialService {
         });
       }
     }
-    if (published.length) {
-      log.info('social.scheduler', 'scheduled posts published by tick', { tenant_id: tenantId, count: published.length });
+    if (published.length || blocked) {
+      log.info('social.scheduler', 'scheduled ticks processed', {
+        tenant_id: tenantId, published: published.length, blocked,
+      });
     }
-    return { processed: published.length, published };
+    return { processed: published.length, published, blocked };
   }
 
   /**

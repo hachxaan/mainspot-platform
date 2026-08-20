@@ -113,7 +113,7 @@ test('INC-005: post → preview → aprobación → publicado idempotente', asyn
   }
 });
 
-test('INC-005: programar con aprobación → tick manual publica UNA vez', async () => {
+test('INC-005: programar con aprobación → cola SOLO tras aprobar → tick manual publica UNA vez (PR-01)', async () => {
   const ops = await login(t.baseUrl, SEED.a.ops.login, SEED.a.ops.password, SEED.a.tenant);
   const admin = await login(t.baseUrl, SEED.a.admin.login, SEED.a.admin.password, SEED.a.tenant);
 
@@ -121,16 +121,18 @@ test('INC-005: programar con aprobación → tick manual publica UNA vez', async
   const postId = created.body.post.post_id as string;
   const future = new Date(Date.now() + 60_000).toISOString();
 
-  // programar borrador (aprobación llega después)
+  // 1) Programar un borrador: SOLO registra la intención (scheduled_at).
   const scheduled = await api(t.baseUrl, `/api/backoffice/social/posts/${postId}/schedule`, {
     method: 'POST', headers: authHeaders(ops.token),
     body: JSON.stringify({ publish_at: future }),
   });
   assert.equal(scheduled.status, 200);
   assert.equal(scheduled.body.status, 'awaiting_approval');
-  const schedRow = await t.pool.query('SELECT status FROM scheduled_post WHERE post_id = $1', [postId]);
-  assert.equal(schedRow.rows[0]?.status, 'pending', 'cola pending hasta aprobación');
+  // PR-01: schedule() NO crea la cola; la cola se materializa al aprobar.
+  const schedCountBefore = await t.pool.query('SELECT count(*) AS n FROM scheduled_post WHERE post_id = $1', [postId]);
+  assert.equal(Number(schedCountBefore.rows[0]?.n ?? 0), 0, 'sin fila de cola antes de la aprobación');
 
+  // 2) Aprobación humana → propuesta → preview → publicación (FLOW-002).
   const approved = await api(t.baseUrl, `/api/backoffice/social/posts/${postId}/approve`, {
     method: 'POST', headers: authHeaders(admin.token),
   });
@@ -140,13 +142,16 @@ test('INC-005: programar con aprobación → tick manual publica UNA vez', async
     method: 'POST', headers: authHeaders(admin.token),
   });
   assert.equal(pub.body.status, 'published');
-  // Aprobado pero con fecha futura ⇒ queda 'scheduled' (no visible aún)
+  // Aprobado pero con fecha futura ⇒ post 'scheduled' + cola materializada.
   const afterApprove = await t.pool.query('SELECT status FROM social_post WHERE post_id = $1', [postId]);
   assert.equal(afterApprove.rows[0]?.status, 'scheduled');
-  const schedPending = await t.pool.query('SELECT status FROM scheduled_post WHERE post_id = $1', [postId]);
-  assert.equal(schedPending.rows[0]?.status, 'pending', 'cola pending hasta la fecha');
+  const schedRow = await t.pool.query<{ status: string; proposal_id: string | null }>(
+    'SELECT status, proposal_id FROM scheduled_post WHERE post_id = $1', [postId],
+  );
+  assert.equal(schedRow.rows[0]?.status, 'scheduled', 'cola creada por el publisher tras aprobación');
+  assert.equal(schedRow.rows[0]?.proposal_id, proposalId, 'cola vinculada a la proposal aprobada (PR-01)');
 
-  // Tick manual: antes de la fecha NO publica…
+  // 3) Tick manual: antes de la fecha NO publica…
   const early = await api(t.baseUrl, '/api/backoffice/social/process-due', {
     method: 'POST', headers: authHeaders(ops.token),
   });
@@ -157,19 +162,79 @@ test('INC-005: programar con aprobación → tick manual publica UNA vez', async
   const tick = await api(t.baseUrl, '/api/backoffice/social/process-due', {
     method: 'POST', headers: authHeaders(ops.token),
   });
-  assert.equal(tick.body.processed, 1, 'tick publica la fila vencida');
+  assert.equal(tick.body.processed, 1, 'tick publica la fila vencida (aprobada)');
   const afterTick = await t.pool.query('SELECT status, external_ref FROM social_post WHERE post_id = $1', [postId]);
   assert.equal(afterTick.rows[0]?.status, 'published');
   assert.ok(String(afterTick.rows[0]?.external_ref).startsWith('sim:fb:post:'));
 
-  // Idempotencia del tick: segundo tick no re-publica
+  // 4) Idempotencia del tick: segundo tick no re-publica
   const tick2 = await api(t.baseUrl, '/api/backoffice/social/process-due', {
     method: 'POST', headers: authHeaders(ops.token),
   });
   assert.equal(tick2.body.processed, 0);
   const pubs = await t.pool.query("SELECT count(*) AS n FROM scheduled_post WHERE post_id = $1 AND status = 'published'", [postId]);
   assert.equal(Number(pubs.rows[0]?.n ?? 0), 1, 'cola publicada UNA vez');
-  console.log('TEST_PASS INC-005 programado + aprobación + tick manual idempotente');
+  console.log('TEST_PASS INC-005 programado + aprobación + cola tras aprobar + tick idempotente (PR-01)');
+});
+
+test('PR-01: programar sin aprobar ⇒ el tick NO publica (audit deny, fila bloqueada)', async () => {
+  const ops = await login(t.baseUrl, SEED.a.ops.login, SEED.a.ops.password, SEED.a.tenant);
+
+  const created = await createPost(ops.token, 'Programado SIN aprobar: no debe publicarse.');
+  const postId = created.body.post.post_id as string;
+  const future = new Date(Date.now() + 60_000).toISOString();
+
+  // Programar (intención) — sin aprobación, sin propuesta, sin cola.
+  const scheduled = await api(t.baseUrl, `/api/backoffice/social/posts/${postId}/schedule`, {
+    method: 'POST', headers: authHeaders(ops.token),
+    body: JSON.stringify({ publish_at: future }),
+  });
+  assert.equal(scheduled.status, 200);
+  assert.equal(scheduled.body.status, 'awaiting_approval');
+  const noQueue = await t.pool.query('SELECT count(*) AS n FROM scheduled_post WHERE post_id = $1', [postId]);
+  assert.equal(Number(noQueue.rows[0]?.n ?? 0), 0, 'sin propuesta ni cola antes de aprobar');
+
+  // Reproduce el escenario del Reviewer: fila de cola presente SIN aprobación
+  // (legacy/tampering) consultada por el tick como si estuviera programada.
+  await t.pool.query(
+    `INSERT INTO scheduled_post (scheduled_post_id, tenant_id, post_id, publish_at, status)
+     VALUES ($1, $2, $3, now() - interval '1 minute', 'scheduled')`,
+    [`sp_rogue_${crypto.randomUUID().slice(0, 8)}`, SEED.a.tenant, postId],
+  );
+
+  const tick = await api(t.baseUrl, '/api/backoffice/social/process-due', {
+    method: 'POST', headers: authHeaders(ops.token),
+  });
+  assert.equal(tick.body.processed, 0, 'tick NO publica: no hay aprobación');
+  assert.equal(tick.body.blocked, 1, 'fila sin aprobación marcada blocked');
+
+  const postAfter = await t.pool.query('SELECT status, external_ref, published_at FROM social_post WHERE post_id = $1', [postId]);
+  assert.equal(postAfter.rows[0]?.status, 'awaiting_approval', 'el post sigue sin publicar');
+  assert.equal(postAfter.rows[0]?.external_ref, null);
+  assert.equal(postAfter.rows[0]?.published_at, null);
+
+  const queueAfter = await t.pool.query('SELECT status FROM scheduled_post WHERE post_id = $1', [postId]);
+  assert.equal(queueAfter.rows[0]?.status, 'blocked', 'fila bloqueada (nunca auto-publicada)');
+
+  // No hay publicaciones del post (ni directas ni por tick).
+  const pubs = await t.pool.query('SELECT count(*) AS n FROM publication WHERE proposal_id = (SELECT proposal_id FROM social_post WHERE post_id = $1)', [postId]);
+  assert.equal(Number(pubs.rows[0]?.n ?? 0), 0, 'cero publicaciones');
+
+  // Audit: deny 'social.published'/'not_approved'; sin allow 'social.published'.
+  const audit = await t.pool.query<{ decision: string; result: string }>(
+    `SELECT decision, result FROM audit_event
+     WHERE tenant_id = $1 AND resource = $2 AND action = 'social.published'
+     ORDER BY ts DESC LIMIT 1`,
+    [SEED.a.tenant, `social_post/${postId}`],
+  );
+  assert.equal(audit.rows[0]?.decision, 'deny');
+  assert.equal(audit.rows[0]?.result, 'not_approved');
+  const allowPublished = await t.pool.query(
+    `SELECT 1 FROM audit_event WHERE tenant_id = $1 AND resource = $2 AND action = 'social.published' AND decision = 'allow'`,
+    [SEED.a.tenant, `social_post/${postId}`],
+  );
+  assert.equal(allowPublished.rowCount ?? 0, 0, 'sin evento allow de publicación');
+  console.log('TEST_PASS PR-01 programar sin aprobar ⇒ tick no publica + audit deny + fila blocked');
 });
 
 test('INC-005: campaña avanzada PROHIBITED con auditoría deny (fuera del MVP)', async () => {
@@ -194,4 +259,21 @@ test('INC-005: campaña avanzada PROHIBITED con auditoría deny (fuera del MVP)'
   const campaignsVisible = await t.pool.query('SELECT count(*) AS n FROM social_post WHERE text LIKE $1', ['%segment%']);
   assert.equal(Number(campaignsVisible.rows[0]?.n ?? 0), 0, 'no se creó ninguna campaña');
   console.log('TEST_PASS INC-005 campaña avanzada PROHIBITED + audit deny');
+});
+
+test('PR-06: rate limiting en el approve social (IP + operador + recurso → 429)', async () => {
+  const ops = await login(t.baseUrl, SEED.a.ops.login, SEED.a.ops.password, SEED.a.tenant);
+  const admin = await login(t.baseUrl, SEED.a.admin.login, SEED.a.admin.password, SEED.a.tenant);
+  const created = await createPost(ops.token, 'Rate limit approve social.');
+  const postId = created.body.post.post_id as string;
+
+  let rateLimited = 0;
+  for (let i = 0; i < 12; i += 1) {
+    const res = await api(t.baseUrl, `/api/backoffice/social/posts/${postId}/approve`, {
+      method: 'POST', headers: authHeaders(admin.token),
+    });
+    if (res.status === 429) rateLimited += 1;
+  }
+  assert.ok(rateLimited >= 1, `el approve se rate-limita tras N intentos (429 apareció ${rateLimited} veces)`);
+  console.log(`TEST_PASS PR-06 rate limiting approve social (429 x${rateLimited})`);
 });

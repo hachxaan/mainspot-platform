@@ -41,6 +41,8 @@ export interface PipelineDeps {
   hooks: Inc001Hooks;
   repo: ConversationRepository;
   websiteRepo: WebsiteRepository;
+  /** Opcional: enforcement de límites del plan (DEC-024) en la ingesta. */
+  entitlements?: { checkLimit(tenantId: string, capability: string): Promise<void> };
 }
 
 /** Senencia de confirmación detallada (AC-006) en lenguaje claro. */
@@ -69,6 +71,14 @@ export class ConversationPipeline {
     }
     if (!input.text || !input.text.trim()) {
       throw new Error('FAIL-CLOSED: empty message cannot be ingested');
+    }
+
+    // PR-02 (Reviewer, DEC-024): enforcement del límite 'conversations' en el
+    // punto de ingesta, ANTES de procesar (fail-closed 403 limit_exceeded /
+    // subscription_required; la capa de rutas audita el deny). Sin plan activo
+    // la conversación NO se procesa (política documentada en README §15).
+    if (this.deps.entitlements) {
+      await this.deps.entitlements.checkLimit(input.tenantId, 'conversations');
     }
 
     const ids = newConversationIds();

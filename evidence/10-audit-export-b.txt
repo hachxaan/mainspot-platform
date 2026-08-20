@@ -3,7 +3,7 @@
 > node scripts/export-audit.ts --tenant client_b --url postgres://mainspot:***@localhost:5432/mainspot_test --out evidence/audit-export-client-b.json
 
 {
-  "count": 34,
+  "count": 39,
   "target": "evidence/audit-export-client-b.json"
 }
-{"ts":"2026-08-20T07:07:01.904Z","level":"info","event":"audit.exported","msg":"exported 34 events to evidence/audit-export-client-b.json","request_id":"520d7c1c-a484-4c40-b991-e297665fc092","tenant_id":"client_b","count":34}
+{"ts":"2026-08-20T07:33:17.492Z","level":"info","event":"audit.exported","msg":"exported 39 events to evidence/audit-export-client-b.json","request_id":"93c8bc2b-8743-42df-b7dd-92d094ddcb26","tenant_id":"client_b","count":39}

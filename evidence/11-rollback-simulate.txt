@@ -4,7 +4,7 @@
 
 # Reporte de rollback simulado — INC-001 (AC-009)
 
-> Fecha: 2026-08-20T07:07:05.960Z
+> Fecha: 2026-08-20T07:33:21.470Z
 > Procedimiento del contrato INC-001 §Rollback y PLAN-INC-001 §11.
 
 ## 0. Estado previo (snapshot)
@@ -47,4 +47,4 @@
 - auditoría: intacta; sirve de evidencia de lo ocurrido antes y durante el rollback.
 - acceso cruzado: negado por sesión (revocada) y por capa de datos (scope tenant_id).
 - observación: si un path nuevo que INC-002 ya usara se deshabilita aquí, debe coordinarse con ese incremento (nota Reviewer).
-{"ts":"2026-08-20T07:07:05.964Z","level":"info","event":"rollback.simulated","msg":"rollback report written to evidence/rollback-report.md","request_id":"3fe1ec88-de30-4cc1-8b76-4252213df336"}
+{"ts":"2026-08-20T07:33:21.477Z","level":"info","event":"rollback.simulated","msg":"rollback report written to evidence/rollback-report.md","request_id":"91912931-42be-4e72-8f61-3e10217137c9"}

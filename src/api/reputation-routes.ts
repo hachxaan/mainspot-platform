@@ -15,6 +15,7 @@ import { getRequestContext, type SessionSummary } from '../shared/context.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import type { AuditSink } from '../audit/sink.ts';
 import type { ReputationEngine, ReviewRow } from '../reputation/engine.ts';
+import type { ActionRateLimiter } from '../boundary/action-ratelimit.ts';
 import { denyAndRespond, type LooseRequest } from '../boundary/middleware.ts';
 import { requirePermission } from '../boundary/middleware.ts';
 
@@ -23,6 +24,12 @@ export interface ReputationRouteDeps {
   config: AppConfig;
   sink: AuditSink;
   engine: ReputationEngine;
+  approvalRateLimiter: ActionRateLimiter;
+}
+
+function approveAllowed(limiter: ActionRateLimiter, ip: string, actor: string, resource: string): number | null {
+  if (limiter.allow(ip, actor, resource)) return null;
+  return Math.max(1, Math.ceil(limiter.lockRemainingMs(ip, actor, resource) / 1000));
 }
 
 function rcOf(lreq: LooseRequest): { request_id: string; session: SessionSummary | null } {
@@ -127,11 +134,20 @@ export function reputationRouter(deps: ReputationRouteDeps): Router {
   }));
 
   // Aprobar la respuesta → crea propuesta de preview/publicación (DEC-011).
+  // PR-06: rate limiting de aprobaciones sensibles (IP + operador + reseña).
   router.post('/reputation/reviews/:id/approve', requirePermission('reputation.approve', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
     const id = req.params.id as string;
+
+    const retryAfter = approveAllowed(deps.approvalRateLimiter, req.ip ?? 'unknown', session.user_id, id);
+    if (retryAfter != null) {
+      res.set('Retry-After', String(retryAfter));
+      return res.status(429).json({ error: { code: 'too_many_attempts', message: 'Hubo demasiados intentos de aprobación. Espera un momento y vuelve a intentarlo.' } });
+    }
+    deps.approvalRateLimiter.recordAttempt(req.ip ?? 'unknown', session.user_id, id);
+
     const { review, proposalId } = await deps.engine.approveResponse(session.tenant_id, id, session.user_id, rc.request_id);
     return res.json({
       review,

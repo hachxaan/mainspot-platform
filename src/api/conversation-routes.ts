@@ -13,7 +13,7 @@ import { Router, type Request, type Response } from 'express';
 import type { Pool } from 'pg';
 import type { AppConfig } from '../shared/config.ts';
 import { getRequestContext, type SessionSummary } from '../shared/context.ts';
-import { AppError, DENY_CODES } from '../shared/errors.ts';
+import { AppError, DENY_CODES, isUniqueViolation } from '../shared/errors.ts';
 import type { AuditSink } from '../audit/sink.ts';
 import type { ConversationRepository, ActionProposalRow } from '../conversation/repositories.ts';
 import type { ConversationPipeline } from '../conversation/pipeline.ts';
@@ -23,9 +23,10 @@ import type { ActionRateLimiter } from '../boundary/action-ratelimit.ts';
 import type { WebsiteRepository } from '../website/repository.ts';
 import type { DomainService, ClientDomainRow } from '../domain/service.ts';
 import type { ChannelAdapter } from '../channels/types.ts';
-import type { LooseRequest } from '../boundary/middleware.ts';
+import { denyAndRespond, type LooseRequest } from '../boundary/middleware.ts';
 import { requirePermission } from '../boundary/middleware.ts';
 import type { ProposalStatus, RequestStatus } from '../conversation/intents.ts';
+import type { EntitlementService } from '../subscriptions/entitlements.ts';
 
 export interface ConversationRouteDeps {
   pool: Pool;
@@ -38,6 +39,7 @@ export interface ConversationRouteDeps {
   websiteRepo: WebsiteRepository;
   domainService: DomainService;
   channel: ChannelAdapter;
+  entitlements: EntitlementService;
 }
 
 function rcOf(lreq: LooseRequest): { request_id: string; session: SessionSummary | null } {
@@ -62,6 +64,15 @@ function approveAllowed(limiter: ActionRateLimiter, ip: string, actor: string, r
   return Math.max(1, Math.ceil(limiter.lockRemainingMs(ip, actor, resource) / 1000));
 }
 
+/** Maneja deny de dominio (límite/suscripción/prohibited) con auditoría. */
+async function handleDomainDeny(req: Request, res: Response, lreq: LooseRequest, err: unknown, pool: Pool): Promise<boolean> {
+  if (err instanceof AppError && (err.code === DENY_CODES.LIMIT_EXCEEDED || err.code === DENY_CODES.SUBSCRIPTION_REQUIRED || err.code === DENY_CODES.PROHIBITED)) {
+    await denyAndRespond(req, res, lreq, err, pool);
+    return true;
+  }
+  return false;
+}
+
 export function conversationRouter(deps: ConversationRouteDeps): Router {
   const router = Router();
 
@@ -75,14 +86,22 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
       return res.status(400).json({ error: { code: 'validation_error', message: 'Escribe tu solicitud para poder ayudarte.' } });
     }
 
-    const outcome = await deps.pipeline.ingest({
-      tenantId: session.tenant_id,
-      actorId: session.user_id,
-      actorRole: session.role_name,
-      channel: channel === 'telegram' ? 'telegram' : 'simulated',
-      text: text.trim(),
-      requestId: rc.request_id,
-    });
+    let outcome;
+    try {
+      // PR-02: el pipeline verifica el límite 'conversations' del plan antes de
+      // procesar; si se excede, la ruta responde 403 + audit deny.
+      outcome = await deps.pipeline.ingest({
+        tenantId: session.tenant_id,
+        actorId: session.user_id,
+        actorRole: session.role_name,
+        channel: channel === 'telegram' ? 'telegram' : 'simulated',
+        text: text.trim(),
+        requestId: rc.request_id,
+      });
+    } catch (err) {
+      if (await handleDomainDeny(req, res, lreq, err, deps.pool)) return undefined;
+      throw err;
+    }
 
     // Respuesta por el canal (best-effort; el outcome JSON es la respuesta API).
     const channelSent = await deps.channel.sendMessage(session.user_id, outcome.responseText).catch(() => ({ ok: false, error: 'send_failed' }));
@@ -281,6 +300,45 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
       tenantId: session.tenant_id, proposalId: id, actorId: session.user_id, requestId: rc.request_id,
     });
     return res.json({ proposal, status: proposal.status, message: 'Cambios rechazados. No se publicó nada.' });
+  }));
+
+  // --- Website: crear sitio (website.provision) -----------------------------
+  // PR-02: enforcement del límite 'website' en el punto de CREACIÓN (DEC-024).
+  // Sin plan activo ⇒ 403 'subscription_required'; con uso actual >= límite ⇒
+  // 403 'limit_exceeded' (audit deny por la ruta). Un sitio por tenant (UNIQUE).
+  router.post('/website', requirePermission('website.provision', deps.sink, deps.pool), ah(async (req, res) => {
+    const lreq = req as LooseRequest;
+    const rc = rcOf(lreq);
+    const session = sessionOf(lreq);
+    const { slug, site_name } = (req.body ?? {}) as { slug?: string; site_name?: string };
+    if (!slug?.trim() || !site_name?.trim()) {
+      return res.status(400).json({ error: { code: 'validation_error', message: 'Escribe el nombre del sitio y un subdominio para crearlo.' } });
+    }
+    try {
+      await deps.entitlements.checkLimit(session.tenant_id, 'website');
+    } catch (err) {
+      if (await handleDomainDeny(req, res, lreq, err, deps.pool)) return undefined;
+      throw err;
+    }
+    try {
+      const site = await deps.websiteRepo.createSite(session.tenant_id, slug.trim().toLowerCase(), site_name.trim());
+      await deps.sink.write({
+        tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
+        action: 'website.created', resource: `client_website/${site.website_id}`, request_id: rc.request_id,
+        decision: 'allow', result: 'created',
+      });
+      return res.status(201).json({ website: site, message: 'Página web creada. Ahora puedes editar su contenido y publicarla.' });
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        await deps.sink.write({
+          tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
+          action: 'website.created', resource: 'client_website', request_id: rc.request_id,
+          decision: 'deny', result: 'already_exists',
+        }).catch(() => undefined);
+        return res.status(409).json({ error: { code: 'already_exists', message: 'Este cliente ya tiene una página web (o el subdominio ya está usado).' } });
+      }
+      throw err;
+    }
   }));
 
   // --- Website del tenant (data.read) + provisión (website.provision). --------

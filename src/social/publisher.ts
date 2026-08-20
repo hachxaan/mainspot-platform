@@ -3,8 +3,10 @@
  * preview/aprobación humana desde la state machine (RULE-003, FLOW-002).
  *
  * - Sin fecha futura ⇒ publicación INMEDIATA (una vez, idempotente).
- * - Con fecha futura ⇒ queda 'scheduled' + cola pending; el tick
- *   (processDueScheduled) "publica" en el simulador al llegar la fecha.
+ * - Con fecha futura ⇒ crea/actualiza la fila de cola scheduled_post con
+ *   status='scheduled' y proposal_id=ctx.proposalId (PR-01: la cola SOLO
+ *   existe tras aprobación); el tick (processDueScheduled) "publica" en el
+ *   simulador al llegar la fecha y verifica la aprobación de nuevo.
  */
 
 import type { Pool } from 'pg';
@@ -50,8 +52,20 @@ export class SocialPublisher implements Publisher {
     const future = scheduledAt > Date.now();
 
     if (future && post.status !== 'scheduled') {
-      // Aprobado pero programado a futuro: no publicar aún; la cola se procesa
-      // con el tick manual (worker simple). La propuesta ya queda registrada.
+      // PR-01: la aprobación HUMANA ya ocurrió (este publisher solo se alcanza
+      // desde la state machine). Materializamos la cola CON la referencia a la
+      // proposal aprobada; el tick la publicará al llegar la fecha.
+      await conn.query(
+        `INSERT INTO scheduled_post (scheduled_post_id, tenant_id, post_id, proposal_id, publish_at, status, created_at)
+         VALUES ($1,$2,$3,$4,$5,'scheduled', now())
+         ON CONFLICT (post_id) DO UPDATE SET
+           publish_at = EXCLUDED.publish_at,
+           status = 'scheduled',
+           proposal_id = EXCLUDED.proposal_id,
+           external_ref = NULL,
+           processed_at = NULL`,
+        [`sp_${crypto.randomUUID()}`, ctx.tenantId, postId, ctx.proposalId, post.scheduled_at],
+      );
       await conn.query(
         `UPDATE social_post SET status = 'scheduled', updated_at = now() WHERE post_id = $1 AND tenant_id = $2 AND status <> 'published'`,
         [postId, ctx.tenantId],
@@ -59,7 +73,7 @@ export class SocialPublisher implements Publisher {
       return { ok: true, version: 1, external_ref: `sim:fb:scheduled:${postId}` };
     }
 
-    // Publicación inmediata (sin fecha o fecha ya vencida).
+    // Publicación inmediata (sin fecha o fecha ya vencida durante la aprobación).
     const result = await this.provider.publishPost({
       tenantId: ctx.tenantId,
       text: post.text,
@@ -75,11 +89,11 @@ export class SocialPublisher implements Publisher {
        WHERE post_id = $2 AND tenant_id = $3`,
       [result.external_ref, postId, ctx.tenantId],
     );
-    // Si había cola pendiente del mismo post (fecha vencida durante la
-    // aprobación), marcarla publicada (idempotente: solo si 'pending').
+    // Si había cola del mismo post (fecha vencida durante la aprobación),
+    // marcarla publicada (idempotente: solo 'scheduled'/'pending' legacy).
     await conn.query(
       `UPDATE scheduled_post SET status = 'published', external_ref = $1, processed_at = now()
-       WHERE post_id = $2 AND tenant_id = $3 AND status = 'pending'`,
+       WHERE post_id = $2 AND tenant_id = $3 AND status IN ('scheduled','pending')`,
       [result.external_ref, postId, ctx.tenantId],
     );
     await this.sink.write({

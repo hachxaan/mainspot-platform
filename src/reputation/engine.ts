@@ -70,8 +70,15 @@ export interface ReputationEngineDeps {
   sink: AuditSink;
   provider: ReputationProvider;
   conversationRepo: ConversationRepository;
-  /** Opcional: enforcement de límites del plan (DEC-024) en la ingesta. */
-  entitlements?: { checkLimit(tenantId: string, capability: string): Promise<void> };
+  /**
+   * Opcional: enforcement de límites del plan (DEC-024) en la ingesta.
+   * checkLimit lanza 'limit_exceeded'/'subscription_required' por ítem;
+   * remainingQuota permite validar LOTES ANTES de insertar (PR-03).
+   */
+  entitlements?: {
+    checkLimit(tenantId: string, capability: string): Promise<void>;
+    remainingQuota?(tenantId: string, capability: string): Promise<number>;
+  };
 }
 
 export class ReviewRepository {
@@ -105,13 +112,14 @@ export class ReviewRepository {
     return res.rows;
   }
 
-  /** Ingesta idempotente: mismo (tenant, source_review_id) ⇒ la fila previa. */
+  /** Ingesta idempotente: mismo (tenant, source_review_id) ⇒ la fila previa.
+   *  `db` permite participar en la MISMA transacción (PR-03: batch atómico). */
   async ingest(input: {
     reviewId: string; tenantId: string; r: ReviewInput; classification: ReviewClassification;
     state: ReviewState; suggestedOptions: string[]; responseText: string | null;
-  }): Promise<{ row: ReviewRow; created: boolean }> {
+  }, db: Pool | import('pg').PoolClient = this.pool): Promise<{ row: ReviewRow; created: boolean }> {
     const t = this.assertTenant(input.tenantId);
-    const res = await this.pool.query<ReviewRow>(
+    const res = await db.query<ReviewRow>(
       `INSERT INTO review
         (review_id, tenant_id, source, source_review_id, author_name, star_rating, review_text, classification, state, suggested_options, response_text)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
@@ -122,12 +130,22 @@ export class ReviewRepository {
     );
     const row = res.rows[0] ?? null;
     if (row) return { row, created: true };
-    const existing = await this.pool.query<ReviewRow>(
+    const existing = await db.query<ReviewRow>(
       'SELECT * FROM review WHERE tenant_id = $1 AND source_review_id = $2',
       [t, input.r.source_review_id],
     );
     const existingRow = existing.rows[0] ?? null;
     return { row: existingRow as ReviewRow, created: false };
+  }
+
+  /** source_review_id ya presentes del tenant (para validar capacidad de lote). */
+  async existingSourceIds(tenantId: string): Promise<Set<string>> {
+    const t = this.assertTenant(tenantId);
+    const res = await this.pool.query<{ source_review_id: string }>(
+      'SELECT source_review_id FROM review WHERE tenant_id = $1',
+      [t],
+    );
+    return new Set(res.rows.map((r) => r.source_review_id));
   }
 
   /** Guard de transición: solo se actualiza si el estado actual ∈ fromStates.
@@ -221,24 +239,59 @@ export class ReputationEngine {
     return this.deps.config.reviewThreshold;
   }
 
-  /** Sincroniza/ingesta las reseñas del proveedor (simulado determinista). */
+  /**
+   * Sincroniza/ingesta las reseñas del proveedor (simulado determinista).
+   *
+   * PR-03 (Reviewer): el lote se valida ANTES de insertar (una sola
+   * comprobación de capacidad contra uso actual + tamaño del lote) y las
+   * inserciones + auditoría se ejecutan en UNA transacción atómica. Si el
+   * lote excede el límite ⇒ 403 'limit_exceeded' SIN estado parcial; si un
+   * insert falla a mitad ⇒ ROLLBACK (nunca quedan filas sueltas).
+   */
   async sync(tenantId: string, actorId: string, requestId: string): Promise<{ outcome: SyncOutcome; reviews: ReviewRow[] }> {
     const reviews = await this.deps.provider.listReviews(tenantId);
-    const outcome: SyncOutcome = { synced: 0, skipped: 0, classified: { acknowledged: 0, suggested: 0 } };
-    for (const r of reviews) {
-      // Enforcement del límite del plan en el punto de ingesta (DEC-024):
-      // una reseña nueva que exceda 'reviews_managed' se rechaza (deny auditable).
-      if (this.deps.entitlements) {
-        await this.deps.entitlements.checkLimit(tenantId, 'reviews_managed');
+    const pending = reviews;
+    if (this.deps.entitlements) {
+      // 1) Capacidad del LOTE (no por fila): cuántas reseñas NUEVAS (no
+      //    existentes) pretende insertar el lote vs la cuota restante.
+      const existingForTenant = await this.repo.existingSourceIds(tenantId);
+      const fresh = pending.filter((r) => !existingForTenant.has(r.source_review_id));
+      if (fresh.length > 0) {
+        const remaining = this.deps.entitlements.remainingQuota
+          ? await this.deps.entitlements.remainingQuota(tenantId, 'reviews_managed')
+          // Fallback: sin remainingQuota, validar por fila (conserva el
+          // comportamiento previo de checkLimit).
+          : await this.remainingViaCheckLimit(tenantId, fresh.length > 0);
+        if (remaining < fresh.length) {
+          throw new AppError(403, DENY_CODES.LIMIT_EXCEEDED,
+            `Se alcanzó el límite del plan para reseñas gestionadas: el lote de ${fresh.length} reseñas nuevas no cabe en la cuota disponible (${Math.max(0, remaining)} restantes). Ninguna reseña fue registrada.`);
+        }
       }
-      const { row, created } = await this.ingestTracked(tenantId, actorId, requestId, r);
-      if (!created) { outcome.skipped += 1; continue; }
-      outcome.synced += 1;
-      if (row.state === 'acknowledged') outcome.classified.acknowledged += 1;
-      if (row.state === 'suggested') outcome.classified.suggested += 1;
     }
+
+    // 2) Ingesta atómica por lote: insert + auditoría en la MISMA transacción.
+    const outcome: SyncOutcome = { synced: 0, skipped: 0, classified: { acknowledged: 0, suggested: 0 } };
+    await runAtomic(this.deps.pool, async (client) => {
+      for (const r of reviews) {
+        const { row, created } = await this.ingestTracked(tenantId, actorId, requestId, r, client);
+        if (!created) { outcome.skipped += 1; continue; }
+        outcome.synced += 1;
+        if (row.state === 'acknowledged') outcome.classified.acknowledged += 1;
+        if (row.state === 'suggested') outcome.classified.suggested += 1;
+      }
+    });
     const list = await this.repo.list(tenantId);
     return { outcome, reviews: list };
+  }
+
+  /** Fallback antiguo (por fila) cuando el proveedor de límites no expone
+   *  remainingQuota: validar con checkLimit con la primera reseña nueva. */
+  private async remainingViaCheckLimit(tenantId: string, hasNew: boolean): Promise<number> {
+    if (!hasNew) return Number.MAX_SAFE_INTEGER;
+    await (this.deps.entitlements as NonNullable<ReputationEngineDeps['entitlements']>).checkLimit(tenantId, 'reviews_managed');
+    // checkLimit solo dice "cabe una más"; para un lote desconocido asumimos
+    // capacidad 1 (fallback conservador, nunca permite lote parcial).
+    return 1;
   }
 
   /** Ingesta una review: inserta (idempotente), clasifica y enruta por umbral. */
@@ -249,6 +302,7 @@ export class ReputationEngine {
 
   private async ingestTracked(
     tenantId: string, actorId: string, requestId: string, r: ReviewInput,
+    db?: import('pg').PoolClient,
   ): Promise<{ row: ReviewRow; created: boolean }> {
     const classification = classifyReview(r.star_rating);
     const business = await this.repo.businessName(tenantId);
@@ -264,14 +318,14 @@ export class ReputationEngine {
     const { row, created } = await this.repo.ingest({
       reviewId: `rev_${crypto.randomUUID()}`,
       tenantId, r, classification, state, suggestedOptions: options, responseText,
-    });
+    }, db);
     await this.deps.sink.write({
       tenant_id: tenantId, actor_id: actorId, actor_role: null,
       action: 'reputation.review.ingested',
       resource: `review/${row?.review_id ?? r.source_review_id}`,
       request_id: requestId, decision: 'allow',
       result: created ? `${classification}:${state}` : 'already_existing',
-    });
+    }, db);
     log.info('reputation.ingested', 'review ingested and classified', {
       tenant_id: tenantId, review_id: row?.review_id, classification, state, created,
     });

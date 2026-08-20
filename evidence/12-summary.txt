@@ -1,4 +1,26 @@
-run: 2026-08-20T07:06:50Z
+run: 2026-08-20T07:33:05Z
+head: 0727ff1e99e1fb2beb98c5da712106ac4c3e2483
+git status:
+ M evidence/00-environment.txt
+ M evidence/00-run-meta.txt
+ M evidence/02-permission-matrix.txt
+ M evidence/03-unit-tests.txt
+ M evidence/04-db-up.txt
+ M evidence/05-db-setup.txt
+ M evidence/06-integration-tests.txt
+ M evidence/07-smoke.txt
+ M evidence/08-denied-cross-tenant.txt
+ M evidence/09-audit-export.txt
+ M evidence/10-audit-export-b.txt
+ M evidence/11-rollback-simulate.txt
+ M evidence/13-e2e-inc002-inc003.txt
+ M evidence/14-e2e-inc004-006.txt
+ M evidence/audit-export-client-a.json
+ M evidence/audit-export-client-b.json
+ M evidence/e2e-inc002-inc003.txt
+ M evidence/e2e-inc004-006.txt
+ M evidence/permission-matrix.md
+ M evidence/rollback-report.md
 typecheck:   PASS
 unit:        PASS
 db up:       PASS

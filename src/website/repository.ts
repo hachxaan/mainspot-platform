@@ -87,6 +87,26 @@ export class WebsiteRepository {
       [JSON.stringify(data), websiteId, tenantId],
     );
   }
+
+  /**
+   * Crea la página web inicial del tenant (un sitio por tenant: UNIQUE
+   * (tenant_id) y UNIQUE (slug) en BD). PR-02: el caller debe verificar
+   * checkLimit('website') antes de invocar.
+   */
+  async createSite(
+    tenantId: string, slug: string, siteName: string,
+    db: Pool | PoolClient = this.pool,
+  ): Promise<ClientWebsiteRow> {
+    if (!tenantId || !slug || !siteName) {
+      throw new Error('FAIL-CLOSED: createSite requires tenant, slug and site name');
+    }
+    const res = await db.query<ClientWebsiteRow>(
+      `INSERT INTO client_website (website_id, tenant_id, slug, site_name, status, data, published_version)
+       VALUES ($1,$2,$3,$4,'draft','{}',0) RETURNING *`,
+      [`site_${crypto.randomUUID()}`, tenantId, slug, siteName],
+    );
+    return res.rows[0] as ClientWebsiteRow;
+  }
 }
 
 export { normalizeWebsiteData };
