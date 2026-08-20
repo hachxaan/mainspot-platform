@@ -1,0 +1,16 @@
+# 02-db-setup — creación de role/bases + migración y seed (via app)
+[1] role 'mainspot' (LOGIN CREATEDB, password aleatoria generada en deploy) y bases mainspot/mainspot_test:
+mainspot|false|true
+mainspot owner=mainspot
+mainspot_test owner=mainspot
+
+[2] aplicación de migraciones 0001..0011 + seed (node scripts/db-setup.ts en mainspot-app; re-run converge sin duplicar):
+{"ts":"2026-08-20T14:45:52.517Z","level":"info","event":"db.setup.done","msg":"database ready (migrate + seed)","request_id":"3b901f25-6b78-4b14-8efd-fcd4c112d227","applied":"none","skipped":"0001_schema.sql,0002_seed.sql,0003_login_unique_per_tenant.sql,0004_conversation_preview.sql,0005_website_domain.sql,0006_permissions.sql,0007_reputation_reviews.sql,0008_social_posts.sql,0009_subscriptions_plans.sql,0010_analytics_summary.sql,0011_social_approval_gate.sql"}
+
+[3] verificación sobre la BD mainspot (schema_migrations + usuarios seed + roles):
+11 migraciones registradas
+6 usuarios seed
+read_only:2, operation:2, administration:2
+
+[4] pg_hba.conf (línea gestionada por deploy-lxd.sh):
+host all all 10.209.99.0/24 scram-sha-256 # mainspot-lxd-managed

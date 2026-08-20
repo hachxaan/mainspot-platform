@@ -1,0 +1,25 @@
+# MainSpot Platform API — LXD deploy unit
+# Managed by scripts/deploy/deploy-lxd.sh (regenerable). No secrets here;
+# all secrets/config live in /etc/mainspot/mainspot.env (0600, user mainspot).
+# IR-02 fail-fast: `node src/api/server.ts` aborts at startup if JWT_SECRET is
+# missing or a placeholder (see src/shared/config.ts), so a misconfigured
+# deploy never serves traffic.
+[Unit]
+Description=MainSpot Platform API (LXD deploy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mainspot
+Group=mainspot
+WorkingDirectory=/opt/mainspot-platform
+EnvironmentFile=/etc/mainspot/mainspot.env
+ExecStart=/usr/bin/node src/api/server.ts
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

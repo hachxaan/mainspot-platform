@@ -1,0 +1,14 @@
+# 06-proxy — device proxy LXD app->host y verificación
+[1] device añadido por deploy-lxd.sh:
+proxy-http:
+  connect: tcp:127.0.0.1:3000
+  listen: tcp:0.0.0.0:3000
+  type: proxy
+
+[2] socket escuchando en el host:
+LISTEN 0      4096                          *:3000             *:*                                                
+
+[3] verificación real desde el host a través del proxy:
+GET http://localhost:3000/health -> HTTP 200
+
+[4] nota: se eligió listen 0.0.0.0:3000 (spec); el puerto 3000 del host estaba libre al momento del deploy. Riesgo documentado: quedaría expuesto en la red física del host si existiera ruteo externo; para un entorno aislado usar listen=tcp:127.0.0.1:3000.

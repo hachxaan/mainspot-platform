@@ -1,0 +1,26 @@
+# 07-summary — estado final del despliegue local LXD
+2026-08-20T09:46:16-05:00
+
+[1] contenedores:
+      NAME       STATE               IPV4              
+  chedraui-dev  RUNNING  172.21.0.1 (br-bb5cbb4615a6)  
+  mainspot-app  RUNNING  10.209.99.238 (eth0)          
+  mainspot-db   RUNNING  10.209.99.172 (eth0)          
+  webserver     RUNNING  10.209.99.101 (eth0)          
+
+[2] servicio app:
+active
+
+[3] URLs
+  app local (host):  http://localhost:3000   (proxy LXD listen tcp:0.0.0.0:3000 -> mainspot-app:3000)
+  health:            http://localhost:3000/health
+  panel web:         http://localhost:3000/panel
+  app interna:       http://10.209.99.238:3000 (dentro de lxdbr0)
+  postgres interna:  10.209.99.172:5432 (solo lxdbr0, pg_hba 10.209.99.0/24 scram)
+
+[4] cómo ver logs:
+  app: lxc exec mainspot-app -- journalctl -u mainspot.service -f
+  db:  lxc exec mainspot-db -- tail -f /var/log/postgresql/postgresql-16-main.log
+
+[5] secretos: /home/administrador/.config/mainspot/mainspot-secrets.env (0600), fuera del repo.
+  env de producción dentro del contenedor app: /etc/mainspot/mainspot.env (0600, user mainspot).

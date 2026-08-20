@@ -1,0 +1,8 @@
+# 04-health — health check (dentro del contenedor y desde el host vía proxy)
+[1] dentro de mainspot-app:
+{"ok":true,"app":"mainspot-platform","increments":["INC-001","INC-002","INC-003","INC-004","INC-005","INC-006","INC-007"]}
+[2] desde el host (proxy LXD listen 0.0.0.0:3000):
+{"ok":true,"app":"mainspot-platform","increments":["INC-001","INC-002","INC-003","INC-004","INC-005","INC-006","INC-007"]}
+HTTP 200
+
+[3] nota: la ruta de health del código es GET /health (src/api/server.ts); no existe /api/health.

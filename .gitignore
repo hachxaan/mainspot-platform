@@ -14,6 +14,10 @@ build/
 *.log
 logs/
 
+# Deploy artifacts (never commit real secrets; secrets live in ~/.config/mainspot)
+.deploy/
+deploy/secrets.env
+
 # OS / editor
 .DS_Store
 *.swp

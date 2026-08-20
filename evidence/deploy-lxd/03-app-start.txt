@@ -1,0 +1,45 @@
+# 03-app-start — inicio de la aplicación (systemd unit en mainspot-app)
+[1] unit file /etc/systemd/system/mainspot.service (copiado por deploy-lxd.sh):
+# MainSpot Platform API — LXD deploy unit
+# Managed by scripts/deploy/deploy-lxd.sh (regenerable). No secrets here;
+# all secrets/config live in /etc/mainspot/mainspot.env (0600, user mainspot).
+# IR-02 fail-fast: `node src/api/server.ts` aborts at startup if JWT_SECRET is
+# missing or a placeholder (see src/shared/config.ts), so a misconfigured
+# deploy never serves traffic.
+[Unit]
+Description=MainSpot Platform API (LXD deploy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mainspot
+Group=mainspot
+WorkingDirectory=/opt/mainspot-platform
+EnvironmentFile=/etc/mainspot/mainspot.env
+ExecStart=/usr/bin/node src/api/server.ts
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+
+[2] estado del servicio:
+enabled
+active
+● mainspot.service - MainSpot Platform API (LXD deploy)
+     Loaded: loaded (/etc/systemd/system/mainspot.service; enabled; preset: enabled)
+     Active: active (running) since Thu 2026-08-20 14:45:28 UTC; 25s ago
+   Main PID: 2046 (MainThread)
+      Tasks: 7 (limit: 70717)
+     Memory: 49.2M (peak: 50.6M)
+        CPU: 295ms
+     CGroup: /system.slice/mainspot.service
+
+[3] journal: arranque:
+Aug 20 14:45:31 mainspot-app node[2046]: {"ts":"2026-08-20T14:45:31.580Z","level":"info","event":"http.request","msg":"GET /health -> 200","request_id":"8171b9e9-fe58-451d-9925-edc6478e6078","method":"GET","path":"/health","status":200,"duration_ms":4}
+
+[4] env de producción (permisos):
+-rw------- 1 mainspot mainspot 1080 Aug 20 14:45 /etc/mainspot/mainspot.env

@@ -170,6 +170,24 @@ Rutas INC-007 base (analítica):
 | `POST /api/backoffice/analytics/refresh-summary` | `analytics.export` | Materializa `analytics_daily_summary` (upsert idempotente) |
 | `POST /api/backoffice/analytics/purge` | `analytics.purge` | Retención ON-DEMAND; **default DRY-RUN** (no borra; `dry_run=false` aplica) |
 
+### 4.1 Deploy local LXD (contenedores LXC/LXD)
+
+Para un piloto **sin Docker**, la plataforma se despliega en contenedores
+`LXC/LXD` locales con [`scripts/deploy/deploy-lxd.sh`](scripts/deploy/deploy-lxd.sh)
+(idempotente): dos contenedores `mainspot-db` (PostgreSQL 16) y `mainspot-app`
+(Node ≥ 24, type-stripping nativo), app expuesta en `http://localhost:3000` vía
+device proxy LXD. Aplica migraciones 0001→0011 + seed y genera secretos
+aleatorios **fuera** del repo (`~/.config/mainspot/mainspot-secrets.env`, 0600).
+
+Ver [`scripts/deploy/README-deploy-lxd.md`](scripts/deploy/README-deploy-lxd.md)
+para requisitos, uso (`--reset`/`--destroy`), arquitectura, logs y evidencia
+real en `evidence/deploy-lxd/`.
+
+```bash
+./scripts/deploy/deploy-lxd.sh        # crea/asegura contenedores, BD, app y proxy
+curl -s http://localhost:3000/health  # {"ok":true,...}
+```
+
 ## 5. INC-002 — Conversational request intake with preview and human approval
 
 Flujo implementado (según `INC-002`, AC-004..AC-007, FLOW-001/002/003):

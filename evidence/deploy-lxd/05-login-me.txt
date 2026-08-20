@@ -1,0 +1,24 @@
+# 05-login-me — smoke real: login + /api/backoffice/me + mini E2E (host)
+[1] POST /api/auth/login (admin client_a) — token redactado:
+{
+  "token": "<redacted>",
+  "expires_at": "2026-08-20T15:46:02.595Z",
+  "session": {
+    "session_id": "sess_cca77769-4cca-414c-a5c6-2dc3e7368e42",
+    "user_id": "user_a_admin",
+    "display_name": "Ana Administradora",
+    "tenant_id": "client_a",
+    "role_id": "administration",
+    "permissions": 28
+  }
+}
+
+[2] GET /api/backoffice/me (Bearer):
+{"user_id":"user_a_admin","tenant_id":"client_a","role_id":"administration","role_label":"Administración","permissions":28}
+
+[3] mini E2E: crear dato, listar datos, consultar auditoría:
+POST /data -> {"data_id":"data_540aee0b-418b-477c-a593-6bcb6b6409f9","kind":"client.asset","tenant_id":"client_a"}
+GET /data -> count=3
+GET /audit -> ultimo={"action":"data.read","decision":"allow","result":"success","actor_role":"administration"}
+
+[4] credenciales de seed usadas (README §3, simuladas dev): admin.a@example.com / client_a
