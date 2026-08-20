@@ -20,6 +20,13 @@ export const ACTIONS = [
   'operation.reject',
   'data.read',
   'data.write',
+  // INC-002 (CAP-005/CAP-008): flujo conversacional y aprobación.
+  'conversation.read',
+  'conversation.send',
+  'conversation.confirm',
+  // INC-003 (CAP-001/CAP-010): publicación web y aprovisionamiento de subdominio.
+  'website.publish',
+  'website.provision',
 ] as const;
 
 export type ActionName = (typeof ACTIONS)[number];
@@ -39,8 +46,18 @@ export interface MatrixEntry {
  */
 export const MATRIX: Record<RoleName, readonly ActionName[]> = {
   administration: [...ACTIONS],
-  operation: ['operation.create', 'operation.execute', 'data.read', 'data.write'],
-  read_only: ['data.read'],
+  operation: [
+    'operation.create',
+    'operation.execute',
+    'data.read',
+    'data.write',
+    'conversation.read',
+    'conversation.send',
+    'conversation.confirm',
+    'website.publish',
+    'website.provision',
+  ],
+  read_only: ['data.read', 'conversation.read'],
 };
 
 export const ALLOWED_EFFECT = 'allow' as const;
@@ -68,6 +85,11 @@ export const ACTION_LABELS: Record<ActionName, string> = {
   'operation.reject': 'Rechazar operaciones',
   'data.read': 'Ver los datos del cliente',
   'data.write': 'Registrar datos del cliente',
+  'conversation.read': 'Ver solicitudes y propuestas del cliente',
+  'conversation.send': 'Enviar y recibir mensajes del canal',
+  'conversation.confirm': 'Confirmar una propuesta y preparar su vista previa',
+  'website.publish': 'Publicar la web del cliente',
+  'website.provision': 'Aprovisionar el subdominio del cliente',
 };
 
 export const ROLE_LABELS: Record<RoleName, string> = {

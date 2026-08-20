@@ -21,8 +21,12 @@ after(async () => {
 test('AC-009 smoke: health + all three roles can log in and see their context', async () => {
   const healthRes = await fetch(`${t.baseUrl}/health`);
   assert.equal(healthRes.status, 200);
-  const health = (await healthRes.json()) as { increment?: string };
-  assert.equal(health.increment, 'INC-001');
+  const health = (await healthRes.json()) as { increments?: string[] };
+  // INC-001 base + INC-002/INC-003 habilitados en esta tanda.
+  assert.ok(Array.isArray(health.increments));
+  for (const inc of ['INC-001', 'INC-002', 'INC-003']) {
+    assert.ok(health.increments.includes(inc), `health reports ${inc}`);
+  }
   // IR-13: security headers present even on public endpoints.
   assert.equal(healthRes.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(healthRes.headers.get('x-frame-options'), 'DENY');

@@ -13,16 +13,24 @@ test('AC-001 unit: administration can do every declared action', () => {
   }
 });
 
-test('AC-001 unit: operation only creates/executes ops and reads/writes data', () => {
+test('AC-001 unit: operation only creates/executes ops, reads/writes data and drives conversations (no approve/reject/users/audit)', () => {
   for (const action of ACTIONS) {
-    const expected = ['operation.create', 'operation.execute', 'data.read', 'data.write'].includes(action);
+    const expected = [
+      'operation.create', 'operation.execute', 'data.read', 'data.write',
+      // INC-002/INC-003: opera el flujo conversacional y publica tras aprobación.
+      'conversation.read', 'conversation.send', 'conversation.confirm',
+      'website.publish', 'website.provision',
+    ].includes(action);
     assert.equal(can('operation', action), expected, `operation ${action} expected ${expected}`);
   }
+  // governance: aprobar/rechazar es solo administración (TENTATIVA, INC-001).
+  assert.equal(can('operation', 'operation.approve'), false);
+  assert.equal(can('operation', 'operation.reject'), false);
 });
 
-test('AC-001 unit: read_only can only read data', () => {
+test('AC-001 unit: read_only can only read data and conversation state', () => {
   for (const action of ACTIONS) {
-    const expected = action === 'data.read';
+    const expected = action === 'data.read' || action === 'conversation.read';
     assert.equal(can('read_only', action), expected, `read_only ${action} expected ${expected}`);
   }
 });

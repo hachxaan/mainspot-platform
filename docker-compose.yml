@@ -36,6 +36,15 @@ services:
       PORT: 3000
       LOG_LEVEL: ${LOG_LEVEL:-info}
       AUDIT_MODE: ${AUDIT_MODE:-fail_closed}
+      # INC-002/INC-003 (DEC-016/019/026): canal + proveedor de dominios.
+      # Sin TELEGRAM_BOT_TOKEN / HOSTINGER_API_TOKEN el sistema usa el modo
+      # simulado funcional (E2E/piloto sin credenciales externas).
+      CHANNEL_PRIMARY: ${CHANNEL_PRIMARY:-simulated}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      DOMAIN_PROVIDER: ${DOMAIN_PROVIDER:-simulated}
+      HOSTINGER_API_TOKEN: ${HOSTINGER_API_TOKEN:-}
+      MAINSPOT_DOMAIN_SUFFIX: ${MAINSPOT_DOMAIN_SUFFIX:-sim.mainspot.local}
+      PREVIEW_TOKEN_TTL_MINUTES: ${PREVIEW_TOKEN_TTL_MINUTES:-1440}
     ports:
       - "${APP_PORT:-3000}:3000"
     command: ["sh", "-c", "test -n \"$JWT_SECRET\" || { echo 'FATAL: JWT_SECRET is required for the app. Generate one (openssl rand -hex 32) and set it in .env (see .env.example). There is no default secret (IR-02).'; exit 1; }; node scripts/db-setup.ts && node src/api/server.ts"]

@@ -13,10 +13,23 @@ import { SessionResolver } from '../boundary/session.ts';
 import { requestContext, resolveSession, requireSession, rejectTenantOverride } from '../boundary/middleware.ts';
 import { TenantDataRepository, DemoActionRepository } from '../boundary/datasource.ts';
 import { LoginRateLimiter } from '../boundary/ratelimit.ts';
+import { ActionRateLimiter } from '../boundary/action-ratelimit.ts';
 import { authRouter, backofficeRouter } from './routes.ts';
+import { conversationRouter, type ConversationRouteDeps } from './conversation-routes.ts';
+import { previewRouter } from './preview-routes.ts';
 import { loginPageHtml, panelPageHtml, errorPageHtml } from './ui.ts';
 import { log } from '../shared/logger.ts';
 import { AppError } from '../shared/errors.ts';
+import { buildInc001Hooks } from '../hooks/contracts.ts';
+import { ConversationRepository } from '../conversation/repositories.ts';
+import { ConversationPipeline } from '../conversation/pipeline.ts';
+import type { StateMachineDeps } from '../conversation/state-machine.ts';
+import { WebsiteRepository } from '../website/repository.ts';
+import { DomainService } from '../domain/service.ts';
+import { PublisherRegistry } from '../publishing/publisher.ts';
+import { StubPublisher } from '../publishing/stub.ts';
+import { WebsitePublisher } from '../publishing/website.ts';
+import { createChannelAdapter } from '../channels/registry.ts';
 
 export interface AppHandle {
   app: express.Express;
@@ -24,6 +37,8 @@ export interface AppHandle {
   config: AppConfig;
   sink: AuditSink;
   identityRepo: IdentityRepository;
+  conversationRepo: ConversationRepository;
+  conversationRoutesDeps: ConversationRouteDeps;
 }
 
 /** IR-13: basic security headers (CSP baseline, HSTS, nosniff, frame guard). */
@@ -50,6 +65,29 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   const actionRepo = new DemoActionRepository(pool);
   const loginRateLimiter = new LoginRateLimiter(config.rateLimitMax, config.rateLimitWindowMs, config.rateLimitLockMs);
 
+  // INC-002/INC-003 wiring (DEC-016, DEC-019, DEC-026).
+  const hooks = buildInc001Hooks({ pool, jwtSecret: config.jwtSecret, sink });
+  const conversationRepo = new ConversationRepository(pool);
+  const websiteRepo = new WebsiteRepository(pool);
+  const domainService = new DomainService(pool, config);
+  const channel = createChannelAdapter(config);
+  const publishers = new PublisherRegistry();
+  publishers.register(new WebsitePublisher(pool, domainService));
+  publishers.register(new StubPublisher());
+  const machine: StateMachineDeps = {
+    pool,
+    sink,
+    repo: conversationRepo,
+    publishers,
+    previewTtlMinutes: config.previewTokenTtlMinutes,
+  };
+  const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo });
+  const approvalRateLimiter = new ActionRateLimiter(
+    config.approvalRateLimitMax,
+    config.approvalRateLimitWindowMs,
+    config.approvalRateLimitLockMs,
+  );
+
   const deps = {
     pool,
     config,
@@ -59,6 +97,19 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     dataRepo,
     actionRepo,
     loginRateLimiter,
+  };
+
+  const conversationDeps: ConversationRouteDeps = {
+    pool,
+    config,
+    sink,
+    repo: conversationRepo,
+    pipeline,
+    machine,
+    approvalRateLimiter,
+    websiteRepo,
+    domainService,
+    channel,
   };
 
   const app = express();
@@ -72,16 +123,20 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   // Auth (public endpoints: login/logout).
   app.use('/api/auth', authRouter(deps));
 
+  // Preview/sandbox público (INC-002, CAP-008): enlace seguro con token.
+  app.use(previewRouter({ config, sink, repo: conversationRepo, machine, approvalRateLimiter }));
+
   // Protected backoffice API: session -> tenant override guard -> permission.
   app.use('/api/backoffice', resolveSession(sessionResolver, sink, pool));
   app.use('/api/backoffice', requireSession());
   app.use('/api/backoffice', rejectTenantOverride(pool));
   app.use('/api/backoffice', backofficeRouter(deps));
+  app.use('/api/backoffice', conversationRouter(conversationDeps));
 
   // Minimal UX pages (AC-008).
   app.get('/', (req, res) => res.type('html').send(loginPageHtml()));
   app.get('/panel', (req, res) => res.type('html').send(panelPageHtml()));
-  app.get('/health', (req, res) => res.json({ ok: true, app: 'mainspot-platform', increment: 'INC-001' }));
+  app.get('/health', (req, res) => res.json({ ok: true, app: 'mainspot-platform', increments: ['INC-001', 'INC-002', 'INC-003'] }));
 
   // Central error handling: controlled + plain language (AC-008), structured log.
   app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
@@ -106,7 +161,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     }
   });
 
-  return { app, pool, config, sink, identityRepo };
+  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps };
 }
 
 async function main(): Promise<void> {

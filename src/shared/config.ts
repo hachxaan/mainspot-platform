@@ -12,10 +12,14 @@
 const APP_ENVS = ['development', 'production', 'test'] as const;
 const AUDIT_MODES = ['fail_closed', 'fail_open'] as const;
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
+const CHANNEL_PRIMARYS = ['telegram', 'simulated'] as const;
+const DOMAIN_PROVIDERS = ['simulated', 'hostinger'] as const;
 
 export type AppEnv = (typeof APP_ENVS)[number];
 export type AuditMode = (typeof AUDIT_MODES)[number];
 export type LogLevelValue = (typeof LOG_LEVELS)[number];
+export type ChannelPrimary = (typeof CHANNEL_PRIMARYS)[number];
+export type DomainProviderName = (typeof DOMAIN_PROVIDERS)[number];
 
 export interface AppConfig {
   port: number;
@@ -31,6 +35,20 @@ export interface AppConfig {
   rateLimitWindowMs: number;
   rateLimitLockMs: number;
   evidenceDir: string;
+  // INC-002 channels (DEC-016, DEC-026)
+  channelPrimary: ChannelPrimary;
+  telegramBotToken: string;
+  telegramBaseUrl: string;
+  previewTokenTtlMinutes: number;
+  // INC-002 approval rate limiting (sensitive approvals)
+  approvalRateLimitMax: number;
+  approvalRateLimitWindowMs: number;
+  approvalRateLimitLockMs: number;
+  // INC-003 domain provisioning (DEC-019, DEC-026)
+  domainProvider: DomainProviderName;
+  hostingerApiBaseUrl: string;
+  hostingerApiToken: string;
+  mainspotDomainSuffix: string;
 }
 
 export interface LoadConfigOptions {
@@ -85,6 +103,20 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS ?? 60_000),
     rateLimitLockMs: Number(process.env.RATE_LIMIT_LOCK_MS ?? 60_000),
     evidenceDir: process.env.EVIDENCE_DIR ?? 'evidence',
+    // INC-002: canal primario (DEC-016/026) + preview token (TENTATIVA: expiración configurable).
+    channelPrimary: enumValue<ChannelPrimary>('CHANNEL_PRIMARY', process.env.CHANNEL_PRIMARY, CHANNEL_PRIMARYS, 'simulated'),
+    telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? '',
+    telegramBaseUrl: process.env.TELEGRAM_BASE_URL ?? 'https://api.telegram.org',
+    previewTokenTtlMinutes: Number(process.env.PREVIEW_TOKEN_TTL_MINUTES ?? 1440),
+    // INC-002: rate limiting de aprobaciones sensibles (operador + recurso).
+    approvalRateLimitMax: Number(process.env.APPROVAL_RATE_LIMIT_MAX ?? 10),
+    approvalRateLimitWindowMs: Number(process.env.APPROVAL_RATE_LIMIT_WINDOW_MS ?? 60_000),
+    approvalRateLimitLockMs: Number(process.env.APPROVAL_RATE_LIMIT_LOCK_MS ?? 30_000),
+    // INC-003: proveedor de dominios (DEC-019/026) — simulado por defecto.
+    domainProvider: enumValue<DomainProviderName>('DOMAIN_PROVIDER', process.env.DOMAIN_PROVIDER, DOMAIN_PROVIDERS, 'simulated'),
+    hostingerApiBaseUrl: process.env.HOSTINGER_API_BASE_URL ?? 'https://api.hostinger.com',
+    hostingerApiToken: process.env.HOSTINGER_API_TOKEN ?? '',
+    mainspotDomainSuffix: process.env.MAINSPOT_DOMAIN_SUFFIX ?? 'sim.mainspot.local',
   };
 
   return { ...config, ...overrides };

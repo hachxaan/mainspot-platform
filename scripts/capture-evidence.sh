@@ -97,6 +97,10 @@ note "smoke tests (AC-009 + UX signs)"
 npm run test:smoke 2>&1 | tee_file "$EVIDENCE/07-smoke.txt"
 SMOKE_OK=$?
 
+note "e2e INC-002 + INC-003 (canal simulado, DEC-026) — transcript + evidence file"
+npm run test:e2e 2>&1 | tee_file "$EVIDENCE/13-e2e-inc002-inc003.txt"
+E2E_OK=$?
+
 note "rollback simulation (AC-009 — from the deterministic test DB)"
 npm run rollback:simulate -- --url "$TESTURL" 2>&1 | tee_file "$EVIDENCE/11-rollback-simulate.txt"
 
@@ -109,6 +113,7 @@ db up:       $([ "${DB_UP_OK:-1}" = "0" ] && echo PASS || echo FAIL-or-skipped)
 db setup:    $([ "$DB_SETUP_OK" = "0" ] && echo PASS || echo FAIL)
 integration: $([ "$INTEGRATION_OK" = "0" ] && echo PASS || echo FAIL)
 smoke:       $([ "$SMOKE_OK" = "0" ] && echo PASS || echo FAIL)
+e2e:         $([ "${E2E_OK:-1}" = "0" ] && echo PASS || echo FAIL)
 EOF
 
 echo

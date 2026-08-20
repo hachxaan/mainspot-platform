@@ -37,6 +37,14 @@ export const SENSITIVE_ACTIONS = new Set<string>([
   'operation.approve',
   'operation.reject',
   'data.write',
+  // INC-002/INC-003: aprobación/publicación y aprovisionamiento son acciones
+  // con efecto externo (RULE-003/004): la acción y su evento deben ser
+  // atómicos (fail-closed) — la operación se revierte si el audit falla.
+  'conversation.approved',
+  'conversation.published',
+  'conversation.publish_attempt',
+  'conversation.rejected',
+  'website.provisioned',
 ]);
 
 export const READ_ACTIONS = new Set<string>(['data.read', 'audit.read', 'audit.export']);
