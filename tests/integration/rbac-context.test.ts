@@ -42,6 +42,9 @@ test('AC-001: administration profile can use all backoffice actions', async () =
   assert.equal(audit.status, 200);
   const data = await api(t.baseUrl, '/api/backoffice/data', { headers: authHeaders(token) });
   assert.equal(data.status, 200);
+  const actionsList = await api(t.baseUrl, '/api/backoffice/actions', { headers: authHeaders(token) });
+  assert.equal(actionsList.status, 200, 'admin can list own tenant demo actions');
+  assert.ok(Array.isArray(actionsList.body.actions));
   console.log('TEST_PASS AC-001 administration has full authorized access');
 });
 
@@ -100,6 +103,9 @@ test('AC-001: read_only profile can read but every mutation is denied + audited'
 
   const exportDeny = await api(t.baseUrl, '/api/backoffice/audit/export', { headers: authHeaders(token) });
   assert.equal(exportDeny.status, 403);
+
+  const actionsDeny = await api(t.baseUrl, '/api/backoffice/actions', { headers: authHeaders(token) });
+  assert.equal(actionsDeny.status, 403, 'read_only cannot list demo actions');
   console.log('TEST_PASS AC-001 read_only: reads allowed, all mutations denied + audited');
 });
 

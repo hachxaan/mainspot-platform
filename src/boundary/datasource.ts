@@ -115,6 +115,16 @@ export class DemoActionRepository {
     return { found: true, in_tenant: row.tenant_id === tenantOf(session), row };
   }
 
+  /** List own tenant demo actions (panel: make approve/reject/execute usable). */
+  async list(session: SessionSummary): Promise<DemoActionRow[]> {
+    const tenantId = tenantOf(session);
+    const res = await this.pool.query<DemoActionRow>(
+      'SELECT * FROM demo_action WHERE tenant_id = $1 ORDER BY created_at DESC, action_id',
+      [tenantId],
+    );
+    return res.rows;
+  }
+
   async setStatus(
     session: SessionSummary,
     actionId: string,

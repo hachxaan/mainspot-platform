@@ -1,0 +1,39 @@
+# 08-panel-contract — GET /api/backoffice/me canonical shape (live LXD)
+# HEAD desplegado: 194465d + cambios de panel del commit final (ver git log -1 de la rama)
+# LXD: mainspot-app 10.209.99.238 (Node v24.19.0, systemd mainspot.service active)
+# Host proxy: http://localhost:3000
+
+[1] health
+{"ok":true,"app":"mainspot-platform","increments":["INC-001","INC-002","INC-003","INC-004","INC-005","INC-006","INC-007"]}
+
+[2] systemctl (live)
+MainPID=2228  ActiveState=active  SubState=running  (started 2026-08-20 15:20:11 UTC)
+
+[3] POST /api/auth/login (admin client_a) — token <redacted>, len 276
+
+[4] GET /api/backoffice/me con Bearer (contrato estandarizado):
+{
+  "session": {
+    "user_id": "user_a_admin",
+    "display_name": "Ana Administradora",
+    "tenant_id": "client_a",
+    "tenant": {
+      "id": "client_a",
+      "business_name": "Restaurante El Sol (cliente de prueba A)",
+      "status": "active"
+    },
+    "role_id": "administration",
+    "role_label": "Administración",
+    "role_description": "Puede gestionar usuarios, configuración y auditoría, y ejecutar todas las acciones del panel (salvo las bloqueadas por diseño).",
+    "permissions": ["user.manage","client.config.manage","audit.read","audit.export","operation.create","operation.execute","operation.approve","operation.reject","data.read","data.write","conversation.read","conversation.send","conversation.confirm","website.publish","website.provision","reputation.read","reputation.respond","reputation.escalate","reputation.approve","social.read","social.create","social.schedule","social.approve","subscription.admin","subscription.read","analytics.read","analytics.export","analytics.purge"],
+    "expires_at": "2026-08-20T16:20:23.028Z"
+  }
+}
+permissions_type=array (28 elementos) — NUNCA un conteo numérico.
+
+[5] GET /panel -> HTTP 200; el HTML contiene las 5 secciones nuevas
+    (roleCard, websiteCard, socialCard, reputationCard, subscriptionCard) + dataCard + auditCard.
+    Se verifica render real con DOM headless (ver 09-panel-render.txt).
+
+[6] GET /api/backoffice/actions (listado tenant-scoped, admin) -> HTTP 200, actions: [...]
+    (endpoint mínimo agregado para que Aprobar/Rechazar/Ejecutar operen con estado real).

@@ -139,4 +139,25 @@ export class IdentityRepository {
     );
     return res.rows;
   }
+
+  /** Display name for a user id (safe: never exposes login/password). */
+  async getUserDisplayName(userId: string): Promise<string | null> {
+    const res = await this.pool.query<{ display_name: string }>(
+      'SELECT display_name FROM internal_user WHERE user_id = $1 LIMIT 1',
+      [userId],
+    );
+    return res.rows[0]?.display_name ?? null;
+  }
+
+  /**
+   * Tenant summary for the /me contract (AC-008: plain language, no
+   * sensitive metadata). Only id/business_name/status are exposed.
+   */
+  async getTenantSummary(tenantId: string): Promise<{ id: string; business_name: string; status: string } | null> {
+    const res = await this.pool.query<{ id: string; business_name: string; status: string }>(
+      'SELECT client_id AS id, business_name, status FROM client WHERE client_id = $1',
+      [tenantId],
+    );
+    return res.rows[0] ?? null;
+  }
 }

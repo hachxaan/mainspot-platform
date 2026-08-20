@@ -110,7 +110,39 @@ Rutas principales (INC-001):
 | `GET/POST /api/backoffice/data` | `data.read/write` | Datos del cliente (solo tenant propio) |
 | `GET /api/backoffice/audit(?:/export)?` | `audit.read/export` | Consulta/export de auditoría |
 | `GET/POST /api/backoffice/users` | `user.manage` | Listar/crear usuarios internos (admin) |
+| `GET/POST /api/backoffice/actions` | `operation.create` | Listar/crear operaciones de prueba del tenant (listado mínimo para el panel) |
 | `POST /api/backoffice/actions/:id/{approve,reject,execute}` | `operation.*` | Verbos AC-003 (fixture) |
+
+### Contrato `GET /api/backoffice/me`
+
+Endpoints canónicos de contexto del panel. **SIEMPRE** devuelve `permissions`
+como **array** de strings (nunca un conteo numérico). Shape (ejemplo real):
+
+```json
+{
+  "session": {
+    "user_id": "user_a_admin",
+    "display_name": "Ana Administradora",
+    "tenant_id": "client_a",
+    "tenant": { "id": "client_a", "business_name": "Restaurante El Sol (cliente de prueba A)", "status": "active" },
+    "role_id": "administration",
+    "role_label": "Administración",
+    "role_description": "Puede gestionar usuarios, configuración y auditoría, y ejecutar todas las acciones del panel…",
+    "permissions": ["user.manage", "audit.read", "data.read", "website.publish", "website.provision", "social.read", "social.create", "social.schedule", "social.approve", "reputation.read", "reputation.respond", "reputation.escalate", "reputation.approve", "subscription.admin", "subscription.read", "analytics.read", "analytics.export", "analytics.purge", "operation.create", "operation.execute", "operation.approve", "operation.reject", "data.write", "client.config.manage", "audit.export", "conversation.read", "conversation.send", "conversation.confirm"],
+    "expires_at": "2026-08-20T16:12:40.040Z"
+  }
+}
+```
+
+- `permissions` es el snapshot de la sesión (espejo de `src/rbac/matrix.ts`); la
+  autorización por request SIEMPRE re-chequea la matriz (el snapshot es
+  informativo/UI).
+- `tenant` contiene solo `id`/`business_name`/`status` (nunca `contact_email` ni
+  `metadata`).
+- `display_name` proviene de `internal_user`; si no existe cae a `user_id`.
+- Implementación: `src/api/routes.ts` (`GET /me`) + helpers de
+  `src/identity/repository.ts` (`getUserDisplayName`, `getTenantSummary`);
+  integración contractual en `tests/integration/me-contract.test.ts`.
 
 Rutas INC-002/INC-003:
 
@@ -185,6 +217,7 @@ real en `evidence/deploy-lxd/`.
 
 ```bash
 ./scripts/deploy/deploy-lxd.sh        # crea/asegura contenedores, BD, app y proxy
+./scripts/deploy/deploy-lxd.sh --update-code  # solo código: copia repo → npm ci → typecheck → restart (sin recrear contenedores)
 curl -s http://localhost:3000/health  # {"ok":true,...}
 ```
 

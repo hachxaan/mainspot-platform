@@ -16,6 +16,9 @@
 #
 # Uso:
 #   ./deploy-lxd.sh           idempotente: asegura contenedores/db/app/proxy
+#   ./deploy-lxd.sh --update-code  copia el repo actual a mainspot-app, npm ci +
+#                                  typecheck, reinicia mainspot.service (sin
+#                                  recrear contenedores ni re-migrar BD)
 #   ./deploy-lxd.sh --reset   destruye y recrea los contenedores mainspot-*
 #   ./deploy-lxd.sh --destroy destruye los contenedores mainspot-* y el proxy
 #
@@ -78,7 +81,7 @@ log() { printf '[deploy-lxd] %s\n' "$*"; }
 die() { printf '[deploy-lxd] ERROR: %s\n' "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '1,60p' "$0" | grep -E '^#( Uso|  \./deploy|$)' | sed 's/^# //; s/^#$//'
+  sed -n '1,60p' "$0" | grep -E '^#( Uso|   \./deploy|$)' | sed 's/^# //; s/^#$//'
 }
 
 source_overrides() {
@@ -299,6 +302,34 @@ ensure_proxy() {
   fi
 }
 
+# ----------------------------------------------------------------------------
+# --update-code: despliega SOLO el código actualizado (sin recrear contenedores,
+# sin re-migrar la BD, sin tocar secretos). Reutiliza el mismo mecanismo de copia
+# que provision_app: tar del repo (excluye node_modules/.git/.deploy/.env) → push
+# → extraer sobre /opt/mainspot-platform → npm ci → typecheck → restart unit.
+# ----------------------------------------------------------------------------
+update_code() {
+  ensure_container "$APP_CONTAINER"
+  if [[ "$(lxc_state "$APP_CONTAINER")" != "Running" ]]; then
+    die "$APP_CONTAINER no está Running"
+  fi
+
+  local tar_tmp
+  tar_tmp="/tmp/mainspot-src-$$.tar.gz"
+  tar -czf "$tar_tmp" --exclude='node_modules' --exclude='.git' --exclude='.deploy' --exclude='.env' -C "$REPO_ROOT" .
+  lxc file push "$tar_tmp" "$APP_CONTAINER/tmp/mainspot-src.tar.gz" >/dev/null
+  rm -f "$tar_tmp"
+
+  log "extrayendo código en $APP_INSIDE_DIR + npm ci + typecheck..."
+  lxc exec "$APP_CONTAINER" -- bash -c "cd $APP_INSIDE_DIR && tar -xzf /tmp/mainspot-src.tar.gz -C . && rm /tmp/mainspot-src.tar.gz && npm ci --no-audit --no-fund >/tmp/npm-ci.log 2>&1 && npm run typecheck >/tmp/typecheck.log 2>&1 && echo build_ok" \
+    || die "npm ci/typecheck falló (ver: lxc exec $APP_CONTAINER -- cat /tmp/npm-ci.log; lxc exec $APP_CONTAINER -- cat /tmp/typecheck.log)"
+
+  log "reiniciando mainspot.service..."
+  lxc exec "$APP_CONTAINER" -- bash -c "systemctl restart mainspot.service && sleep 3 && systemctl is-active mainspot.service"
+  wait_health
+  log "--- update-code completo: $APP_INSIDE_DIR actualizado, mainspot.service reiniciado ---"
+}
+
 wait_health() {
   local url="http://127.0.0.1:$APP_HOST_LISTEN_PORT/health"
   for _ in $(seq 1 30); do
@@ -330,6 +361,7 @@ MODE="${1:-deploy}"
 case "$MODE" in
   --destroy) source_overrides; require_cmds; destroy_all; exit 0 ;;
   --reset)   source_overrides; require_cmds; destroy_all ;;
+  --update-code) source_overrides; require_cmds; ensure_secrets; update_code; exit 0 ;;
   --help|-h) usage; exit 0 ;;
 esac
 

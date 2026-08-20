@@ -16,7 +16,7 @@ import { AuditSink, auditedOperation } from '../audit/sink.ts';
 import { AuditQuery } from '../audit/query.ts';
 import { IdentityRepository } from '../identity/repository.ts';
 import { ROLE_NAMES, type RoleName } from '../identity/entities.ts';
-import { MATRIX, ROLE_LABELS } from '../rbac/matrix.ts';
+import { MATRIX, ROLE_LABELS, ROLE_DESCRIPTIONS } from '../rbac/matrix.ts';
 import { DemoActionRepository, TenantDataRepository, type DemoActionRow } from '../boundary/datasource.ts';
 import { LoginRateLimiter } from '../boundary/ratelimit.ts';
 import { SessionResolver, UNKNOWN_ACTOR_ID } from '../boundary/session.ts';
@@ -202,11 +202,20 @@ export function backofficeRouter(deps: RouteDeps): Router {
   const router = Router();
   const auditQuery = new AuditQuery(deps.pool);
 
-  // me — current context (AC-001 evidence)
+  // me — current context (AC-001 evidence). CONTRACT (documented in README §4):
+  // { session: { user_id, display_name, tenant_id,
+  //              tenant: { id, business_name, status } | null,
+  //              role_id, role_label, role_description,
+  //              permissions: string[] (ARRAY, never a count),
+  //              expires_at } }
   router.get('/me', requirePermission('data.read', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
+    const [displayName, tenant] = await Promise.all([
+      deps.identityRepo.getUserDisplayName(session.user_id),
+      deps.identityRepo.getTenantSummary(session.tenant_id),
+    ]);
     await deps.sink.write({
       tenant_id: session.tenant_id,
       actor_id: session.user_id,
@@ -217,13 +226,17 @@ export function backofficeRouter(deps: RouteDeps): Router {
       decision: 'allow',
       result: 'success',
     });
+    const role = session.role_name as RoleName;
     return res.json({
       session: {
         user_id: session.user_id,
+        display_name: displayName ?? session.user_id,
         tenant_id: session.tenant_id,
+        tenant: tenant ?? null,
         role_id: session.role_name,
-        role_label: ROLE_LABELS[session.role_name as RoleName] ?? session.role_name,
-        permissions: session.permissions,
+        role_label: ROLE_LABELS[role] ?? session.role_name,
+        role_description: ROLE_DESCRIPTIONS[role] ?? null,
+        permissions: [...session.permissions],
         expires_at: session.expires_at,
       },
     });
@@ -440,6 +453,27 @@ export function backofficeRouter(deps: RouteDeps): Router {
       resource: `demo_action/${actionId}`,
     }, (db) => deps.actionRepo.create(session, { title: title.trim() }, db, actionId));
     return res.status(201).json({ action: created, message: 'Operación creada.' });
+  }));
+
+  // actions — list own tenant demo actions (minimal GET so the panel can offer
+  // approve/reject/execute with real state). Tenant-scoped + audited; readable
+  // by anyone allowed to create actions (operation/administration).
+  router.get('/actions', requirePermission('operation.create', deps.sink, deps.pool), ah(async (req, res) => {
+    const lreq = req as LooseRequest;
+    const rc = rcOf(lreq);
+    const session = sessionOf(lreq);
+    const rows = await deps.actionRepo.list(session);
+    await deps.sink.write({
+      tenant_id: session.tenant_id,
+      actor_id: session.user_id,
+      actor_role: session.role_name,
+      action: 'operation.read',
+      resource: 'demo_actions',
+      request_id: rc.request_id,
+      decision: 'allow',
+      result: 'success',
+    });
+    return res.json({ tenant_id: session.tenant_id, actions: rows });
   }));
 
   // approve / reject / execute — AC-003 verbs (idempotent with replay guards)

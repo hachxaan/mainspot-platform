@@ -36,6 +36,7 @@ Host (Linux, LXD 5.21)
 ```bash
 cd scripts/deploy
 ./deploy-lxd.sh            # idempotente: asegura contenedores, BD, app y proxy
+./deploy-lxd.sh --update-code  # solo código: copia repo → npm ci → typecheck → restart (sin recrear contenedores ni re-migrar)
 ./deploy-lxd.sh --reset    # destruye y recrea los contenedores mainspot-* desde cero
 ./deploy-lxd.sh --destroy  # destruye contenedores mainspot-* y el proxy (conserva secretos)
 ./deploy-lxd.sh --help
@@ -61,6 +62,20 @@ Config NO secreta overrideable: copia `mainspot-deploy.env.example` a
    la systemd unit `mainspot.service` (enabled + restart).
 5. Añade el device proxy `proxy-http` si falta, y espera a que
    `http://127.0.0.1:3000/health` responda 200.
+
+### `--update-code` (redeploy de código en caliente)
+
+Para subir cambios de código al contenedor que ya está desplegado **sin**
+recrear contenedores ni re-migrar la BD:
+
+1. Copia el repo actual (tar excluyendo `node_modules`, `.git`, `.deploy`, `.env`).
+2. Lo extrae sobre `/opt/mainspot-platform`.
+3. Ejecuta `npm ci` + `npm run typecheck` (validación de build del repo; no hay
+   script `build`, el runtime Node 24 usa type-stripping nativo).
+4. Reinicia `mainspot.service` y espera a que `/health` responda 200.
+
+No toca `/etc/mainspot/mainspot.env` (secretos) ni la base de datos. Úsalo tras
+cada commit que solo afecte código.
 
 ## Secretos (nunca en git)
 

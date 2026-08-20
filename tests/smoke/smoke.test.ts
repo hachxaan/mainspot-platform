@@ -42,7 +42,15 @@ test('AC-009 smoke: health + all three roles can log in and see their context', 
     assert.equal(loginRes.session.role_id, profile.role, `${profile.who} role`);
     const me = await api(t.baseUrl, '/api/backoffice/me', { headers: authHeaders(loginRes.token) });
     assert.equal(me.status, 200);
+    // /me contract: permissions is an ARRAY (never a count) + enriched context.
+    assert.ok(Array.isArray(me.body.session.permissions), `${profile.who} permissions is an array`);
     assert.ok(me.body.session.permissions.length >= 1);
+    assert.equal(typeof me.body.session.display_name, 'string', `${profile.who} display_name`);
+    assert.ok(me.body.session.tenant && me.body.session.tenant.id === SEED.a.tenant, `${profile.who} tenant summary`);
+    assert.equal(typeof me.body.session.tenant.business_name, 'string');
+    assert.equal(typeof me.body.session.tenant.status, 'string');
+    assert.equal(typeof me.body.session.role_label, 'string', `${profile.who} role_label`);
+    assert.equal(typeof me.body.session.role_description, 'string', `${profile.who} role_description`);
     console.log(`TEST_PASS AC-009 smoke login+me for ${profile.who} (${profile.role})`);
   }
 });
@@ -70,6 +78,16 @@ test('AC-008 smoke: UI pages are plain-language and minimally accessible', async
   const panelHtml = await panel.text();
   assert.ok(panelHtml.includes('Panel de MainSpot'));
   assert.ok(panelHtml.includes('Salir del panel'));
+  // AC-008: full panel sections (per-role profile, modules, data, audit).
+  assert.ok(panelHtml.includes('id="roleCard"'), 'role card section present');
+  assert.ok(panelHtml.includes('id="websiteCard"'), 'website module section present');
+  assert.ok(panelHtml.includes('id="socialCard"'), 'social module section present');
+  assert.ok(panelHtml.includes('id="reputationCard"'), 'reputation module section present');
+  assert.ok(panelHtml.includes('id="subscriptionCard"'), 'subscription module section present');
+  assert.ok(panelHtml.includes('id="dataCard"'), 'data card section present');
+  assert.ok(panelHtml.includes('id="auditCard"'), 'audit card section present');
+  assert.ok(panelHtml.includes('role="alert"'), 'visible alert region for errors');
+  assert.ok(panelHtml.includes('role="status"'), 'status region for confirmations');
   assert.ok(!panelHtml.includes('password_hash'));
   console.log('TEST_PASS AC-008 UI plain language + label/role/alert accessibility basics');
 });
@@ -80,6 +98,12 @@ test('AC-009 smoke: real evidence path works (API export mirrors DB audit rows)'
   await api(t.baseUrl, '/api/backoffice/data', { headers: authHeaders(admin.token) }); // audited read
   const after = await t.pool.query<{ n: string }>('SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1', [SEED.a.tenant]);
   assert.ok(Number(after.rows[0]?.n ?? 0) > Number(before.rows[0]?.n ?? 0), 'audit rows grew after an audited action');
+
+  // Panel-support GET: own tenant demo actions can be listed (tenant-scoped).
+  const actionsList = await api(t.baseUrl, '/api/backoffice/actions', { headers: authHeaders(admin.token) });
+  assert.equal(actionsList.status, 200);
+  assert.ok(Array.isArray(actionsList.body.actions));
+  console.log('TEST_PASS AC-009 smoke: GET /actions tenant-scoped listing works');
 
   const exportRes = await api(t.baseUrl, '/api/backoffice/audit/export', { headers: authHeaders(admin.token) });
   assert.equal(exportRes.status, 200);

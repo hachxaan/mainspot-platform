@@ -1,0 +1,55 @@
+# 09-panel-render — render real del panel en navegador headless (live LXD)
+# Verificación: google-chrome headless (151.0.7922.108) + CDP, sesión inyectada
+# vía sessionStorage en el mismo origin (mismo flujo que el login JS del panel).
+# HEAD desplegado: 194465d + cambios de panel del commit final (ver git log -1).
+
+## A) Perfil administration (user_a_admin — Ana Administradora)
+
+DOM dump (resumen real capturado en vivo):
+
+welcome          = "Hola, Ana Administradora"
+whoami           = "Trabajas con el cliente Restaurante El Sol (cliente de prueba A)."
+denied alert     = oculto (sin errores)
+role desc        = "Administración Puede gestionar usuarios, configuración y auditoría,
+                    y ejecutar todas las acciones del panel (salvo las bloqueadas por diseño)."
+permissionChips  = 28 chips de permisos en lenguaje llano
+
+Acciones rápidas (buttons reales):
+  Registrar un dato del cliente
+  Crear una operación de prueba
+  Ver operaciones y responder
+  Exportar el registro de actividad
+  Gestionar usuarios del cliente
+  + chip informativo: "Configurar el cliente: esta función estará disponible en una próxima versión."
+
+cards visibles:  role ✓ actions ✓ website ✓ social ✓ reputation ✓ subscription ✓ data ✓ audit ✓
+
+websiteBody      = Estado: Publicada | Nombre: Restaurante El Sol
+                   Subdominio: el-sol.sim.mainspot.local (simulado) | Versión publicada: 1
+                   [+ "Aprovisionar subdominio"]
+socialBody       = formulario "Nuevo borrador" + "Todavía no hay publicaciones"
+reputationBody   = "Sincronizar reseñas del simulador" + "Todavía no hay reseñas"
+subscriptionBody = "Piloto 1 (active)" + límites: Páginas web 1 | Publicaciones 10 |
+                   Anuncios 5 | Reseñas gestionadas 20 | Usuarios del panel 5 | Conversaciones 500
+dataRows = 3, auditRows = 20
+
+## B) Perfil read_only (user_a_reader — Rosa Lectura) — fail-closed por permisos
+
+DOM dump (resumen real capturado en vivo):
+
+welcome          = "Hola, Rosa Lectura"
+role desc        = "Solo lectura Puede ver los datos del cliente que su contexto le permite;
+                    no puede modificar nada."
+permissionChips  = 6 chips
+denied alert     = oculto
+
+cards visibles:  role ✓ actions ✗(oculto) website ✗ social ✓ reputation ✓ subscription ✓
+                 data ✓ audit ✗
+dataRows = 3, auditRows = 0 (sin audit.read el card no se muestra)
+
+## C) Comprobaciones estructurales
+
+- /panel -> HTTP 200 (curl), HTML contiene id= roleCard/websiteCard/socialCard/reputationCard/subscriptionCard/dataCard/auditCard (5 match de secciones nuevas).
+- role="alert" presente para errores de cada sección; role="status" para confirmaciones.
+- Ninguna sección muestra error 403 en los dumps (los permisos usados por cada card
+  se comprueban contra /me antes de renderizar; si una API deniega, se muestra alerta visible).
