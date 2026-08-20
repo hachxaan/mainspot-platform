@@ -1,6 +1,6 @@
 # Matriz de permisos del backoffice (INC-001)
 
-> Generado el 2026-08-20T05:36:32.586Z desde `src/rbac/matrix.ts` (fuente de verdad).
+> Generado el 2026-08-20T06:33:16.681Z desde `src/rbac/matrix.ts` (fuente de verdad).
 > Regla fail-closed: toda acción no listada es **deny**; el contexto de cliente siempre aplica sobre el rol.
 
 | Acción (recurso \* = contexto general) | Administración | Operación | Solo lectura |
@@ -15,12 +15,17 @@
 | `operation.reject` — Rechazar operaciones | allow | deny | deny |
 | `data.read` — Ver los datos del cliente | allow | allow | allow |
 | `data.write` — Registrar datos del cliente | allow | allow | deny |
+| `conversation.read` — Ver solicitudes y propuestas del cliente | allow | allow | allow |
+| `conversation.send` — Enviar y recibir mensajes del canal | allow | allow | deny |
+| `conversation.confirm` — Confirmar una propuesta y preparar su vista previa | allow | allow | deny |
+| `website.publish` — Publicar la web del cliente | allow | allow | deny |
+| `website.provision` — Aprovisionar el subdominio del cliente | allow | allow | deny |
 
 ## Vista por rol (lenguaje claro, AC-008)
 
 - **Administración**: todas las acciones del panel
-- **Operación**: `operation.create`, `operation.execute`, `data.read`, `data.write`
-- **Solo lectura**: `data.read`
+- **Operación**: `operation.create`, `operation.execute`, `data.read`, `data.write`, `conversation.read`, `conversation.send`, `conversation.confirm`, `website.publish`, `website.provision`
+- **Solo lectura**: `data.read`, `conversation.read`
 
-Total entradas: 15
+Total entradas: 26
 

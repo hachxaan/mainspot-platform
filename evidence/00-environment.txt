@@ -1,9 +1,8 @@
-run: 2026-08-20T05:36:31Z
+run: 2026-08-20T06:33:15Z
 node: v24.16.0
 npm:  11.13.0
 docker: Docker version 29.5.2, build 79eb04c
 docker compose: Docker Compose version v5.1.4
-git: e930dec
+git: b29a86c
  M evidence/00-environment.txt
  M evidence/00-run-meta.txt
- M evidence/rollback-report.md

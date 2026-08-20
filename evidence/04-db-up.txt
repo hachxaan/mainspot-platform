@@ -17,3 +17,7 @@ time="2026-08-20T00:36:33-05:00" level=warning msg="The \"JWT_SECRET\" variable 
  Container mainspot-platform-postgres-1 Running 
 postgres up
 postgres ready after 1s
+time="2026-08-20T01:33:17-05:00" level=warning msg="The \"JWT_SECRET\" variable is not set. Defaulting to a blank string."
+ Container mainspot-platform-postgres-1 Running 
+postgres up
+postgres ready after 1s
