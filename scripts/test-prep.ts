@@ -5,7 +5,7 @@
  */
 
 import pg from 'pg';
-import { loadConfig } from '../src/shared/config.ts';
+import { loadConfigTool } from '../src/shared/config.ts';
 import { log } from '../src/shared/logger.ts';
 import { withRequestContext } from '../src/shared/context.ts';
 import { applyMigrations } from './migrate.ts';
@@ -16,7 +16,7 @@ const { Pool } = pg;
 
 async function main(): Promise<void> {
   await withRequestContext(async () => {
-    const cfg = loadConfig();
+    const cfg = loadConfigTool();
 
     // Connect to the maintenance DB ('postgres') of the same server.
     const adminUrl = new URL(cfg.databaseUrl);

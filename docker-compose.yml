@@ -26,16 +26,19 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # APP_ENV stays 'development' for the pilot; JWT default is dev-only.
+      # APP_ENV stays 'development' for the pilot.
       APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: postgres://${POSTGRES_USER:-mainspot}:${POSTGRES_PASSWORD:-mainspot_dev_password}@postgres:5432/${POSTGRES_DB:-mainspot}
-      JWT_SECRET: ${JWT_SECRET:-mainspot-dev-only-secret-change-me}
+      # IR-02: NO default secret. The app container refuses to start without a
+      # JWT_SECRET from the environment (see .env.example). Intentionally empty
+      # here so `docker compose up -d postgres` keeps working for local dev DB.
+      JWT_SECRET: ${JWT_SECRET:-}
       PORT: 3000
       LOG_LEVEL: ${LOG_LEVEL:-info}
       AUDIT_MODE: ${AUDIT_MODE:-fail_closed}
     ports:
       - "${APP_PORT:-3000}:3000"
-    command: ["sh", "-c", "node scripts/db-setup.ts && node src/api/server.ts"]
+    command: ["sh", "-c", "test -n \"$JWT_SECRET\" || { echo 'FATAL: JWT_SECRET is required for the app. Generate one (openssl rand -hex 32) and set it in .env (see .env.example). There is no default secret (IR-02).'; exit 1; }; node scripts/db-setup.ts && node src/api/server.ts"]
 
 volumes:
   mainspot_pgdata:

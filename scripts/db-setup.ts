@@ -5,7 +5,7 @@
  */
 
 import pg from 'pg';
-import { loadConfig } from '../src/shared/config.ts';
+import { loadConfigTool } from '../src/shared/config.ts';
 import { log } from '../src/shared/logger.ts';
 import { withRequestContext } from '../src/shared/context.ts';
 import { applyMigrations } from './migrate.ts';
@@ -14,7 +14,7 @@ import path from 'node:path';
 
 const { Pool } = pg;
 
-async function ensureDatabase(cfg: ReturnType<typeof loadConfig>): Promise<void> {
+async function ensureDatabase(cfg: ReturnType<typeof loadConfigTool>): Promise<void> {
   const url = new URL(cfg.databaseUrl);
   const dbName = url.pathname.replace(/^\//, '') || 'mainspot';
   url.pathname = '/postgres';
@@ -33,7 +33,7 @@ async function ensureDatabase(cfg: ReturnType<typeof loadConfig>): Promise<void>
 
 async function main(): Promise<void> {
   await withRequestContext(async () => {
-    const cfg = loadConfig();
+    const cfg = loadConfigTool();
     await ensureDatabase(cfg);
     const migrated = await applyMigrations(cfg.databaseUrl);
     const pool = new Pool({ connectionString: cfg.databaseUrl, max: 2 });

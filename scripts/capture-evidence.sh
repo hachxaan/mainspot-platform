@@ -74,17 +74,17 @@ note "denied cross-tenant evidence (AC-002 — right after integration)"
   if docker compose exec -T postgres psql -U mainspot -d mainspot_test -c "
     SELECT event_id, ts, tenant_id, actor_id, action, resource, request_id, decision, result
     FROM audit_event WHERE decision='deny'
-    ORDER BY ts DESC LIMIT 30;" > "$EVIDENCE/08-denied-cross-tenant.log" 2>/dev/null; then
-    cat "$EVIDENCE/08-denied-cross-tenant.log"
+    ORDER BY ts DESC LIMIT 30;" > "$EVIDENCE/08-denied-cross-tenant.txt" 2>/dev/null; then
+    cat "$EVIDENCE/08-denied-cross-tenant.txt"
     psql_available=1
   elif command -v psql >/dev/null 2>&1; then
     psql "${DATABASE_URL:-postgres://mainspot:mainspot_dev_password@localhost:5432/mainspot}" -c "
       SELECT event_id, tenant_id, actor_id, action, resource, request_id, decision, result
-      FROM audit_event WHERE decision='deny' ORDER BY ts DESC LIMIT 30;" | tee_file "$EVIDENCE/08-denied-cross-tenant.log"
+      FROM audit_event WHERE decision='deny' ORDER BY ts DESC LIMIT 30;" | tee_file "$EVIDENCE/08-denied-cross-tenant.txt"
     psql_available=1
   fi
   if [ "$psql_available" = "0" ]; then
-    echo "(no psql available; denied events are captured in 06-integration-tests.txt and audit export)" >> "$EVIDENCE/08-denied-cross-tenant.log"
+    echo "(no psql available; denied events are captured in 06-integration-tests.txt and audit export)" >> "$EVIDENCE/08-denied-cross-tenant.txt"
   fi
 }
 

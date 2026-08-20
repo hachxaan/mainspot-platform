@@ -19,9 +19,15 @@ after(async () => {
 });
 
 test('AC-009 smoke: health + all three roles can log in and see their context', async () => {
-  const health = await api(t.baseUrl, '/health');
-  assert.equal(health.status, 200);
-  assert.equal(health.body.increment, 'INC-001');
+  const healthRes = await fetch(`${t.baseUrl}/health`);
+  assert.equal(healthRes.status, 200);
+  const health = (await healthRes.json()) as { increment?: string };
+  assert.equal(health.increment, 'INC-001');
+  // IR-13: security headers present even on public endpoints.
+  assert.equal(healthRes.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(healthRes.headers.get('x-frame-options'), 'DENY');
+  assert.ok((healthRes.headers.get('content-security-policy') ?? '').includes("default-src 'self'"));
+  assert.ok(healthRes.headers.get('strict-transport-security')?.startsWith('max-age='));
 
   for (const profile of [
     { who: 'admin', creds: SEED.a.admin, role: 'administration' },
@@ -84,4 +90,24 @@ test('AC-009 smoke: logout revokes the session (rollback of access path enabled)
   const meAfterLogout = await api(t.baseUrl, '/api/backoffice/me', { headers: authHeaders(admin.token) });
   assert.equal(meAfterLogout.status, 401, 'revoked token must be rejected');
   console.log('TEST_PASS AC-009 smoke: revoked session rejected (fail-closed)');
+});
+
+test('IR-04 smoke: UI logout path (/api/auth/logout) revokes the session in DB', async () => {
+  const { token } = await login(t.baseUrl, SEED.a.ops.login, SEED.a.ops.password, SEED.a.tenant);
+  // Exact request the panel UI performs on "Salir" (see src/api/ui.ts).
+  const logout = await fetch(`${t.baseUrl}/api/auth/logout`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  });
+  assert.equal(logout.status, 200);
+  const revoked = await t.pool.query<{ n: string }>(
+    `SELECT count(*) AS n FROM session_context sc
+     JOIN internal_user u ON u.user_id = sc.user_id
+     WHERE u.login = $1 AND sc.tenant_id = $2 AND sc.revoked_at IS NOT NULL`,
+    [SEED.a.ops.login, SEED.a.tenant],
+  );
+  assert.ok(Number(revoked.rows[0]?.n ?? 0) >= 1, 'session must be revoked in DB after UI logout');
+  const meAfter = await api(t.baseUrl, '/api/backoffice/me', { headers: authHeaders(token) });
+  assert.equal(meAfter.status, 401, 'token from a revoked session must be rejected');
+  console.log('TEST_PASS IR-04 UI logout path revokes session in DB (token -> 401)');
 });

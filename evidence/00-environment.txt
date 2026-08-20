@@ -1,10 +1,9 @@
-run: 2026-08-20T05:14:47Z
+run: 2026-08-20T05:36:31Z
 node: v24.16.0
 npm:  11.13.0
 docker: Docker version 29.5.2, build 79eb04c
 docker compose: Docker Compose version v5.1.4
-git: dc9a89d
+git: e930dec
  M evidence/00-environment.txt
  M evidence/00-run-meta.txt
- M migrations/0002_seed.sql
- M tests/integration/rbac-context.test.ts
+ M evidence/rollback-report.md

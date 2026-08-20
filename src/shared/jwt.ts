@@ -56,6 +56,18 @@ export function verifySessionToken(token: string, secret: string): JwtClaims {
   if (parts.length !== 3) throw new JwtError('malformed token');
   const [header, payload, sig] = parts as [string, string, string];
 
+  // IR-13: pin the algorithm — accept HS256 only (rejects 'none' and any other
+  // alg even if the signature check below would not catch it).
+  let headerObj: { alg?: unknown; typ?: unknown };
+  try {
+    headerObj = JSON.parse(b64urlDecode(header).toString('utf8')) as { alg?: unknown; typ?: unknown };
+  } catch {
+    throw new JwtError('invalid header encoding');
+  }
+  if (headerObj.alg !== 'HS256') {
+    throw new JwtError(`unsupported algorithm: ${String(headerObj.alg)} (only HS256 is accepted)`);
+  }
+
   const expectedSig = signPayload(`${header}.${payload}`, secret);
 
   let actual: Buffer;

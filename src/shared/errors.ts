@@ -37,3 +37,13 @@ export class AppError extends Error {
 export function denied(code: DenyCode, userMessage: string, status = 403): AppError {
   return new AppError(status, code, userMessage);
 }
+
+/** True when the error is a PostgreSQL unique violation (SQLSTATE 23505). */
+export function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: unknown }).code === '23505'
+  );
+}

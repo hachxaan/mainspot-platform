@@ -219,7 +219,8 @@ async function loadAudit() {
   }
 }
 document.getElementById('logoutBtn').addEventListener('click', async () => {
-  await api('/logout', { method: 'POST' }).catch(() => undefined);
+  // IR-04: the UI must call the real logout route (revokes the session).
+  await fetch('/api/auth/logout', { method: 'POST', headers }).catch(() => undefined);
   sessionStorage.removeItem('mainspot.token');
   window.location.href = '/';
 });

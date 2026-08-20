@@ -5,7 +5,7 @@
 
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { loadConfig } from '../src/shared/config.ts';
+import { loadConfigTool } from '../src/shared/config.ts';
 import { log } from '../src/shared/logger.ts';
 import { withRequestContext } from '../src/shared/context.ts';
 import { ACTIONS, ROLE_LABELS, ACTION_LABELS, MATRIX, toMatrixEntries } from '../src/rbac/matrix.ts';
@@ -39,7 +39,7 @@ export function renderMatrixMarkdown(): string {
 
 async function main(): Promise<void> {
   await withRequestContext(async () => {
-    const cfg = loadConfig();
+    const cfg = loadConfigTool();
     const md = renderMatrixMarkdown();
     process.stdout.write(md + '\n');
     const out = path.join(cfg.evidenceDir, 'permission-matrix.md');

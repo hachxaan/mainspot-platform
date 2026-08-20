@@ -8,7 +8,7 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import pg from 'pg';
-import { loadConfig } from '../src/shared/config.ts';
+import { loadConfigTool } from '../src/shared/config.ts';
 import { log } from '../src/shared/logger.ts';
 import { withRequestContext } from '../src/shared/context.ts';
 import { AuditQuery } from '../src/audit/query.ts';
@@ -30,7 +30,7 @@ function parseArgs(argv: string[]): { tenant: string; requestId?: string; out?: 
 
 async function main(): Promise<void> {
   await withRequestContext(async () => {
-    const cfg = loadConfig();
+    const cfg = loadConfigTool();
     const { tenant, requestId, out, url } = parseArgs(process.argv.slice(2));
     const connectionString = url ?? cfg.databaseUrl;
     const pool = new Pool({ connectionString, max: 2 });

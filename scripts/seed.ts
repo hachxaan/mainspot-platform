@@ -6,7 +6,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import pg from 'pg';
-import { loadConfig } from '../src/shared/config.ts';
+import { loadConfigTool } from '../src/shared/config.ts';
 import { log } from '../src/shared/logger.ts';
 import { withRequestContext } from '../src/shared/context.ts';
 
@@ -14,7 +14,7 @@ const { Pool } = pg;
 
 async function main(): Promise<void> {
   await withRequestContext(async () => {
-    const cfg = loadConfig();
+    const cfg = loadConfigTool();
     const sql = await readFile(path.resolve('migrations/0002_seed.sql'), 'utf8');
     const pool = new Pool({ connectionString: cfg.databaseUrl, max: 2 });
     try {

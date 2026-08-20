@@ -25,11 +25,15 @@ CREATE TABLE IF NOT EXISTS tenant_context (
 );
 
 -- Internal backoffice user (REQ-010, DEC-009).
+-- tenant_id (nullable in 0001, enforced NOT NULL by 0003): in v1 an internal
+-- account belongs to exactly one tenant; the compound UNIQUE (login, tenant)
+-- is created by 0003 (replaces the old global UNIQUE on login — IR-05).
 CREATE TABLE IF NOT EXISTS internal_user (
   user_id       TEXT PRIMARY KEY,
   display_name  TEXT NOT NULL,
-  login         TEXT NOT NULL UNIQUE, -- SENSITIVE: stored, never emitted to audit/logs
+  login         TEXT NOT NULL UNIQUE, -- v1: global UNIQUE removed by 0003
   status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended')),
+  tenant_id     TEXT REFERENCES client(client_id),
   password_hash TEXT NOT NULL,        -- SENSITIVE: pgcrypto bcrypt hash; never emitted to audit/logs
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()

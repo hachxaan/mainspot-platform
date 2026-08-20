@@ -39,3 +39,12 @@ test('unit: extractBearerToken parses Authorization header', () => {
   assert.equal(extractBearerToken(undefined), null);
   assert.equal(extractBearerToken('Basic abc'), null);
 });
+
+test('IR-13 unit: algorithm is pinned to HS256 (none/others rejected)', () => {
+  const clear = (c: { alg: string; typ: string }) => Buffer.from(JSON.stringify(c)).toString('base64url');
+  const p = Buffer.from(JSON.stringify({ sid: 's', uid: 'u', tid: 't', rol: 'administration', exp: Math.floor(Date.now() / 1000) + 60 })).toString('base64url');
+  const noneToken = `${clear({ alg: 'none', typ: 'JWT' })}.${p}.`;
+  assert.throws(() => verifySessionToken(noneToken, SECRET), JwtError);
+  const hs512Token = `${clear({ alg: 'HS512', typ: 'JWT' })}.${p}.${'x'}`;
+  assert.throws(() => verifySessionToken(hs512Token, SECRET), /unsupported algorithm/);
+});

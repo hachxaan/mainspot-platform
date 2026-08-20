@@ -1,6 +1,6 @@
 # Matriz de permisos del backoffice (INC-001)
 
-> Generado el 2026-08-20T05:14:59.088Z desde `src/rbac/matrix.ts` (fuente de verdad).
+> Generado el 2026-08-20T05:36:32.586Z desde `src/rbac/matrix.ts` (fuente de verdad).
 > Regla fail-closed: toda acción no listada es **deny**; el contexto de cliente siempre aplica sobre el rol.
 
 | Acción (recurso \* = contexto general) | Administración | Operación | Solo lectura |

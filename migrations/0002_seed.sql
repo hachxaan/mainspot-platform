@@ -57,15 +57,15 @@ INSERT INTO role_permission (role_id, permission_id) VALUES
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- Internal users (SIMULATED credentials; see README "Credenciales de prueba")
-INSERT INTO internal_user (user_id, display_name, login, status, password_hash) VALUES
+INSERT INTO internal_user (user_id, display_name, login, status, tenant_id, password_hash) VALUES
   -- tenant A
-  ('user_a_admin',  'Ana Administradora',  'admin.a@example.com',  'active', crypt('Simula-A-Admin-2026!',   gen_salt('bf', 10))),
-  ('user_a_ops',    'Óscar Operador',      'ops.a@example.com',    'active', crypt('Simula-A-Ops-2026!',     gen_salt('bf', 10))),
-  ('user_a_reader', 'Rosa Lectura',        'reader.a@example.com', 'active', crypt('Simula-A-Reader-2026!',  gen_salt('bf', 10))),
+  ('user_a_admin',  'Ana Administradora',  'admin.a@example.com',  'active', 'client_a', crypt('Simula-A-Admin-2026!',   gen_salt('bf', 10))),
+  ('user_a_ops',    'Óscar Operador',      'ops.a@example.com',    'active', 'client_a', crypt('Simula-A-Ops-2026!',     gen_salt('bf', 10))),
+  ('user_a_reader', 'Rosa Lectura',        'reader.a@example.com', 'active', 'client_a', crypt('Simula-A-Reader-2026!',  gen_salt('bf', 10))),
   -- tenant B
-  ('user_b_admin',  'Bruno Administrador', 'admin.b@example.com',  'active', crypt('Simula-B-Admin-2026!',   gen_salt('bf', 10))),
-  ('user_b_ops',    'Berta Operadora',     'ops.b@example.com',    'active', crypt('Simula-B-Ops-2026!',     gen_salt('bf', 10))),
-  ('user_b_reader', 'Beto Lectura',        'reader.b@example.com', 'active', crypt('Simula-B-Reader-2026!',  gen_salt('bf', 10)))
+  ('user_b_admin',  'Bruno Administrador', 'admin.b@example.com',  'active', 'client_b', crypt('Simula-B-Admin-2026!',   gen_salt('bf', 10))),
+  ('user_b_ops',    'Berta Operadora',     'ops.b@example.com',    'active', 'client_b', crypt('Simula-B-Ops-2026!',     gen_salt('bf', 10))),
+  ('user_b_reader', 'Beto Lectura',        'reader.b@example.com', 'active', 'client_b', crypt('Simula-B-Reader-2026!',  gen_salt('bf', 10)))
 ON CONFLICT (user_id) DO NOTHING;
 
 -- Role activations per tenant

@@ -14,7 +14,7 @@ export const TEST_URL =
   process.env.TEST_DATABASE_URL ?? 'postgres://mainspot:mainspot_dev_password@localhost:5432/mainspot_test';
 
 export const TEST_CONFIG = {
-  ...loadConfig(),
+  ...loadConfig({}, { requireJwtSecret: false }),
   databaseUrl: TEST_URL,
   testDatabaseUrl: TEST_URL,
   jwtSecret: 'test-secret-for-verification-only',

@@ -11,13 +11,14 @@ import { Router, type Request, type Response } from 'express';
 import type { Pool } from 'pg';
 import type { AppConfig } from '../shared/config.ts';
 import { getRequestContext, type SessionSummary } from '../shared/context.ts';
-import { AppError, DENY_CODES } from '../shared/errors.ts';
+import { AppError, DENY_CODES, isUniqueViolation } from '../shared/errors.ts';
 import { AuditSink, auditedOperation } from '../audit/sink.ts';
 import { AuditQuery } from '../audit/query.ts';
 import { IdentityRepository } from '../identity/repository.ts';
 import { ROLE_NAMES, type RoleName } from '../identity/entities.ts';
 import { MATRIX, ROLE_LABELS } from '../rbac/matrix.ts';
 import { DemoActionRepository, TenantDataRepository, type DemoActionRow } from '../boundary/datasource.ts';
+import { LoginRateLimiter } from '../boundary/ratelimit.ts';
 import { SessionResolver, UNKNOWN_ACTOR_ID } from '../boundary/session.ts';
 import { type LooseRequest, requirePermission } from '../boundary/middleware.ts';
 import { signSessionToken } from '../shared/jwt.ts';
@@ -31,6 +32,7 @@ interface RouteDeps {
   sessionResolver: SessionResolver;
   dataRepo: TenantDataRepository;
   actionRepo: DemoActionRepository;
+  loginRateLimiter: LoginRateLimiter;
 }
 
 function rcOf(lreq: LooseRequest): { request_id: string; session: SessionSummary | null } {
@@ -65,6 +67,16 @@ export function authRouter(deps: RouteDeps): Router {
       });
     }
 
+    // IR-06: rate limit by IP + login (fail-closed on lockout).
+    const ip = req.ip ?? 'unknown';
+    if (!deps.loginRateLimiter.allow(ip, login)) {
+      const retryAfter = Math.ceil(deps.loginRateLimiter.lockRemainingMs(ip, login) / 1000);
+      res.set('Retry-After', String(Math.max(1, retryAfter)));
+      return res.status(429).json({
+        error: { code: 'too_many_attempts', message: 'Hubo demasiados intentos de ingreso. Espera un momento y vuelve a intentarlo.' },
+      });
+    }
+
     const user = await deps.identityRepo.findLoginInTenant(login, tenant_id);
     if (!user) {
       await deps.sink.write({
@@ -77,6 +89,7 @@ export function authRouter(deps: RouteDeps): Router {
         decision: 'deny',
         result: 'invalid_credentials',
       });
+      deps.loginRateLimiter.recordFailure(ip, login);
       return res.status(401).json({ error: { code: 'invalid_credentials', message: 'El usuario, la contraseña o el cliente no coinciden. Revisa los datos o consulta a tu administrador.' } });
     }
 
@@ -92,6 +105,7 @@ export function authRouter(deps: RouteDeps): Router {
         decision: 'deny',
         result: 'invalid_credentials',
       });
+      deps.loginRateLimiter.recordFailure(ip, login);
       return res.status(401).json({ error: { code: 'invalid_credentials', message: 'El usuario, la contraseña o el cliente no coinciden. Revisa los datos o consulta a tu administrador.' } });
     }
 
@@ -108,6 +122,7 @@ export function authRouter(deps: RouteDeps): Router {
         decision: 'deny',
         result: 'invalid_role',
       });
+      deps.loginRateLimiter.recordFailure(ip, login);
       return res.status(403).json({ error: { code: 'invalid_role', message: 'Tu usuario no tiene un perfil habilitado para este cliente. Consulta a tu administrador.' } });
     }
 
@@ -142,6 +157,7 @@ export function authRouter(deps: RouteDeps): Router {
       result: 'success',
     });
     log.info('auth.login.ok', 'user logged in', { tenant_id, actor_id: user.user_id, actor_role: role });
+    deps.loginRateLimiter.recordSuccess(ip, login);
 
     return res.json({
       token,
@@ -254,14 +270,18 @@ export function backofficeRouter(deps: RouteDeps): Router {
     return res.status(201).json({ data: created });
   }));
 
-  // data.read — scoped read; cross-tenant => deny + audit (AC-002 negative)
+  // data.read — scoped read. ANTI-ORACLE (IR-01): an id that does not exist and
+  // an id that exists in ANOTHER tenant get the IDENTICAL response (404 with the
+  // same body) and the IDENTICAL audit event (allow/not_found). The
+  // found/in_tenant marker is used internally to decide, never to differentiate
+  // HTTP status or audit outcome.
   router.get('/data/:id', requirePermission('data.read', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
     const id = req.params.id as string;
     const found = await deps.dataRepo.findScoped(session, id);
-    if (!found.found) {
+    if (!found.found || !found.in_tenant) {
       await deps.sink.write({
         tenant_id: session.tenant_id,
         actor_id: session.user_id,
@@ -273,11 +293,6 @@ export function backofficeRouter(deps: RouteDeps): Router {
         result: 'not_found',
       });
       return res.status(404).json({ error: { code: 'not_found', message: 'No se encontró el dato solicitado.' } });
-    }
-    if (!found.in_tenant) {
-      const err = new AppError(403, DENY_CODES.TENANT_BOUNDARY, 'La operación que intentas no está permitida: el dato pertenece a otro cliente.');
-      err.audited = true;
-      return deny(deps.pool, res, lreq, rc.request_id, err, req.originalUrl ?? req.path);
     }
     await deps.sink.write({
       tenant_id: session.tenant_id,
@@ -364,22 +379,45 @@ export function backofficeRouter(deps: RouteDeps): Router {
     if (password.length < 8) {
       return res.status(400).json({ error: { code: 'validation_error', message: 'La contraseña debe tener al menos 8 caracteres.' } });
     }
-    const user = await auditedOperation(deps.sink, deps.pool, {
-      request_id: rc.request_id,
-      tenant_id: session.tenant_id,
-      actor_id: session.user_id,
-      actor_role: session.role_name,
-      action: 'user.manage',
-      resource: `users/${login}`,
-    }, (db) => deps.identityRepo.createUserWithRole({
-      user_id: `user_${randomUUID()}`,
-      display_name,
-      login,
-      password,
-      role: role as RoleName,
-      tenant_id: session.tenant_id,
-    }, db));
-    return res.status(201).json({ user: { user_id: user.user_id, display_name: user.display_name, status: user.status } });
+    // IR-03: audit resource uses the generated user_id, NEVER the login.
+    const newUserId = `user_${randomUUID()}`;
+    try {
+      const user = await auditedOperation(deps.sink, deps.pool, {
+        request_id: rc.request_id,
+        tenant_id: session.tenant_id,
+        actor_id: session.user_id,
+        actor_role: session.role_name,
+        action: 'user.manage',
+        resource: `users/${newUserId}`,
+      }, (db) => deps.identityRepo.createUserWithRole({
+        user_id: newUserId,
+        display_name,
+        login,
+        password,
+        role: role as RoleName,
+        tenant_id: session.tenant_id,
+      }, db));
+      return res.status(201).json({ user: { user_id: user.user_id, display_name: user.display_name, status: user.status } });
+    } catch (err) {
+      // IR-05: map duplicate-login constraint violations to a clear 409
+      // without leaking PostgreSQL internals or the login value.
+      if (isUniqueViolation(err)) {
+        await deps.sink.write({
+          tenant_id: session.tenant_id,
+          actor_id: session.user_id,
+          actor_role: session.role_name,
+          action: 'user.manage',
+          resource: `users/${newUserId}`,
+          request_id: rc.request_id,
+          decision: 'deny',
+          result: 'duplicate_login',
+        });
+        return res.status(409).json({
+          error: { code: 'duplicate_login', message: 'Ya existe un usuario con ese acceso para este cliente. Usa otro nombre de usuario.' },
+        });
+      }
+      throw err;
+    }
   }));
 
   // Demo actions for AC-003 (create/approve/reject/execute) — NOT INC-002
@@ -422,11 +460,15 @@ async function decideAction(deps: RouteDeps, req: Request, res: Response, verb: 
   const session = sessionOf(lreq);
   const id = req.params.id as string;
   const found = await deps.actionRepo.findScoped(session, id);
-  if (!found.found) {
-    return deny(deps.pool, res, lreq, rc.request_id, new AppError(404, DENY_CODES.NOT_FOUND, 'No se encontró la operación solicitada.'), req.originalUrl ?? req.path);
-  }
-  if (!found.in_tenant) {
-    return deny(deps.pool, res, lreq, rc.request_id, new AppError(403, DENY_CODES.TENANT_BOUNDARY, 'La operación pertenece a otro cliente y no tienes acceso.'), req.originalUrl ?? req.path);
+  // ANTI-ORACLE (IR-01): nonexistent and other-tenant ids get the SAME 404,
+  // same body and same audit event (allow/not_found). The marker is internal.
+  if (!found.found || !found.in_tenant) {
+    await deps.sink.write({
+      tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
+      action: actionByVerb[verb], resource: `demo_action/${id}`, request_id: rc.request_id,
+      decision: 'allow', result: 'not_found',
+    });
+    return res.status(404).json({ error: { code: 'not_found', message: 'No se encontró la operación solicitada.' } });
   }
   const row = found.row as DemoActionRow;
   const nextStatus = nextStatusByVerb[verb];

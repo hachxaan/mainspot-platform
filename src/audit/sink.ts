@@ -3,6 +3,10 @@
  * and best-effort for reads (contract: reliable or fail-closed for sensitive).
  * Writes go through the SAME database connection/transaction as the action so
  * a sensitive action and its event commit or roll back together.
+ *
+ * Failure events are written with decision='deny' and a GENERIC result
+ * ('failed') — never with raw error messages (which can carry logins or other
+ * personal data into the audit store).
  */
 
 import type { Pool, PoolClient } from 'pg';
@@ -79,10 +83,18 @@ export async function auditedOperation<T>(
       // Already audited as deny (e.g. nested permission failure); do not double-write.
       throw err;
     }
-    const msg = (err as Error).message ?? 'unknown';
-    await sink
-      .write({ ...input, decision: 'allow', result: `failed:${msg}` })
-      .catch(() => undefined);
+    // Failure event after rollback: decision=deny, generic result, WITHOUT the
+    // raw error message (never logins/emails/internal details in the audit
+    // store). If THIS write fails, surface it loudly (fail-closed intent) and
+    // rethrow the original error — no silent swallow.
+    try {
+      await sink.write({ ...input, decision: 'deny', result: 'failed' });
+    } catch (auditErr) {
+      log.error('audit.failure_event_write_failed', 'could not write failure audit event', {
+        error: (auditErr as Error).message,
+        action: input.action,
+      });
+    }
     throw err;
   } finally {
     client.release();

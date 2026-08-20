@@ -7,7 +7,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import pg from 'pg';
-import { loadConfig } from '../src/shared/config.ts';
+import { loadConfigTool } from '../src/shared/config.ts';
 import { log } from '../src/shared/logger.ts';
 import { withRequestContext } from '../src/shared/context.ts';
 
@@ -50,7 +50,7 @@ export async function applyMigrations(connectionString: string, dir = path.resol
 
 async function main(): Promise<void> {
   await withRequestContext(async () => {
-    const cfg = loadConfig();
+    const cfg = loadConfigTool();
     const result = await applyMigrations(cfg.databaseUrl);
     log.info('migrate.done', `applied=${result.applied.join(',') || 'none'} skipped=${result.skipped.join(',') || 'none'}`, {});
     if (result.applied.length === 0) {

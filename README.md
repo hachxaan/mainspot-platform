@@ -35,11 +35,12 @@ mainspot-platform/
 - Node.js **≥ 24** (usa type-stripping nativo; `node -v` debe mostrar `v24.x`)
 - npm ≥ 10 (o pnpm)
 - Docker + Docker Compose (para PostgreSQL local)
-- No se necesita `.env` para el modo dev: los defaults de `docker-compose.yml` y `src/shared/config.ts` coinciden.
+- **JWT_SECRET** (requerido por el app/`npm start`, ver §11; los scripts de BD y tests no lo necesitan)
 
 ```bash
-cp .env.example .env   # opcional: ajusta valores. NUNCA commits .env (ya en .gitignore)
-npm install            # instala dependencias (express + pg)
+cp .env.example .env          # NUNCA commits .env. Ajusta valores; JWT_SECRET es OBLIGATORIO para el app.
+#   Genera el secreto:  JWT_SECRET=$(openssl rand -hex 32)  (añádelo a .env)
+npm install                   # instala dependencias (express + pg)
 ```
 
 ## 3. Setup de la base de datos
@@ -49,7 +50,8 @@ npm run db:up        # docker compose up -d postgres  (crea la BD 'mainspot')
 npm run db:setup     # asegura la BD, aplica migraciones + seed (idempotente)
 ```
 
-- Migraciones: `migrations/0001_schema.sql` (client, tenant_context, internal_user, role, permission, role_permission, user_role, session_context, client_data, demo_action, audit_event) y `migrations/0002_seed.sql` (2 clients `client_a` / `client_b`, 3 roles, 6 usuarios, datos de prueba).
+- Migraciones: `migrations/0001_schema.sql` (client, tenant_context, internal_user, role, permission, role_permission, user_role, session_context, client_data, demo_action, audit_event), `migrations/0002_seed.sql` (2 clients `client_a` / `client_b`, 3 roles, 6 usuarios, datos de prueba) y `migrations/0003_login_unique_per_tenant.sql` (IR-05: quita el UNIQUE global de `internal_user.login`, añade `tenant_id` a `internal_user` backfilled desde `user_role` y crea el UNIQUE compuesto `(lower(login), tenant_id)`).
+- **Procedimiento de regeneración de BD dev/test (IR-05)**: las migraciones 0001→0003 son in-place; para regenerar desde cero: `docker compose down -v && docker compose up -d postgres && npm run db:setup` (dev) y `npm run test:integration` recrea `mainspot_test` sola. No hay datos reales fuera del seed en este piloto.
 - El runner registra archivos aplicados en `schema_migrations` y usa advisory lock (replay seguro).
 - El seed es idempotente (`ON CONFLICT DO NOTHING`).
 
@@ -130,10 +132,10 @@ Regla `06-ACCEPTANCE-EVIDENCE.md`: la evidencia no se basa en afirmaciones — e
 
 Procedimiento ejecutable (también documentado en `evidence/rollback-report.md` tras `npm run rollback:simulate`):
 
-1. **Deshabilitar paths nuevos**: revocar todas las sesiones activas (`npm run rollback:simulate` hace `UPDATE session_context SET revoked_at=now()`); ningún token previo sigue siendo válido.
+1. **Deshabilitar paths nuevos**: revocar todas las sesiones activas (`npm run rollback:simulate` hace `UPDATE session_context SET revoked_at=now()`); ningún token previo sigue siendo válido (el simulador verifica **revocación real de una sesión válida**, IR-12).
 2. **Revertir configuración de roles/permisos**: re-sincronizar `role_permission` desde la matriz de código (idempotente). Para revertir **código** (matriz o endpoints): `git revert` del commit de este incremento o checkout del commit anterior — la matriz vive en `src/rbac/matrix.ts`.
 3. **Preservar auditoría**: no se borra ningún `audit_event`; el simulador verifica conteo antes/después (PRESERVADO).
-4. **Verificar que no queda acceso cruzado**: re-ejecutar el test negativo de 2 tenants (`npm run test:integration`) y revolver sesiones revocadas ⇒ deny.
+4. **Verificar que no queda acceso cruzado**: re-ejecutar el test negativo de 2 tenants (`npm run test:integration`) y resolver sesiones revocadas ⇒ deny.
 5. **Documentar** el reporte como evidencia.
 
 > Riesgo explícito (para Reviewer): si un path nuevo deshabilitado aquí ya lo usara INC-002 en el futuro, la coordinación es obligatoria (fuera de alcance de INC-001).
@@ -143,7 +145,9 @@ Procedimiento ejecutable (también documentado en `evidence/rollback-report.md` 
 | AC | Dónde se cumple | Evidencia |
 |---|---|---|
 | **AC-001** Roles y contexto | `src/rbac/matrix.ts` (matriz), `src/rbac/engine.ts` (motor), `src/boundary/middleware.ts` + `src/api/routes.ts` (chequeo por contexto), `src/api/ui.ts` (perfil visible) | `tests/unit/rbac.engine.test.ts`, `tests/integration/rbac-context.test.ts`, `permission-matrix.md`, salida de denegaciones por rol |
-| **AC-002** Aislamiento por cliente | `src/boundary/session.ts` (resolución ANTES del acceso), `src/boundary/datasource.ts` (scope `tenant_id` forzado en SQL), middleware fail-closed, seed 2 tenants | `tests/integration/isolation.test.ts` (positivo + 4 negativos), `08-denied-cross-tenant.log` |
+| **AC-002** Aislamiento por cliente | `src/boundary/session.ts` (resolución ANTES del acceso), `src/boundary/datasource.ts` (scope `tenant_id` forzado en SQL), middleware fail-closed, seed 2 tenants | `tests/integration/isolation.test.ts` (positivo + negativos), `08-denied-cross-tenant.txt` |
+
+> Anti-oráculo (IR-01): los recursos inexistentes y los de otro tenant responden 404 idéntico (mismo status, body y evento audit), para no filtrar existencia. Verificado por `IR-01 anti-oracle` en `tests/integration/isolation.test.ts`.
 | **AC-003** Auditoría mínima | `src/audit/event.ts` (esquema), `src/audit/sink.ts` (sink fail-closed), `src/audit/query.ts` (correlación `request_id`) | `tests/integration/audit-correlation.test.ts`, `audit-export-*.json` |
 | **AC-008** UX no técnica | `src/api/ui.ts` (lenguaje claro, labels, `role=alert`), mensajes de error en `src/shared/errors.ts` / rutas | `tests/smoke/smoke.test.ts` (señales UX), `docs/UX-CHECKLIST.md` |
 | **AC-009** Evidencia y rollback | `scripts/capture-evidence.sh`, `scripts/simulate-rollback.ts`, este README | `evidence/*`, `rollback-report.md` |
@@ -172,15 +176,18 @@ No se implementa ningún consumidor (INC-002 fuera de alcance). El stub de consu
 | Acción demo `operation.create` | añadida a la matriz para cubrir AC-003 | TENTATIVA (design §5 permite definir nombres en implementación) |
 | Retención de auditoría | sin borrado en dev; pendiente decisión humana (PEND-011) | PENDIENTE |
 | Export de auditoría por `client_a` CLI | `scripts/export-audit.ts` | — |
+| Cuenta interna por tenant (`IR-05`) | modelada con `internal_user.tenant_id` + UNIQUE compuesto `(lower(login), tenant_id)` en `0003` | TENTATIVA v1 |
 
 ## 11. Seguridad y notas operativas
 
 - **Fail-closed**: sin contexto de tenant/actor o chequeo fallido ⇒ deny siempre; nunca default-allow.
-- **Auditoría sin secretos**: el sink y el logger rechazan campos con nombre sensible (`password`, `token`, …); el export se valida con test SEC.
+- **Auditoría sin secretos**: el sink y el logger rechazan campos con nombre sensible (`password`, `token`, …); los eventos de fallo usan `decision='deny'`/`result='failed'` **genérico (sin mensajes crudos de error que puedan contener logins)**; el export se valida con test SEC.
 - **Privilegio mínimo**: `read_only` no muta; `operation` no gestiona usuarios ni ve auditoría.
 - **Canales no son identidad** (`RULE-001`, `DEC-006`): no hay asociación canal→cliente en INC-001.
-- **JWT_SECRET**: en producción el servidor se niega a arrancar con el default dev. Gestionar secreto real por secret manager (fuera de alcance).
-- El `.env.example` es la referencia; **nunca** subir `.env` con secretos reales.
+- **JWT_SECRET (IR-02)**: **requerido** en toda env distinta de `test`; no existe default en código ni en compose, y los placeholders conocidos son rechazados al arrancar (fail-fast). Generar con `openssl rand -hex 32` y proveer via `.env`/secret manager. El contenedor `app` se niega a arrancar sin él (`docker compose up -d postgres` sigue funcionando para la BD dev local).
+- **Rate limiting de login (IR-06)**: intentos fallidos limitados por IP+login (5 fallos / ventana 60s, luego bloqueo 60s con `Retry-After`; acierto resetea). Implementación in-memory por instancia: en despliegues multi-instancia se requiere store compartido antes de exponer login. Las cuentas seed son SOLO dev y deben rotarse antes de exponer el panel (gate T-019).
+- **Auditoría de denegaciones (IR-11)**: los denies de acceso a recursos protegidos se persisten con el `request_id` de la solicitud. EXCEPCIÓN declarada: la escritura del evento de denegación es **best-effort** (si falla, se loguea `warn` y se responde el 4xx igual — nunca se bloquea la respuesta por un problema de auditoría); las acciones sensibles SÍ fallan-cerrado (Guerra: la operación y su evento se revierten juntas).
+- El `.env.example` es la referencia; incluye solo placeholders y **nunca** un secreto real; **nunca** subir `.env`.
 
 ## 12. Out of scope (recordatorio)
 

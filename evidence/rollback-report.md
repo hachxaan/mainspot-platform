@@ -1,12 +1,12 @@
 # Reporte de rollback simulado — INC-001 (AC-009)
 
-> Fecha: 2026-08-20T05:14:54.056Z
+> Fecha: 2026-08-20T05:36:38.740Z
 > Procedimiento del contrato INC-001 §Rollback y PLAN-INC-001 §11.
 
 ## 0. Estado previo (snapshot)
 
 - base de datos objetivo: mainspot_test
-- eventos de auditoría: 12
+- eventos de auditoría: 15
 - sesiones activas: 4
 - filas role_permission: 15
 
@@ -22,7 +22,7 @@
 
 ## 3. Preservar datos de auditoría
 
-- eventos antes: 12; después: 12
+- eventos antes: 15; después: 15
 - resultado: PRESERVADO (no se borró ningún evento)
 
 ## 4. Verificar que no queda acceso cruzado
@@ -30,6 +30,11 @@
 - request sin token -> no_token (fail-closed: OK)
 - token inválido/revocado -> invalid_token (fail-closed: OK)
 - lectura de dato de otro cliente con contexto A -> found=true, in_tenant=false (esperado found=true, in_tenant=false => deny) OK: deny, sin exponer datos
+
+## 4b. Revocación real de sesión válida (IR-12)
+
+- sesión creada y firmada: resolvible OK (antes de revocar)
+- tras revocar la misma sesión (token intacto): reason=session_revoked, session=null -> OK: revocación efectiva (equivalente HTTP 401)
 
 ## 5. Estado documentado post-rollback
 

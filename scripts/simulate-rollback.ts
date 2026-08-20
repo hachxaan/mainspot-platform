@@ -12,13 +12,14 @@
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import pg from 'pg';
-import { loadConfig } from '../src/shared/config.ts';
+import { loadConfigTool } from '../src/shared/config.ts';
 import { log } from '../src/shared/logger.ts';
 import { withRequestContext } from '../src/shared/context.ts';
 import { IdentityRepository } from '../src/identity/repository.ts';
 import { RbacRepository } from '../src/rbac/repository.ts';
 import { TenantDataRepository } from '../src/boundary/datasource.ts';
 import { SessionResolver } from '../src/boundary/session.ts';
+import { signSessionToken } from '../src/shared/jwt.ts';
 import { toMatrixEntries } from '../src/rbac/matrix.ts';
 
 const { Pool } = pg;
@@ -30,7 +31,7 @@ interface ReportSection {
 
 async function main(): Promise<void> {
   await withRequestContext(async () => {
-    const cfg = loadConfig();
+    const cfg = loadConfigTool();
     const urlFlag = process.argv.findIndex((a) => a === '--url');
     const connectionString = urlFlag !== -1 && process.argv[urlFlag + 1] ? (process.argv[urlFlag + 1] as string) : cfg.databaseUrl;
     const pool = new Pool({ connectionString, max: 3 });
@@ -112,6 +113,39 @@ async function main(): Promise<void> {
           `- token inválido/revocado -> ${revokedTokenCheck.reason} (fail-closed: ${revokedTokenCheck.session === null ? 'OK' : 'FALLO'})`,
           `- lectura de dato de otro cliente con contexto A -> found=${cross.found}, in_tenant=${cross.in_tenant} (esperado found=true, in_tenant=false => deny)` +
             (cross.in_tenant ? ' FALLO: se expuso dato de otro tenant' : ' OK: deny, sin exponer datos'),
+        ],
+      });
+
+      // IR-12: prove REAL revocation, not just invalid signatures: create a
+      // valid session, resolve it OK, revoke it, then resolve again -> denied.
+      // The secret below is a check-only literal (never used by the server).
+      const rev = { sid: `sess_rollback_rev_${Date.now()}`, secret: 'rollback-check-local-secret' };
+      await identityRepo.createSession({
+        session_id: rev.sid,
+        user_id: 'user_a_admin',
+        tenant_id: 'client_a',
+        role_id: 'administration',
+        permissions: [],
+        source: 'rollback-check',
+        issued_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+        revoked_at: null,
+      });
+      const revResolver = new SessionResolver(identityRepo, rev.secret);
+      const revToken = signSessionToken(
+        { sid: rev.sid, uid: 'user_a_admin', tid: 'client_a', rol: 'administration' },
+        rev.secret,
+        1,
+      );
+      const beforeRevoke = await revResolver.resolve(`Bearer ${revToken}`);
+      await identityRepo.revokeSession(rev.sid);
+      const afterRevoke = await revResolver.resolve(`Bearer ${revToken}`);
+      sections.push({
+        title: '4b. Revocación real de sesión válida (IR-12)',
+        lines: [
+          `- sesión creada y firmada: ${beforeRevoke.session ? 'resolvible OK (antes de revocar)' : 'FALLO: no resolvible antes de revocar'}`,
+          `- tras revocar la misma sesión (token intacto): reason=${afterRevoke.reason}, session=${afterRevoke.session === null ? 'null' : 'STILL VALID'}` +
+            (afterRevoke.session === null ? ' -> OK: revocación efectiva (equivalente HTTP 401)' : ' -> FALLO: token revocado sigue resolviendo'),
         ],
       });
 

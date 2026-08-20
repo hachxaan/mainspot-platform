@@ -7,11 +7,12 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import type { Pool } from 'pg';
 import { loadConfig, type AppConfig } from '../shared/config.ts';
 import { getPool } from '../db/pool.ts';
-import { AuditSink, auditedOperation } from '../audit/sink.ts';
+import { AuditSink } from '../audit/sink.ts';
 import { IdentityRepository } from '../identity/repository.ts';
 import { SessionResolver } from '../boundary/session.ts';
 import { requestContext, resolveSession, requireSession, rejectTenantOverride } from '../boundary/middleware.ts';
 import { TenantDataRepository, DemoActionRepository } from '../boundary/datasource.ts';
+import { LoginRateLimiter } from '../boundary/ratelimit.ts';
 import { authRouter, backofficeRouter } from './routes.ts';
 import { loginPageHtml, panelPageHtml, errorPageHtml } from './ui.ts';
 import { log } from '../shared/logger.ts';
@@ -25,6 +26,20 @@ export interface AppHandle {
   identityRepo: IdentityRepository;
 }
 
+/** IR-13: basic security headers (CSP baseline, HSTS, nosniff, frame guard). */
+export function securityHeaders(): (req: Request, res: Response, next: NextFunction) => void {
+  return (_req, res, next) => {
+    // The pilot UI is a single page with inline styles/scripts; CSP baseline
+    // keeps inline allowed but restricts origins to self + data: images.
+    res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'");
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    next();
+  };
+}
+
 export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): AppHandle {
   const config = overrides.config ?? loadConfig();
   const pool = overrides.pool ?? getPool({ connectionString: config.databaseUrl });
@@ -33,6 +48,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   const sessionResolver = new SessionResolver(identityRepo, config.jwtSecret);
   const dataRepo = new TenantDataRepository(pool);
   const actionRepo = new DemoActionRepository(pool);
+  const loginRateLimiter = new LoginRateLimiter(config.rateLimitMax, config.rateLimitWindowMs, config.rateLimitLockMs);
 
   const deps = {
     pool,
@@ -42,10 +58,12 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     sessionResolver,
     dataRepo,
     actionRepo,
+    loginRateLimiter,
   };
 
   const app = express();
   app.disable('x-powered-by');
+  app.use(securityHeaders());
   app.use(express.json({ limit: '100kb' }));
 
   // Correlation + structured access logs for every request.
