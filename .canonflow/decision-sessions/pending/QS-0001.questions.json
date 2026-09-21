@@ -1,0 +1,309 @@
+{
+  "schema_version": 2,
+  "session_label": "Cierre de decisiones TENTATIVA del piloto (INC-001..007)",
+  "title": "Cerrar las decisiones técnicas marcadas TENTATIVA que el canon no fija (README §15 / DR-0001 DI-0002)",
+  "generated_at": "2026-09-21T21:10:00Z",
+  "state": "PENDING",
+  "intervention_reason": "El piloto INC-001..007 quedó implementado con 17 decisiones marcadas TENTATIVA (README §15) que el canon v0.1 no fija (DR-0001 DI-0002). Para evolucionar la plataforma con canon confiable, el humano debe confirmar o corregir cada una; el silencio nunca aprueba (DEC-003).",
+  "affected_loop": "implementation_loop",
+  "decision_impact": "Cada confirmación promueve el elemento INFERRED a obligación del canon (staging patch hacia FC/TC v0.2.0); cada corrección genera remediación; lo aceptado temporalmente con riesgo puede registrarse como RSK con vencimiento. No se toca código hasta la decisión (DR-0001).",
+  "risk_tier": 3,
+  "ui_language": "es",
+  "initial_instructions": "Responde cada pregunta; las recomendaciones son NO vinculantes y nunca van preseleccionadas. Si overrideas un default, explica en el comentario. Tus respuestas se convierten en registros de decisión (DEC/APR) tras la ingestión por el agente.",
+  "topics": [
+    {
+      "topic_id": "autonomia",
+      "title": "Autonomía y aprobaciones"
+    },
+    {
+      "topic_id": "integraciones",
+      "title": "Integraciones y dominios"
+    },
+    {
+      "topic_id": "limites",
+      "title": "Límites y deudas técnicas"
+    },
+    {
+      "topic_id": "prioridades",
+      "title": "Priorización de deudas"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-CLASSIFIER",
+      "type": "confirm_or_override",
+      "topic_id": "autonomia",
+      "title": "Clasificador de intención determinista (reglas/keywords en español, sin ML)",
+      "short_description": "El clasificador actual es determinista e iterable (TENTATIVA). Confirmar como cierre de plataforma v0.2.",
+      "full_explanation": "SRC-0006 §15 registra el clasificador determinista como TENTATIVA. La alternativa (ML/generativo) no está evaluada y el modo simulado determinista (DEC-026) favorece reproducibilidad.",
+      "why_this_matters": "Define la frontera de autonomía del agente en la ingesta conversacional (FLOW-001).",
+      "risk_tier": 2,
+      "required": true,
+      "default_option": "confirm",
+      "requires_comment": false,
+      "options": [
+        {
+          "value": "confirm",
+          "label": "Confirmar: determinista por reglas, iterable",
+          "impact": "reproducible y auditable",
+          "risk": "cobertura limitada a reglas conocidas"
+        },
+        {
+          "value": "override",
+          "label": "Override: evaluar ML/generativo antes de cerrar",
+          "impact": "mayor cobertura",
+          "risk": "no determinista; requiere evaluación"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-APPROVALS",
+      "type": "single_choice",
+      "topic_id": "autonomia",
+      "title": "¿Qué perfiles aprueban operaciones sensibles (publicar/aprobar/ejecutar)?",
+      "short_description": "Hoy solo 'administración' tiene operation.approve/reject, reputation.approve y social.approve (TENTATIVA).",
+      "full_explanation": "DEC-020 define los tres perfiles del backoffice. La restricción de aprobación a administración es TENTATIVA; ampliarla afecta la matriz RBAC y sus espejos en migraciones.",
+      "why_this_matters": "Define quién ejerce la autoridad humana en los gates (RULE-004/DEC-003).",
+      "affected_loop": "implementation_loop",
+      "risk_tier": 3,
+      "required": true,
+      "default_option": "solo_administracion",
+      "requires_comment": false,
+      "options": [
+        {
+          "value": "solo_administracion",
+          "label": "Solo administración (como está)",
+          "impact": "menor superficie de riesgo",
+          "risk": "cuello de botella operativo"
+        },
+        {
+          "value": "admin_mas_operacion",
+          "label": "Administración + operación",
+          "impact": "más ágil",
+          "risk": "más superficie de aprobación"
+        },
+        {
+          "value": "configurable_por_tenant",
+          "label": "Configurable por tenant",
+          "impact": "flexible",
+          "risk": "complejidad de configuración y auditoría"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-PREVIEW",
+      "type": "confirm_or_override",
+      "topic_id": "integraciones",
+      "title": "Política de enlace de preview: token aleatorio, solo hash en BD, expiración configurable, single-use, alcance por propuesta",
+      "short_description": "Confirmar la política actual (CAP-008 TENTATIVA) como estándar; audiencia/revocación quedan para fase productiva.",
+      "full_explanation": "El token pv_… con hash SHA-256, TTL configurable (PREVIEW_TOKEN_TTL_MINUTES), single-use y alcance limitado fue implementado en INC-002. La audiencia (quién puede portar el enlace) y la revocación masiva quedan pendientes por diseño.",
+      "why_this_matters": "Es el mecanismo por el que el humano aprueba todo cambio visible (DEC-011/RULE-003).",
+      "risk_tier": 3,
+      "required": true,
+      "default_option": "confirm",
+      "requires_comment": false,
+      "options": [
+        {
+          "value": "confirm",
+          "label": "Confirmar política actual",
+          "impact": "E2E y piloto funcionan",
+          "risk": "el enlace es un bearer token compartible"
+        },
+        {
+          "value": "override",
+          "label": "Override: endurecer ahora (audiencia/revocación)",
+          "impact": "más seguridad",
+          "risk": "remediación antes del piloto"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-SUBDOMAIN",
+      "type": "single_choice",
+      "topic_id": "integraciones",
+      "title": "Esquema de subdominio simulado para el piloto",
+      "short_description": "Actual: <slug>.sim.mainspot.local determinista, DNS CNAME y certificado simulados (TENTATIVA, DEC-026).",
+      "full_explanation": "DEC-019 decidió subdominio de MainSpot por cliente vía Hostinger; el modo simulado usa el esquema .sim.mainspot.local. El nombre definitivo de producción (dominio real de MainSpot) requiere registrar el dominio y aprobar la marca.",
+      "why_this_matters": "Afecta la demo piloto y la migración futura a DNS real.",
+      "risk_tier": 2,
+      "required": true,
+      "default_option": "sim_local",
+      "requires_comment": false,
+      "options": [
+        {
+          "value": "sim_local",
+          "label": "Mantener <slug>.sim.mainspot.local (simulado)",
+          "impact": "piloto sin costo",
+          "risk": "no representa DNS real"
+        },
+        {
+          "value": "dominio_real_piloto",
+          "label": "Registrar dominio real y usar DNS real en el piloto",
+          "impact": "más realismo",
+          "risk": "costo y App Review/credenciales"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-LIMITS",
+      "type": "confirm_or_override",
+      "topic_id": "limites",
+      "title": "TOCTOU entre check e insert de límites aceptado en piloto; endurecer con UNIQUE/claims en fase productiva",
+      "short_description": "El enforcement de límites tiene una ventana TOCTOU aceptada (TENTATIVA); PR-03 ya hace atómica la validación de lote de reseñas.",
+      "full_explanation": "README §15: el límite se verifica en el punto de creación; entre el check y el insert otra operación podría pasarse del límite. En piloto con 2 tenants el riesgo es bajo; en productivo se endurece con UNIQUE parciales o claims.",
+      "why_this_matters": "Deuda técnica explícita: decidir si el piloto la acepta formalmente.",
+      "risk_tier": 2,
+      "required": true,
+      "default_option": "confirm",
+      "requires_comment": true,
+      "options": [
+        {
+          "value": "confirm",
+          "label": "Confirmar: aceptado en piloto, endurecer en productivo",
+          "impact": "sin remediación ahora",
+          "risk": "posible exceso transitorio de cuota"
+        },
+        {
+          "value": "override",
+          "label": "Override: endurecer ahora (UNIQUE/claims)",
+          "impact": "garantía fuerte",
+          "risk": "remediación + migración antes del piloto"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-AGENTS",
+      "type": "single_choice",
+      "topic_id": "limites",
+      "title": "Límite 'agents' visible pero sin enforcement (deuda declarada)",
+      "short_description": "El límite se muestra en entitlements pero no existe creación de agentes (README §15). ¿Qué hacemos?",
+      "full_explanation": "DI-0004: ninguna operación verifica el límite de agentes. Opciones: diferir el enforcement hasta el INC de agentes (como está), o remover el límite del catálogo hasta que exista la capacidad.",
+      "why_this_matters": "Deuda registrada que puede confundir al cliente del piloto al ver un límite que no opera.",
+      "risk_tier": 2,
+      "required": true,
+      "default_option": "diferir",
+      "requires_comment": false,
+      "options": [
+        {
+          "value": "diferir",
+          "label": "Diferir: enforcement cuando exista creación de agentes",
+          "impact": "cero código ahora",
+          "risk": "límite cosmético en el piloto"
+        },
+        {
+          "value": "enforcement_ahora",
+          "label": "Implementar enforcement ahora",
+          "impact": "consistencia",
+          "risk": "alcance nuevo sin INC aprobado"
+        },
+        {
+          "value": "quitar_del_catalogo",
+          "label": "Quitar 'agents' del catálogo visible",
+          "impact": "honestidad de UI",
+          "risk": "redefine el catálogo del plan"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NOPLAN",
+      "type": "confirm_or_override",
+      "topic_id": "limites",
+      "title": "Política sin plan: DENY 403 subscription_required en toda operación que CREA recursos; lecturas permitidas",
+      "short_description": "Decisión PR-02 del owner (TENTATIVA, configurable con plan 'libre' si el piloto lo pide).",
+      "full_explanation": "Las creaciones (mensajes, posts, reseñas, sitios, facturación) fallan con 403 subscription_required sin plan activo; las lecturas (entitlements, data.read, listados, analítica de lectura) siguen permitidas.",
+      "why_this_matters": "Es la política de admissions del piloto; cambiarla afecta conversión y soporte.",
+      "risk_tier": 3,
+      "required": true,
+      "default_option": "confirm",
+      "requires_comment": false,
+      "options": [
+        {
+          "value": "confirm",
+          "label": "Confirmar DENY en creaciones",
+          "impact": "protege cuota y costes",
+          "risk": "fricción en onboarding"
+        },
+        {
+          "value": "override",
+          "label": "Override: permitir creaciones con plan 'libre' automático",
+          "impact": "menos fricción",
+          "risk": "consumo sin control"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NFR",
+      "type": "multi_choice",
+      "topic_id": "autonomia",
+      "title": "¿Cuáles NFR recuperados de la implementación se promueven a obligatorio del canon v0.2?",
+      "short_description": "NFR-0001 auditoría atómica · NFR-0002 anti-oráculo 404 · NFR-0003 determinismo simulado · NFR-0004 rate limiting · NFR-0005 secretos fuera de repo/logs.",
+      "full_explanation": "Estos cinco elementos se recuperaron del código/tests (INFERRED, DR-0001). Los que selecciones se promueven a obligación canónica en el staging patch v0.2; los no seleccionados quedan PROPOSED sin obligation.",
+      "why_this_matters": "Define qué garantías no funcionales son contrato y cuáles solo aspiración.",
+      "risk_tier": 3,
+      "required": true,
+      "requires_comment": true,
+      "options": [
+        {
+          "value": "nfr_0001",
+          "label": "NFR-0001 auditoría atómica"
+        },
+        {
+          "value": "nfr_0002",
+          "label": "NFR-0002 anti-oráculo 404"
+        },
+        {
+          "value": "nfr_0003",
+          "label": "NFR-0003 determinismo simulado"
+        },
+        {
+          "value": "nfr_0004",
+          "label": "NFR-0004 rate limiting"
+        },
+        {
+          "value": "nfr_0005",
+          "label": "NFR-0005 secretos fuera de repo/logs"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-PRIORITY",
+      "type": "ordered_priority",
+      "topic_id": "prioridades",
+      "title": "Ordena las deudas técnicas para la siguiente tanda de remediación",
+      "short_description": "1 = primero. Requiere confirmación explícita del orden y comentario.",
+      "full_explanation": "Deudas abiertas: enforcement de agentes (DI-0004), endurecimiento TOCTOU, retención global de plataforma (fuera del scope por tenant), dashboards completos (INC-007 fase 2).",
+      "why_this_matters": "Fija la fila de trabajo del siguiente ciclo de implementación.",
+      "risk_tier": 2,
+      "required": true,
+      "requires_comment": true,
+      "options": [
+        {
+          "value": "agents_enforcement",
+          "label": "Enforcement de agentes (DI-0004)"
+        },
+        {
+          "value": "toctou_hardening",
+          "label": "Endurecer TOCTOU de límites"
+        },
+        {
+          "value": "retention_global",
+          "label": "Retención global de plataforma"
+        },
+        {
+          "value": "dashboards_fase2",
+          "label": "Dashboards completos (INC-007 fase 2)"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NOTES",
+      "type": "free_text",
+      "topic_id": "prioridades",
+      "title": "Notas generales para el registro",
+      "short_description": "Opcional: condiciones, matices o aclaraciones para las decisiones anteriores.",
+      "required": false,
+      "options": []
+    }
+  ],
+  "question_session_id": "QS-0001"
+}

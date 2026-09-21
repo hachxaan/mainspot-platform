@@ -1,0 +1,159 @@
+# Core Skill Registry fragment — Traceability capabilities (method/20).
+# Validate: schemas/skill-registry.schema.yaml. REVIEW_CANDIDATE (PROP-0006).
+# Capabilities are exercised by the canonflow-state-manager operating role (method/21);
+# canon_to_evidence_mapping also feeds the canonflow-evidence-auditor (method/21).
+schema: skill-registry/v1
+registry_version: 0.2.0
+level: core
+category: traceability
+source_sha: 9f223113af19bb74d3288e06373df995512b4ae2
+coverage_notes: "Typed lineage edge generation, matrix validation and canon-to-evidence mapping, exercised by canonflow-state-manager; canon_to_evidence_mapping also feeds canonflow-evidence-auditor. SUB-02 v2 additions (DEC-0043): does_not_cover, per-entry checksum, source_sha."
+does_not_cover:
+  - "approving any gate (a G-TRACE result is a mechanical PASS or FAIL, never an approval)"
+  - "closing an evidence gap by inference (needs an EVIDENCES edge or a human RSK)"
+  - "producing the evidence itself (audit and implementation fragments)"
+  - "minting canon, decision or increment ids (only their owning roles)"
+  - "deciding the correct upstream artifact when lineage is ambiguous (human decision)"
+skills:
+  - schema: skill-definition/v1
+    skill_id: trace_link_generation
+    name: Trace link generation
+    category: traceability
+    level: core
+    purpose: Generate typed traceability edges (link_type) between canon, decision, implementation and skill-run ids so lineage is explicit and machine-checkable.
+    operating_role: canonflow-state-manager
+    card_ref: skills/canonflow-state-manager.skill-card.yaml
+    checksum: "sha256:7d2857a227a5e0ffaa2c0f064145bc1cdcc6d97fa7ced7328919044938523387"
+    triggered_when:
+      - "new canon, decision or skill-run artifacts exist without typed edges in links.yaml"
+      - "an artifact references an id that has no edge in the traceability graph"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; broken or missing lineage blocks every downstream gate and approval"
+    inputs:
+      - ".canonflow/traceability/links.yaml"
+      - "functional and technical canon indices"
+      - ".canonflow/skill-runs/index.yaml"
+    outputs:
+      - ".canonflow/traceability/links.yaml new typed edges (from, to, type, by, at)"
+    required_templates: []
+    required_schemas: [schemas/traceability.schema.yaml]
+    required_prompts: [prompts/24-skill-state-manager.md]
+    required_gates: []
+    evidence_required:
+      - "each edge carries from, to, type, by, at per traceability.schema"
+      - "every referenced id matches the pattern ^[A-Z]{2,4}-[0-9]{4}$"
+      - "type is one of the nine allowed link_type values (DERIVES_FROM..RECONCILES)"
+    human_decision_triggers:
+      - "the correct upstream artifact for an edge is ambiguous (a lineage decision, not an inference)"
+    token_profile:
+      reads:
+        - "links.yaml index"
+        - "canon and skill-run indices (ids only)"
+      ignores:
+        - "artifact bodies"
+        - "code"
+        - "runtime evidence"
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions:
+      - "bulk backfill of edges across a large existing canon or a drift migration"
+    failure_modes:
+      - "dangling edge to an id that does not exist (fails G-TRACE downstream)"
+      - "wrong link_type applied (e.g. IMPLEMENTS where VERIFIES is meant)"
+      - "id minted outside the ^[A-Z]{2,4}-[0-9]{4}$ pattern"
+    related_skills: [trace_matrix_validation, canon_to_evidence_mapping, functional_traceability]
+  - schema: skill-definition/v1
+    skill_id: trace_matrix_validation
+    name: Trace matrix validation
+    category: traceability
+    level: core
+    purpose: Validate that the whole traceability matrix resolves — no dangling ids, every obligation reaching a source and its evidence — and record the G-TRACE result.
+    operating_role: canonflow-state-manager
+    card_ref: skills/canonflow-state-manager.skill-card.yaml
+    checksum: "sha256:7d2857a227a5e0ffaa2c0f064145bc1cdcc6d97fa7ced7328919044938523387"
+    triggered_when:
+      - "a functional slice, technical slice, increment or release reaches a G-TRACE checkpoint"
+      - "links.yaml changed and the trace matrix must be revalidated before approval"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; an unresolved matrix lets scope with no lineage pass unnoticed"
+    inputs:
+      - ".canonflow/traceability/links.yaml"
+      - "functional and technical canon indices"
+      - "evidence and skill-run indices"
+    outputs:
+      - "G-TRACE result (PASS or FAIL) with the enumerated unresolved ids"
+      - "trace matrix validation record cited as evidence"
+    required_templates: []
+    required_schemas: [schemas/traceability.schema.yaml]
+    required_prompts: [prompts/24-skill-state-manager.md]
+    required_gates: [G-TRACE]
+    evidence_required:
+      - "G-TRACE recorded PASS or FAIL for the validated scope"
+      - "every dangling, orphan or unresolved link id enumerated"
+    human_decision_triggers: []
+    token_profile:
+      reads:
+        - "links.yaml index"
+        - "canon, evidence and skill-run indices (ids only)"
+      ignores:
+        - "artifact bodies"
+        - "code"
+        - "evidence file contents"
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions:
+      - "large graphs where cycles or transitive gaps must be traced by hand"
+    failure_modes:
+      - "matrix reported PASS while dangling ids remain (false G-TRACE pass)"
+      - "orphan requirement or obligation with no upstream source missed"
+      - "validation run against a stale links.yaml pointer"
+    related_skills: [trace_link_generation, canon_to_evidence_mapping, traceability_closure, gate_verification]
+  - schema: skill-definition/v1
+    skill_id: canon_to_evidence_mapping
+    name: Canon to evidence mapping
+    category: traceability
+    level: core
+    purpose: Map every VERIFIED/DECIDED obligation in the canon to the collected evidence that proves it via EVIDENCES edges, so the canonflow-evidence-auditor can confirm coverage.
+    operating_role: canonflow-state-manager
+    card_ref: skills/canonflow-state-manager.skill-card.yaml
+    checksum: "sha256:7d2857a227a5e0ffaa2c0f064145bc1cdcc6d97fa7ced7328919044938523387"
+    triggered_when:
+      - "VERIFIED or DECIDED obligations exist without an EVIDENCES edge to a collected evidence file"
+      - "a release or audit needs canon-to-evidence coverage confirmed before G-TRACE or G-AUD"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; an obligation with no evidence is an unverifiable claim that must not be approved"
+    inputs:
+      - "approved functional and technical canon indices"
+      - "skill-run report evidence[] paths"
+      - "increment evidence packages"
+      - ".canonflow/traceability/links.yaml"
+    outputs:
+      - "EVIDENCES edges per obligation in links.yaml"
+      - "coverage report listing obligations with no evidence as OPEN"
+    required_templates: []
+    required_schemas: [schemas/traceability.schema.yaml]
+    required_prompts: [prompts/24-skill-state-manager.md]
+    required_gates: [G-TRACE]
+    evidence_required:
+      - "each VERIFIED/DECIDED obligation resolves to at least one EVIDENCES edge to an evidence file"
+      - "obligations without evidence listed as OPEN, never silently closed"
+    human_decision_triggers:
+      - "closing coverage would require accepting an evidence gap (risk acceptance, human only)"
+    token_profile:
+      reads:
+        - "canon indices (obligation ids and states)"
+        - "evidence and skill-run indices (paths only)"
+        - "links.yaml index"
+      ignores:
+        - "evidence file contents"
+        - "code"
+        - "full skill reports"
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions:
+      - "release-scope closure across many increments and evidence packages"
+    failure_modes:
+      - "obligation mapped to an evidence file that does not prove it (spurious EVIDENCES edge)"
+      - "evidence gap closed by inference instead of an EVIDENCES edge or a human risk decision"
+      - "narrative or self-report treated as evidence (facts-precedence violation)"
+    related_skills: [trace_link_generation, trace_matrix_validation, evidence_validation, evidence_completeness_check]

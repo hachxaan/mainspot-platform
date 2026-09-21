@@ -1,0 +1,170 @@
+# Core Skill Registry fragment — Release capabilities (method/20).
+# Validate: schemas/skill-registry.schema.yaml. REVIEW_CANDIDATE (PROP-0006).
+# Capabilities are exercised by the canonflow-release-governor operating role (method/21).
+# DEC-0015 closure: increment set in IMPLEMENTED_INCREMENT_DONE + release-level independent
+# audit with no blocking findings + G-TRACE at release scope.
+# Ceiling: RELEASE_CANDIDATE_READY on the work branch. Merge and deploy are human acts (DEC-0004);
+# no production/staging/freeze/general-readiness claims are ever produced here.
+schema: skill-registry/v1
+registry_version: 0.2.0
+level: core
+category: release
+source_sha: 9f223113af19bb74d3288e06373df995512b4ae2
+coverage_notes: "Verifies one declared release scope is closed under DEC-0015; the single agent-held workflow transition is RELEASE_CANDIDATE_READY on the work branch. SUB-02 v2 additions (DEC-0043): does_not_cover, per-entry checksum, source_sha."
+does_not_cover:
+  - "merge, tag, deploy, freeze or any production, staging or readiness claim (human acts; ceiling RELEASE_CANDIDATE_READY)"
+  - "approving G-RC (human only)"
+  - "performing the deep audit itself (delegated to canonflow-evidence-auditor)"
+  - "implementation or canon authoring"
+  - "deciding release scope content absent from approved canons and plans"
+skills:
+  - schema: skill-definition/v1
+    skill_id: release_checklist
+    name: Release checklist
+    category: release
+    level: core
+    purpose: Assemble the release scope from the RC-xxxx candidate and verify the increment set is a closed set all in IMPLEMENTED_INCREMENT_DONE with pinned canon versions (DEC-0015).
+    operating_role: canonflow-release-governor
+    card_ref: skills/canonflow-release-governor.skill-card.yaml
+    checksum: "sha256:51c2266be4e2343ced347058fb20ce23f2ccf367e9e1642d040dddfaeb117e4b"
+    triggered_when:
+      - "a release-candidate.yaml is in RELEASE_SCOPE_DEFINED awaiting closure verification"
+      - "task mode release and an increment set is declared closed"
+    affected_loop: release_candidate
+    risk_relevance: "T0-T4; the checklist is the release-scope floor before any closure claim"
+    inputs: ["the one RC-xxxx release-candidate.yaml pointer", ".canonflow/state/*.yaml", ".canonflow/skill-runs/index.yaml"]
+    outputs: ["a release checklist evidence file under RC-xxxx/evidence/", "per-increment closure status for the set"]
+    required_templates: [templates/release/release-candidate.yaml]
+    required_schemas: [schemas/release-candidate.schema.yaml]
+    required_prompts: [prompts/23-skill-release-governor.md]
+    required_gates: [G-REPO]
+    evidence_required: ["state per increment in the set (must be IMPLEMENTED_INCREMENT_DONE)", "pinned functional and technical canon versions"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["RC-xxxx candidate", "increment index in scope", "state pointers"]
+      ignores: ["full repository", "source corpus", "per-increment diffs"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["large increment set or cross-increment dependency chains"]
+    failure_modes: ["an increment not IMPLEMENTED_INCREMENT_DONE accepted into the set", "unpinned canon version treated as closed", "scope grown beyond the declared closed set"]
+    related_skills: [traceability_closure, evidence_completeness_check, blocker_review, release_candidate_verdict]
+  - schema: skill-definition/v1
+    skill_id: traceability_closure
+    name: Traceability closure
+    category: release
+    level: core
+    purpose: Run G-TRACE at release scope so every in-scope FR/AC resolves FR to INC to EV to AUD(PASS) with no dangling links (DEC-0015).
+    operating_role: canonflow-release-governor
+    card_ref: skills/canonflow-release-governor.skill-card.yaml
+    checksum: "sha256:51c2266be4e2343ced347058fb20ce23f2ccf367e9e1642d040dddfaeb117e4b"
+    triggered_when:
+      - "a closed increment set needs release-scope traceability resolution"
+      - "the RC-xxxx traceability_check field is empty"
+    affected_loop: release_candidate
+    risk_relevance: "T0-T4; an unresolved in-scope FR/AC blocks RELEASE_CANDIDATE_READY"
+    inputs: [".canonflow/traceability/links.yaml", "canon indices at the pinned versions", "the increment set pointers"]
+    outputs: ["a G-TRACE release-scope result evidence file referenced by RC-xxxx.traceability_check"]
+    required_templates: []
+    required_schemas: [schemas/traceability.schema.yaml, schemas/release-candidate.schema.yaml]
+    required_prompts: [prompts/23-skill-release-governor.md]
+    required_gates: [G-TRACE]
+    evidence_required: ["every in-scope FR/AC resolves FR to INC to EV to AUD(PASS)", "no dangling references reported by check_gates.py --gate G-TRACE"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["links index", "canon indices in scope", "audit verdict index"]
+      ignores: ["full repository", "raw sources", "runtime"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["large canon surface or cross-increment link fan-out"]
+    failure_modes: ["dangling link passed as resolved (fails G-TRACE)", "in-scope FR/AC omitted from the release matrix"]
+    related_skills: [release_checklist, trace_matrix_validation, evidence_completeness_check]
+  - schema: skill-definition/v1
+    skill_id: evidence_completeness_check
+    name: Evidence completeness check
+    category: release
+    level: core
+    purpose: Verify evidence completeness across the increment set (G-EVID) and that Tier 3-4 obligations are evidenced or carry an unexpired RSK (DEC-0015).
+    operating_role: canonflow-release-governor
+    card_ref: skills/canonflow-release-governor.skill-card.yaml
+    checksum: "sha256:51c2266be4e2343ced347058fb20ce23f2ccf367e9e1642d040dddfaeb117e4b"
+    triggered_when:
+      - "a closed increment set needs release-level evidence completeness verification"
+      - "Tier 3-4 obligations in the set lack evidence or a risk record"
+    affected_loop: release_candidate
+    risk_relevance: "elevated at T3-T4; security, migration, rollback and runtime-verification obligations must be evidenced or RSK-covered"
+    inputs: ["per-increment evidence-package pointers", "RSK/TR records", "the increment set audit pointers"]
+    outputs: ["a release-level evidence completeness evidence file under RC-xxxx/evidence/"]
+    required_templates: [templates/implementation/evidence-package.yaml]
+    required_schemas: [schemas/evidence-package.schema.yaml]
+    required_prompts: [prompts/23-skill-release-governor.md]
+    required_gates: [G-EVID]
+    evidence_required: ["evidence package complete per contract for each increment in the set", "each Tier 3-4 obligation evidenced or backed by an unexpired RSK"]
+    human_decision_triggers: ["accepting a Tier 3-4 evidence gap as a risk acceptance (RSK) instead of evidencing it"]
+    token_profile:
+      reads: ["evidence-package indices in scope", "risk records"]
+      ignores: ["full repository", "raw sources", "canon prose"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["Tier 3-4 set with security/migration/rollback obligations", "large evidence surface across many increments"]
+    failure_modes: ["missing evidence treated as complete", "expired RSK accepted as coverage", "runtime-verification obligation ignored"]
+    related_skills: [release_checklist, blocker_review, release_candidate_verdict]
+  - schema: skill-definition/v1
+    skill_id: blocker_review
+    name: Blocker review
+    category: release
+    level: core
+    purpose: Verify a release-level independent audit exists with no blocking findings across the set and cross-increment regressions, delegating to canonflow-evidence-auditor when it is missing (DEC-0015).
+    operating_role: canonflow-release-governor
+    card_ref: skills/canonflow-release-governor.skill-card.yaml
+    checksum: "sha256:51c2266be4e2343ced347058fb20ce23f2ccf367e9e1642d040dddfaeb117e4b"
+    triggered_when:
+      - "the RC-xxxx release_audit field is empty or no release-level audit exists"
+      - "per-increment audits may hide cross-increment regressions or blocking findings"
+    affected_loop: release_candidate
+    risk_relevance: "T0-T4; a blocking finding anywhere in the set blocks RELEASE_CANDIDATE_READY"
+    inputs: ["the increment set audit pointers (AUD-xxxx)", "the release-level audit pointer if present", "the FND finding index"]
+    outputs: ["a blocker-review evidence file listing blocking/major findings for the set", "a bounded remediation task handed to the orchestrator when findings block (never next_task)"]
+    required_templates: [templates/implementation/audit.yaml]
+    required_schemas: [schemas/audit.schema.yaml]
+    required_prompts: [prompts/22-skill-evidence-auditor.md, prompts/09-release-candidate-reviewer.md]
+    required_gates: [G-AUD]
+    evidence_required: ["a release-level audit verdict for the set", "no blocking finding open in the release scope"]
+    human_decision_triggers: ["a blocking finding is proposed for human risk acceptance instead of remediation"]
+    token_profile:
+      reads: ["audit index and verdicts in scope", "finding index"]
+      ignores: ["full repository", "raw sources", "canon prose"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["missing release-level audit requiring a delegated deep audit", "cross-increment regression analysis"]
+    failure_modes: ["restating per-increment audits without a cross-increment regression check", "blocking finding downgraded to pass the set", "self-audit of the governor's own work"]
+    related_skills: [evidence_completeness_check, diff_review, release_candidate_verdict]
+  - schema: skill-definition/v1
+    skill_id: release_candidate_verdict
+    name: Release candidate verdict
+    category: release
+    level: core
+    purpose: Aggregate the four DEC-0015 conditions into one release-scope verdict; on PASS set RELEASE_CANDIDATE_READY on the work branch and generate the G-RC approval session.
+    operating_role: canonflow-release-governor
+    card_ref: skills/canonflow-release-governor.skill-card.yaml
+    checksum: "sha256:51c2266be4e2343ced347058fb20ce23f2ccf367e9e1642d040dddfaeb117e4b"
+    triggered_when:
+      - "checklist, traceability closure, evidence completeness and blocker review all have evidence for the RC-xxxx"
+      - "a RELEASE_SCOPE_DEFINED candidate is ready for a closure verdict"
+    affected_loop: release_candidate
+    risk_relevance: "T0-T4; RELEASE_CANDIDATE_READY is the ceiling, never release/merge/deploy readiness"
+    inputs: ["the four closure evidence files under RC-xxxx/evidence/", "the RC-xxxx candidate", ".canonflow/skill-runs/index.yaml"]
+    outputs: ["a scoped skill report verdict (PASS/PASS_WITH_LIMITATIONS/REMEDIATION_REQUIRED/BLOCKED)", "RC-xxxx state set to RELEASE_CANDIDATE_READY on the work branch on PASS", "a G-RC approval question session quoting every limitation"]
+    required_templates: [templates/release/release-candidate.yaml, templates/decision-console/question-session.json]
+    required_schemas: [schemas/skill-report.schema.yaml, schemas/release-candidate.schema.yaml]
+    required_prompts: [prompts/23-skill-release-governor.md, prompts/12-question-session-generator.md]
+    required_gates: [G-TRACE, G-AUD, G-EVID, G-RC]
+    evidence_required: ["all four DEC-0015 conditions evidenced with one file each", "a G-RC question session generated for human approval"]
+    human_decision_triggers: ["G-RC approval (human only)", "any PASS_WITH_LIMITATIONS limitation carrying a RISK claim"]
+    token_profile:
+      reads: ["the four closure evidence files", "RC-xxxx candidate", "run/report index"]
+      ignores: ["full repository", "per-increment diffs", "raw sources"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["Tier 3-4 release with unexpired risk acceptances", "contested or incomplete closure evidence"]
+    failure_modes: ["declaring release/merge/deploy readiness beyond RELEASE_CANDIDATE_READY", "setting RELEASE_CANDIDATE_READY with an unresolved DEC-0015 condition", "self-verifying its own closure evidence"]
+    related_skills: [release_checklist, traceability_closure, evidence_completeness_check, blocker_review]

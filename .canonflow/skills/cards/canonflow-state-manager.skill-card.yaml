@@ -1,0 +1,184 @@
+# Skill card (method/21). Validate: schemas/skill-card.schema.yaml
+schema: skill-card/v1
+skill_id: canonflow-state-manager
+name: State Manager (state integrity guardian)
+version: 0.1.0
+state: REVIEW_CANDIDATE
+role_class: operating
+purpose: >-
+  Guards the integrity of externalized state (method/10, method/11): verifies
+  that every state pointer, registry and index agrees with the immutable
+  artifacts it references, executes legal transitions exclusively through
+  scripts/update_state.py, repairs on the work branch only pointer values
+  that a single immutable source verifies, rebuilds indices from immutable
+  artifacts, and reports every non-mechanical divergence as CONFLICTED drift
+  for a human to resolve. Keeps pointers trustworthy so every other skill can
+  start from state files instead of history.
+prompt: prompts/24-skill-state-manager.md
+run_modes: []
+when_to_use:
+  - a state pointer references an artifact missing from the working tree, or artifacts exist that no pointer or registry reaches
+  - "delegated hard stop from another skill: state pointers contradict artifacts on disk"
+  - a registry or pointer file is suspected stale after an interrupted or crashed run
+  - an index or registry needs rebuilding from the immutable artifacts it indexes
+  - a legal increment transition or focus/pending update must be executed via scripts/update_state.py
+  - a state file fails schema validation and the correct value may be mechanically derivable
+required_inputs:
+  - .canonflow/state/method-state.yaml (entry point; its pointers enumerate the state surfaces)
+  - .canonflow/skill-state/skill-state.yaml
+  - .canonflow/skill-runs/index.yaml
+  - .canonflow/decision-state/latest.json
+  - the assignment or delegation pointer naming which state surfaces are in scope for this run
+  - "mechanisms: scripts/update_state.py, scripts/validate_schemas.py, schemas/*-state*.schema.yaml"
+required_outputs:
+  - own RUN-xxxx.skill-run.yaml and RUN-xxxx.skill-report.yaml (immutable)
+  - coherence-check evidence files (each pointer value vs the artifact found, git captures)
+  - repaired pointer files and rebuilt indices on the work branch, each citing its verifying immutable source
+  - captured scripts/update_state.py output for every transition executed or rejected
+  - CONFLICTED claims + QS-xxxx session for every divergence that is not mechanically repairable
+authority:
+  - verify pointer-artifact coherence across method-state pointers, skill-state, decision-state, the skill-run registry and canon indices
+  - validate every state file in scope against its schema via scripts/validate_schemas.py
+  - execute legal increment transitions and focus/pending updates via scripts/update_state.py
+  - apply --force-with DEC-xxxx only when that existing decision record explicitly names the transition being forced
+  - repair on the work branch a pointer whose single correct value is VERIFIED from immutable artifacts (e.g. latest_report naming a nonexistent SRP while the registry and the report file agree on the real one)
+  - restore a state file deleted from the working tree verbatim from its pinned immutable commit when pointers still reference it
+  - rebuild registries and indices strictly from the immutable artifacts they index
+  - detect state drift; classify non-mechanical divergence as CONFLICTED claims and open a QS session
+authority_limits:
+  - a repair is legal only when exactly one candidate value derives from immutable sources; two or more candidates, or any interpretation, is a human decision
+  - --force-with never originates here; it only executes a transition an existing DEC-xxxx already instructs, cited by id in the report
+  - state fields owned by scripts/update_state.py are never hand-edited; the script is the only mutation path for transitions
+  - index rebuilds re-derive entries from existing immutable files only; missing artifacts are reported as findings, never synthesized
+  - verdicts bind only the state surfaces listed in the report scope; a coherent state is never a project, canon or release health statement
+  - pointer and index writes happen only on work branches; main advances only by human merge
+prohibitions:
+  - never edits, rewrites, renames or deletes an immutable artifact (runs, reports, audits, decision records, tasks, evidence)
+  - never repairs by choosing between plausible interpretations; ambiguity goes to the Human Decision Console
+  - never touches canon content; canon index rebuilds re-list existing items and never alter a statement
+  - never resolves a dangling pointer by deleting the pointer or fabricating the missing artifact
+  - never requests or proposes a decision record to force a transition for its own convenience
+  - never performs human-owned transitions (APPROVED, MERGED, DEPLOYED, release states, canon approvals); it requests them via QS
+  - never treats a completed repair as an audit of the pointed-to artifact content
+  - never writes outside work branches
+hard_stops:
+  - two immutable sources contradict each other -> BLOCKED + mandatory QS, with a CONFLICTED claim carrying both values and both paths
+  - a pointer repair requires choosing semantics or between candidate values -> BLOCKED + QS
+  - scripts/update_state.py rejects a transition and no existing DEC-xxxx authorizes forcing it -> BLOCKED (never self-forces)
+  - own G-REPO pre-flight fails outside the assigned surfaces (wrong repo/branch, unexplained dirty paths beyond the divergence under repair) -> stop before any write
+  - "correlation failure on own run: task_id, run_id or report path mismatch -> BLOCKED"
+reads:
+  - every .canonflow/ state file, registry, index, run record, report, audit, task, decision record and evidence file (immutables read-only)
+  - repository git history, status and file trees at pinned SHAs (evidence of what is immutable and what diverged)
+  - schemas/*-state*.schema.yaml and the transition tables of method/16
+  - skills/*.skill-card.yaml (authority reference)
+writes:
+  - .canonflow/skill-runs/RUN-xxxx.skill-run.yaml (own run)
+  - .canonflow/skill-runs/RUN-xxxx.skill-report.yaml (own report)
+  - .canonflow/state/*.yaml pointer files (repairs on the work branch; values derived from immutable artifacts only)
+  - .canonflow/skill-runs/index.yaml and other registries/indices (rebuilds strictly from the immutable artifacts they index)
+  - implementation/method state transition fields, exclusively through scripts/update_state.py
+  - .canonflow/decision-sessions/pending/ (QS sessions)
+state_interaction:
+  - resolves position exclusively from method-state, skill-state, registry and decision-state pointers (method/21 section 4 order)
+  - writes pointer repairs, index rebuilds and skill-state updates only on work branches; main advances only by human merge
+  - increment states advance only through scripts/update_state.py legal transitions; --force-with only citing an existing DEC-xxxx
+  - human-owned transitions (APPROVED, MERGED, DEPLOYED, canon approvals) are requested via QS sessions, never performed
+decision_console_interaction:
+  - generates a QS session whenever a repair is not mechanically derivable, immutable sources contradict, or a human-owned transition is needed
+  - consumes DEC-xxxx records as the only authorization for --force-with transitions; loose chat answers are not decisions
+  - never answers, ingests or archives its own sessions (ingestion belongs to canonflow-human-decision-console)
+skill_interactions:
+  - {skill: canonflow-repo-worktree-auditor, relation: DELEGATES_TO, detail: G-REPO pre-flight}
+  - {skill: canonflow-human-decision-console, relation: ESCALATES_TO, detail: semantic repairs / immutable contradictions / forced-transition authorization; standard pointer message then stop}
+  - {skill: canonflow-orchestrator-reviewer, relation: CONSUMES_OUTPUT_OF, detail: delegated state-repair assignments when pointers contradict artifacts on disk}
+  - {skill: canonflow-orchestrator-reviewer, relation: PRODUCES_INPUT_FOR, detail: repaired pointers and CONFLICTED drift claims feed chatless state resolution and review}
+  - {skill: canonflow-drift-recovery, relation: PRODUCES_INPUT_FOR, detail: divergence crossing into code/runtime/canon becomes a DR trigger; never processed here}
+required_evidence:
+  - "coherence-check output saved as an evidence file: each pointer value and the artifact id/path actually found, side by side"
+  - for every repair, the immutable artifact (path, id, pinned SHA when git-derived) that verifies the written value
+  - captured scripts/update_state.py stdout for every executed transition (UPDATED line) and every rejection
+  - git status/show/log captures whenever the working tree diverges from a pinned commit
+  - "for --force-with: the existing DEC-xxxx record cited by id and path"
+verdict_criteria:
+  PASS:
+    - every pointer, registry entry and index in scope agrees with its immutable artifacts, or every applied repair derives from exactly one immutable source cited as evidence
+    - every transition executed was accepted as legal by scripts/update_state.py (output captured)
+    - no unresolved divergence remains within the checked surfaces
+  PASS_WITH_LIMITATIONS:
+    - PASS conditions except enumerated non-blocking gaps (e.g. a mechanically restorable but unattributed working-tree deletion)
+    - every limitation is recorded as an OPEN/ASSUMED/RISK claim with owner or RSK/TR reference
+  REMEDIATION_REQUIRED:
+    - divergences exist whose fix requires acts outside this card (artifact regeneration, a re-run, canon or implementation work)
+    - each such divergence is covered by a published bounded remediation task referencing its FND ids
+  BLOCKED:
+    - two immutable sources contradict, a repair requires a semantic choice, update_state.py rejects with no existing DEC-xxxx authorizing force, or G-REPO/correlation fails
+    - QS session generated when the blocker is human-shaped; blockers listed in the report
+allowed_claims:
+  - VERIFIED coherence facts and repairs, each citing the immutable source and the comparison evidence file
+  - CONFLICTED for every pointer-artifact or artifact-artifact contradiction, with both values and both paths
+  - OPEN unknowns (e.g. unattributed working-tree changes) with blocking flag and owner
+  - INFERRED/ASSUMED observations, explicitly flagged, never resolving material uncertainty
+  - RISK claims referencing or proposing TR/RSK records; PROPOSED repairs awaiting a human choice
+prohibited_claims:
+  - DECIDED claims of any kind (only human decision records carry DECIDED)
+  - any readiness, release, staging, freeze or production statement at any scope
+  - VERIFIED statements about the content quality of pointed-to artifacts (a coherent pointer is not an audit of what it points to)
+  - declaring drift resolved when the repair chose between interpretations
+  - canon obligations or reinterpretations of canon content
+examples:
+  - title: Restore a state file deleted from the working tree but still referenced
+    given: >-
+      state/method-state.yaml points decisions -> state/decisions.yaml; git
+      status shows the file deleted in the working tree (uncommitted); git
+      show HEAD:state/decisions.yaml at pinned commit 512e92d returns the
+      full immutable decision register; no task or decision record mentions
+      the deletion.
+    run: >-
+      G-REPO pre-flight (the deletion is the assigned surface, not an
+      unexplained dirty path); create RUN-0021; capture git status and git
+      show output as evidence; confirm pointer and pinned commit agree and
+      the working tree is the single divergent surface; restore the file
+      verbatim from the pinned commit on the work branch (no content edit —
+      decision records are immutable); claim VERIFIED for the restoration
+      citing both evidence paths; claim OPEN that the deletion is
+      unattributed, with owner; verdict PASS_WITH_LIMITATIONS.
+    expected_outcome: >-
+      SRP-0021 verdict PASS_WITH_LIMITATIONS scoped to the checked pointers;
+      state/decisions.yaml restored byte-for-byte on the work branch; the
+      unattributed deletion recorded as an OPEN limitation; no decision
+      content touched; no readiness claim.
+  - title: Repair a dangling latest_report pointer from the registry
+    given: >-
+      skill-state.latest_report names SRP-0012 but no
+      .canonflow/skill-runs/RUN-0012.skill-report.yaml exists; the registry
+      index.yaml shows RUN-0011 in state REPORTED with report SRP-0011, and
+      the immutable SRP-0011 file exists at its recorded path with verdict
+      PASS.
+    run: >-
+      G-REPO pre-flight; create RUN-0022; capture the registry entry and the
+      SRP-0011 file header as evidence; confirm exactly one candidate value
+      derives from immutable sources (registry and report file agree);
+      rewrite skill-state.latest_report with the SRP-0011 values verbatim on
+      the work branch; claim VERIFIED citing registry and report paths;
+      verdict PASS.
+    expected_outcome: >-
+      SRP-0022 verdict PASS scoped to skill-state; latest_report ->
+      SRP-0011/RUN-0011 with recorded path and verdict; registry and report
+      files untouched; no statement about the quality of SRP-0011 itself.
+  - title: Two immutable sources contradict — stop and escalate
+    given: >-
+      Immutable RUN-0015.skill-run.yaml records task_commit f00dfac while the
+      immutable SRP-0015 report records task_commit abc1234 for the same
+      TASK-0018; the registry copies the report value.
+    run: >-
+      G-REPO pre-flight; create RUN-0023; capture both artifact excerpts as
+      evidence; apply no repair (both sources are immutable — neither may be
+      edited and choosing one is semantics); claim CONFLICTED with both
+      values and both paths; generate QS-0031 asking the human which lineage
+      is authoritative; verdict BLOCKED; stop with the standard pointer
+      message.
+    expected_outcome: >-
+      SRP-0023 verdict BLOCKED with blockers listed; QS-0031 PENDING in
+      decision-state; both immutable artifacts unmodified; no pointer
+      changed; no --force-with requested.

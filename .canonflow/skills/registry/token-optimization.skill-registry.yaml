@@ -1,0 +1,164 @@
+# Core Skill Registry fragment — Token Optimization capabilities (method/20).
+# Validate: schemas/skill-registry.schema.yaml. REVIEW_CANDIDATE (PROP-0006).
+# Materializes the eight token rules of method/11 (pointers not payloads, per-artifact
+# indices, summaries, minimal prompts); never weakens the method/12 gate matrix (safety floor).
+schema: skill-registry/v1
+registry_version: 0.2.0
+level: core
+category: token_optimization
+source_sha: 9f223113af19bb74d3288e06373df995512b4ae2
+coverage_notes: "Materializes the eight token rules of method/11; pointer_generation and state_indexing are exercised by canonflow-state-manager, while context_minimization, evidence_summarization and prompt_compaction carry operating_role empty (cross-cutting rules with no single card) and therefore no card checksum. SUB-02 v2 additions (DEC-0043): does_not_cover, per-entry checksum, source_sha."
+does_not_cover:
+  - "weakening, dropping or reordering any method/12 gate to save tokens (safety floor stays intact)"
+  - "deciding what is in scope for a task (that is classification, routing fragment)"
+  - "substituting a summary for a cited evidence file (G-EVID)"
+  - "producing canon, implementation or audit content"
+  - "trimming a safety-floor input for the tier"
+skills:
+  - schema: skill-definition/v1
+    skill_id: context_minimization
+    name: Context minimization
+    category: token_optimization
+    level: core
+    purpose: Bound the minimal read set a task needs and record what is deliberately not loaded, so execution opens only its contract (method/11 rules 1 and 8).
+    operating_role: ""
+    checksum_note: "no operating card (operating_role empty; GAP-11 executor identity gap); no card to checksum at this index"
+    triggered_when:
+      - "any material task is classified and its read set must be bounded before execution"
+      - "a run would otherwise start from conversational history instead of pointers"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; never trims a safety-floor input, the gate matrix stays intact"
+    inputs: [".canonflow/state/method-state.yaml", "the task classification pointer (TCL-xxxx)", "method/11-token-optimization-model.md"]
+    outputs: ["selected read set and ignored_context recorded in SSR-xxxx.skill-selection.yaml"]
+    required_templates: []
+    required_schemas: [schemas/skill-selection-report.schema.yaml, schemas/task-classification.schema.yaml]
+    required_prompts: []
+    required_gates: []
+    evidence_required: ["ignored_context list recorded in the selection report", "every safety-floor input for the tier kept in the read set"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["method-state pointers", "the task classification", "the gate matrix tier row (method/12)"]
+      ignores: ["conversational history", "out-of-scope canon and code", "immutable artifacts not in the contract"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["Tier 3-4 tasks where trimming risks dropping a security or migration input"]
+    failure_modes: ["a safety-floor input trimmed to save tokens (gate weakened)", "read set widened to the whole repository, defeating the optimization"]
+    related_skills: [pointer_generation, prompt_compaction, state_indexing]
+  - schema: skill-definition/v1
+    skill_id: pointer_generation
+    name: Pointer generation
+    category: token_optimization
+    level: core
+    purpose: Emit pointers (paths, ids, canon versions, commit SHAs) in place of pasted payloads so consumers open exactly what they need (method/11 rule 2).
+    operating_role: canonflow-state-manager
+    card_ref: skills/canonflow-state-manager.skill-card.yaml
+    checksum: "sha256:7d2857a227a5e0ffaa2c0f064145bc1cdcc6d97fa7ced7328919044938523387"
+    triggered_when:
+      - "a report, task or prompt would otherwise paste file contents or logs"
+      - "a state pointer file must reference a new immutable artifact"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; a wrong pointer breaks correlation and evidence trust"
+    inputs: [".canonflow/state/method-state.yaml", ".canonflow/skill-state/skill-state.yaml", "the immutable artifact paths being referenced"]
+    outputs: ["pointer fields (path, id, canon_version, commit sha) written into state files, reports and prompts"]
+    required_templates: []
+    required_schemas: [schemas/method-state.schema.yaml, schemas/skill-state.schema.yaml]
+    required_prompts: [prompts/24-skill-state-manager.md]
+    required_gates: []
+    evidence_required: ["each generated pointer resolves to an existing immutable artifact", "no payload pasted where a pointer suffices"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["state pointer files", "the artifact index for target ids"]
+      ignores: ["artifact bodies (only paths and ids are read)", "conversational history"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: []
+    failure_modes: ["dangling pointer to a moved or non-existent artifact", "pointer silently rewritten to a mutated file (immutability broken)"]
+    related_skills: [state_indexing, context_minimization, prompt_compaction]
+  - schema: skill-definition/v1
+    skill_id: state_indexing
+    name: State indexing
+    category: token_optimization
+    level: core
+    purpose: Build and maintain per-artifact index.yaml manifests (id, title, state, links) so agents read the index first and open only their contract items (method/11 rule 3).
+    operating_role: canonflow-state-manager
+    card_ref: skills/canonflow-state-manager.skill-card.yaml
+    checksum: "sha256:7d2857a227a5e0ffaa2c0f064145bc1cdcc6d97fa7ced7328919044938523387"
+    triggered_when:
+      - "a canon or skill-run directory gains artifacts not reflected in its index"
+      - "an index diverges from the immutable artifacts it lists"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; a stale index misroutes reads and hides items from review"
+    inputs: [".canonflow/ artifact directories in scope", "the existing index.yaml pointer"]
+    outputs: ["rebuilt index.yaml entries (id, title, state, links) per artifact directory"]
+    required_templates: []
+    required_schemas: [schemas/skill-run-index.schema.yaml, schemas/method-state.schema.yaml]
+    required_prompts: [prompts/24-skill-state-manager.md]
+    required_gates: []
+    evidence_required: ["each index entry maps to an existing immutable artifact", "index rebuilt only from immutable files, never from narrative"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["artifact headers and ids in scope", "the current index"]
+      ignores: ["full artifact bodies", "out-of-scope directories", "code and runtime"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["large directories requiring incremental re-indexing"]
+    failure_modes: ["index lists an item that no longer exists", "index treated as evidence (a pointer is not evidence)"]
+    related_skills: [pointer_generation, context_minimization, evidence_summarization]
+  - schema: skill-definition/v1
+    skill_id: evidence_summarization
+    name: Evidence summarization
+    category: token_optimization
+    level: core
+    purpose: Reduce script-collected evidence to a path plus a one-line result and produce the compact dual report summary, never replacing the evidence files (method/11 rules 5 and 6).
+    operating_role: ""
+    checksum_note: "no operating card (operating_role empty; GAP-11 executor identity gap); no card to checksum at this index"
+    triggered_when:
+      - "a run has script-collected evidence files to report"
+      - "a report needs its compact dual form (machine YAML plus short summary)"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; a summary never substitutes for the cited evidence file"
+    inputs: ["script-collected evidence files under .canonflow/", "the evidence package or skill report pointer"]
+    outputs: ["evidence entries as path plus one-line result", "a report summary of at most five lines"]
+    required_templates: []
+    required_schemas: [schemas/evidence-package.schema.yaml, schemas/skill-report.schema.yaml]
+    required_prompts: []
+    required_gates: []
+    evidence_required: ["each summarized result cites its evidence file path", "no evidence existence claimed without a backing file"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["evidence file headers and result lines", "the evidence or report index"]
+      ignores: ["full log bodies", "unrelated evidence", "canon and code"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["large or conflicting evidence sets needing careful result extraction"]
+    failure_modes: ["summary asserts a pass the evidence file does not show", "evidence file dropped in favour of the summary (G-EVID weakened)"]
+    related_skills: [pointer_generation, prompt_compaction, context_minimization]
+  - schema: skill-definition/v1
+    skill_id: prompt_compaction
+    name: Prompt compaction
+    category: token_optimization
+    level: core
+    purpose: Assemble minimal pointer-based prompts that start from state pointers and one contract, carrying no pasted content or re-narrated history (method/11 rules 1, 2 and 6).
+    operating_role: ""
+    checksum_note: "no operating card (operating_role empty; GAP-11 executor identity gap); no card to checksum at this index"
+    triggered_when:
+      - "a run or hand-off prompt is being assembled"
+      - "a prompt would otherwise re-narrate history or paste file contents"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; over-compaction that drops a required pointer stalls the run"
+    inputs: [".canonflow/state/method-state.yaml", "the one contract or task pointer the run needs", "method/11-token-optimization-model.md"]
+    outputs: ["a minimal prompt carrying pointers, ids and SHAs only"]
+    required_templates: []
+    required_schemas: [schemas/skill-run.schema.yaml]
+    required_prompts: []
+    required_gates: []
+    evidence_required: ["the compacted prompt names every pointer the run must open", "no pasted payload where a pointer suffices"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["state pointers", "the single contract in scope"]
+      ignores: ["conversational history", "unrelated prompts and artifacts", "the full repository"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: []
+    failure_modes: ["a required pointer omitted, forcing the run to re-ask for context", "history pasted back into the prompt, defeating rule 1"]
+    related_skills: [context_minimization, pointer_generation, evidence_summarization]

@@ -1,0 +1,342 @@
+# Core Skill Registry fragment — Drift Recovery capabilities (method/20).
+# Validate: schemas/skill-registry.schema.yaml. REVIEW_CANDIDATE (PROP-0006).
+# Capabilities are exercised by the canonflow-drift-recovery operating role (method/21),
+# the only legal path for observed reality to re-enter canon (method/05).
+schema: skill-registry/v1
+registry_version: 0.2.0
+level: core
+category: drift_recovery
+source_sha: 9f223113af19bb74d3288e06373df995512b4ae2
+coverage_notes: "The only legal path for observed reality (code/runtime/config/contracts) to re-enter canon: inventories seven surfaces, classifies drift, proposes R1-R5 as PROPOSED; patches only post-RECONCILIATION_DECIDED. SUB-02 v2 additions (DEC-0043): does_not_cover, per-entry checksum, source_sha."
+does_not_cover:
+  - "writing code or canon before RECONCILIATION_DECIDED"
+  - "deciding the reconciliation direction R1-R5 (human decision via HDC)"
+  - "treating runtime behavior as canon without a decision record"
+  - "greenfield or brownfield canon authoring (functional and technical loops)"
+  - "independent audit verdicts (audit fragment)"
+skills:
+  - schema: skill-definition/v1
+    skill_id: documentation_inventory
+    name: Documentation inventory
+    category: drift_recovery
+    level: core
+    purpose: Fingerprint the canon documentation surfaces (S1 functional canon and S2 technical canon) so canon claims are compared against a saved fingerprint, never memory.
+    operating_role: canonflow-drift-recovery
+    card_ref: skills/canonflow-drift-recovery.skill-card.yaml
+    checksum: "sha256:43ae614367489937e04b17497972617f2cee8e6385028eabcc002734ae6f4329"
+    triggered_when:
+      - "drift recovery opens or resumes a DR-xxxx and S1/S2 are not yet fingerprinted"
+      - "a stale_canon cascade or audit finding names canon documentation as a compared surface"
+    affected_loop: drift_runtime_recovery_mode
+    risk_relevance: "T0-T4; unfingerprinted canon lets a comparison run against memory"
+    inputs: ["pinned functional and technical canon index pointers", "the open recovery/DR-xxxx pointer"]
+    outputs:
+      - "S1_functional_canon and S2_technical_canon fingerprint entries with evidence paths in the DR-xxxx report"
+    required_templates: [templates/recovery/runtime-inventory.md]
+    required_schemas: [schemas/drift-report.schema.yaml]
+    required_prompts: [prompts/17-skill-drift-recovery.md]
+    required_gates: []
+    evidence_required:
+      - "a fingerprint (version plus content hash) per canon surface"
+      - "a script-collected evidence file path per fingerprint"
+    human_decision_triggers: []
+    token_profile:
+      reads: ["canon indices via pointers", "the open DR-xxxx inventory"]
+      ignores: ["code", "runtime", "downstream drift items"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["large multi-slice canon requiring a sampling strategy"]
+    failure_modes:
+      - "canon compared from memory instead of a saved fingerprint"
+      - "absent canon treated as a match rather than an EVIDENCE_GAP signal"
+    related_skills: [repo_inventory, drift_classification, recovery_evidence_capture]
+  - schema: skill-definition/v1
+    skill_id: repo_inventory
+    name: Repository inventory
+    category: drift_recovery
+    level: core
+    purpose: Fingerprint the code surface (S3 = repo at a pinned SHA) after a G-REPO pre-flight so code reality is captured before any comparison.
+    operating_role: canonflow-drift-recovery
+    card_ref: skills/canonflow-drift-recovery.skill-card.yaml
+    checksum: "sha256:43ae614367489937e04b17497972617f2cee8e6385028eabcc002734ae6f4329"
+    triggered_when:
+      - "drift recovery must capture S3 and the repo/branch/base SHA are not yet fingerprinted"
+      - "brownfield onboarding starts from an existing repository with no trusted canon"
+    affected_loop: drift_runtime_recovery_mode
+    risk_relevance: "T0-T4; a wrong repo/branch/SHA poisons every downstream comparison"
+    inputs: ["repo path/branch/base-SHA pointers", "the open recovery/DR-xxxx pointer"]
+    outputs:
+      - "S3_code fingerprint entry (repo@sha) with an evidence file in the DR-xxxx report"
+    required_templates: [templates/recovery/runtime-inventory.md]
+    required_schemas: [schemas/drift-report.schema.yaml]
+    required_prompts: [prompts/17-skill-drift-recovery.md]
+    required_gates: [G-REPO]
+    evidence_required:
+      - "a repo@sha fingerprint with branch and dirty-state recorded"
+      - "a script-collected file/route inventory evidence path"
+    human_decision_triggers: []
+    token_profile:
+      reads: ["repo metadata and tree listing via scripts", "the open DR-xxxx inventory"]
+      ignores: ["full file contents", "canon", "runtime"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["monorepo or many-service repository needing per-service SHAs"]
+    failure_modes:
+      - "fingerprinting the wrong repo/branch/SHA (G-REPO hard stop ignored)"
+      - "writing to the tree before G-REPO passes"
+    related_skills: [documentation_inventory, runtime_inventory, api_contract_comparison]
+  - schema: skill-definition/v1
+    skill_id: runtime_inventory
+    name: Runtime inventory
+    category: drift_recovery
+    level: core
+    purpose: Fingerprint the deployed reality (S4 runtime) — build id, deployed version, route table, effective schema — from a fresh probe, never an assumption.
+    operating_role: canonflow-drift-recovery
+    card_ref: skills/canonflow-drift-recovery.skill-card.yaml
+    checksum: "sha256:43ae614367489937e04b17497972617f2cee8e6385028eabcc002734ae6f4329"
+    triggered_when:
+      - "drift recovery must capture S4 and runtime is reachable but not yet fingerprinted"
+      - "a runtime incident triggered recovery and deployed behavior must be inventoried"
+    affected_loop: drift_runtime_recovery_mode
+    risk_relevance: "elevated at T3-T4; runtime carries production and security surface"
+    inputs: ["runtime access/endpoint pointers", "the open recovery/DR-xxxx pointer"]
+    outputs:
+      - "S4_runtime fingerprint entry (deployed id) with an evidence file in the DR-xxxx report"
+    required_templates: [templates/recovery/runtime-inventory.md]
+    required_schemas: [schemas/drift-report.schema.yaml]
+    required_prompts: [prompts/17-skill-drift-recovery.md]
+    required_gates: []
+    evidence_required:
+      - "a deployed build/version id plus a route table or schema dump hash"
+      - "a script-collected runtime evidence file path with collected_at"
+    human_decision_triggers:
+      - "probing a production runtime needs a human-authorized read window"
+    token_profile:
+      reads: ["runtime probes via scripts", "the open DR-xxxx inventory"]
+      ignores: ["repo contents", "canon", "unrelated services"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["multi-region or multi-instance runtimes with divergent deploys"]
+    failure_modes:
+      - "runtime behavior recorded from memory or a stale dashboard, not a fresh probe"
+      - "an unreachable runtime silently treated as matching the code"
+    related_skills: [repo_inventory, configuration_inventory, drift_classification]
+  - schema: skill-definition/v1
+    skill_id: configuration_inventory
+    name: Configuration inventory
+    category: drift_recovery
+    level: core
+    purpose: Fingerprint the configuration surface (S5 env, secret references, infra) as effective per-environment hashes so config drift is captured, never guessed.
+    operating_role: canonflow-drift-recovery
+    card_ref: skills/canonflow-drift-recovery.skill-card.yaml
+    checksum: "sha256:43ae614367489937e04b17497972617f2cee8e6385028eabcc002734ae6f4329"
+    triggered_when:
+      - "drift recovery must capture S5 and per-environment configuration is not yet fingerprinted"
+      - "a CONFIG_DRIFT signal or an environment mismatch triggered recovery"
+    affected_loop: drift_runtime_recovery_mode
+    risk_relevance: "elevated at T4; configuration governs data, auth and deployment"
+    inputs: ["environment and config source pointers (never secret values)", "the open recovery/DR-xxxx pointer"]
+    outputs:
+      - "S5_configuration fingerprint entry (effective per-env hash) with an evidence file"
+    required_templates: [templates/recovery/runtime-inventory.md]
+    required_schemas: [schemas/drift-report.schema.yaml]
+    required_prompts: [prompts/17-skill-drift-recovery.md]
+    required_gates: []
+    evidence_required:
+      - "an effective configuration hash per environment"
+      - "an evidence file that references secrets by reference, never by value"
+    human_decision_triggers:
+      - "configuration exposes secret values that require a human-handled redaction decision"
+    token_profile:
+      reads: ["config manifests and env references via scripts", "the open DR-xxxx inventory"]
+      ignores: ["secret plaintext", "code", "canon"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["many environments or layered infra-as-code needing per-layer hashing"]
+    failure_modes:
+      - "secret values captured into evidence instead of references (security leak)"
+      - "one environment's config assumed to match another"
+    related_skills: [runtime_inventory, published_contract_inventory, drift_classification]
+  - schema: skill-definition/v1
+    skill_id: published_contract_inventory
+    name: Published contract inventory
+    category: drift_recovery
+    level: core
+    purpose: Fingerprint the externally published surface (S6 published docs and external contracts) so what consumers were promised is captured before comparison.
+    operating_role: canonflow-drift-recovery
+    card_ref: skills/canonflow-drift-recovery.skill-card.yaml
+    checksum: "sha256:43ae614367489937e04b17497972617f2cee8e6385028eabcc002734ae6f4329"
+    triggered_when:
+      - "drift recovery must capture S6 and published docs/contract versions are not yet fingerprinted"
+      - "an external integration or published-docs mismatch triggered recovery"
+    affected_loop: drift_runtime_recovery_mode
+    risk_relevance: "elevated at T3; published contracts bind external consumers"
+    inputs: ["published docs and external contract location pointers", "the open recovery/DR-xxxx pointer"]
+    outputs:
+      - "S6_published_docs fingerprint entry (published contract versions) with an evidence file"
+    required_templates: [templates/recovery/runtime-inventory.md]
+    required_schemas: [schemas/drift-report.schema.yaml]
+    required_prompts: [prompts/17-skill-drift-recovery.md]
+    required_gates: []
+    evidence_required:
+      - "a published contract/version identifier per external surface"
+      - "a script-collected evidence file path for each published artifact"
+    human_decision_triggers: []
+    token_profile:
+      reads: ["published contract descriptors via scripts", "the open DR-xxxx inventory"]
+      ignores: ["internal code", "canon internals", "runtime internals"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["many externally published contracts across channels or versions"]
+    failure_modes:
+      - "a published version fingerprinted from an internal draft, not the live published copy"
+      - "a deprecated-but-still-published contract omitted"
+    related_skills: [api_contract_comparison, configuration_inventory, drift_classification]
+  - schema: skill-definition/v1
+    skill_id: api_contract_comparison
+    name: API contract comparison
+    category: drift_recovery
+    level: core
+    purpose: Compare API contracts across the fingerprinted surfaces (technical canon vs code vs runtime vs published S6) and emit precise per-endpoint divergence signals for classification.
+    operating_role: canonflow-drift-recovery
+    card_ref: skills/canonflow-drift-recovery.skill-card.yaml
+    checksum: "sha256:43ae614367489937e04b17497972617f2cee8e6385028eabcc002734ae6f4329"
+    triggered_when:
+      - "at least two surfaces expose API contracts and both are already fingerprinted"
+      - "a PUBLISHED_CONTRACT_DRIFT or integration signal names an API surface to compare"
+    affected_loop: drift_runtime_recovery_mode
+    risk_relevance: "elevated at T3-T4; API divergence breaks external consumers and integrations"
+    inputs: ["fingerprinted S2/S3/S4/S6 contract evidence pointers", "the open recovery/DR-xxxx pointer"]
+    outputs:
+      - "per-endpoint API divergence signals feeding drift items (no class verdict yet)"
+    required_templates: [templates/recovery/drift-report.yaml]
+    required_schemas: [schemas/drift-report.schema.yaml]
+    required_prompts: [prompts/17-skill-drift-recovery.md]
+    required_gates: []
+    evidence_required:
+      - "each divergence signal cites the two surfaces and the endpoint/field compared"
+      - "the comparison runs only against saved fingerprints, not live memory"
+    human_decision_triggers: []
+    token_profile:
+      reads: ["contract evidence files for the compared surfaces"]
+      ignores: ["unrelated endpoints", "canon prose", "implementation internals"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["large API surfaces or subtle schema/semantic differences"]
+    failure_modes:
+      - "comparison performed against memory instead of fingerprinted evidence"
+      - "a cosmetic difference reported as breaking divergence (or a breaking one missed)"
+    related_skills: [published_contract_inventory, repo_inventory, drift_classification]
+  - schema: skill-definition/v1
+    skill_id: drift_classification
+    name: Drift classification
+    category: drift_recovery
+    level: core
+    purpose: Turn each divergence into a DI-xxxx item with exactly one drift_class (DOC_AHEAD_OF_CODE, CODE_AHEAD_OF_CANON, RUNTIME_AHEAD_OF_CODE, CONFIG_DRIFT, PUBLISHED_CONTRACT_DRIFT, EVIDENCE_GAP, UNKNOWN_ORIGIN), a severity tier and the surfaces involved.
+    operating_role: canonflow-drift-recovery
+    card_ref: skills/canonflow-drift-recovery.skill-card.yaml
+    checksum: "sha256:43ae614367489937e04b17497972617f2cee8e6385028eabcc002734ae6f4329"
+    triggered_when:
+      - "surfaces are fingerprinted and divergence signals or comparisons exist to classify"
+      - "the drift report is at DRIFT_INVENTORY and needs DRIFT_CLASSIFIED items"
+    affected_loop: drift_runtime_recovery_mode
+    risk_relevance: "T0-T4; under-tiering or misclassification derails reconciliation"
+    inputs: ["fingerprinted surface evidence pointers", "divergence and comparison signal pointers", "the open recovery/DR-xxxx pointer"]
+    outputs:
+      - "DI-xxxx drift items carrying drift_class severity_tier and surfaces at DRIFT_CLASSIFIED"
+    required_templates: [templates/recovery/drift-report.yaml]
+    required_schemas: [schemas/drift-report.schema.yaml]
+    required_prompts: [prompts/17-skill-drift-recovery.md]
+    required_gates: []
+    evidence_required:
+      - "every DI-xxxx cites its surfaces and the compared evidence fingerprints"
+      - "a severity tier assigned per item per the method/12 tier semantics"
+    human_decision_triggers: []
+    token_profile:
+      reads: ["surface fingerprints and divergence signals", "the drift report skeleton"]
+      ignores: ["full source files", "unrelated surfaces"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["Tier 3-4 divergences or ambiguous UNKNOWN_ORIGIN attribution"]
+    failure_modes:
+      - "a divergence forced into a class it does not fit instead of UNKNOWN_ORIGIN"
+      - "under-tiering a security/data/migration divergence below its true tier"
+      - "canon or code edited during classification (no write before RECONCILIATION_DECIDED)"
+    related_skills: [api_contract_comparison, reconciliation_planning, recovery_evidence_capture]
+  - schema: skill-definition/v1
+    skill_id: reconciliation_planning
+    name: Reconciliation planning
+    category: drift_recovery
+    level: core
+    purpose: Propose exactly one reconciliation direction per drift item (R1_UPDATE_CANON, R2_FIX_REALITY, R3_SPLIT, R4_DEPRECATE, R5_ACCEPT_RISK) as PROPOSED and generate a Human Decision Console session — individual per Tier >= 2 item, batchable for Tier 0-1.
+    operating_role: canonflow-drift-recovery
+    card_ref: skills/canonflow-drift-recovery.skill-card.yaml
+    checksum: "sha256:43ae614367489937e04b17497972617f2cee8e6385028eabcc002734ae6f4329"
+    triggered_when:
+      - "the drift report is DRIFT_CLASSIFIED and has no reconciliation directions yet"
+      - "reconciliation must move from RECONCILIATION_PROPOSED toward a human decision"
+    affected_loop: drift_runtime_recovery_mode
+    risk_relevance: "T0-T4; the chosen direction governs whether canon or reality changes"
+    inputs: ["classified DI-xxxx item pointers", "the reconciliation-plan template pointer", "decision-state pointers"]
+    outputs:
+      - "reconciliation-plan.md with one PROPOSED R1-R5 direction per item plus a QS session"
+    required_templates: [templates/recovery/reconciliation-plan.md, templates/decision-console/question-session.json]
+    required_schemas: [schemas/drift-report.schema.yaml, schemas/question-session.schema.yaml]
+    required_prompts: [prompts/17-skill-drift-recovery.md, prompts/12-question-session-generator.md]
+    required_gates: []
+    evidence_required:
+      - "one PROPOSED direction with a rationale per DI-xxxx"
+      - "a QS session exists for every Tier >= 2 item before any recovery work"
+      - "each R5 proposal carries a proposed owner and an expiry"
+    human_decision_triggers:
+      - "every Tier >= 2 drift item (individual RECONCILIATION_DECIDED)"
+      - "any R5 accept-risk proposal (RSK-xxxx with owner and expiry)"
+      - "promoting runtime behavior into canon via R1 (runtime is never canon without a decision record)"
+    token_profile:
+      reads: ["classified drift items", "decision-state/latest.json"]
+      ignores: ["full surface evidence", "source code", "runtime internals"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["Tier 3-4 items or split (R3) reconciliations spanning multiple loops"]
+    failure_modes:
+      - "writing canon or code before RECONCILIATION_DECIDED closes the session"
+      - "a direction chosen by inference instead of a human decision for a Tier >= 2 item"
+      - "an R5 accepted with no owner or no expiry"
+    related_skills: [drift_classification, question_session_generation, decision_record_generation]
+  - schema: skill-definition/v1
+    skill_id: recovery_evidence_capture
+    name: Recovery evidence capture
+    category: drift_recovery
+    level: core
+    purpose: Script-collect and store the fingerprints, comparisons and decision references of a recovery run as immutable evidence files, then confirm a clean seven-surface re-comparison before RECOVERED.
+    operating_role: canonflow-drift-recovery
+    card_ref: skills/canonflow-drift-recovery.skill-card.yaml
+    checksum: "sha256:43ae614367489937e04b17497972617f2cee8e6385028eabcc002734ae6f4329"
+    triggered_when:
+      - "a recovery run produces fingerprints, comparisons or decision references needing durable evidence"
+      - "recovery reaches RECOVERY_IN_PROGRESS or RECOVERED and the seven-surface re-comparison must be captured"
+    affected_loop: drift_runtime_recovery_mode
+    risk_relevance: "T0-T4; recovery closure and audit depend on complete cited evidence"
+    inputs: ["surface fingerprint and comparison output pointers", "DEC/RSK decision reference pointers", "the open recovery/DR-xxxx pointer"]
+    outputs:
+      - "immutable evidence files cited by path from DI-xxxx items and a clean re-comparison record"
+    required_templates: [templates/recovery/drift-report.yaml]
+    required_schemas: [schemas/drift-report.schema.yaml, schemas/skill-report.schema.yaml]
+    required_prompts: [prompts/17-skill-drift-recovery.md]
+    required_gates: [G-EVID]
+    evidence_required:
+      - "every DI-xxxx and surface fingerprint resolves to a stored evidence file path"
+      - "a saved clean seven-surface re-comparison before any RECOVERED claim"
+      - "no Tier >= 3 UNKNOWN_ORIGIN item left open at close"
+    human_decision_triggers: []
+    token_profile:
+      reads: ["fingerprint and comparison outputs", "decision references", "the drift report index"]
+      ignores: ["raw source files", "chat history", "unrelated runs"]
+      typical_cost: low
+    default_effort: medium
+    max_effort_conditions: ["large recovery with many surfaces and decision records to reconcile"]
+    failure_modes:
+      - "evidence pasted into the report instead of stored and cited by path"
+      - "RECOVERED claimed without a clean saved re-comparison"
+      - "a Tier >= 3 UNKNOWN_ORIGIN item left unresolved at close"
+    related_skills: [drift_classification, reconciliation_planning, evidence_validation]

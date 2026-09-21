@@ -1,0 +1,35 @@
+functional_canon_version: 0.1.0
+technical_canon_version: 0.1.0
+increments:
+- increment_id: INC-0001
+  state: IMPLEMENTED
+  risk_tier: 4
+  evidence: evidence/00-environment.txt..12-summary.txt; commit 0687ddf + e9ab96d
+  note: implementado upstream con remediación de review (PR-02..06 cubren parte)
+- increment_id: INC-0002
+  state: IMPLEMENTED
+  risk_tier: 3
+  evidence: evidence/13-e2e-inc002-inc003.txt; commits b29a86c, 2b14c05
+- increment_id: INC-0003
+  state: IMPLEMENTED
+  risk_tier: 2
+  evidence: evidence/13-e2e-inc002-inc003.txt; commit b29a86c
+- increment_id: INC-0004
+  state: IMPLEMENTED
+  risk_tier: 3
+  evidence: evidence/14-e2e-inc004-006.txt; commits d333610, a67d443
+- increment_id: INC-0005
+  state: IMPLEMENTED
+  risk_tier: 3
+  evidence: evidence/14-e2e-inc004-006.txt; PR-01 (348676e)
+- increment_id: INC-0006
+  state: IMPLEMENTED
+  risk_tier: 3
+  evidence: evidence/14-e2e-inc004-006.txt; PR-02/PR-03 (348676e)
+- increment_id: INC-0007
+  state: IMPLEMENTED
+  risk_tier: 2
+  evidence: evidence/14-e2e-inc004-006.txt (base; dashboards fase 2)
+note: 'Implementado antes del onboarding canonflow (SRC-0007). Estado IMPLEMENTED
+  (no DONE): auditoría independiente formal del método pendiente; remediación PR-01..06
+  registrada como revisión interna.'

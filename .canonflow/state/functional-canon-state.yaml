@@ -1,0 +1,11 @@
+canon: functional
+version: 0.1.0
+state: FUNCTIONAL_CANON_IN_PROGRESS
+items_index: .canonflow/canon/functional/index.yaml
+changelog: .canonflow/canon/functional/CHANGELOG.md
+blocking_open:
+- QS-0001
+- QS-0002
+note: v0.1.0 fijada desde la baseline aprobada upstream (DEC-015). El delta de plataforma
+  (items INFERRED + cierre TENTATIVA) requiere decisiones humanas vía HDC antes de
+  REVIEW_CANDIDATE (G-EPI).

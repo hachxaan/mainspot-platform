@@ -1,0 +1,183 @@
+# Skill card (method/21). Validate: schemas/skill-card.schema.yaml
+schema: skill-card/v1
+skill_id: canonflow-release-governor
+name: Release Governor (release-scope closure verifier, DEC-0015)
+version: 0.1.0
+state: REVIEW_CANDIDATE
+role_class: operating
+purpose: >-
+  Formalizes release-candidate governance (prompts/09, method/16 section 5):
+  verifies that exactly one declared release scope is closed under DEC-0015 —
+  every increment of the closed set in IMPLEMENTED_INCREMENT_DONE, an
+  independent release-level audit with no blocking findings, G-TRACE at
+  release scope resolving every in-scope FR/AC through INC and EV to
+  AUD(PASS), and every Tier 3-4 obligation (security, migration, rollback,
+  runtime verification plan) backed by evidence or an explicit RSK with
+  expiry. On verified closure it sets RELEASE_CANDIDATE_READY — the only
+  release transition permitted to an agent — and generates the G-RC approval
+  session. Every release state after that one is human-owned (DEC-0004).
+prompt: prompts/23-skill-release-governor.md
+run_modes: []
+when_to_use:
+  - a release-candidate.yaml exists in RELEASE_SCOPE_DEFINED and every increment of its set claims IMPLEMENTED_INCREMENT_DONE
+  - skill-state.next_task points this skill at an RC-xxxx closure verification
+  - a release scope previously reported REMEDIATION_REQUIRED and the cited remediations are reported complete
+  - G-RC returned RELEASE_REJECTED and the remediated set needs a fresh closure verification before a new G-RC request
+required_inputs:
+  - .canonflow/releases/RC-xxxx/release-candidate.yaml (state RELEASE_SCOPE_DEFINED; the one subject of the run)
+  - .canonflow/state/method-state.yaml, .canonflow/skill-state/skill-state.yaml and .canonflow/skill-runs/index.yaml
+  - "for every INC-xxxx in increment_set: state entry, contract, report, audit and evidence-package pointers"
+  - .canonflow/traceability/links.yaml plus canon indices pinned at the RC canon versions
+  - RSK-xxxx records cited for any Tier 3-4 obligation not covered by direct evidence
+  - the assigning TASK-xxxx / RUN-xxxx correlation anchors (task_id, task_commit)
+required_outputs:
+  - own RUN-xxxx.skill-run.yaml and RUN-xxxx.skill-report.yaml (immutable)
+  - closure evidence files (increment closure matrix, G-TRACE release-scope output, Tier 3-4 obligation coverage table) cited by path
+  - "on PASS or PASS_WITH_LIMITATIONS: release-candidate.yaml at RELEASE_CANDIDATE_READY plus the generated G-RC QS session"
+  - "on closure failure: FND findings per gap plus bounded remediation task artifacts or listed blockers"
+  - registry entry and skill-state latest_run/latest_report updates (work branch only)
+authority:
+  - verify closure of exactly one declared release scope (RC-xxxx) against the four DEC-0015 conditions, with evidence per condition
+  - run scripts/check_gates.py --gate G-TRACE at release scope and save the output as the traceability evidence file
+  - challenge the closed set — verify increment_set membership against state files and that no in-scope FR/AC lacks an increment
+  - delegate the release-level independent audit to canonflow-evidence-auditor when release_audit is empty, then consume its AUD verdict
+  - accept an explicit unexpired RSK-xxxx in place of direct Tier 3-4 evidence, recording it as a RISK-classed limitation
+  - set release-candidate.yaml state to RELEASE_CANDIDATE_READY on the work branch once all four conditions are VERIFIED (prompts/09 permission)
+  - generate the G-RC approval QS session with pointers to all closure evidence and every limitation quoted verbatim
+  - record FND findings for closure gaps and author bounded remediation task artifacts covering only those findings
+authority_limits:
+  - the verdict binds only the RC-xxxx scope of this run; it is never project readiness, deploy readiness, environment health or portfolio status
+  - "RELEASE_CANDIDATE_READY is the ceiling: RELEASE_APPROVED, MERGED, DEPLOYED and RUNTIME_VERIFIED are human-owned (DEC-0004, DEC-0007) and may only be requested via QS sessions"
+  - may verify that an APR-xxxx exists for G-RC; may never produce, infer or anticipate one
+  - remediation task artifacts may only reference the exact FND ids that motivated them; new scope goes to G-PLAN, never into a remediation
+  - next_task publication stays with canonflow-orchestrator-reviewer; this skill only hands remediation artifacts over
+  - an RSK substitute for Tier 3-4 evidence counts only when explicit, unexpired and surfaced as a limitation in both the report and the G-RC session
+  - all writes happen on work branches; main advances only by human merge (DEC-0003)
+prohibitions:
+  - never approves G-RC or any human gate; never moves the RC to RELEASE_APPROVED, MERGED, DEPLOYED or RUNTIME_VERIFIED
+  - never merges, tags, deploys, freezes or releases anything, in any environment
+  - never claims production ready, staging pass, freeze or readiness beyond the run scope; the maximum claim is "RELEASE_CANDIDATE_READY reached, evidence at <paths>, G-RC approval pending"
+  - never produces the release-level audit and consumes it in the same run; the audit executor must be independent of every implementer in the set
+  - never verifies a release scope containing artifacts produced by its own executor
+  - never widens, shrinks or substitutes members of increment_set; set changes go to G-PLAN or the HDC
+  - never sets RELEASE_CANDIDATE_READY while any DEC-0015 condition is unverified, inferred or assumed
+  - never treats implementer self-reports, auditor narrative, chat or assumptions as closure evidence
+hard_stops:
+  - "increment set not closed: any INC-xxxx of increment_set not in IMPLEMENTED_INCREMENT_DONE -> stop, RELEASE_CANDIDATE_READY is never set; verdict BLOCKED listing each offending increment and its actual state"
+  - blocking findings in any audit of the set (release-level or per-increment) -> stop; verdict REMEDIATION_REQUIRED only when every cited FND is covered by a bounded remediation artifact, otherwise BLOCKED
+  - G-TRACE FAIL at release scope (any chain FR/AC -> INC -> EV -> AUD(PASS) broken) -> stop; unresolved links listed verbatim from the script output
+  - Tier 3-4 obligation (security, migration, rollback, runtime verification plan) with no evidence and no explicit unexpired RSK-xxxx -> stop
+  - "correlation failure: rc_id, increment_set, canon versions or audit refs contradict state files, registry or artifacts on disk -> BLOCKED + delegate to canonflow-state-manager + QS if material"
+  - own G-REPO pre-flight fails (wrong repo/branch, dirty tree) -> stop before any write
+reads:
+  - release-candidate.yaml, increment contracts, reports, audits, evidence packages and state files of the set
+  - .canonflow/traceability/links.yaml and canon indices at the pinned canon versions (read-only)
+  - DEC/APR/RSK records relevant to the release scope, including expiry fields
+  - .canonflow/state/*.yaml pointers, .canonflow/skill-runs/index.yaml and skill reports covering the set
+  - repository commits and diffs at the pinned SHAs of the set
+writes:
+  - .canonflow/skill-runs/RUN-xxxx.skill-run.yaml (own run)
+  - .canonflow/skill-runs/RUN-xxxx.skill-report.yaml (own report)
+  - .canonflow/skill-runs/index.yaml (own registry entry, legal chain only)
+  - .canonflow/skill-state/skill-state.yaml (latest_run and latest_report pointers; never next_task)
+  - .canonflow/releases/RC-xxxx/release-candidate.yaml (state field only, RELEASE_SCOPE_DEFINED -> RELEASE_CANDIDATE_READY on verified closure)
+  - .canonflow/releases/RC-xxxx/evidence/ (closure matrix, G-TRACE output, obligation coverage table)
+  - .canonflow/decision-sessions/pending/ (G-RC approval QS and human-shaped blocker sessions)
+  - bounded remediation task artifacts referenced by the report (handed to the orchestrator for publication)
+state_interaction:
+  - resolves position exclusively from method-state, skill-state, registry and decision-state pointers (method/21 section 4 order)
+  - increment states are read-only inputs; they advance only through scripts/update_state.py legal transitions, which this skill requests but never performs
+  - "performs exactly one release mutation: release-candidate.yaml state RELEASE_SCOPE_DEFINED -> RELEASE_CANDIDATE_READY on the work branch, only after all four DEC-0015 conditions are VERIFIED"
+  - human-owned release transitions (RELEASE_APPROVED, MERGED, DEPLOYED, RUNTIME_VERIFIED) are requested via QS sessions, never performed
+  - own registry entry follows the legal chain PUBLISHED->CLAIMED->REPORTED; AUDITED is set only by a later independent review
+decision_console_interaction:
+  - generates the G-RC approval QS session on every PASS or PASS_WITH_LIMITATIONS, pointing to closure evidence and quoting every limitation
+  - generates a QS session for disputed set membership, expired RSK records, tier exceptions and contradictions only a human can resolve
+  - consumes DEC/APR/RSK records as the only valid human inputs; loose chat answers are not decisions
+  - never answers, ingests or archives its own sessions (ingestion belongs to canonflow-human-decision-console)
+skill_interactions:
+  - {skill: canonflow-orchestrator-reviewer, relation: CONSUMES_OUTPUT_OF, detail: audited increment set and reviewed runs feed release-scope verification}
+  - {skill: canonflow-evidence-auditor, relation: CONSUMES_OUTPUT_OF, detail: per-increment and release-level audit verdicts are closure inputs}
+  - {skill: canonflow-evidence-auditor, relation: DELEGATES_TO, detail: release-level independent audit when release_audit is empty; consumes the resulting AUD verdict}
+  - {skill: canonflow-repo-worktree-auditor, relation: DELEGATES_TO, detail: G-REPO pre-flight}
+  - {skill: canonflow-state-manager, relation: DELEGATES_TO, detail: state integrity repair when the RC file contradicts state files or registry}
+  - {skill: canonflow-human-decision-console, relation: ESCALATES_TO, detail: G-RC approval session and every human-shaped blocker; standard pointer message then stop}
+  - {skill: canonflow-orchestrator-reviewer, relation: PRODUCES_INPUT_FOR, detail: remediation task artifacts and closure findings for next_task publication}
+  - {skill: canonflow-drift-recovery, relation: PRODUCES_INPUT_FOR, detail: drift suspected during closure verification becomes a DR trigger}
+  - {skill: canonflow-implementation-planner, relation: PRODUCES_INPUT_FOR, detail: closure gaps needing new scope become proposed increments for G-PLAN}
+required_evidence:
+  - "increment closure matrix saved as an evidence file: every INC-xxxx of the set with its state, report, audit verdict and evidence-package paths"
+  - release-level audit reference with its executor identity, verdict and finding severities independently checked
+  - G-TRACE release-scope script output saved as a file and cited (never a restated summary)
+  - per Tier 3-4 obligation, the exact evidence path or the RSK-xxxx id with its expiry date
+  - correlation check output comparing release-candidate.yaml against state files, registry and pinned canon versions
+verdict_criteria:
+  PASS:
+    - every increment of the closed set VERIFIED in IMPLEMENTED_INCREMENT_DONE against state files and registry; set membership matches release-candidate.yaml exactly
+    - release-level independent audit exists, its executor differs from every implementer in the set, and it carries zero blocking findings
+    - G-TRACE at release scope passes with the script output on file; every in-scope FR/AC resolves FR/AC -> INC -> EV -> AUD(PASS)
+    - every Tier 3-4 obligation covered by direct evidence, no RSK substitutions needed
+    - RELEASE_CANDIDATE_READY set on the work branch and the G-RC QS session generated
+  PASS_WITH_LIMITATIONS:
+    - PASS conditions hold except enumerated non-blocking limitations (RSK-backed Tier 3-4 obligations, non-blocking release-audit findings)
+    - every limitation recorded as an OPEN, ASSUMED or RISK claim with owner or RSK/TR reference and quoted in the G-RC session
+    - RELEASE_CANDIDATE_READY still set; the human sees every limitation at G-RC before deciding
+  REMEDIATION_REQUIRED:
+    - closure fails on remediable blocking gaps (release-audit blocking findings, broken G-TRACE chains, Tier 3-4 evidence absent without RSK)
+    - each gap recorded as an FND finding and covered by a bounded remediation task artifact referencing only that finding
+    - RELEASE_CANDIDATE_READY not set; the RC remains in RELEASE_SCOPE_DEFINED
+  BLOCKED:
+    - increment set not closed, correlation failure, release audit missing and not delegable, self-verification condition, or a contradiction only a human can resolve
+    - blockers listed in the report; QS session generated when the blocker is human-shaped; no release state touched
+allowed_claims:
+  - VERIFIED facts about set states, audit verdicts, traceability resolution and obligation evidence it checked itself (evidence pointers mandatory)
+  - the single scoped closure claim "RELEASE_CANDIDATE_READY reached, evidence at <paths>, G-RC approval pending" and nothing stronger
+  - RISK claims referencing or proposing RSK/TR records for accepted Tier 3-4 gaps
+  - OPEN claims for pending G-RC approval and unresolved closure items; CONFLICTED for contradictions between the RC file and state
+  - PROPOSED remediations and set corrections awaiting human decision
+prohibited_claims:
+  - production ready, staging pass, deploy ready, freeze, rollout safe or any readiness beyond the RC-xxxx scope of the run
+  - DECIDED claims of any kind; gate approvals (the ceiling is VERIFIED that an APR-xxxx exists or OPEN that G-RC approval is pending)
+  - RELEASE_APPROVED, MERGED, DEPLOYED or RUNTIME_VERIFIED presented as states this run reached or will reach
+  - generalizing one RC closure to project, portfolio or environment health
+  - restating implementer or auditor narrative as VERIFIED without checking the underlying artifacts
+  - runtime behavior claims; RUNTIME_VERIFIED evidence is post-deploy and human-owned
+examples:
+  - title: Close RC-0001 with an RSK-backed rollback plan and request G-RC
+    given: >-
+      RC-0001 in RELEASE_SCOPE_DEFINED with increment_set [INC-0004, INC-0005,
+      INC-0006], all IMPLEMENTED_INCREMENT_DONE; release_audit AUD-0009 (PASS,
+      independent executor, no blocking findings); INC-0006 is Tier 3 with
+      security evidence on file but its rollback plan covered only by RSK-0003
+      (expiry 2026-09-30); TASK-0021 assigns this verification.
+    run: >-
+      G-REPO pre-flight via canonflow-repo-worktree-auditor; create RUN-0012;
+      verify correlation (rc_id, set membership, canon versions vs state and
+      registry); build and save the closure matrix; check AUD-0009 executor
+      independence and finding severities; run check_gates.py --gate G-TRACE
+      at release scope and save the output; verify Tier 3-4 coverage and
+      record RSK-0003 as a RISK limitation; set RELEASE_CANDIDATE_READY on the
+      work branch; generate QS-0018 for G-RC quoting the limitation; emit
+      SRP-0012.
+    expected_outcome: >-
+      SRP-0012 verdict PASS_WITH_LIMITATIONS scoped to RC-0001; RC-0001 state
+      RELEASE_CANDIDATE_READY; QS-0018 PENDING with RSK-0003 quoted; the only
+      readiness claim is "RELEASE_CANDIDATE_READY reached, evidence at
+      .canonflow/releases/RC-0001/evidence/, G-RC approval pending";
+      merge and deploy untouched.
+  - title: G-TRACE failure at release scope blocks promotion
+    given: >-
+      RC-0002 in RELEASE_SCOPE_DEFINED with increment_set [INC-0007,
+      INC-0008], both IMPLEMENTED_INCREMENT_DONE; release_audit AUD-0011 PASS;
+      check_gates.py --gate G-TRACE at release scope reports FR-0009/AC-2
+      resolving to INC-0008 with no EV link to an AUD(PASS).
+    run: >-
+      Save the failing G-TRACE output as evidence; hard stop — never set
+      RELEASE_CANDIDATE_READY; record FND-0032 for the broken chain; author
+      bounded remediation task artifact TASK-0027 covering only FND-0032 and
+      hand it to the orchestrator; verdict REMEDIATION_REQUIRED; update
+      registry and skill-state pointers; emit SRP-0014.
+    expected_outcome: >-
+      SRP-0014 verdict REMEDIATION_REQUIRED scoped to RC-0002; RC-0002 remains
+      RELEASE_SCOPE_DEFINED; TASK-0027 referenced in the report for
+      publication; no G-RC session generated; no readiness claim anywhere.

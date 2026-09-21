@@ -1,0 +1,8 @@
+canon: technical
+version: 0.1.0
+derived_from_functional_version: 0.1.0
+state: TECHNICAL_CANON_IN_PROGRESS
+items_index: .canonflow/canon/technical/index.yaml
+changelog: .canonflow/canon/technical/CHANGELOG.md
+blocking_open:
+- QS-0001

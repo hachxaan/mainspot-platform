@@ -1,29 +1,13 @@
-# Dependencies
+# CanonFlow HDC v1 managed exclusions (CANONFLOW_HDC_DEFINITION §4).
+# NEVER ignore .canonflow/ globally: new ANS files, lifecycle files and
+# preserved legacy snapshots are versionable canonical evidence.
+.canonflow/decision-console/config/.env
+.canonflow/decision-console/local-data/
+.canonflow/decision-console/backups/
+.canonflow/decision-console/runtime/
+.canonflow/decision-console/locks/
+.canonflow/decision-console/app/releases/
+.canonflow/decision-console/app/current.json
+
+# Node
 node_modules/
-
-# Build output
-dist/
-build/
-
-# Environment (never commit real secrets; .env.example is the reference)
-.env
-.env.local
-.env.*.local
-
-# Logs
-*.log
-logs/
-
-# Deploy artifacts (never commit real secrets; secrets live in ~/.config/mainspot)
-.deploy/
-deploy/secrets.env
-
-# OS / editor
-.DS_Store
-*.swp
-.idea/
-.vscode/
-
-# Test artifacts (evidence/ IS committed on purpose: it is the AC-009 deliverable)
-coverage/
-.nyc_output/

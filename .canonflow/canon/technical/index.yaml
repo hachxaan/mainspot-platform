@@ -1,0 +1,30 @@
+project: mainspot-platform
+canon_version: 0.1.0
+derived_from_functional_version: 0.1.0
+note: 'TC soporte: decisiones de stack/patrón aprobadas (DEC-022/026/018) + elementos
+  recuperados pendientes de cierre (QS-0001).'
+items:
+- id: API-0001
+  title: Stack TypeScript + PostgreSQL 16 + JWT propio + Docker Compose
+  state: DECIDED
+  tier_hint: 3
+  path: items/API-0001.md
+  source: DEC-022
+- id: API-0002
+  title: Monorepo por capas
+  state: DECIDED
+  tier_hint: 3
+  path: items/API-0002.md
+  source: DEC-022
+- id: API-0003
+  title: 'Patrón de integraciones: adaptador + real opcional + simulado funcional'
+  state: DECIDED
+  tier_hint: 3
+  path: items/API-0003.md
+  source: DEC-026
+- id: API-0004
+  title: Migraciones espejo con advisory lock
+  state: INFERRED
+  tier_hint: 2
+  path: items/API-0004.md
+  source: recovered (SRC-0006/SRC-0007)

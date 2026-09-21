@@ -1,0 +1,249 @@
+# Core Skill Registry fragment -- Routing & intake pipeline capabilities (method/20).
+# Validate: schemas/skill-registry.schema.yaml. REVIEW_CANDIDATE (PROP-0006); SUB-02 v2 (DEC-0043).
+# Closes Phase-1 GAP-06 (routing category absent -> Router unindexable), GAP-07
+# (canonflow-orchestrator-reviewer had zero registry entries) and GAP-08
+# (canonflow / canonflow-main had no registry entries), per FABLE_DESIGN section 7.2.
+# The routing category is the ONLY enum-backed home (common-enums skill_category) for the
+# design's intake->route pipeline; the reference (canonflow) and interface (canonflow-main)
+# identities are distinguished by role_class, NOT by a new category -- a dedicated
+# knowledge/interface skill_category would require a common-enums change (schemas tranche).
+# Subordination floor (design 7.1): a capability NEVER grants authority its card withholds.
+# The Router recommends only -- authorization is structurally null (OB-07, DD-03); a
+# recommended route never starts anything (a later RAR with a human authority source does).
+schema: skill-registry/v1
+registry_version: 0.2.0
+level: core
+category: routing
+source_sha: 9f223113af19bb74d3288e06373df995512b4ae2
+coverage_notes: "The routing and intake pipeline (reference canonflow -> interface canonflow-main -> meta Skill Router -> operating Orchestrator-Reviewer); role_class per entry preserves the FABLE_DESIGN section 4/5/6 distinction inside the single enum-backed routing category. Recommendation is never decision: the Router carries authorization null and every route awaits an external RAR (DD-11) before execution. SUB-02 v2 additions (DEC-0043): does_not_cover, per-entry checksum, source_sha."
+does_not_cover:
+  - "authorizing execution or producing a RAR (Router authorization is structurally null; the RAR is a later artifact with a human authority source)"
+  - "approving anything (human only)"
+  - "executing, implementing or auditing any work"
+  - "forcing the nearest capability on a registry_miss (fail-closed -> HUMAN_DECISION_REQUIRED or NO_SAFE_ROUTE + QS)"
+  - "the Orchestrator-Reviewer run-review and AUD-adjacent verdict facet (audit fragment / reviewer role); this fragment indexes only its authorized route -> next_task conversion and publication"
+  - "canonflow arbitrating a canonical conflict, or canonflow-main deciding for the human (both redirect; neither decides, classifies or routes)"
+skills:
+  - schema: skill-definition/v1
+    skill_id: task_classification
+    name: Task classification (TCL)
+    category: routing
+    level: core
+    role_class: meta
+    purpose: Classify a material task (mode, impact_class, cited signals, confidence with a confidence_reason and falsifiers) into an immutable TCL -- the sole holder of this act (monopoly, DD-03). Classification is not authorization.
+    operating_role: ""
+    card_ref: skills/skill-router.skill-card.yaml
+    checksum: "sha256:55d7644fa3aafc89094f95ff3901ddb3eb50f3541de47c90d21117b9a61c6132"
+    triggered_when:
+      - "a material task or a TFR from canonflow-main needs classification before a route can be recommended"
+      - "the operational materiality criterion is met (trivial tasks are exempt)"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; a wrong mode or impact_class misroutes every downstream step"
+    inputs:
+      - "the task or TFR to classify (verbatim framing + pointers)"
+      - ".canonflow/state/*, skill-state and decision-state pointers (integrity preflight)"
+      - "the installed skill registry verified by hash against the RIM"
+    outputs:
+      - ".canonflow/routing/TCL-xxxx.task-classification.yaml (immutable): mode, impact_class, cited signals, confidence + confidence_reason (signals/counter-signals/falsifiers)"
+    required_templates: []
+    required_schemas: [schemas/task-classification.schema.yaml]
+    required_prompts: [prompts/15-skill-router.md]
+    required_gates: []
+    evidence_required:
+      - "confidence_reason with cited signals (path), counter-signals and falsifiers"
+      - "registry_snapshot (registry_sha, rim_id) proving the catalogue was verified against the RIM"
+      - "classification never asserted over dirty state (fail-closed)"
+    human_decision_triggers:
+      - "a low-confidence or material-impact classification is escalated (via route_recommendation) to the human by QS; the Router decides nothing"
+    token_profile:
+      reads: ["the task/TFR and its pointers", "state pointers for the preflight", "the installed registry index (hash only)"]
+      ignores: ["conversational history", "artifact bodies", "code and runtime"]
+      typical_cost: low
+    default_effort: medium
+    max_effort_conditions: ["Tier 3-4 or material-impact tasks where mode/impact_class is contested"]
+    failure_modes:
+      - "classifying over dirty or contradictory state (must fail closed and request State Manager validation)"
+      - "asserting high confidence while a flag, critical assumption or missing evidence is present (DD-10 cap violated)"
+      - "treating host_projected as a source of truth for classification (P-15)"
+    related_skills: [route_recommendation, route_conversion, intent_framing, canon_reference_query]
+  - schema: skill-definition/v1
+    skill_id: route_recommendation
+    name: Route recommendation (SSR / RPL)
+    category: routing
+    level: core
+    role_class: meta
+    purpose: Recommend a route (SSR) and compose a multi-step route plan (RPL) when coverage requires dependent steps, selecting only from the installed registry, with mechanical confidence caps (DD-10), mandatory alternatives, and terminal outcomes ROUTE_RECOMMENDED / HUMAN_DECISION_REQUIRED / NO_SAFE_ROUTE. Recommendation is never decision -- authorization is structurally null.
+    operating_role: ""
+    card_ref: skills/skill-router.skill-card.yaml
+    checksum: "sha256:55d7644fa3aafc89094f95ff3901ddb3eb50f3541de47c90d21117b9a61c6132"
+    triggered_when:
+      - "a TCL exists and a cited route recommendation is required"
+      - "coverage is absent (registry_miss), no safe route exists, or a low-confidence or material decision must be escalated to the human via QS"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; a forced or over-confident route sends work to the wrong capability"
+    inputs:
+      - "the TCL to route (backlink TCL to TFR)"
+      - "the installed skill registry (covers[] and does_not_cover[]) and the skill-cards it indexes"
+      - "runtime-installation evidence (RIM) for runtime_installed checks"
+      - "CQR from canonflow when a canon doubt arises (attached as evidence)"
+    outputs:
+      - ".canonflow/routing/SSR-xxxx.skill-selection.yaml (immutable; artifact_kind route_recommendation; authorization null; assumptions[], alternatives[], hard_stops_evaluated[], outcome)"
+      - ".canonflow/routing/RPL-xxxx.route-plan.yaml (immutable; composite routes only)"
+      - "a QS reference (in the SSR) when the outcome is HUMAN_DECISION_REQUIRED, registry_miss or NO_SAFE_ROUTE"
+    required_templates: []
+    required_schemas: [schemas/skill-selection-report.schema.yaml, schemas/route-plan.schema.yaml]
+    required_prompts: [prompts/15-skill-router.md]
+    required_gates: []
+    evidence_required:
+      - "hard_stops_evaluated[] with a per-hard-stop result (passed or triggered) and citation"
+      - "alternatives[] recorded when confidence is not high or two or more plausible routes exist"
+      - "the route selected only from the installed registry; a registry_miss never forced onto the nearest capability"
+      - "authorization is null in every emitted SSR/RPL"
+    human_decision_triggers:
+      - "registry_miss (no capability covers the task, or coverage would violate does_not_cover) -> HUMAN_DECISION_REQUIRED + QS"
+      - "NO_SAFE_ROUTE, or a low-confidence or material route with no clearly dominated alternative -> a QS the human answers"
+    token_profile:
+      reads: ["the TCL", "the installed registry covers[]/does_not_cover[] and indexed cards", "the RIM (hash + runtime_installed)"]
+      ignores: ["conversational history", "code and runtime", "out-of-scope cards"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["composite multi-step routes (RPL) with cross-step gates", "contested coverage near a does_not_cover boundary"]
+    failure_modes:
+      - "forcing the nearest capability on a registry_miss instead of escalating (fail-closed violated)"
+      - "emitting or implying authorization or next_task (Router is structurally incapable; Orchestrator monopoly, DD-04)"
+      - "asserting high confidence while a flag, critical assumption or missing evidence is present (DD-10)"
+      - "routing on a stale registry (hash mismatch vs the RIM) instead of failing closed (P-18)"
+    related_skills: [task_classification, route_conversion, intent_framing, canon_reference_query]
+  - schema: skill-definition/v1
+    skill_id: route_conversion
+    name: Route conversion and publication (authorized route to next_task)
+    category: routing
+    level: core
+    role_class: operating
+    purpose: Convert an authorized-pending SSR/RPL into the next bounded task and publish next_task -- the Orchestrator-Reviewer monopoly (DD-04) -- but only with a prior RAR whose authority source is human. Closes GAP-07 (orchestrator had zero registry entries).
+    operating_role: canonflow-orchestrator-reviewer
+    card_ref: skills/canonflow-orchestrator-reviewer.skill-card.yaml
+    checksum: "sha256:86bb84ffe4f3b8f91976b00a7a50b824b704f14fd9702e550c0e636b610d91d3"
+    triggered_when:
+      - "a ROUTE_RECOMMENDED SSR (or RPL) exists with a prior RAR and no PENDING decision session blocks it"
+      - "chatless cycle start: next_task is empty and an authorized route is ready to publish"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; publishing a task without a valid RAR would launch unauthorized work"
+    inputs:
+      - "the authorized SSR/RPL pointer (backlink SSR to TCL to TFR)"
+      - "the RAR (route-authorization) whose authority source is a human DEC/APR"
+      - ".canonflow/skill-state/skill-state.yaml and .canonflow/skill-runs/index.yaml"
+    outputs:
+      - "the published next_task derived from the authorized route + updated skill-state.next_task pointer (work branch only)"
+      - "a QS-xxxx session when a contradiction, ambiguity or material decision is detected"
+    required_templates: []
+    required_schemas: [schemas/route-authorization.schema.yaml, schemas/skill-run.schema.yaml]
+    required_prompts: [prompts/16-skill-orchestrator-reviewer.md]
+    required_gates: [G-REPO]
+    evidence_required:
+      - "a RAR exists with a human authority source before any conversion (never inferred)"
+      - "the published task introduces no scope absent from the approved canons/plans the route derives from"
+      - "correlation verified end to end (route, RAR, task, registry, SHAs)"
+    human_decision_triggers:
+      - "no valid RAR, or an ambiguity or contradiction only a human can resolve -> QS; publish nothing"
+    token_profile:
+      reads: ["the authorized route and its RAR", "skill-state and run-registry pointers", "the approved plan/canon the task derives from"]
+      ignores: ["conversational history", "raw sources", "unrelated runs"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["composite RPL publication with cross-step dependencies", "remediation-task derivation from blocking findings"]
+    failure_modes:
+      - "converting a route into next_task without a valid RAR (authorization skipped)"
+      - "introducing scope absent from the approved plan/canon into the published task"
+      - "advancing main outside a human merge (registry and pointer writes belong to the work branch)"
+    related_skills: [route_recommendation, task_classification, intent_framing]
+  - schema: skill-definition/v1
+    skill_id: intent_framing
+    name: Intent framing and presentation (TFR)
+    category: routing
+    level: core
+    role_class: interface
+    purpose: Frame verbatim human intention into a TFR (its only own artifact), request routing/validation/planning/publication from the responsible skill, draft QS, and present SSR/next_task/decisions/state to the human as pointers. It never classifies, routes, publishes, approves or decides. Closes GAP-08 (canonflow-main).
+    operating_role: canonflow-main
+    card_ref: skills/canonflow-main.skill-card.yaml
+    checksum: "sha256:75c33087e4bfb4de8a0bc1de9d5e407fbfc05313859fa9744d9b0426b0f285ca"
+    triggered_when:
+      - "a human expresses an intention that must be framed into a CanonFlow flow (TFR)"
+      - "a pending decision, a returned SSR, or current state must be presented to the human as pointers"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; a mis-framed or lost intent breaks the whole intake pipeline (P-08)"
+    inputs:
+      - "human intention (verbatim)"
+      - "current state and decision pointers (path, sha)"
+      - "responses from Router / orchestrator / specialists (TCL/SSR, queue status, verdicts) as pointers"
+      - "CQR from canonflow (canon references, never improvised)"
+    outputs:
+      - ".canonflow/intake/TFR-xxxx.task-framing-record.yaml (its only own artifact: verbatim intent, framing, scope hypothesis epistemically classed, CQR refs, state pointers read)"
+      - ".canonflow/intake/qs-drafts/QS-xxxx.draft.json (QS DRAFTS only; the console materializes the canonical session)"
+      - "registered, backlinked requests to Router / State Manager / planner / orchestrator"
+    required_templates: []
+    required_schemas: [schemas/task-framing-record.schema.yaml]
+    required_prompts: []
+    required_gates: []
+    evidence_required:
+      - "the verbatim human intent captured in the TFR (raw_intent)"
+      - "the state pointers read (path, sha) recorded in the TFR"
+      - "a backlink from every downstream request to the originating TFR (intent_id)"
+    human_decision_triggers:
+      - "material ambiguity or a user/method contradiction -> a clarification or decision QS-draft for the human; the current method wins until the human decides"
+      - "every material decision is the human's; canonflow-main decides nothing"
+    token_profile:
+      reads: ["the human intent", "state and decision pointers", "Router/specialist outputs as pointers", "CQR from canonflow"]
+      ignores: ["artifact bodies (pointers only)", "the full repository"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["a contested or method-contradicting intent requiring careful QS-draft framing"]
+    failure_modes:
+      - "emitting a TCL or SSR or publishing next_task (reserved acts it must only request, never perform)"
+      - "deciding for the human or resolving a contradiction by inference instead of drafting a QS"
+      - "mutating state or presenting a summary without a pointer (P-08)"
+    related_skills: [canon_reference_query, task_classification, route_recommendation, route_conversion]
+  - schema: skill-definition/v1
+    skill_id: canon_reference_query
+    name: Canonical reference query (CQR)
+    category: routing
+    level: core
+    role_class: reference
+    purpose: Answer with mandatory citation and an epistemic class per claim (VERIFIED/INFERRED/NOT_DEFINED/CONFLICTED) what CanonFlow says about X and where it is defined, emitting a CQR the invoker persists -- zero writes. It classifies nothing, recommends no route, decides nothing, and redirects every action request to canonflow-main. Closes GAP-08 (canonflow); indexed under routing only because the enum has no dedicated knowledge/reference category (role_class reference preserves the section 4 distinction).
+    operating_role: ""
+    card_ref: skills/canonflow.skill-card.yaml
+    checksum: "sha256:5657ae5d7b836c1c89983d08e3ab71d6eafb827323b47465723176b7b3e28028"
+    triggered_when:
+      - "a human or agent needs to know what CanonFlow says about X and where it is defined"
+      - "an agent (Router, orchestrator, canon, planner, auditor) needs a cited canon reference (CQR) attached to its own evidence before proceeding"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; an uncited or wrong canon claim would corrupt every downstream obligation"
+    inputs:
+      - "the question (verbatim) from a human invocation or an agent query"
+      - "optional context pointers (task / TCL / SSR / QS / TFR references) -- pointers, never pasted content"
+      - "the canonical source tree at a pinned SHA (method/*, schemas/*, skills/* cards + registry, prompts/*, templates/*, decision records)"
+    outputs:
+      - "a cited answer with an epistemic class per material claim (VERIFIED / INFERRED / NOT_DEFINED / CONFLICTED)"
+      - "a CQR (Canon Query Report) payload with citations (path, lines, sha) and freshness, handed to the invoker to persist -- canonflow writes nothing"
+      - "for an action-shaped request: a redirect to canonflow-main citing the applicable restriction"
+    required_templates: []
+    required_schemas: [schemas/canon-query-report.schema.yaml]
+    required_prompts: []
+    required_gates: []
+    evidence_required:
+      - "for every VERIFIED or CONFLICTED claim: the exact path:line and the source SHA read (freshness)"
+      - "the epistemic class attached to every material claim"
+      - "for NOT_DEFINED: the canonical sources checked and cited as not defining the subject"
+    human_decision_triggers: []
+    token_profile:
+      reads: ["the canonical source tree at a pinned SHA, resolved index-first within a declared read budget"]
+      ignores: ["conversational history", "host projections and generated output (never canonical)", "state files as final evidence"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["a broad or cross-cutting canon question requiring many index-first resolutions"]
+    failure_modes:
+      - "asserting without a citation, or presenting a non-VERIFIED claim as what CanonFlow says"
+      - "answering an action-shaped request instead of redirecting to canonflow-main"
+      - "arbitrating a CONFLICTED pair (it exposes both sides; it never resolves)"
+      - "writing any file or mutating any state (canonflow performs zero writes)"
+    related_skills: [intent_framing, task_classification, route_recommendation]

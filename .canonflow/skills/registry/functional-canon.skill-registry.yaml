@@ -1,0 +1,326 @@
+# Core Skill Registry fragment — Functional Canon capabilities (method/20).
+# Validate: schemas/skill-registry.schema.yaml. REVIEW_CANDIDATE (PROP-0006).
+# Capabilities are exercised by the canonflow-functional-canon operating role (method/21).
+schema: skill-registry/v1
+registry_version: 0.2.0
+level: core
+category: functional_canon
+source_sha: 9f223113af19bb74d3288e06373df995512b4ae2
+coverage_notes: "Loop 1 functional-canon builder and independent-reviewer capabilities exercised by canonflow-functional-canon on the work branch; reviewer ceiling is FUNCTIONAL_CANON_REVIEW_CANDIDATE, never APPROVED. SUB-02 v2 additions (DEC-0043): does_not_cover, per-entry checksum, source_sha."
+does_not_cover:
+  - "technical design, architecture, ADRs, contracts or test strategy (technical_canon, Loop 2)"
+  - "implementation, coding or test execution (implementation loop)"
+  - "moving canon to APPROVED or granting G-FUN (human approval only)"
+  - "deciding product questions or resolving CONFLICTED pairs (human decision via HDC)"
+  - "drift reconciliation of code or runtime back into canon (drift_recovery)"
+skills:
+  - schema: skill-definition/v1
+    skill_id: source_ingestion
+    name: Source ingestion
+    category: functional_canon
+    level: core
+    purpose: Register and fingerprint raw sources so nothing enters canon unregistered (G-SRC).
+    operating_role: canonflow-functional-canon
+    card_ref: skills/canonflow-functional-canon.skill-card.yaml
+    checksum: "sha256:858070f7598184f35211cb5f6c360fea30163b159c6068f58ca5437861976cad"
+    triggered_when:
+      - "task mode greenfield or brownfield and new sources exist"
+      - "source-register.yaml is missing entries the task references"
+    affected_loop: functional_canon_loop
+    risk_relevance: "T0-T4; source integrity underpins every downstream obligation"
+    inputs: [".canonflow/sources/", "the source register pointer"]
+    outputs: [".canonflow/canon/functional/source-register.yaml entries with fingerprints"]
+    required_templates: [templates/functional-canon/source-register.yaml]
+    required_schemas: [schemas/source-register.schema.yaml]
+    required_prompts: [prompts/02-functional-canon-agent.md]
+    required_gates: [G-SRC]
+    evidence_required: ["fingerprint (sha256) per source", "classification per source"]
+    human_decision_triggers: ["a source's authority or licence is ambiguous"]
+    token_profile:
+      reads: ["source files once for fingerprint", "existing register index"]
+      ignores: ["downstream canon items", "technical canon"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["large or binary source corpora needing sampling strategy"]
+    failure_modes: ["unfingerprintable source accepted", "source treated as canon (sources are not canon)"]
+    related_skills: [source_normalization, epistemic_classification]
+  - schema: skill-definition/v1
+    skill_id: source_normalization
+    name: Source normalization
+    category: functional_canon
+    level: core
+    purpose: Reduce registered sources to normalized, quotable statements without adding meaning.
+    operating_role: canonflow-functional-canon
+    card_ref: skills/canonflow-functional-canon.skill-card.yaml
+    checksum: "sha256:858070f7598184f35211cb5f6c360fea30163b159c6068f58ca5437861976cad"
+    triggered_when: ["a source is registered but not yet normalized"]
+    affected_loop: functional_canon_loop
+    risk_relevance: "T0-T4"
+    inputs: ["registered source entries", templates/functional-canon/normalized-source.md]
+    outputs: [".canonflow/canon/functional/normalized/*.md"]
+    required_templates: [templates/functional-canon/normalized-source.md]
+    required_schemas: []
+    required_prompts: [prompts/02-functional-canon-agent.md]
+    required_gates: []
+    evidence_required: ["each normalized statement cites its source id + location"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["one source at a time"]
+      ignores: ["other sources", "technical canon", "code"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["dense or contradictory source prose"]
+    failure_modes: ["inference introduced during normalization", "loss of source traceability"]
+    related_skills: [source_ingestion, epistemic_classification]
+  - schema: skill-definition/v1
+    skill_id: epistemic_classification
+    name: Epistemic classification
+    category: functional_canon
+    level: core
+    purpose: Assign every relevant statement exactly one epistemic state (method/01); only VERIFIED/DECIDED bind.
+    operating_role: canonflow-functional-canon
+    card_ref: skills/canonflow-functional-canon.skill-card.yaml
+    checksum: "sha256:858070f7598184f35211cb5f6c360fea30163b159c6068f58ca5437861976cad"
+    triggered_when: ["normalized statements exist without an epistemic state"]
+    affected_loop: functional_canon_loop
+    risk_relevance: "T0-T4; misclassification lets an assumption become an obligation"
+    inputs: ["normalized statements", "decision records", "schemas/common-enums.yaml epistemic_state"]
+    outputs: ["classified statements in the functional canon index"]
+    required_templates: [templates/functional-canon/requirement.md]
+    required_schemas: [schemas/functional-canon-state.schema.yaml]
+    required_prompts: [prompts/02-functional-canon-agent.md]
+    required_gates: [G-EPI]
+    evidence_required: ["state per statement", "DEC ref for any DECIDED"]
+    human_decision_triggers: ["promotion of PROPOSED/INFERRED/ASSUMED to DECIDED", "resolving CONFLICTED"]
+    token_profile:
+      reads: ["normalized statements", "decision register index"]
+      ignores: ["technical canon", "code", "runtime"]
+      typical_cost: low
+    default_effort: medium
+    max_effort_conditions: ["conflicting sources requiring CONFLICTED adjudication"]
+    failure_modes: ["inference dressed as fact", "untriaged statements passing G-EPI"]
+    related_skills: [conflict_detection, open_question_management, functional_review]
+  - schema: skill-definition/v1
+    skill_id: functional_requirement_extraction
+    name: Functional requirement extraction
+    category: functional_canon
+    level: core
+    purpose: Derive atomic functional requirements (FR) from classified statements, each source-linked.
+    operating_role: canonflow-functional-canon
+    card_ref: skills/canonflow-functional-canon.skill-card.yaml
+    checksum: "sha256:858070f7598184f35211cb5f6c360fea30163b159c6068f58ca5437861976cad"
+    triggered_when: ["classified statements describe product behavior not yet captured as FRs"]
+    affected_loop: functional_canon_loop
+    risk_relevance: "T0-T4"
+    inputs: ["classified statements", templates/functional-canon/requirement.md]
+    outputs: ["FR-xxxx items in the functional canon index"]
+    required_templates: [templates/functional-canon/requirement.md, templates/functional-canon/product-scope.md]
+    required_schemas: [schemas/functional-canon-state.schema.yaml]
+    required_prompts: [prompts/02-functional-canon-agent.md]
+    required_gates: []
+    evidence_required: ["each FR links DERIVES_FROM a source/statement"]
+    human_decision_triggers: ["scope ambiguity that is a product decision"]
+    token_profile:
+      reads: ["classified statements in scope"]
+      ignores: ["out-of-scope canon", "technical canon"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["broad or novel product surface"]
+    failure_modes: ["invented scope with no source", "non-atomic requirements"]
+    related_skills: [business_rule_extraction, acceptance_criteria_generation, functional_traceability]
+  - schema: skill-definition/v1
+    skill_id: business_rule_extraction
+    name: Business rule extraction
+    category: functional_canon
+    level: core
+    purpose: Capture business rules (BR) and constraints governing requirements, each source-linked.
+    operating_role: canonflow-functional-canon
+    card_ref: skills/canonflow-functional-canon.skill-card.yaml
+    checksum: "sha256:858070f7598184f35211cb5f6c360fea30163b159c6068f58ca5437861976cad"
+    triggered_when: ["sources state constraints, invariants or policies not yet captured"]
+    affected_loop: functional_canon_loop
+    risk_relevance: "T0-T4; rules often carry security/data implications"
+    inputs: ["classified statements", "extracted FRs"]
+    outputs: ["BR-xxxx items linked to the FRs they constrain"]
+    required_templates: [templates/functional-canon/requirement.md]
+    required_schemas: [schemas/functional-canon-state.schema.yaml]
+    required_prompts: [prompts/02-functional-canon-agent.md]
+    required_gates: []
+    evidence_required: ["each BR links to source and to constrained FRs"]
+    human_decision_triggers: ["a rule encodes a policy/compliance decision"]
+    token_profile:
+      reads: ["statements and FRs in scope"]
+      ignores: ["technical canon", "code"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["regulatory or safety-critical rules"]
+    failure_modes: ["rule invented without source", "rule conflated with a requirement"]
+    related_skills: [functional_requirement_extraction, conflict_detection]
+  - schema: skill-definition/v1
+    skill_id: workflow_modeling
+    name: Workflow modeling
+    category: functional_canon
+    level: core
+    purpose: Model user/system workflows connecting requirements into end-to-end behavior.
+    operating_role: canonflow-functional-canon
+    card_ref: skills/canonflow-functional-canon.skill-card.yaml
+    checksum: "sha256:858070f7598184f35211cb5f6c360fea30163b159c6068f58ca5437861976cad"
+    triggered_when: ["FRs describe steps that form a workflow not yet modeled"]
+    affected_loop: functional_canon_loop
+    risk_relevance: "T0-T3"
+    inputs: ["FR/BR items", templates/functional-canon/workflow.md]
+    outputs: [".canonflow/canon/functional/workflows/*.md"]
+    required_templates: [templates/functional-canon/workflow.md]
+    required_schemas: [schemas/functional-canon-state.schema.yaml]
+    required_prompts: [prompts/02-functional-canon-agent.md]
+    required_gates: []
+    evidence_required: ["each workflow step references an FR"]
+    human_decision_triggers: ["a workflow branch is a product decision"]
+    token_profile:
+      reads: ["FR/BR items in scope"]
+      ignores: ["technical canon", "code"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["complex multi-actor orchestration"]
+    failure_modes: ["workflow steps with no backing requirement", "hidden decisions in branches"]
+    related_skills: [functional_requirement_extraction, acceptance_criteria_generation]
+  - schema: skill-definition/v1
+    skill_id: acceptance_criteria_generation
+    name: Acceptance criteria generation
+    category: functional_canon
+    level: core
+    purpose: Produce verifiable acceptance criteria (AC) per requirement/workflow for later evidence.
+    operating_role: canonflow-functional-canon
+    card_ref: skills/canonflow-functional-canon.skill-card.yaml
+    checksum: "sha256:858070f7598184f35211cb5f6c360fea30163b159c6068f58ca5437861976cad"
+    triggered_when: ["an FR or workflow has no verifiable AC"]
+    affected_loop: functional_canon_loop
+    risk_relevance: "T0-T4; ACs are the contract audits verify against"
+    inputs: ["FR/workflow items"]
+    outputs: ["AC-xxxx items linked to their FR/workflow"]
+    required_templates: [templates/functional-canon/requirement.md]
+    required_schemas: [schemas/functional-canon-state.schema.yaml]
+    required_prompts: [prompts/02-functional-canon-agent.md]
+    required_gates: []
+    evidence_required: ["each AC is observable/testable and links VERIFIES its FR"]
+    human_decision_triggers: ["acceptance threshold is a product/risk decision"]
+    token_profile:
+      reads: ["FRs and workflows in scope"]
+      ignores: ["technical canon", "implementation"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["safety/security acceptance requiring negative criteria"]
+    failure_modes: ["unverifiable AC", "AC that restates the FR without a check"]
+    related_skills: [functional_requirement_extraction, functional_traceability]
+  - schema: skill-definition/v1
+    skill_id: conflict_detection
+    name: Conflict detection
+    category: functional_canon
+    level: core
+    purpose: Detect contradictory statements/requirements and mark them CONFLICTED (hard stop for approval).
+    operating_role: canonflow-functional-canon
+    card_ref: skills/canonflow-functional-canon.skill-card.yaml
+    checksum: "sha256:858070f7598184f35211cb5f6c360fea30163b159c6068f58ca5437861976cad"
+    triggered_when: ["new statements/FRs enter a scope with existing items"]
+    affected_loop: functional_canon_loop
+    risk_relevance: "T0-T4"
+    inputs: ["functional canon index in scope"]
+    outputs: ["CONFLICTED marks + QS sessions for resolution"]
+    required_templates: [templates/functional-canon/requirement.md]
+    required_schemas: [schemas/functional-canon-state.schema.yaml]
+    required_prompts: [prompts/03-functional-canon-reviewer.md]
+    required_gates: [G-EPI, G-CON]
+    evidence_required: ["each conflict cites the two contradicting items"]
+    human_decision_triggers: ["resolving any CONFLICTED pair"]
+    token_profile:
+      reads: ["canon index in scope"]
+      ignores: ["technical canon", "code"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["large canon with subtle semantic conflicts"]
+    failure_modes: ["silent overwrite of a conflicting item", "conflict resolved by inference"]
+    related_skills: [epistemic_classification, open_question_management, functional_review]
+  - schema: skill-definition/v1
+    skill_id: open_question_management
+    name: Open question management
+    category: functional_canon
+    level: core
+    purpose: Track OPEN items (blocking/non-blocking) and route blocking ones to the Human Decision Console.
+    operating_role: canonflow-functional-canon
+    card_ref: skills/canonflow-functional-canon.skill-card.yaml
+    checksum: "sha256:858070f7598184f35211cb5f6c360fea30163b159c6068f58ca5437861976cad"
+    triggered_when: ["a known unknown blocks canon completion"]
+    affected_loop: functional_canon_loop
+    risk_relevance: "T0-T4"
+    inputs: ["functional canon index", "decision-state pointers"]
+    outputs: ["OPEN items with blocking flag + QS sessions"]
+    required_templates: [templates/decision-console/question-session.json]
+    required_schemas: [schemas/question-session.schema.yaml]
+    required_prompts: [prompts/12-question-session-generator.md]
+    required_gates: [G-EPI]
+    evidence_required: ["each blocking OPEN has an owner or a pending QS"]
+    human_decision_triggers: ["any blocking OPEN item"]
+    token_profile:
+      reads: ["canon index", "decision-state/latest.json"]
+      ignores: ["technical canon", "code"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: []
+    failure_modes: ["blocking OPEN hidden and canon approved anyway", "question left in chat not a session"]
+    related_skills: [question_session_generation, conflict_detection]
+  - schema: skill-definition/v1
+    skill_id: functional_traceability
+    name: Functional traceability
+    category: functional_canon
+    level: core
+    purpose: Record DERIVES_FROM/VERIFIES links from sources to statements to FR/BR/AC.
+    operating_role: canonflow-functional-canon
+    card_ref: skills/canonflow-functional-canon.skill-card.yaml
+    checksum: "sha256:858070f7598184f35211cb5f6c360fea30163b159c6068f58ca5437861976cad"
+    triggered_when: ["canon items exist without complete lineage links"]
+    affected_loop: functional_canon_loop
+    risk_relevance: "T0-T4"
+    inputs: ["functional canon index", ".canonflow/traceability/links.yaml"]
+    outputs: ["links.yaml entries for functional items"]
+    required_templates: []
+    required_schemas: [schemas/traceability.schema.yaml]
+    required_prompts: [prompts/02-functional-canon-agent.md]
+    required_gates: [G-TRACE]
+    evidence_required: ["every FR/AC resolves upstream to a source/decision"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["canon index", "links index"]
+      ignores: ["technical canon", "code", "runtime"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: []
+    failure_modes: ["dangling link ids (fails G-TRACE)", "orphan requirement with no source"]
+    related_skills: [trace_link_generation, functional_requirement_extraction]
+  - schema: skill-definition/v1
+    skill_id: functional_review
+    name: Functional review
+    category: functional_canon
+    level: core
+    purpose: Independently review the functional canon slice (G-EPI, G-CON) before human G-FUN approval.
+    operating_role: canonflow-functional-canon
+    card_ref: skills/canonflow-functional-canon.skill-card.yaml
+    checksum: "sha256:858070f7598184f35211cb5f6c360fea30163b159c6068f58ca5437861976cad"
+    triggered_when: ["a functional canon slice reaches builder completion and needs independent review"]
+    affected_loop: functional_canon_loop
+    risk_relevance: "T0-T4"
+    inputs: ["builder staging patch", "functional canon index", "gate outputs"]
+    outputs: ["review verdict + at most FUNCTIONAL_CANON_REVIEW_CANDIDATE + G-FUN QS"]
+    required_templates: [templates/decision-console/question-session.json]
+    required_schemas: [schemas/skill-report.schema.yaml]
+    required_prompts: [prompts/03-functional-canon-reviewer.md]
+    required_gates: [G-EPI, G-CON, G-FUN]
+    evidence_required: ["no CONFLICTED/blocking OPEN/untriaged in scope", "source lineage present"]
+    human_decision_triggers: ["G-FUN approval (human only)"]
+    token_profile:
+      reads: ["staging patch (diff)", "canon index"]
+      ignores: ["full repository", "technical canon"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["large slice or contested statements"]
+    failure_modes: ["reviewer shares builder context (not independent)", "approving canon by inference"]
+    related_skills: [conflict_detection, epistemic_classification, functional_traceability]

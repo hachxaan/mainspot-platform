@@ -1,0 +1,68 @@
+drift_report_id: DR-0001
+state: RECONCILIATION_PROPOSED
+trigger: brownfield_onboarding
+surfaces_inventoried:
+- surface: S1_functional_canon
+  fingerprint: upstream CANONICAL_BASE_APPROVED_v0.1 (DEC-015, 2026-08-19)
+  evidence: /home/administrador/codeart/mainspoot/mainspot-documentation/state/canonical-state.yaml
+- surface: S3_code
+  fingerprint: git:fc4378eaf59ae3ca766e9729acb79cfee2c38a54 (main + feat/canonflow-implementation
+    @ fc4378e)
+  evidence: 9 commits 2026-08-20 (INC-001..007 + PR-01..06)
+- surface: S6_published_docs
+  fingerprint: sha256:4fc2f844466845b35bca1a2ab131b7d586dfdfde766b8e2f5a7a0579ff03aa7e
+  evidence: README.md INC-001..007 + tabla TENTATIVA §15
+- surface: S7_evidence
+  fingerprint: sha256:e8e389d07f5b61326b70aa5db81b9fa8a92560169356c9afdb96aab549ad8781
+  evidence: evidence/00..14 (typecheck, tests, E2E, auditoría, rollback, deploy)
+items:
+- id: DI-0001
+  class: CODE_AHEAD_OF_CANON
+  severity_tier: 3
+  surfaces:
+  - S1_functional_canon
+  - S3_code
+  description: 'La implementación incorpora obligaciones no fijadas por el canon:
+    remediación PR-01..06 (gate de aprobación social, enforcement de límites, sync
+    atómico, rate limiting), contrato /me (permissions array), deploy LXD, migración
+    0011. Recuperadas como INFERRED (NFR-0001..0005); cierre vía QS-0001.'
+- id: DI-0002
+  class: EVIDENCE_GAP
+  severity_tier: 2
+  surfaces:
+  - S1_functional_canon
+  - S6_published_docs
+  description: '17 decisiones marcadas TENTATIVA en README §15 que el canon no fija
+    (clasificador, tokens de preview, subdominio, TOCTOU, agentes sin enforcement,
+    política sin plan, retención...). Requieren decisión humana para promoverse o
+    rechazarse: QS-0001.'
+- id: DI-0003
+  class: DOC_AHEAD_OF_CODE
+  severity_tier: 2
+  surfaces:
+  - S1_functional_canon
+  - S6_published_docs
+  description: 'Q-004 upstream OPEN: la landing propone planes/precios/límites; el
+    canon los mantiene PROPOSED (DEC-007/024; CONFLICT-002). La oferta comercial no
+    puede publicarse sin decisión: QS-0002.'
+- id: DI-0004
+  class: EVIDENCE_GAP
+  severity_tier: 1
+  surfaces:
+  - S1_functional_canon
+  - S3_code
+  description: 'Límite ''agents'' visible en entitlements sin enforcement en ninguna
+    operación (deuda declarada en README §15). Decidir: implementar o remover del
+    catálogo (QS-0001 Q-AGENTS).'
+- id: DI-0005
+  class: UNKNOWN_ORIGIN
+  severity_tier: 1
+  surfaces:
+  - S2_technical_canon
+  - S6_published_docs
+  description: 'Vertical piloto (Q-009) sin decidir: CAP-006 no puede iniciarse sin
+    vertical ni reglas de negocio (PEND-010). Pregunta comercial/estratégica: QS-0002.'
+reconciliation_plan: 'QS-0001 (cierre técnico TENTATIVA) y QS-0002 (oferta comercial/vertical)
+  en el Human Decision Console; al decidir: R1 staging patches del canon (promover
+  INFERRED→DECIDED o REJECTED), R2 remediaciones si procede, R5 RSK con expiry para
+  lo aceptado temporalmente.'

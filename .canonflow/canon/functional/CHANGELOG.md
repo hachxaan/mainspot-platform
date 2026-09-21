@@ -1,0 +1,1 @@
+# Functional Canon changelog

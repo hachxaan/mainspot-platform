@@ -1,0 +1,19 @@
+# Bootstrap-installed Core Skill Registry fragments (method/20).
+# Framework-managed: refreshed by scripts/init_project.py on every run.
+# The Skill Router reads this core catalog first, then ../project-extensions/.
+schema: skill-install-index/v1
+kind: core_skill_registry
+level: core
+installed_at: "2026-09-21T20:59:04Z"
+count: 10
+fragments:
+  - audit.skill-registry.yaml
+  - drift-recovery.skill-registry.yaml
+  - functional-canon.skill-registry.yaml
+  - human-decision-console.skill-registry.yaml
+  - implementation.skill-registry.yaml
+  - release.skill-registry.yaml
+  - routing.skill-registry.yaml
+  - technical-canon.skill-registry.yaml
+  - token-optimization.skill-registry.yaml
+  - traceability.skill-registry.yaml

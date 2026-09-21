@@ -1,0 +1,93 @@
+project: mainspot-platform
+sources:
+- id: SRC-0001
+  title: Kickoff MainSpot (transcripción 77 min, Carlos Pinacho)
+  kind: interview
+  location: /home/administrador/codeart/mainspoot/20260628_kickoff.txt
+  fingerprint: sha256:bf924309fc07ca9cf1c94418f6172bc0f00d25df365f73aac3b774b6a81a5089
+  reliability: authoritative
+  registered_at: '2026-09-21'
+  notes: 'Fuente primaria del producto: microempresas, agentes IA por WhatsApp/Telegram,
+    web/redes/reseñas, aislamiento por cliente, ETL.'
+- id: SRC-0002
+  title: Landing prototype MainSpot (kresvia_landing)
+  kind: document
+  location: /home/administrador/codeart/mainspoot/landingpage/kresvia_landing/index.html
+  fingerprint: sha256:defa1f35117c3bbf063bda47431251694147923e6d360cae37639f3bafe477ce
+  reliability: informative
+  registered_at: '2026-09-21'
+  notes: 'Propuesta comercial NO contractual (DEC-007/CONFLICT-002): planes, precios
+    y claims permanecen PROPOSED hasta Q-004.'
+- id: SRC-0003
+  title: Lluvia de ideas (transcripción 2026-06-04)
+  kind: interview
+  location: /home/administrador/codeart/mainspoot/mainspot-documentation/sources/original/SRC-003-ideas-rain.txt
+  fingerprint: git:fc4378eaf59ae3ca766e9729acb79cfee2c38a54
+  reliability: authoritative
+  registered_at: '2026-09-21'
+  notes: Segmentación por niveles, piloto-primero, stakeholder Jorge (The Mayan Universe),
+    arquitectura alternativa agente único.
+- id: SRC-0004
+  title: Baseline canónica v0.1 APROBADA (mainspot-documentation)
+  kind: document
+  location: /home/administrador/codeart/mainspoot/mainspot-documentation/docs/canonical/00-INDEX.md
+  fingerprint: sha256:47cb39af9dcedd72eb30a5ab0f54a9f971cca57f162edbef80f5f80a8042b8ed
+  reliability: authoritative
+  registered_at: '2026-09-21'
+  notes: Canon funcional aprobado por humano (DEC-015, gate 2026-08-19). Repo en /home/administrador/codeart/mainspoot/mainspot-documentation,
+    rama feat/canonical-baseline-v0.1; CAP-001..015, REQ/RULE/FLOW, AC-001..009.
+- id: SRC-0005
+  title: Decision log upstream (07-DECISIONS-OPEN-QUESTIONS.md)
+  kind: document
+  location: /home/administrador/codeart/mainspoot/mainspot-documentation/docs/canonical/07-DECISIONS-OPEN-QUESTIONS.md
+  fingerprint: sha256:8565b3dfa512da6af308e8ad1d66715f74fb1de0c73986b3abda1b230042edb9
+  reliability: authoritative
+  registered_at: '2026-09-21'
+  notes: DEC-001..026 DECIDED (gates 2026-08-19/20); Q-004 OPEN (oferta comercial);
+    Q-009 RESUELTA_EN_PARTE (vertical); CONFLICT-001/002 resueltos.
+- id: SRC-0006
+  title: README de implementación mainspot-platform (INC-001..007)
+  kind: document
+  location: /home/administrador/codeart/mainspoot/mainspot-platform/README.md
+  fingerprint: sha256:4fc2f844466845b35bca1a2ab131b7d586dfdfde766b8e2f5a7a0579ff03aa7e
+  reliability: informative
+  registered_at: '2026-09-21'
+  notes: Narrativa de implementación + tabla §15 de decisiones TENTATIVA (17 ítems)
+    que el canon NO fija.
+- id: SRC-0007
+  title: Historial git de mainspot-platform (todas las ramas @ fc4378e)
+  kind: code
+  location: git:/home/administrador/codeart/mainspoot/mainspot-platform (main + feat/canonflow-implementation,
+    HEAD fc4378eaf59ae3ca766e9729acb79cfee2c38a54)
+  fingerprint: git:fc4378eaf59ae3ca766e9729acb79cfee2c38a54
+  reliability: informative
+  registered_at: '2026-09-21'
+  notes: '9 commits 2026-08-20: INC-001..007 implementados; remediación PR-01..06
+    de full review; evidencia AC-009 capturada.'
+- id: SRC-0008
+  title: Evidencia capturada AC-009 (evidence/00..14)
+  kind: runtime_evidence
+  location: /home/administrador/codeart/mainspoot/mainspot-platform/evidence/12-summary.txt
+  fingerprint: sha256:e8e389d07f5b61326b70aa5db81b9fa8a92560169356c9afdb96aab549ad8781
+  reliability: authoritative
+  registered_at: '2026-09-21'
+  notes: Typecheck, matriz de permisos, unit/integration/smoke/E2E, auditoría por
+    tenant, rollback, deploy LXD + health.
+- id: SRC-0009
+  title: Keystone governance anterior (mainspot-keystone, REVIEW_CANDIDATE)
+  kind: document
+  location: /home/administrador/codeart/mainspot-keystone/docs/canonical/00-INDEX.md
+  fingerprint: sha256:2489a5a05b334300df7f6ed6d8c9508982754d5f0fc7645c4fa385329a95332b
+  reliability: informative
+  registered_at: '2026-09-21'
+  notes: Versión previa del canon (v0.1→v0.2 resoluciones 2026-08-18); reemplazada
+    por la baseline aprobada (SRC-0004). No es autoridad.
+- id: SRC-0010
+  title: Deploy LXD (scripts/deploy + evidence/deploy-lxd)
+  kind: config
+  location: /home/administrador/codeart/mainspoot/mainspot-platform/scripts/deploy/README-deploy-lxd.md
+  fingerprint: sha256:a618b5f2912fc301146aa2945183fc3cb1291d8829c5a2bba56fa88d6270ff79
+  reliability: informative
+  registered_at: '2026-09-21'
+  notes: 'Topología piloto sin Docker: contenedores LXC mainspot-db/mainspot-app;
+    secretos fuera del repo (0600).'

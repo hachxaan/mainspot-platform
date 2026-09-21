@@ -1,0 +1,190 @@
+# Skill card (method/21). Validate: schemas/skill-card.schema.yaml
+schema: skill-card/v1
+skill_id: canonflow-functional-canon
+name: Functional Canon (Loop 1 builder + independent reviewer)
+version: 0.1.0
+state: REVIEW_CANDIDATE
+role_class: operating
+purpose: >-
+  Formalizes Loop 1 (method/02) as two strictly separated run modes. The
+  builder converts registered, fingerprinted sources into atomic functional
+  statements carrying exactly one epistemic state each, assembled as staging
+  patches against the functional canon index. The reviewer independently
+  checks epistemic honesty (G-EPI), semantic consistency (G-CON) and
+  source-to-statement lineage. The skill at most leaves the canon in
+  FUNCTIONAL_CANON_REVIEW_CANDIDATE and generates the G-FUN approval session;
+  approval itself is human. Sources feed the canon; they are never canon.
+prompt: prompts/19-skill-functional-canon.md
+run_modes:
+  - mode: builder
+    description: >-
+      Registers and fingerprints sources (G-SRC), normalizes each one,
+      extracts atomic statements with exact epistemic states, reconciles
+      duplicates and conflicts, and assembles staging patches against the
+      functional canon index. Every product decision (scope, priority,
+      conflict resolution) becomes a QS session, never a choice.
+    separation_rule: >-
+      Builder and reviewer of the same canon scope are always distinct runs
+      with different executor identities and no shared conversational context
+      (method/06). A builder run never reviews its own patch.
+  - mode: reviewer
+    description: >-
+      Independently reviews one staging patch: G-EPI (no CONFLICTED, no
+      blocking OPEN, no untriaged statements in scope), G-CON (semantic
+      consistency, no contradictions), no inference dressed as fact, and
+      source-to-statement lineage for every item. Reads artifacts, diffs and
+      gate outputs, never the builder's narrative.
+    separation_rule: >-
+      The reviewer run rejects the assignment if the subject patch or its
+      builder report was produced by this run's executor identity (self
+      review) or if the builder run already has audited_by set (double
+      review needs DEC-xxxx).
+when_to_use:
+  - "skill-state.next_task assigns a Loop 1 objective: new sources to canonize, a scope slice to draft, or a staging patch to review"
+  - registered sources exist that are not yet normalized or extracted into classified statements
+  - a staging patch is complete and needs independent review before FUNCTIONAL_CANON_REVIEW_CANDIDATE
+  - Loop 2 or Loop 3 routed a functional question back to Loop 1 through a published task
+  - a RECONCILIATION_DECIDED record requires a functional canon update as a staging patch
+required_inputs:
+  - .canonflow/canon/functional/index.yaml (canon index at a pinned SHA)
+  - source register instance (templates/functional-canon/source-register.yaml) with fingerprints
+  - the one TASK-xxxx assignment defining mode and scope for this run
+  - decision records (DEC-xxxx) cited by the task, as pointers
+  - "reviewer mode: the staging patch (diff), builder RUN/SRP ids and the builder's gate-check output paths"
+required_outputs:
+  - own RUN-xxxx.skill-run.yaml and RUN-xxxx.skill-report.yaml (immutable)
+  - "builder: staging patch + updated functional canon index on the work branch, every statement classified and source-linked"
+  - "builder: QS-xxxx sessions for every OPEN/CONFLICTED item and every product decision detected"
+  - "reviewer: FND findings and a scoped verdict on the subject patch, recorded in the report"
+  - "reviewer: G-FUN approval session (prompts/10) when the candidate guards pass"
+authority:
+  - "builder: register and fingerprint sources and record them in the source register (G-SRC)"
+  - "builder: normalize sources and extract atomic statements, assigning exactly one epistemic state per statement"
+  - "builder: assemble staging patches against the canon index; approved canon is never edited in place"
+  - "builder: raise QS sessions for scope, no-scope, priority, conflicts and any other product decision"
+  - "reviewer: run independent G-EPI and G-CON checks and record FND findings, including epistemic misclassification and missing lineage"
+  - "reviewer: issue a scoped verdict on the subject patch and draft the FND-bounded remediation it requires"
+  - "reviewer: move the canon to FUNCTIONAL_CANON_REVIEW_CANDIDATE when the method/16 section 3 guards pass, and generate the G-FUN session"
+authority_limits:
+  - verdicts bind only the staging patch and canon scope named in the task; they are never canon-approval, project, release or readiness statements
+  - FUNCTIONAL_CANON_REVIEW_CANDIDATE is the terminal state this skill may set; FUNCTIONAL_CANON_APPROVED exists only through human G-FUN approval
+  - statements enter the patch only with the epistemic state the evidence supports; VERIFIED requires evidence pointers, DECIDED requires a DEC-xxxx reference
+  - scope comes only from the task, registered sources and decision records; missing or ambiguous scope goes to the Decision Console, never into the patch
+  - remediation drafts may only reference the FND ids that motivated them; next_task publication belongs to canonflow-orchestrator-reviewer
+  - writes happen only on work branches; main advances only by human merge
+prohibitions:
+  - never decides product questions; every scope, priority or conflict choice becomes a QS session and waits for a DEC record
+  - never approves anything and never moves the canon (or any artifact) to APPROVED
+  - never invents scope, actors, requirements or acceptance criteria absent from registered sources, tasks or decision records
+  - never promotes PROPOSED, INFERRED or ASSUMED statements into canon obligations; only VERIFIED and DECIDED bind
+  - never treats sources, chat or its own assumptions as canon; sources feed canon, they are never canon themselves
+  - never designs architecture and never writes code (Loop 1 boundary, method/02)
+  - "reviewer mode: never edits the patch under review; findings are recorded, remediation is a separate builder run"
+  - "builder mode: never reuses the reviewer's or its own prior review as evidence of quality; self-checks are inputs, not review"
+hard_stops:
+  - a source cannot be fingerprinted or attributed -> BLOCKED (G-SRC failure)
+  - any CONFLICTED statement or blocking OPEN question in scope at candidate time -> stop + QS session (method/16 section 3 guard)
+  - scope change requested without a decision record -> BLOCKED + QS session
+  - "reviewer mode: subject patch or builder report produced by this run's executor -> BLOCKED (self-review)"
+  - "correlation failure: task_id, patch paths, builder RUN/SRP ids or registry entry do not match -> BLOCKED"
+  - own G-REPO pre-flight fails (wrong repo/branch, dirty tree, missing allowed paths) -> stop before any write
+reads:
+  - source register and registered source files (fingerprinted, read-only)
+  - .canonflow/canon/functional/ index, statements, changelog and staging patches
+  - decision records, question/answer sessions and traceability links
+  - gate-check outputs (scripts/check_gates.py) and evidence files
+  - .canonflow/state/method-state.yaml, .canonflow/skill-state/skill-state.yaml, .canonflow/skill-runs/index.yaml
+  - skills/canonflow-functional-canon.skill-card.yaml (own authority reference)
+writes:
+  - .canonflow/skill-runs/RUN-xxxx.skill-run.yaml (own run)
+  - .canonflow/skill-runs/RUN-xxxx.skill-report.yaml (own report)
+  - .canonflow/skill-runs/index.yaml (own registry entry and states)
+  - "builder: functional canon staging patches + index updates (work branch only)"
+  - "builder: source register entries with fingerprints and classifications"
+  - .canonflow/decision-sessions/pending/ (QS sessions, including the G-FUN approval session)
+  - .canonflow/traceability/links.yaml (source->statement and DEC links)
+state_interaction:
+  - resolves position exclusively from method-state, skill-state, registry and decision-state pointers (method/21 section 4 order)
+  - "canon states: builder works while the canon is FUNCTIONAL_CANON_IN_PROGRESS; reviewer may set FUNCTIONAL_CANON_REVIEW_CANDIDATE when guards pass; FUNCTIONAL_CANON_APPROVED is requested via the G-FUN QS session, never performed"
+  - pointer updates happen only on work branches; any increment state transition touched by remediation goes only through scripts/update_state.py legal transitions
+decision_console_interaction:
+  - generates a QS session for every OPEN or CONFLICTED statement, every scope/no-scope/priority choice and every governance ambiguity detected
+  - "reviewer: generates the G-FUN approval session when the candidate guards pass; the session requests, never records, approval"
+  - consumes DEC/APR records as the only valid decision inputs; loose chat answers are not decisions
+  - never answers, ingests or archives its own sessions (ingestion belongs to canonflow-human-decision-console)
+skill_interactions:
+  - {skill: canonflow-repo-worktree-auditor, relation: DELEGATES_TO, detail: G-REPO pre-flight}
+  - {skill: canonflow-human-decision-console, relation: ESCALATES_TO, detail: product decisions and OPEN/CONFLICTED triage; standard pointer message then stop}
+  - {skill: canonflow-orchestrator-reviewer, relation: CONSUMES_OUTPUT_OF, detail: published TASK-xxxx assignments define run mode and scope}
+  - {skill: canonflow-orchestrator-reviewer, relation: PRODUCES_INPUT_FOR, detail: reviewer findings and FND-bounded remediation drafts feed next-task publication}
+  - {skill: canonflow-technical-canon, relation: PRODUCES_INPUT_FOR, detail: approved functional canon versions are the Loop 2 obligation source}
+  - {skill: canonflow-implementation-planner, relation: PRODUCES_INPUT_FOR, detail: FR/BR/WF/AC/NFR items feed increment planning}
+  - {skill: canonflow-drift-recovery, relation: CONSUMES_OUTPUT_OF, detail: RECONCILIATION_DECIDED records re-enter canon as staging patches}
+required_evidence:
+  - "builder: fingerprint + registration entry for every source cited by the patch (G-SRC output saved and cited)"
+  - "builder: gate-check output (scripts/check_gates.py) for G-SRC, G-EPI, G-CON, G-TRACE saved as an evidence file and cited"
+  - "reviewer: its own independent G-EPI/G-CON check output, never the builder's self-check reused"
+  - "reviewer: lineage verification for sampled statements (source fingerprint -> normalized source -> statement id) saved and cited"
+  - "for every VERIFIED claim: the exact source file, diff, index entry or gate output checked"
+verdict_criteria:
+  PASS:
+    - "builder: every in-scope source registered, normalized and extracted; every statement carries exactly one epistemic state and backward links; staging patch validates against the index; self-check gates G-SRC, G-EPI, G-CON, G-TRACE pass"
+    - "reviewer: no CONFLICTED, blocking OPEN or untriaged statements in scope; no inference dressed as fact; lineage verified; canon set to FUNCTIONAL_CANON_REVIEW_CANDIDATE and G-FUN session generated"
+  PASS_WITH_LIMITATIONS:
+    - PASS conditions except explicitly enumerated non-blocking limitations (non-blocking OPEN questions with owner, minor findings, deferred sources)
+    - every limitation recorded as an OPEN/ASSUMED/RISK claim with owner or RSK/TR reference
+  REMEDIATION_REQUIRED:
+    - "reviewer: blocking or major findings exist (misclassified statements, missing lineage, contradictions) and each is covered by an FND-bounded remediation draft handed to the orchestrator for publication"
+    - the canon does not advance to FUNCTIONAL_CANON_REVIEW_CANDIDATE and no G-FUN session is generated
+  BLOCKED:
+    - unfingerprintable source, scope change without decision record, correlation failure or self-review condition
+    - a contradiction or product question only a human can resolve stops the objective itself
+    - QS session generated when the blocker is human-shaped; blockers listed in the report
+allowed_claims:
+  - VERIFIED facts about sources, fingerprints, statements, lineage and gate outputs it checked itself (evidence pointers mandatory)
+  - PROPOSED statements, scope suggestions and reconciliations awaiting human decision
+  - INFERRED/ASSUMED observations, explicitly flagged, never resolving material uncertainty and never entering the patch as obligations
+  - OPEN unknowns with blocking flag; CONFLICTED for contradictions between sources or statements
+  - RISK claims referencing or proposing TR/RSK records
+prohibited_claims:
+  - DECIDED claims (only human decision records carry DECIDED)
+  - any canon-approved, readiness, release, staging or project statement at any scope
+  - VERIFIED status for content backed only by a single unverifiable source or by the builder's narrative
+  - restating source content as fact without epistemic classification
+  - generalizing a patch-level PASS to canon health, product completeness or project state
+examples:
+  - title: Builder run canonizes three sources and routes one conflict to the human
+    given: >-
+      skill-state.next_task = TASK-0021 (mode builder, scope: canonize
+      SRC-0005..SRC-0007 into functional canon v0.2.0 draft), canon index at
+      commit 3f2a9c1, no pending decision session.
+    run: >-
+      G-REPO pre-flight via canonflow-repo-worktree-auditor; create RUN-0021;
+      register + fingerprint SRC-0005..SRC-0007 (G-SRC); normalize each;
+      extract FR-0031..FR-0038 and BR-0009 with epistemic states and source
+      links; detect SRC-0005 vs SRC-0006 contradiction on the refund window ->
+      mark statement CONFLICTED, generate QS-0033; assemble staging patch
+      against the index; run scripts/check_gates.py; report with the
+      CONFLICTED item enumerated as a limitation.
+    expected_outcome: >-
+      SRP-0021 verdict PASS_WITH_LIMITATIONS scoped to the TASK-0021 slice;
+      staging patch + index update on the work branch; QS-0033 PENDING; canon
+      remains FUNCTIONAL_CANON_IN_PROGRESS; nothing promoted, nothing decided.
+  - title: Reviewer run finds inference dressed as fact and requires remediation
+    given: >-
+      skill-state.next_task = TASK-0022 (mode reviewer, subject: staging patch
+      of RUN-0021 / SRP-0021), executor differs from the builder's, QS-0033
+      answered by DEC-0018, canon index at commit 8b04d77.
+    run: >-
+      G-REPO pre-flight; create RUN-0024; verify correlation (task_id, patch
+      paths, builder RUN/SRP ids, registry) and executor separation; run
+      independent G-EPI/G-CON checks; verify lineage for sampled statements;
+      find FR-0036 classified VERIFIED with no evidence pointer beyond the
+      builder's narrative -> FND-0012 (inference dressed as fact, blocking);
+      draft the FND-0012-bounded remediation for the orchestrator; verdict
+      REMEDIATION_REQUIRED; no G-FUN session.
+    expected_outcome: >-
+      SRP-0024 verdict REMEDIATION_REQUIRED scoped to the RUN-0021 patch;
+      FND-0012 recorded with the checked evidence path; canon stays
+      FUNCTIONAL_CANON_IN_PROGRESS; remediation draft handed to
+      canonflow-orchestrator-reviewer for publication.

@@ -1,0 +1,266 @@
+# Core Skill Registry fragment — Audit capabilities (method/20).
+# Validate: schemas/skill-registry.schema.yaml. REVIEW_CANDIDATE (PROP-0006).
+# Capabilities are exercised by the canonflow-evidence-auditor operating role (method/21, prompts/22).
+# Input is file-based handoff only (task anchors, contract, pinned-SHA diff, report, evidence),
+# never implementer narrative. No self-audit; human owns G-AUD (DEC-0007).
+schema: skill-registry/v1
+registry_version: 0.2.0
+level: core
+category: audit
+source_sha: 9f223113af19bb74d3288e06373df995512b4ae2
+coverage_notes: "Deep independent audit of exactly one subject across the ten dimensions; AUD verdict monopoly; file-based handoff only (task anchors, contract, pinned-SHA diff, report, evidence), never implementer narrative. SUB-02 v2 additions (DEC-0043): does_not_cover, per-entry checksum, source_sha."
+does_not_cover:
+  - "approving G-AUD or any human gate (human only; DEC-0007)"
+  - "producing implementation, canon or plans (it audits, it never builds)"
+  - "auditing a run whose executor identity matches the auditor (self-audit prohibited)"
+  - "re-auditing an already AUDITED run without a DEC instructing it"
+  - "release-scope aggregate closure (release fragment; deep audits are delegated here)"
+skills:
+  - schema: skill-definition/v1
+    skill_id: claim_verification
+    name: Claim verification
+    category: audit
+    level: core
+    purpose: Verify each material claim in the subject report against checked evidence; a VERIFIED claim with no evidence is a finding.
+    operating_role: canonflow-evidence-auditor
+    card_ref: skills/canonflow-evidence-auditor.skill-card.yaml
+    checksum: "sha256:198ce384a96277a5215c4f0a0d357d55b64de2fcd5ae1f810e8aeaec0f735fb9"
+    triggered_when:
+      - "a REPORTED skill run or IMPLEMENTED increment awaits audit and its report carries VERIFIED/DECIDED claims"
+      - "task mode audit"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; elevated at T3-T4 where VERIFIED claims gate release"
+    inputs:
+      - ".canonflow/skill-runs/RUN-xxxx.skill-report.yaml (subject report)"
+      - "evidence files cited by the subject report"
+      - ".canonflow/skill-runs/index.yaml"
+    outputs:
+      - "FND-xxxx findings for unsupported VERIFIED/DECIDED claims"
+      - "per-claim verification notes in the claim-quality dimension evidence file"
+    required_templates: []
+    required_schemas: [schemas/skill-report.schema.yaml]
+    required_prompts: [prompts/22-skill-evidence-auditor.md, prompts/07-implementation-reviewer.md]
+    required_gates: [G-EVID]
+    evidence_required:
+      - "each VERIFIED claim cites an evidence file the auditor opened and confirmed"
+      - "each DECIDED claim cites a DEC/APR record"
+      - "any VERIFIED claim without supporting evidence recorded as a FND-xxxx finding"
+    human_decision_triggers:
+      - "a DECIDED claim about a choice can only be resolved by a human decision record"
+    token_profile:
+      reads: ["subject skill/increment report", "evidence files cited by the claims"]
+      ignores: ["the full repository", "unrelated runs", "chat or narrative"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["T3-T4 subjects with many VERIFIED claims", "security or data claims"]
+    failure_modes:
+      - "VERIFIED accepted without a checked evidence file"
+      - "auditor restates the implementer narrative instead of verifying it"
+      - "self-audit: subject produced by the auditor own executor"
+    related_skills: [evidence_validation, diff_review, finding_classification]
+  - schema: skill-definition/v1
+    skill_id: diff_review
+    name: Diff review
+    category: audit
+    level: core
+    purpose: Review the pinned-SHA diff against the contract; check changed paths vs allowed_paths and detect under-tiering.
+    operating_role: canonflow-evidence-auditor
+    card_ref: skills/canonflow-evidence-auditor.skill-card.yaml
+    checksum: "sha256:198ce384a96277a5215c4f0a0d357d55b64de2fcd5ae1f810e8aeaec0f735fb9"
+    triggered_when:
+      - "an increment reaches AUDIT_PENDING with a diff pinned to the reported base/head SHA"
+      - "task mode audit"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; elevated at T3-T4; under-tiering is a blocking finding"
+    inputs:
+      - "pinned-SHA diff for the subject"
+      - ".canonflow/increments/INC-xxxx.increment-contract.yaml (allowed_paths, tier)"
+    outputs:
+      - "scope/tier findings (FND-xxxx) with tier_challenge set when tier is understated"
+      - "diff-review dimension evidence file"
+    required_templates: [templates/implementation/audit.yaml]
+    required_schemas: [schemas/audit.schema.yaml]
+    required_prompts: [prompts/22-skill-evidence-auditor.md, prompts/07-implementation-reviewer.md]
+    required_gates: [G-REPO]
+    evidence_required:
+      - "diff pinned to the reported base/head SHA (correlation confirmed)"
+      - "each changed path checked against the contract allowed_paths"
+      - "declared tier challenged against what the diff actually touches"
+    human_decision_triggers:
+      - "under-tiering detected: re-tier and re-approve is a human decision (G-PLAN)"
+    token_profile:
+      reads: ["the pinned-SHA diff", "contract allowed_paths and tier"]
+      ignores: ["files outside the diff", "implementer narrative"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["T3-T4 diffs touching public API or migrations", "suspected under-tiering"]
+    failure_modes:
+      - "reviewing an unpinned or wrong-SHA diff"
+      - "out-of-scope path silently accepted"
+      - "under-tiering missed and the audit passes"
+    related_skills: [claim_verification, gate_verification, finding_classification]
+  - schema: skill-definition/v1
+    skill_id: evidence_validation
+    name: Evidence validation
+    category: audit
+    level: core
+    purpose: Validate that the evidence package is complete per contract (G-EVID) and tier-appropriate tests passed (G-TEST).
+    operating_role: canonflow-evidence-auditor
+    card_ref: skills/canonflow-evidence-auditor.skill-card.yaml
+    checksum: "sha256:198ce384a96277a5215c4f0a0d357d55b64de2fcd5ae1f810e8aeaec0f735fb9"
+    triggered_when:
+      - "an increment awaits audit and an evidence package exists"
+      - "G-EVID and the G-TEST matrix must be confirmed before G-AUD"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; elevated at T4 (security, migration, deploy evidence)"
+    inputs:
+      - ".canonflow/increments/INC-xxxx/evidence-package.yaml"
+      - "evidence files referenced by the package"
+      - ".canonflow/increments/INC-xxxx.increment-contract.yaml (evidence requirements, tier)"
+    outputs:
+      - "evidence-validation findings (FND-xxxx) incl. EVIDENCE_GAP"
+      - "G-EVID / G-TEST verification notes in the evidence dimension file"
+    required_templates: []
+    required_schemas: [schemas/evidence-package.schema.yaml]
+    required_prompts: [prompts/22-skill-evidence-auditor.md, prompts/07-implementation-reviewer.md]
+    required_gates: [G-EVID, G-TEST]
+    evidence_required:
+      - "evidence package validated against the contract requirements (G-EVID)"
+      - "tier-appropriate test evidence present and opened (G-TEST matrix)"
+      - "an incomplete package reported as EVIDENCE_GAP, never assumed complete"
+    human_decision_triggers:
+      - "an evidence gap can only be waived by a human risk-acceptance decision"
+    token_profile:
+      reads: ["the evidence package and its referenced files", "contract evidence requirements"]
+      ignores: ["source canon prose", "the full repository"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["T4 evidence: security, migration, rollback, deploy manifests, env fingerprints"]
+    failure_modes:
+      - "incomplete evidence package passed instead of EVIDENCE_GAP -> BLOCKED"
+      - "test evidence assumed rather than opened and confirmed"
+    related_skills: [claim_verification, gate_verification, verdict_generation]
+  - schema: skill-definition/v1
+    skill_id: gate_verification
+    name: Gate verification
+    category: audit
+    level: core
+    purpose: Verify every mandatory gate for the tier resolves; the skill never approves a human gate — G-AUD stays human-owned.
+    operating_role: canonflow-evidence-auditor
+    card_ref: skills/canonflow-evidence-auditor.skill-card.yaml
+    checksum: "sha256:198ce384a96277a5215c4f0a0d357d55b64de2fcd5ae1f810e8aeaec0f735fb9"
+    triggered_when:
+      - "a subject in AUDIT_PENDING needs its gate outputs verified before G-AUD"
+      - "task mode audit"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; every tier has a mandatory gate floor (method/12)"
+    inputs:
+      - "gate output files for the subject"
+      - ".canonflow/increments/INC-xxxx.increment-contract.yaml (tier, gate set)"
+      - "APR records in .canonflow/decision-records/ for human-owned gates"
+    outputs:
+      - "gate-verification matrix (gate -> PASS/FAIL/APR reference)"
+      - "findings (FND-xxxx) for missing or failed gates"
+    required_templates: [templates/implementation/audit.yaml]
+    required_schemas: [schemas/audit.schema.yaml]
+    required_prompts: [prompts/22-skill-evidence-auditor.md, prompts/12-question-session-generator.md]
+    required_gates: [G-EVID, G-TRACE, G-AUD]
+    evidence_required:
+      - "each mandatory gate for the tier has a PASS output or an APR reference"
+      - "human-owned gates recorded only as VERIFIED APR-xxxx exists or OPEN approval pending (DEC-0007)"
+      - "gate outputs cited by path, never restated from narrative"
+    human_decision_triggers:
+      - "G-AUD approval (human only)"
+    token_profile:
+      reads: ["gate output files", "APR references for human gates"]
+      ignores: ["file contents behind already-passed gates", "narrative"]
+      typical_cost: low
+    default_effort: medium
+    max_effort_conditions: ["T3-T4 gate set incl. G-SEC / G-MIG / G-DEPLOY"]
+    failure_modes:
+      - "a human-owned gate reported as approved by the skill (DEC-0007 violation)"
+      - "a missing gate output treated as PASS"
+    related_skills: [evidence_validation, verdict_generation, finding_classification]
+  - schema: skill-definition/v1
+    skill_id: finding_classification
+    name: Finding classification
+    category: audit
+    level: core
+    purpose: Assign each audit finding exactly one severity from BLOCKING|MAJOR|MINOR|NOTE, grounded in cited evidence.
+    operating_role: canonflow-evidence-auditor
+    card_ref: skills/canonflow-evidence-auditor.skill-card.yaml
+    checksum: "sha256:198ce384a96277a5215c4f0a0d357d55b64de2fcd5ae1f810e8aeaec0f735fb9"
+    triggered_when:
+      - "raw audit observations exist without assigned severities"
+      - "claim/diff/evidence/gate verification produced findings to classify"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; severity drives the verdict and any remediation"
+    inputs:
+      - "raw findings from claim, diff, evidence and gate verification"
+      - ".canonflow/increments/INC-xxxx.increment-contract.yaml (tier)"
+    outputs:
+      - "FND-xxxx findings each with one severity BLOCKING|MAJOR|MINOR|NOTE"
+    required_templates: [templates/implementation/audit.yaml]
+    required_schemas: [schemas/audit.schema.yaml]
+    required_prompts: [prompts/22-skill-evidence-auditor.md, prompts/07-implementation-reviewer.md]
+    required_gates: [G-AUD]
+    evidence_required:
+      - "each finding carries exactly one severity from BLOCKING|MAJOR|MINOR|NOTE"
+      - "each finding cites the artifact or evidence file it is grounded in"
+      - "under-tiering classified BLOCKING with tier_challenge set"
+    human_decision_triggers:
+      - "a BLOCKING finding routes to a human remediation or risk-acceptance decision"
+    token_profile:
+      reads: ["the raw findings", "contract tier"]
+      ignores: ["the full evidence corpus already reduced to findings"]
+      typical_cost: low
+    default_effort: medium
+    max_effort_conditions: ["borderline severity that changes the verdict"]
+    failure_modes:
+      - "severity inflated or deflated to steer the verdict"
+      - "a blocking finding downgraded to NOTE"
+    related_skills: [verdict_generation, claim_verification, diff_review]
+  - schema: skill-definition/v1
+    skill_id: verdict_generation
+    name: Verdict generation
+    category: audit
+    level: core
+    purpose: Emit the immutable AUD-xxxx audit verdict PASS|PASS_WITH_FINDINGS|BLOCKED (never renamed) scoped to the subject, then open the G-AUD session.
+    operating_role: canonflow-evidence-auditor
+    card_ref: skills/canonflow-evidence-auditor.skill-card.yaml
+    checksum: "sha256:198ce384a96277a5215c4f0a0d357d55b64de2fcd5ae1f810e8aeaec0f735fb9"
+    triggered_when:
+      - "all audit dimensions are checked and findings classified for a subject"
+      - "an audit needs a scoped verdict before the human-owned G-AUD"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; the verdict is the audit binding output"
+    inputs:
+      - "classified findings (FND-xxxx)"
+      - "audit dimension evidence files"
+      - ".canonflow/skill-runs/index.yaml (subject registry entry, audited_by)"
+    outputs:
+      - ".canonflow/increments/INC-xxxx/AUD-xxxx.audit.yaml (INC; PASS|PASS_WITH_FINDINGS|BLOCKED; RC audits under .canonflow/releases/)"
+      - "G-AUD question session (QS-xxxx) for human approval"
+      - "SRP-xxxx skill report + <=5-line summary handed to orchestrator review"
+    required_templates: [templates/implementation/audit.yaml, templates/decision-console/question-session.json]
+    required_schemas: [schemas/audit.schema.yaml, schemas/skill-report.schema.yaml]
+    required_prompts: [prompts/22-skill-evidence-auditor.md, prompts/12-question-session-generator.md]
+    required_gates: [G-AUD]
+    evidence_required:
+      - "verdict is exactly one of PASS|PASS_WITH_FINDINGS|BLOCKED (audit enum, not renamed)"
+      - "verdict scoped to the audited subject only; every finding referenced"
+      - "any BLOCKING finding forces BLOCKED; no PASS over an open blocker"
+    human_decision_triggers:
+      - "G-AUD approval (human only)"
+    token_profile:
+      reads: ["classified findings", "audit dimension evidence files", "subject registry entry"]
+      ignores: ["re-reading raw evidence already audited", "unrelated subjects"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["T3-T4 deep audit with runtime checks", "release candidate audit"]
+    failure_modes:
+      - "audit verdict renamed or mapped onto the skill_run_verdict enum"
+      - "PASS emitted despite a BLOCKING finding"
+      - "verdict scope exceeds the audited subject"
+      - "self-audit or double audit (audited_by already set) not rejected"
+    related_skills: [finding_classification, gate_verification, evidence_validation]

@@ -1,0 +1,22 @@
+# Bootstrap-installed Core CanonFlow Skill cards (method/21).
+# Framework-managed: refreshed by scripts/init_project.py on every run.
+# Do not hand-edit; project-specific skills live in ../project-extensions/.
+schema: skill-install-index/v1
+kind: core_skill_cards
+level: core
+installed_at: "2026-09-21T20:59:04Z"
+count: 13
+cards:
+  - canonflow-drift-recovery.skill-card.yaml
+  - canonflow-evidence-auditor.skill-card.yaml
+  - canonflow-functional-canon.skill-card.yaml
+  - canonflow-human-decision-console.skill-card.yaml
+  - canonflow-implementation-planner.skill-card.yaml
+  - canonflow-main.skill-card.yaml
+  - canonflow-orchestrator-reviewer.skill-card.yaml
+  - canonflow-release-governor.skill-card.yaml
+  - canonflow-repo-worktree-auditor.skill-card.yaml
+  - canonflow-state-manager.skill-card.yaml
+  - canonflow-technical-canon.skill-card.yaml
+  - canonflow.skill-card.yaml
+  - skill-router.skill-card.yaml

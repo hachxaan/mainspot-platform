@@ -1,0 +1,12 @@
+{
+  "app_version": "1.0.0",
+  "generated_at": "2026-09-21T20:59:04Z",
+  "managed_paths": [
+    ".canonflow/decision-console/app/releases",
+    ".canonflow/decision-console/app/current.json",
+    ".canonflow/decision-console/VERSION",
+    ".canonflow/decision-console/managed-manifest.json",
+    ".canonflow/decision-console/config/.env.example"
+  ],
+  "schema_version": 1
+}

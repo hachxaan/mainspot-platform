@@ -1,0 +1,117 @@
+{
+  "schema_version": 2,
+  "session_label": "Oferta comercial (Q-004) y vertical del piloto (Q-009)",
+  "title": "Oferta comercial y vertical del piloto — decisiones abiertas del canon upstream",
+  "generated_at": "2026-09-21T21:11:00Z",
+  "state": "PENDING",
+  "intervention_reason": "Q-004 (planes/precios/límites de la landing) sigue OPEN y bloquea la oferta comercial; Q-009 dejó la vertical del piloto OPEN (CAP-006 no se inicia sin vertical, PEND-010). Son las únicas preguntas materiales abiertas del canon aprobado v0.1 más la confirmación de alcance por niveles (DEC-012).",
+  "affected_loop": "functional_canon_loop",
+  "decision_impact": "Aprobar planes/precios habilita la oferta comercial (hoy PROPOSED por DEC-007/024 y CONFLICT-002); elegir vertical habilita el diseño del agente de operaciones (CAP-006); confirmar el alcance mantiene fuera los niveles 2-3 (pyme/grande). Ninguna decisión modifica código del piloto.",
+  "risk_tier": 3,
+  "ui_language": "es",
+  "initial_instructions": "Preguntas de negocio/canon funcional. La landing (SRC-0002) es propuesta NO contractual (CONFLICT-002); nada se aprueba por defecto. El piloto sigue sin cobro hasta que se decida lo contrario (DEC-024).",
+  "topics": [
+    {
+      "topic_id": "oferta",
+      "title": "Oferta comercial (Q-004)"
+    },
+    {
+      "topic_id": "piloto",
+      "title": "Piloto y alcance"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-PLANS",
+      "type": "single_choice",
+      "topic_id": "oferta",
+      "title": "¿Se aprueban planes, nombres, precios y límites de la landing para la oferta comercial?",
+      "short_description": "Q-004 (OPEN, pospuesta en PEND-006): la landing propone planes/precios; la infraestructura INC-006 ya opera sin precios (DEC-024).",
+      "full_explanation": "DEC-024 dejó la infraestructura lista sin precios; la decisión comercial permanece abierta. Aprobar aquí crea la oferta oficial; posponer la mantiene PROPOSED y el piloto continúa sin cobro.",
+      "why_this_matters": "Única decisión que bloquea la venta comercial; define compromisos contractuales.",
+      "risk_tier": 4,
+      "required": true,
+      "default_option": "mantener_pospuesto",
+      "requires_comment": true,
+      "options": [
+        {
+          "value": "aprobar_tal_cual",
+          "label": "Aprobar planes/precios de la landing tal cual"
+        },
+        {
+          "value": "ajustar",
+          "label": "Aprobar con ajustes (indicar en comentario)"
+        },
+        {
+          "value": "paquetes_piloto",
+          "label": "Reemplazar por paquetes de piloto (3-5 negocios, DEC-010)"
+        },
+        {
+          "value": "mantener_pospuesto",
+          "label": "Mantener pospuesta hasta validar costos e integraciones"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-VERTICAL",
+      "type": "single_choice",
+      "topic_id": "piloto",
+      "title": "¿Qué vertical define el agente de operaciones del piloto (CAP-006)?",
+      "short_description": "Q-009 (RESUELTA_EN_PARTE): no iniciar CAP-006 sin vertical ni reglas de negocio (PEND-010).",
+      "full_explanation": "El agente de operaciones requiere reglas de negocio por vertical. Elegir vertical desbloquea su diseño; elegir 'aún no' mantiene CAP-006 fuera del alcance inmediato.",
+      "why_this_matters": "Define el siguiente incremento mayor de producto.",
+      "risk_tier": 3,
+      "required": true,
+      "default_option": "aun_no",
+      "requires_comment": false,
+      "options": [
+        {
+          "value": "restaurantes",
+          "label": "Restaurantes"
+        },
+        {
+          "value": "servicios_profesionales",
+          "label": "Servicios profesionales"
+        },
+        {
+          "value": "salud_agenda",
+          "label": "Salud / agenda"
+        },
+        {
+          "value": "aun_no",
+          "label": "Aún no: CAP-006 fuera del alcance inmediato"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-SCOPE",
+      "type": "yes_no",
+      "topic_id": "piloto",
+      "title": "¿Confirmas que los niveles 2-3 (pyme/grande con capa operativa) permanecen excluidos del alcance v0.1 (DEC-012)?",
+      "short_description": "Re-confirmación de alcance para v0.2 del canon de plataforma.",
+      "required": true,
+      "default_option": "yes",
+      "requires_comment": false,
+      "options": [
+        {
+          "value": "yes",
+          "label": "Sí: solo nivel 1 (micro) en v0.1"
+        },
+        {
+          "value": "no",
+          "label": "No: ampliar alcance (indicar en comentario)"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NOTES",
+      "type": "free_text",
+      "topic_id": "oferta",
+      "title": "Notas comerciales para el registro",
+      "short_description": "Opcional: condiciones, calendario o matices de la oferta.",
+      "required": false,
+      "options": []
+    }
+  ],
+  "question_session_id": "QS-0002"
+}

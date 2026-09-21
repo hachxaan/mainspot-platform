@@ -1,0 +1,17 @@
+project: mainspot-platform
+method_version: 1.0.0
+current_focus: 'Flow B: canon v0.1.0 fijada desde la baseline aprobada; pendiente
+  cierre de decisiones TENTATIVA y de oferta comercial vía Human Decision Console
+  (QS-0001, QS-0002)'
+pointers:
+  functional_canon_state: .canonflow/state/functional-canon-state.yaml
+  technical_canon_state: .canonflow/state/technical-canon-state.yaml
+  implementation_state: .canonflow/state/implementation-state.yaml
+  decision_state: .canonflow/decision-state/index.json
+  traceability: .canonflow/traceability/links.yaml
+  source_register: .canonflow/sources/source-register.yaml
+  upstream_canon: /home/administrador/codeart/mainspoot/mainspot-documentation/docs/canonical/00-INDEX.md
+pending_human:
+- QS-0001
+- QS-0002
+updated_at: '2026-09-21T21:02:19Z'

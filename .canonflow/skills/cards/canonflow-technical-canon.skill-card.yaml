@@ -1,0 +1,209 @@
+# Skill card (method/21). Validate: schemas/skill-card.schema.yaml
+schema: skill-card/v1
+skill_id: canonflow-technical-canon
+name: Technical Canon (Loop 2 builder + independent reviewer)
+version: 0.1.0
+state: REVIEW_CANDIDATE
+role_class: operating
+purpose: >-
+  Formalizes Loop 2 (method/03) as two strictly separated run modes. The
+  builder derives technical truth — architecture, components, API contracts,
+  data model, ADRs, test strategy and technical risks — exclusively from a
+  pinned FUNCTIONAL_CANON_APPROVED version, linking every technical item to
+  the functional items it derives from (G-DER, no invented scope), assembled
+  as staging patches against the technical canon index. The reviewer
+  independently checks derivation completeness (G-DER), semantic consistency
+  (G-CON) and epistemic honesty (G-EPI) at the technical level. The skill at
+  most leaves the canon in TECHNICAL_CANON_REVIEW_CANDIDATE and generates the
+  G-TEC approval session; approval itself is human. Product questions are
+  routed to Loop 1, never decided here; nothing downstream redefines upstream.
+prompt: prompts/20-skill-technical-canon.md
+run_modes:
+  - mode: builder
+    description: >-
+      Pins the approved functional canon version and derives architecture
+      overview, components (CMP-xxxx), API contracts (API-xxxx), data model
+      (DM-xxxx), integrations, security, data, deployment, rollback and
+      test-strategy content plus ADRs (ADR-xxxx, status PROPOSED) from it,
+      recording technical risks as TR-xxxx and assembling staging patches
+      against the technical canon index. Every product question detected
+      during derivation becomes a QS session routed to Loop 1, never a
+      choice made here.
+    separation_rule: >-
+      Builder and reviewer of the same canon scope are always distinct runs
+      with different executor identities and no shared conversational context
+      (method/06). A builder run never reviews its own patch.
+  - mode: reviewer
+    description: >-
+      Independently reviews one technical staging patch: G-DER (complete
+      derivation, no invented scope, no orphaned in-scope functional items),
+      G-CON (semantic consistency, no contradictions), G-EPI (no inference
+      dressed as fact, exact epistemic states), ADR quality (options, impact,
+      risk, tradeoff), mandatory sections for Tier 3-4 exposure and a test
+      strategy mapping every in-scope AC-xxxx to a verification level. Reads
+      artifacts, diffs and gate outputs, never the builder's narrative.
+    separation_rule: >-
+      The reviewer run rejects the assignment if the subject patch or its
+      builder report was produced by this run's executor identity (self
+      review) or if the builder run already has audited_by set (double
+      review needs DEC-xxxx).
+when_to_use:
+  - "skill-state.next_task assigns a Loop 2 objective: a functional scope slice to derive, a constraint set to incorporate, or a technical staging patch to review"
+  - a FUNCTIONAL_CANON_APPROVED version exists whose in-scope items are not yet derived into linked technical items
+  - a technical staging patch is complete and needs independent review before TECHNICAL_CANON_REVIEW_CANDIDATE
+  - Loop 3 routed a technical question back to Loop 2 through a published task
+  - a newly approved functional canon version requires affected technical items to be re-derived
+  - a RECONCILIATION_DECIDED record requires a technical canon update as a staging patch
+required_inputs:
+  - .canonflow/canon/technical/index.yaml (canon index at a pinned SHA)
+  - .canonflow/canon/functional/index.yaml at the pinned FUNCTIONAL_CANON_APPROVED version (sole obligation source)
+  - the one TASK-xxxx assignment defining mode and scope for this run
+  - decision records (DEC-xxxx) cited by the task — human technical constraints such as budget, compliance, platform — as pointers
+  - "existing systems: Flow B runtime inventory and code map pointers (method/03 inputs)"
+  - "reviewer mode: the staging patch (diff), builder RUN/SRP ids and the builder's gate-check output paths"
+required_outputs:
+  - own RUN-xxxx.skill-run.yaml and RUN-xxxx.skill-report.yaml (immutable)
+  - "builder: staging patch + updated technical canon index on the work branch, every item DERIVES_FROM-linked and epistemically classified"
+  - "builder: ADR-xxxx records in PROPOSED (options, impact, risk, tradeoff) and TR-xxxx records for detected technical risks"
+  - "builder: QS-xxxx sessions routing every product question to Loop 1 and covering every OPEN/CONFLICTED item"
+  - "reviewer: FND findings and a scoped verdict on the subject patch, recorded in the report"
+  - "reviewer: G-TEC approval session (prompts/10) when the candidate guards pass"
+authority:
+  - "builder: pin the approved functional canon version the derivation binds to and record it in the patch"
+  - "builder: derive components, API contracts, data model, integrations, security, deployment, observability, migration, rollback and test-strategy content from approved functional items and DEC constraints"
+  - "builder: record material technical choices as ADR-xxxx in PROPOSED and technical risks as TR-xxxx"
+  - "builder: assemble staging patches against the technical canon index; approved canon is never edited in place"
+  - "builder: raise QS sessions for every product question, constraint ambiguity and derivation conflict detected"
+  - "reviewer: run independent G-DER, G-CON and G-EPI checks and record FND findings, including invented scope, broken derivation and ADR-quality failures"
+  - "reviewer: issue a scoped verdict on the subject patch and draft the FND-bounded remediation it requires"
+  - "reviewer: move the canon to TECHNICAL_CANON_REVIEW_CANDIDATE when the method/16 section 3 guards pass, and generate the G-TEC session"
+authority_limits:
+  - verdicts bind only the staging patch and canon scope named in the task; they are never canon-approval, project, release or readiness statements
+  - TECHNICAL_CANON_REVIEW_CANDIDATE is the terminal state this skill may set; TECHNICAL_CANON_APPROVED exists only through human G-TEC approval
+  - technical items enter the patch only with DERIVES_FROM links to approved functional items; constraints bind only through DEC-xxxx references; VERIFIED requires evidence pointers
+  - scope comes only from the task, the pinned functional canon version and decision records; missing or ambiguous scope goes to the Decision Console, never into the patch
+  - remediation drafts may only reference the FND ids that motivated them; next_task publication belongs to canonflow-orchestrator-reviewer
+  - writes happen only on work branches; main advances only by human merge
+prohibitions:
+  - never decides product questions; every functional gap, ambiguity or priority choice is routed to Loop 1 as a QS session and waits for a DEC record
+  - never redefines, edits or reinterprets the functional canon; nothing downstream redefines upstream (method/21 section 7)
+  - never invents technical scope; every CMP/API/DM/ADR/TR item must derive from at least one approved functional item (G-DER)
+  - never consumes DRAFT or REVIEW_CANDIDATE functional content as an obligation source; only FUNCTIONAL_CANON_APPROVED versions bind
+  - never approves anything and never moves the canon (or any artifact) to APPROVED
+  - never implements; no code, no migrations, no deployment (Loop 2 boundary, method/03)
+  - never promotes PROPOSED, INFERRED or ASSUMED content into obligations; only VERIFIED and DECIDED bind
+  - "reviewer mode: never edits the patch under review; findings are recorded, remediation is a separate builder run"
+  - "builder mode: never reuses the reviewer's or its own prior review as evidence of quality; self-checks are inputs, not review"
+hard_stops:
+  - a technical item cannot be linked to any approved functional item -> the item never enters the patch; unlinked scope at candidate time fails G-DER and stops the run
+  - the referenced functional canon version is not FUNCTIONAL_CANON_APPROVED or not pinned -> BLOCKED
+  - a derivation choice requires a product or functional decision -> item held + QS session routed to Loop 1; the loop does not proceed on that item (method/03)
+  - any CONFLICTED statement or blocking OPEN question in scope at candidate time -> stop + QS session (method/16 section 3 guard)
+  - scope change requested without a decision record -> BLOCKED + QS session
+  - "reviewer mode: subject patch or builder report produced by this run's executor -> BLOCKED (self-review)"
+  - "correlation failure: task_id, patch paths, builder RUN/SRP ids or registry entry do not match -> BLOCKED"
+  - own G-REPO pre-flight fails (wrong repo/branch, dirty tree, missing allowed paths) -> stop before any write
+reads:
+  - approved functional canon versions (index, statements, changelog) as the read-only obligation source
+  - .canonflow/canon/technical/ index, items, changelog and staging patches
+  - decision records, question/answer sessions and traceability links
+  - Flow B runtime inventory and code-map evidence for existing systems (read-only)
+  - gate-check outputs (scripts/check_gates.py) and evidence files
+  - .canonflow/state/method-state.yaml, .canonflow/skill-state/skill-state.yaml, .canonflow/skill-runs/index.yaml
+  - skills/canonflow-technical-canon.skill-card.yaml (own authority reference)
+writes:
+  - .canonflow/skill-runs/RUN-xxxx.skill-run.yaml (own run)
+  - .canonflow/skill-runs/RUN-xxxx.skill-report.yaml (own report)
+  - .canonflow/skill-runs/index.yaml (own registry entry and states)
+  - "builder: technical canon staging patches + index updates (work branch only), including ADR-xxxx and TR-xxxx records"
+  - .canonflow/decision-sessions/pending/ (QS sessions, including the G-TEC approval session)
+  - .canonflow/traceability/links.yaml (DERIVES_FROM and DEC links)
+state_interaction:
+  - resolves position exclusively from method-state, skill-state, registry and decision-state pointers (method/21 section 4 order)
+  - "canon states: builder works while the canon is TECHNICAL_CANON_IN_PROGRESS; reviewer may set TECHNICAL_CANON_REVIEW_CANDIDATE when guards pass; TECHNICAL_CANON_APPROVED is requested via the G-TEC QS session, never performed"
+  - pointer updates happen only on work branches; any increment state transition touched by remediation goes only through scripts/update_state.py legal transitions
+decision_console_interaction:
+  - generates a QS session for every product question detected during derivation (routed to Loop 1), every OPEN or CONFLICTED item and every governance or constraint ambiguity
+  - "reviewer: generates the G-TEC approval session when the candidate guards pass; the session requests, never records, approval and lists approval-critical ADRs still PROPOSED as explicit decisions"
+  - consumes DEC/APR records as the only valid decision inputs; loose chat answers are not decisions
+  - never answers, ingests or archives its own sessions (ingestion belongs to canonflow-human-decision-console)
+skill_interactions:
+  - {skill: canonflow-repo-worktree-auditor, relation: DELEGATES_TO, detail: G-REPO pre-flight}
+  - {skill: canonflow-human-decision-console, relation: ESCALATES_TO, detail: product questions routed to Loop 1 and constraint ambiguity; standard pointer message then stop}
+  - {skill: canonflow-orchestrator-reviewer, relation: CONSUMES_OUTPUT_OF, detail: published TASK-xxxx assignments define run mode and scope}
+  - {skill: canonflow-orchestrator-reviewer, relation: PRODUCES_INPUT_FOR, detail: reviewer findings and FND-bounded remediation drafts feed next-task publication}
+  - {skill: canonflow-functional-canon, relation: CONSUMES_OUTPUT_OF, detail: pinned FUNCTIONAL_CANON_APPROVED versions are the sole obligation source for derivation}
+  - {skill: canonflow-implementation-planner, relation: PRODUCES_INPUT_FOR, detail: approved CMP/API/DM/ADR items and test strategy feed increment planning}
+  - {skill: canonflow-drift-recovery, relation: CONSUMES_OUTPUT_OF, detail: RECONCILIATION_DECIDED records re-enter the technical canon as staging patches}
+required_evidence:
+  - "builder: the pinned functional canon version and SHA recorded in the patch and cited in the report"
+  - "builder: gate-check output (scripts/check_gates.py) for G-DER, G-CON, G-EPI, G-TRACE saved as an evidence file and cited"
+  - "reviewer: its own independent G-DER/G-CON/G-EPI check output, never the builder's self-check reused"
+  - "reviewer: derivation verification for sampled items (technical item id -> DERIVES_FROM -> functional item id at the pinned version) saved and cited"
+  - "for every VERIFIED claim: the exact canon file, diff, index entry or gate output checked"
+verdict_criteria:
+  PASS:
+    - "builder: every in-scope functional item is covered by derived technical items or explicitly routed to a QS session; every CMP/API/DM/ADR/TR item carries DERIVES_FROM links to at least one FR/BR/WF/AC; ADRs are complete (options, impact, risk, tradeoff) in PROPOSED; mandatory sections present for Tier 3-4 exposure; self-check gates G-DER, G-CON, G-EPI, G-TRACE pass"
+    - "reviewer: derivation verified complete (no invented scope, no orphaned in-scope functional items); ADR quality confirmed; mandatory Tier 3-4 sections present; test strategy maps every in-scope AC-xxxx to a verification level; no CONFLICTED or blocking OPEN in scope; canon set to TECHNICAL_CANON_REVIEW_CANDIDATE and G-TEC session generated"
+  PASS_WITH_LIMITATIONS:
+    - PASS conditions except explicitly enumerated non-blocking limitations (non-blocking OPEN questions with owner, minor findings, items held pending routed product questions)
+    - every limitation recorded as an OPEN/ASSUMED/RISK claim with owner or RSK/TR reference
+  REMEDIATION_REQUIRED:
+    - "reviewer: blocking or major findings exist (invented technical scope, missing or broken derivation, orphaned functional items, incomplete ADRs on approval-critical choices, missing mandatory sections) and each is covered by an FND-bounded remediation draft handed to the orchestrator for publication"
+    - the canon does not advance to TECHNICAL_CANON_REVIEW_CANDIDATE and no G-TEC session is generated
+  BLOCKED:
+    - unapproved or unpinned functional canon version, scope change without decision record, correlation failure or self-review condition
+    - a product question or contradiction only a human can resolve stops the objective itself
+    - QS session generated when the blocker is human-shaped; blockers listed in the report
+allowed_claims:
+  - VERIFIED facts about derivation links, technical items, pinned versions and gate outputs it checked itself (evidence pointers mandatory)
+  - PROPOSED architecture choices, ADRs and reconciliations awaiting human decision
+  - INFERRED/ASSUMED observations, explicitly flagged, never resolving material uncertainty and never entering the patch as obligations
+  - OPEN unknowns with blocking flag; CONFLICTED for contradictions between functional canon, constraints or existing-system evidence
+  - RISK claims referencing or proposing TR-xxxx / RSK-xxxx records
+prohibited_claims:
+  - DECIDED claims (only human decision records carry DECIDED)
+  - any canon-approved, readiness, release, staging or project statement at any scope
+  - product or functional claims; the functional canon is consumed, never restated as new or reinterpreted obligations
+  - VERIFIED status for derivation or item content backed only by the builder's narrative
+  - generalizing a patch-level PASS to canon health, architecture completeness or project state
+examples:
+  - title: Builder run derives a payments slice and routes one product question to Loop 1
+    given: >-
+      skill-state.next_task = TASK-0031 (mode builder, scope: derive
+      FR-0031..FR-0038 and BR-0009 into technical canon v0.2.0 draft),
+      functional canon v1.1.0 in FUNCTIONAL_CANON_APPROVED at commit 5c1d2ab,
+      technical canon index at commit 7d40e12, no pending decision session.
+    run: >-
+      G-REPO pre-flight via canonflow-repo-worktree-auditor; create RUN-0031;
+      pin functional canon v1.1.0; derive CMP-0007..CMP-0009, API-0004 and
+      DM-0003 with DERIVES_FROM links to the in-scope FR/BR items; record
+      ADR-0011 (payment provider abstraction, PROPOSED, options/impact/risk/
+      tradeoff) and TR-0006 (idempotency risk); detect that FR-0034 leaves
+      the refund currency ambiguous (product question) -> hold the item and
+      generate QS-0041 routed to Loop 1; assemble the staging patch against
+      the index; run scripts/check_gates.py (G-DER, G-CON, G-EPI, G-TRACE);
+      report with the held item enumerated as a limitation.
+    expected_outcome: >-
+      SRP-0031 verdict PASS_WITH_LIMITATIONS scoped to the TASK-0031 slice;
+      staging patch + index update on the work branch; QS-0041 PENDING; canon
+      remains TECHNICAL_CANON_IN_PROGRESS; no product decision made anywhere.
+  - title: Reviewer run finds invented technical scope and requires remediation
+    given: >-
+      skill-state.next_task = TASK-0032 (mode reviewer, subject: staging patch
+      of RUN-0031 / SRP-0031), executor differs from the builder's, QS-0041
+      answered by DEC-0022, technical canon index at commit 9e77a01.
+    run: >-
+      G-REPO pre-flight; create RUN-0034; verify correlation (task_id, patch
+      paths, builder RUN/SRP ids, registry) and executor separation; run
+      independent G-DER/G-CON/G-EPI checks; verify derivation for sampled
+      items against functional canon v1.1.0; find CMP-0009 exposing an admin
+      bulk-refund endpoint with no DERIVES_FROM link to any FR/BR/WF/AC ->
+      FND-0019 (invented technical scope, blocking); draft the
+      FND-0019-bounded remediation for the orchestrator; verdict
+      REMEDIATION_REQUIRED; no G-TEC session.
+    expected_outcome: >-
+      SRP-0034 verdict REMEDIATION_REQUIRED scoped to the RUN-0031 patch;
+      FND-0019 recorded with the checked evidence path; canon stays
+      TECHNICAL_CANON_IN_PROGRESS; remediation draft handed to
+      canonflow-orchestrator-reviewer for publication.

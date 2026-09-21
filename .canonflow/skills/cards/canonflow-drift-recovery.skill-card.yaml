@@ -1,0 +1,202 @@
+# Skill card (method/21). Validate: schemas/skill-card.schema.yaml
+schema: skill-card/v1
+skill_id: canonflow-drift-recovery
+name: Drift / Runtime Recovery Mode operator
+version: 0.1.0
+state: REVIEW_CANDIDATE
+role_class: operating
+purpose: >-
+  Formalizes the Drift / Runtime Recovery Mode operator (method/05,
+  prompts/08): the only legal path for observed reality — code, runtime,
+  configuration, published contracts or evidence — to re-enter canon.
+  Inventories the seven surfaces through scripts into fingerprint evidence,
+  classifies every divergence as a DI item with a drift_class and severity
+  tier, proposes per-item reconciliation directions R1-R5 strictly as
+  PROPOSED, routes every material item through the Human Decision Console,
+  and only after RECONCILIATION_DECIDED spawns canon staging patches (R1),
+  recovery increments (R2-R4) and expiring risk records (R5). Also runs
+  reverse canonization for brownfield onboarding, where every statement
+  recovered from reality is INFERRED until independently verified or decided.
+prompt: prompts/17-skill-drift-recovery.md
+run_modes: []
+when_to_use:
+  - an audit, review or release check finds canon/code/runtime mismatch (trigger audit_finding)
+  - a runtime incident contradicts canon (trigger runtime_incident)
+  - a STALE_CANON cascade reveals divergence wider than one increment (trigger stale_canon_cascade)
+  - a scheduled drift check is due (trigger scheduled_check)
+  - brownfield onboarding with no canon or no trusted canon (trigger brownfield_onboarding, reverse canonization, Flow B entry)
+  - another skill reports a drift suspicion or an EVIDENCE_GAP that needs classification
+when_not_to_use:
+  - a single increment failed its audit with no cross-surface divergence (that is AUDIT_BLOCKED -> REMEDIATION, method/16 section 4, not recovery)
+required_inputs:
+  - trigger pointer (assigned TASK-xxxx, FND-xxxx finding, incident reference, schedule entry or onboarding instruction)
+  - .canonflow/state/method-state.yaml and .canonflow/skill-state/skill-state.yaml pointers
+  - .canonflow/recovery/DR-xxxx/ when resuming an existing recovery
+  - approved canon indices at pinned versions (S1/S2 baseline; may be empty in brownfield)
+  - fingerprinting script outputs (never memory, chat or narrative as a surface)
+required_outputs:
+  - own RUN-xxxx.skill-run.yaml and RUN-xxxx.skill-report.yaml (immutable)
+  - .canonflow/recovery/DR-xxxx/drift-report.yaml validating against schemas/drift-report.schema.yaml
+  - .canonflow/recovery/DR-xxxx/reconciliation-plan.md with exactly one PROPOSED direction R1-R5 per DI item
+  - one script-collected fingerprint evidence file per inventoried surface, cited by path
+  - reconciliation QS-xxxx session(s) when the run reaches RECONCILIATION_PROPOSED
+  - after RECONCILIATION_DECIDED, canon staging patches (R1), increment planning inputs (R2-R4) and RSK-xxxx records with expiry (R5)
+authority:
+  - open a DR-xxxx recovery and advance its state field through the legal chain up to RECONCILIATION_PROPOSED
+  - inventory all seven surfaces S1-S7 via scripts into fingerprint evidence files before any comparison
+  - classify each divergence as a DI-xxxx item with drift_class, severity tier (0-4, method/12 semantics) and involved surfaces
+  - map drift kinds to classes verbatim -> documentation drift to DOC_AHEAD_OF_CODE, implementation drift to CODE_AHEAD_OF_CANON, runtime drift to RUNTIME_AHEAD_OF_CODE or CONFIG_DRIFT, evidence gaps to EVIDENCE_GAP
+  - propose per-item reconciliation directions (R1_UPDATE_CANON, R2_FIX_REALITY, R3_SPLIT, R4_DEPRECATE, R5_ACCEPT_RISK), all PROPOSED
+  - generate the reconciliation Decision Console session (one individual question per Tier >= 2 item; Tier 0-1 items batchable per method/09 and PROP-0001 — approval is never skipped)
+  - after RECONCILIATION_DECIDED, create canon staging patches for R1 items, hand R2-R4 items to increment planning, and record RSK-xxxx with owner and expiry for R5 items
+  - run reverse canonization on brownfield entry, drafting candidate functional/technical canons from S3-S7 with every statement classified INFERRED
+  - declare RECOVERED only after a clean seven-surface re-comparison with zero unexplained divergence, saved as evidence
+authority_limits:
+  - every reconciliation direction stays PROPOSED until a DEC-xxxx / RSK-xxxx record exists; the skill never selects a direction on its own authority
+  - Tier >= 2 items require individual human decisions; batching is limited to Tier 0-1 and never skips approval (method/09, PROP-0001)
+  - R1 staging patches are candidates entering normal Loop 1/2 review; never in-place canon edits, never self-approved
+  - R2-R4 recovery work executes as normal increments through Loop 3 gates; this skill produces planning inputs, never implementations
+  - R5 acceptance requires an RSK-xxxx with owner and expiry date; open-ended risk acceptance is outside its authority
+  - reverse canonization output enters canon only through normal Loop 1/2 approval, item by item for Tier >= 2 behavior
+  - verdicts bind only the DR scope of the run; RECOVERED for one DR is never project, canon or release health
+  - all writes happen on work branches only; main advances only by human merge
+prohibitions:
+  - never writes code or changes runtime, configuration or canon before RECONCILIATION_DECIDED
+  - never treats runtime behavior as canon without a decision record (principle 8)
+  - never classifies a reality-derived statement as VERIFIED by default; reverse canonization output is INFERRED until verified or decided
+  - never closes a recovery with UNKNOWN_ORIGIN items unresolved at Tier >= 3
+  - never fingerprints from memory, chat or narrative; every surface fingerprint is script-collected into a file
+  - never merges the obligations axis with the facts axis (method/21 section 7); divergence is classified and reported, never silently reconciled
+  - never approves its own reconciliation plan, answers its own QS sessions or ingests decision answers
+  - never executes the R2-R4 increments itself; implementation stays with the Loop 3 implementation agent
+hard_stops:
+  - any write to code, runtime, configuration or canon requested or attempted before RECONCILIATION_DECIDED -> BLOCKED
+  - pressure to accept runtime behavior as canon without a decision record -> BLOCKED + QS session
+  - a required surface cannot be fingerprinted at all (no access, no script output) -> BLOCKED with the gap recorded as an EVIDENCE_GAP DI item
+  - closing attempted with an UNKNOWN_ORIGIN item at Tier >= 3 -> BLOCKED until attributed or human-decided
+  - own G-REPO pre-flight fails (wrong repo/branch, dirty tree) -> stop before any write
+  - state pointers contradict recovery artifacts on disk -> BLOCKED + delegate to canonflow-state-manager + QS if material
+reads:
+  - all seven surfaces via scripts (canon indices, repo at pinned SHA, runtime and config fingerprints, published docs/contracts, evidence files)
+  - .canonflow/ state files, registries, prior DR-xxxx trees, decision records and audit findings
+  - templates/recovery/ (drift-report, reconciliation-plan, runtime-inventory)
+  - skills/*.skill-card.yaml (authority reference)
+writes:
+  - .canonflow/skill-runs/RUN-xxxx.skill-run.yaml (own run)
+  - .canonflow/skill-runs/RUN-xxxx.skill-report.yaml (own report)
+  - .canonflow/skill-runs/index.yaml (own registry entry and states)
+  - .canonflow/recovery/DR-xxxx/ (drift-report.yaml, reconciliation-plan.md, fingerprint evidence files)
+  - .canonflow/decision-sessions/pending/ (reconciliation QS sessions)
+  - canon staging patches for R1 items (work branch, after RECONCILIATION_DECIDED, for Loop 1/2 review)
+  - RSK-xxxx records for R5 items (after decision, owner and expiry mandatory)
+  - .canonflow/skill-state/skill-state.yaml (latest_report pointer after reporting)
+  - .canonflow/traceability/links.yaml (RECONCILES/DECIDED_BY/EVIDENCES links for DI items)
+state_interaction:
+  - resolves position exclusively from method-state, decision-state, skill-state and registry pointers (method/21 section 4 order)
+  - advances the drift report state only through the legal chain DRIFT_SUSPECTED -> DRIFT_INVENTORY -> DRIFT_CLASSIFIED -> RECONCILIATION_PROPOSED; RECONCILIATION_DECIDED is recorded only after DEC/RSK records exist for every material item
+  - pointer and registry updates happen only on work branches
+  - increment states for R2-R4 recovery work advance only through scripts/update_state.py legal transitions
+  - human-owned transitions (RECONCILIATION_DECIDED, canon approvals, G-PLAN on recovery increments) are requested via QS sessions, never performed
+decision_console_interaction:
+  - generates the reconciliation QS session at RECONCILIATION_PROPOSED; one individual question per Tier >= 2 DI item, Tier 0-1 items batchable into a single question (method/09, PROP-0001)
+  - consumes DEC-xxxx / RSK-xxxx records as the only valid reconciliation decisions; loose chat answers are not decisions
+  - generates QS sessions for runtime-as-canon pressure, tier exceptions and Tier >= 3 UNKNOWN_ORIGIN attribution
+  - never answers, ingests or archives its own sessions (ingestion belongs to canonflow-human-decision-console)
+skill_interactions:
+  - {skill: canonflow-repo-worktree-auditor, relation: DELEGATES_TO, detail: G-REPO pre-flight}
+  - {skill: canonflow-human-decision-console, relation: ESCALATES_TO, detail: reconciliation sessions and every material drift decision; standard pointer message then stop}
+  - {skill: canonflow-orchestrator-reviewer, relation: CONSUMES_OUTPUT_OF, detail: drift suspicions found during reviews arrive as DR triggers}
+  - {skill: canonflow-evidence-auditor, relation: CONSUMES_OUTPUT_OF, detail: EVIDENCE_GAP and mismatch findings arrive as DR triggers}
+  - {skill: canonflow-state-manager, relation: DELEGATES_TO, detail: state integrity repair when pointers contradict recovery artifacts}
+  - {skill: canonflow-functional-canon, relation: PRODUCES_INPUT_FOR, detail: R1 staging patches enter Loop 1 build/review}
+  - {skill: canonflow-technical-canon, relation: PRODUCES_INPUT_FOR, detail: R1 and CONFIG_DRIFT staging patches enter Loop 2 build/review}
+  - {skill: canonflow-implementation-planner, relation: PRODUCES_INPUT_FOR, detail: R2-R4 items become bounded increment planning inputs}
+required_evidence:
+  - one script-collected fingerprint evidence file per inventoried surface, cited by path in the drift report
+  - "for every DI item: the exact fingerprints, paths or command outputs on each diverging surface"
+  - "for every VERIFIED claim: the evidence file or script output the skill collected itself"
+  - "for RECOVERED: the clean seven-surface re-comparison output saved as an evidence file"
+  - "for every R5 item: the RSK-xxxx record with owner and expiry"
+verdict_criteria:
+  PASS:
+    - the assigned recovery phase (inventory, classification, proposal, or post-decision spawning) completed with every output validating against its schema
+    - every DI item carries class, severity tier, involved surfaces and evidence pointers; every direction is PROPOSED or backed by a DEC/RSK record
+    - no write to code, runtime, configuration or canon occurred before RECONCILIATION_DECIDED
+    - when the run closes the recovery, the seven-surface re-comparison is clean with zero unexplained divergence and no Tier >= 3 UNKNOWN_ORIGIN remains
+  PASS_WITH_LIMITATIONS:
+    - PASS conditions except explicitly enumerated limitations (e.g. a partial fingerprint on a low-tier surface), each recorded as an OPEN/ASSUMED/RISK claim with owner or RSK/TR reference
+    - no limitation touches the classification or evidence of a Tier >= 2 DI item
+  REMEDIATION_REQUIRED:
+    - a defect in existing recovery artifacts was found (misclassified DI item, stale fingerprint, missing decision link) and a bounded remediation task covering only the cited findings is published
+  BLOCKED:
+    - write pressure before RECONCILIATION_DECIDED, runtime-as-canon without a decision record, an unfingerprintable surface, a Tier >= 3 UNKNOWN_ORIGIN at close, or a G-REPO/correlation failure
+    - QS session generated when the blocker is human-shaped; blockers listed in the report
+allowed_claims:
+  - VERIFIED facts about fingerprints, divergences and re-comparisons it script-collected itself (evidence pointers mandatory)
+  - INFERRED for every reality-derived statement in reverse canonization and for suspected but unconfirmed drift causes; never resolving material uncertainty
+  - PROPOSED reconciliation directions R1-R5 awaiting human decision
+  - OPEN for unattributed divergences (UNKNOWN_ORIGIN), flagged blocking at Tier >= 3
+  - CONFLICTED for direct contradictions between two inventoried surfaces
+  - RISK claims referencing or proposing RSK/TR records (R5 acceptances, expiring risks)
+  - ASSUMED only for explicitly flagged environmental assumptions, which must end empty or reviewed
+prohibited_claims:
+  - RECOVERED without a clean seven-surface re-comparison saved as evidence
+  - any readiness, release, staging pass, freeze or production statement at any scope
+  - DECIDED claims (reconciliation decisions exist only as human DEC/RSK records)
+  - VERIFIED for reality-derived canon candidates (reverse canonization output is INFERRED)
+  - canon obligations derived from runtime observation without a decision record
+  - generalizing one DR recovery to project, canon set or release health
+examples:
+  - title: Runtime incident becomes a classified, human-decidable drift report
+    given: >-
+      skill-state.next_task = TASK-0021 (open recovery; FND-0031 reports the
+      deployed API returns a field absent from the technical canon). No
+      existing DR tree for this scope; no pending decision session.
+    run: >-
+      G-REPO pre-flight; create RUN-0021; open DR-0002 (trigger
+      runtime_incident); fingerprint S1-S7 via scripts into evidence files;
+      classify DI-0004 CODE_AHEAD_OF_CANON Tier 2 (endpoint field in code and
+      runtime, not in canon) and DI-0005 CONFIG_DRIFT Tier 1 (env var differs
+      from technical canon); write drift-report.yaml + reconciliation-plan.md
+      with DI-0004 -> R1_UPDATE_CANON PROPOSED and DI-0005 -> R2_FIX_REALITY
+      PROPOSED; generate QS-0017 (individual question for DI-0004; DI-0005 in
+      the Tier 0-1 batch section); verdict PASS scoped to
+      inventory+classification+proposal; stop.
+    expected_outcome: >-
+      SRP-0021 verdict PASS; DR-0002 state RECONCILIATION_PROPOSED; QS-0017
+      PENDING in decision-state; zero writes to code or canon; next_pointer
+      is the QS-0017 path.
+  - title: Spawn recovery work after RECONCILIATION_DECIDED
+    given: >-
+      DR-0002 decisions ingested by the console: DEC-0023 sets DI-0004 =
+      R1_UPDATE_CANON, DEC-0024 sets DI-0005 = R5_ACCEPT_RISK with expiry
+      2026-09-30. DR-0002 state RECONCILIATION_DECIDED; TASK-0024 assigns the
+      spawning run.
+    run: >-
+      G-REPO pre-flight; create RUN-0024; verify a DEC/RSK record covers
+      every material DI item; create the canon staging patch for DI-0004 on
+      the work branch as a Loop 2 review candidate (claim PROPOSED, never
+      self-approved); record RSK-0003 (owner + expiry 2026-09-30) for
+      DI-0005; set DR-0002 to RECOVERY_IN_PROGRESS; verdict PASS scoped to
+      post-decision spawning; no RECOVERED claim (re-comparison pending).
+    expected_outcome: >-
+      SRP-0024 verdict PASS; staging patch awaiting canonflow-technical-canon
+      review; RSK-0003 recorded with expiry; DR-0002 RECOVERY_IN_PROGRESS; no
+      readiness or RECOVERED claim anywhere.
+  - title: Brownfield reverse canonization (Flow B entry)
+    given: >-
+      method-state shows brownfield onboarding; S1/S2 empty (no trusted
+      canon); TASK-0002 assigns reverse canonization of the existing system
+      at repo commit abc1234.
+    run: >-
+      G-REPO pre-flight; create RUN-0003; open DR-0001 (trigger
+      brownfield_onboarding); inventory S3-S7 via scripts; draft candidate
+      functional and technical canon statements from observed reality, every
+      statement classified INFERRED; record missing evidence as EVIDENCE_GAP
+      DI items; reconciliation-plan.md proposes R1_UPDATE_CANON per observed
+      behavior; QS-0004 with one individual question per Tier >= 2 behavior;
+      verdict PASS scoped to inventory+drafting+proposal; stop.
+    expected_outcome: >-
+      SRP-0003 verdict PASS; candidate canons contain zero VERIFIED or
+      DECIDED statements; promotion happens only through normal Loop 1/2
+      approval after QS-0004; DR-0001 state RECONCILIATION_PROPOSED.

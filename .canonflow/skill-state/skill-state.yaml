@@ -1,0 +1,5 @@
+schema: skill-state/v1
+latest_run: ""
+latest_report: {report_id: "", run_id: "", path: "", verdict: ""}
+next_task: {kind: none, ref: "", path: "", published_by: ""}
+updated_at: "2026-09-21T20:59:04Z"

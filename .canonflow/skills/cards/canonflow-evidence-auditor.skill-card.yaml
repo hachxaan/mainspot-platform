@@ -1,0 +1,218 @@
+# Skill card (method/21). Validate: schemas/skill-card.schema.yaml
+schema: skill-card/v1
+skill_id: canonflow-evidence-auditor
+name: Evidence Auditor (deep independent audit of evidence, claims and the ten dimensions)
+version: 0.1.0
+state: REVIEW_CANDIDATE
+role_class: operating
+purpose: >-
+  Formalizes the deep independent audit (prompts/07, with the review
+  discipline of prompts/03 and prompts/05, and the method/12 tier x gate
+  matrix): audits exactly one subject — an increment, a release scope or a
+  delegated skill run — from an exclusively file-based handoff (contract,
+  real diff at pinned SHAs, report, evidence files, canons at pinned
+  versions), never from the implementer's narrative. Covers all ten audit
+  dimensions, modulated by tier; challenges under-tiering as BLOCKING;
+  verifies in the registry that the subject is not already AUDITED and that
+  its executor differs from this run's executor. For INC/RC subjects it
+  emits the immutable AUD-xxxx audit artifact and generates the G-AUD
+  approval session — the audit verdict binds only the audited scope and the
+  human approves G-AUD.
+prompt: prompts/22-skill-evidence-auditor.md
+run_modes: []
+when_to_use:
+  - an increment reached AUDIT_PENDING and needs its independent audit before the human G-AUD decision (method/16 section 4)
+  - canonflow-orchestrator-reviewer delegates a deep evidence/claims audit of a Tier >= 2 subject run
+  - canonflow-release-governor delegates the release-level independent audit of an RC increment set (DEC-0015)
+  - a remediated increment re-entered AUDIT_PENDING through the AUDIT_BLOCKED -> REMEDIATION route and needs re-audit
+  - a report's VERIFIED claims need verification deeper than correlation review (claims checked against actual files and evidence)
+required_inputs:
+  - "the assigning TASK-xxxx with correlation anchors (task_id, task_commit) and subject_ref: INC-xxxx, RC-xxxx or RUN-xxxx"
+  - .canonflow/increments/INC-xxxx/contract.yaml (allowed_paths, done_criteria, tier, pinned canon versions) — or the RC/run equivalents
+  - the real diff at the pinned SHAs (base..head, taken from git), never a described or pasted diff
+  - the implementer report and evidence package files — inputs to audit, never audit results; the implementer narrative is excluded by design
+  - approved canon indices at the exact versions pinned by the contract (functional and technical, read-only)
+  - .canonflow/skill-runs/index.yaml plus increment/release state entries (audit-once and separation-of-duties checks)
+  - .canonflow/traceability/links.yaml (lineage dimension)
+required_outputs:
+  - own RUN-xxxx.skill-run.yaml and RUN-xxxx.skill-report.yaml (immutable; skill_run_verdict scoped to the audited subject)
+  - "for INC/RC subjects: immutable AUD-xxxx audit.yaml with verdict PASS|PASS_WITH_FINDINGS|BLOCKED — this enum is never renamed — plus FND findings and evidence_reviewed"
+  - dimension-by-dimension audit evidence files (what was checked, against what, with which command or path) cited from the report
+  - the G-AUD approval QS session for the human on every completed increment audit
+  - registry entry and skill-state latest_run/latest_report updates (work branch only); the SRP handed to canonflow-orchestrator-reviewer
+authority:
+  - audit exactly one assigned subject against all ten dimensions at the depth the method/12 tier row requires; a dimension the tier does not require is recorded NOT_APPLICABLE, never silently skipped
+  - "dimension 1 — scope fidelity: the real diff path list against allowed_paths, consuming canonflow-repo-worktree-auditor scope-fidelity evidence when present; every path outside is a BLOCKING finding"
+  - "dimension 2 — done_criteria: every criterion verified against actual files, executed outputs and evidence entries — never against report statements"
+  - "dimension 3 — architecture: changed code against the pinned technical canon (ADRs, boundaries, declared patterns)"
+  - "dimension 4 — security: positive and negative security evidence plus fail-closed behavior, mandatory depth at Tier 3-4 (G-SEC)"
+  - "dimension 5 — contracts/API: exposed interfaces against the canon-derived contracts; any undeclared surface change is a finding"
+  - "dimension 6 — tests: the G-TEST tier matrix (build/lint at Tier 0 up to security, migration and rollback tests at Tier 4), verified from executed outputs"
+  - "dimension 7 — migrations and rollback: rehearsal and rollback evidence at Tier 4 (G-MIG)"
+  - "dimension 8 — idempotency, concurrency and recovery behavior wherever the contract or canon declares them"
+  - "dimension 9 — lineage: traceability links resolve canon item -> increment -> evidence for the subject scope (G-TRACE input)"
+  - "dimension 10 — claim quality: every VERIFIED claim in the subject report checked against its cited evidence; a VERIFIED claim without evidence is a finding"
+  - challenge the declared tier against the method/12 floors; under-tiering is always a BLOCKING finding with tier_challenge true
+  - record FND-xxxx findings with severity and evidence; emit the immutable AUD-xxxx artifact for INC/RC subjects
+  - run scripts/check_gates.py for the script-checkable gates in scope (G-TEST, G-EVID, G-TRACE) and save the outputs as evidence files
+  - verify in the registry, before auditing, that the subject carries no audited_by and that every subject executor differs from this run's executor
+  - generate the G-AUD approval QS session presenting the audit result, findings and evidence pointers to the human
+authority_limits:
+  - the verdict binds only the audited subject of this run (one INC, RC or RUN); it is never a canon, release, readiness or project-health statement
+  - "the AUD verdict is an input to the human G-AUD decision: human_approval stays empty and the audit binds nobody until an APR-xxxx exists (DEC-0007)"
+  - may verify that an APR-xxxx exists for a human gate; may never produce, infer or anticipate one
+  - findings and claims rest only on evidence this run checked itself; the implementer self-report never counts as audit evidence
+  - remediation proposals are bounded to the exact FND ids they cite; publication of remediation tasks stays with canonflow-orchestrator-reviewer
+  - audit depth may exceed but never fall below the method/12 tier row of the subject
+  - all writes happen on work branches; main advances only by human merge (DEC-0003)
+prohibitions:
+  - never audits work produced by its own executor; a self-audit assignment is rejected with verdict BLOCKED (method/21 section 8)
+  - never audits a subject whose registry entry already carries audited_by; a second audit requires an explicit DEC-xxxx
+  - never accepts implementer self-report, narrative, chat or assumptions as evidence; subject claims are hypotheses to verify against files
+  - never approves G-AUD or any human gate; never moves an increment to AUDIT_PASSED or any artifact to APPROVED
+  - never implements, fixes or remediates the audited code itself; it audits, records findings and proposes bounded remediations
+  - "never renames or re-maps verdict enums: audit.yaml keeps PASS|PASS_WITH_FINDINGS|BLOCKED and its own SRP keeps the skill_run_verdict enum, mapped per method/16 section 9"
+  - never softens under-tiering into MINOR or NOTE; it is always BLOCKING with tier_challenge true
+  - never declares readiness, release, staging pass, freeze or production ready at any scope
+  - never widens the audit beyond the assigned subject_ref; adjacent suspicions become findings or drift triggers, not scope growth
+hard_stops:
+  - subject registry or state entry already shows audited_by / AUDITED -> BLOCKED (double audit needs DEC-xxxx)
+  - the subject implementer or subject run executor equals this run's executor -> BLOCKED (self-audit)
+  - "correlation failure: task_id, task_commit, subject_ref, contract or report paths, or the pinned SHAs contradict registry, state files or git -> BLOCKED"
+  - "handoff incomplete: contract, pinned-SHA diff, report or evidence package missing or unreadable -> BLOCKED, flagged as EVIDENCE_GAP drift"
+  - a canon version pinned by the contract is not APPROVED or not resolvable -> BLOCKED
+  - own G-REPO pre-flight fails (wrong repo/branch, dirty tree) -> stop before any write
+reads:
+  - increment and release artifacts under .canonflow/increments/ and .canonflow/releases/ (contracts, reports, evidence packages, prior audits)
+  - repository commits, diffs and file trees at the pinned SHAs of the subject (read-only toward product files)
+  - approved canon indices and items at the versions pinned by the contract (read-only)
+  - .canonflow/state/*.yaml pointers, .canonflow/skill-runs/index.yaml and the subject run/report records
+  - .canonflow/traceability/links.yaml and the DEC/APR/RSK records cited by the subject
+  - scripts/check_gates.py output; skills/*.skill-card.yaml (authority reference)
+writes:
+  - .canonflow/skill-runs/RUN-xxxx.skill-run.yaml (own run)
+  - .canonflow/skill-runs/RUN-xxxx.skill-report.yaml (own report)
+  - .canonflow/increments/INC-xxxx/audit.yaml or .canonflow/releases/RC-xxxx/audit.yaml (immutable AUD-xxxx; INC/RC subjects only)
+  - .canonflow/skill-runs/RUN-xxxx.evidence/ (dimension check outputs; never product files)
+  - .canonflow/skill-runs/index.yaml (own registration; audited_by on the subject entry when the subject is a RUN)
+  - .canonflow/skill-state/skill-state.yaml (latest_run and latest_report pointers; never next_task)
+  - .canonflow/decision-sessions/pending/ (G-AUD approval QS and human-shaped blocker sessions)
+  - .canonflow/traceability/links.yaml (AUDITS links from AUD/SRP to the subject)
+state_interaction:
+  - resolves position exclusively from method-state, skill-state, registry and decision-state pointers (method/21 section 4 order)
+  - pointer and registry writes happen only on work branches; main advances only by human merge
+  - "increment transitions run only through scripts/update_state.py: on blocking findings it requests the AUDIT_BLOCKED -> REMEDIATION route; AUDIT_PENDING -> AUDIT_PASSED is human-owned (G-AUD) and is requested via QS, never performed"
+  - own registry entry follows the legal chain PUBLISHED->CLAIMED->REPORTED; when the subject is a RUN it sets that entry's audited_by exactly once
+  - never touches release states; consuming AUD verdicts for RC closure belongs to canonflow-release-governor
+decision_console_interaction:
+  - generates the G-AUD approval QS session on every completed increment audit — any AUD verdict — pointing at the audit, findings and evidence paths
+  - generates a QS session for tier disputes it cannot settle from the method/12 floors, contradictions between canon and contract, and every human-shaped blocker
+  - consumes DEC/APR/RSK records as the only valid human inputs; loose chat answers are not decisions
+  - never answers, ingests or archives its own sessions (ingestion belongs to canonflow-human-decision-console)
+skill_interactions:
+  - {skill: canonflow-orchestrator-reviewer, relation: PRODUCES_INPUT_FOR, detail: its SRP verdict and findings feed loop-level run review and next-task/remediation publication}
+  - {skill: canonflow-orchestrator-reviewer, relation: CONSUMES_OUTPUT_OF, detail: delegated deep-audit assignments for Tier >= 2 subjects arrive as published tasks}
+  - {skill: canonflow-implementation-planner, relation: CONSUMES_OUTPUT_OF, detail: approved contracts are the audit baseline; the Loop 3 implementer file-based handoff (diff; report; evidence) is measured against them}
+  - {skill: canonflow-repo-worktree-auditor, relation: DELEGATES_TO, detail: G-REPO pre-flight}
+  - {skill: canonflow-repo-worktree-auditor, relation: CONSUMES_OUTPUT_OF, detail: verified diff-path and scope-fidelity evidence feeds the scope dimension}
+  - {skill: canonflow-release-governor, relation: PRODUCES_INPUT_FOR, detail: per-increment and release-level AUD verdicts are DEC-0015 closure inputs}
+  - {skill: canonflow-state-manager, relation: DELEGATES_TO, detail: state integrity repair when registry or pointers contradict artifacts}
+  - {skill: canonflow-drift-recovery, relation: PRODUCES_INPUT_FOR, detail: EVIDENCE_GAP and code/canon mismatch findings arrive as DR triggers}
+  - {skill: canonflow-human-decision-console, relation: ESCALATES_TO, detail: G-AUD approval sessions and every human-shaped blocker; standard pointer message then stop}
+required_evidence:
+  - registry and state lookup output proving the subject carries no audited_by and that every subject executor differs from this run's executor, saved and cited
+  - "correlation check output: task_id, task_commit, subject_ref, contract/report paths and base..head SHAs compared side by side"
+  - "per audited dimension: the exact files, diff hunks, commits, script outputs or evidence paths checked — a dimension with nothing checked is a finding or NOT_APPLICABLE per tier, never a silent pass"
+  - executed G-TEST and G-EVID outputs — plus G-SEC/G-MIG where the tier requires them — captured as files, never restated summaries
+  - "for every FND finding and every VERIFIED claim: the evidence pointer it rests on"
+verdict_criteria:
+  PASS:
+    - handoff complete and correlation verified end to end (task, contract, report, pinned SHAs, registry)
+    - all ten dimensions audited at the tier-required depth with zero findings; every done_criteria verified against actual files and evidence
+    - declared tier confirmed at or above the method/12 floors; every VERIFIED claim of the subject independently confirmed
+    - "INC/RC subjects: AUD-xxxx written with verdict PASS and human_approval empty; the G-AUD QS session generated — approval remains pending and human-owned"
+  PASS_WITH_LIMITATIONS:
+    - PASS conditions except MINOR/NOTE findings or tier-modulated depth limits, each enumerated as an OPEN, ASSUMED or RISK claim with owner or RSK/TR reference
+    - "INC/RC subjects: AUD verdict PASS_WITH_FINDINGS (the artifact-level analogue per method/16 section 9); every finding quoted in the G-AUD session"
+  REMEDIATION_REQUIRED:
+    - BLOCKING or MAJOR findings exist — including under-tiering with tier_challenge true — each covered by a bounded remediation proposal referencing only its FND ids
+    - "increment subjects: AUD verdict BLOCKED and the AUDIT_BLOCKED -> REMEDIATION route requested via legal transition; the G-AUD session presents the blocked audit"
+  BLOCKED:
+    - "the audit itself cannot execute: self-audit or double-audit condition, correlation failure, incomplete handoff, unapproved pinned canon, or missing authority"
+    - no AUD artifact emitted; blockers listed in the report; QS session generated when the blocker is human-shaped
+allowed_claims:
+  - VERIFIED facts about the subject it checked itself against files, diffs, executed outputs and evidence (evidence pointers mandatory)
+  - CONFLICTED where a subject claim and the checked evidence disagree, citing both sides
+  - OPEN for unverifiable done_criteria and evidence gaps (blocking flag where material); ASSUMED explicitly flagged and expected to end empty or reviewed
+  - RISK claims referencing or proposing TR/RSK records for exposures found during the audit
+  - PROPOSED remediations and tier corrections awaiting the orchestrator or a human decision
+  - INFERRED only for non-material observations, explicitly flagged, never resolving whether a dimension passed
+prohibited_claims:
+  - any readiness, release, staging, freeze or production statement at any scope
+  - DECIDED claims; G-AUD approval statements (the ceiling is VERIFIED that an APR-xxxx exists or OPEN that G-AUD approval is pending)
+  - generalizing one subject audit to increment set, project or release health
+  - restating implementer or subject narrative as VERIFIED without checking the underlying artifacts
+  - pass statements about dimensions it did not check at the tier-required depth
+  - runtime behavior claims beyond executed evidence on file
+examples:
+  - title: Deep audit of a Tier 2 increment with one minor finding
+    given: >-
+      INC-0009 at AUDIT_PENDING; TASK-0031 (task_commit abc1234) assigns the
+      audit with subject_ref INC-0009; handoff is contract.yaml (Tier 2,
+      allowed_paths [src/billing/, tests/billing/], canons FC 1.2.0 / TC
+      1.1.0), diff 512e92d..4f9e2c1, report.yaml and the evidence package;
+      the registry shows implementer executor impl-A and no audited_by.
+    run: >-
+      G-REPO pre-flight via canonflow-repo-worktree-auditor; create RUN-0033
+      (executor aud-B, subject_ref INC-0009); verify audit-once and
+      separation in the registry; verify correlation; audit the ten
+      dimensions per the Tier 2 row (acceptance tests vs AC, standard
+      evidence, security on touch); verify every done_criteria against files
+      and executed outputs; confirm Tier 2 against the method/12 floors;
+      record FND-0040 MINOR (one AC covered only by a happy-path test);
+      write AUD-0012 PASS_WITH_FINDINGS; generate QS-0021 for G-AUD quoting
+      the finding; update registry and pointers; emit SRP-0033.
+    expected_outcome: >-
+      SRP-0033 verdict PASS_WITH_LIMITATIONS scoped to the INC-0009 audit;
+      AUD-0012 PASS_WITH_FINDINGS with human_approval empty; QS-0021
+      PENDING; INC-0009 stays AUDIT_PENDING until the human decides G-AUD;
+      no readiness claim anywhere.
+  - title: Under-tiering caught and routed to remediation
+    given: >-
+      INC-0011 declared Tier 1 (internal refactor); the pinned diff modifies
+      db/migrations/0042_add_column.sql and src/auth/session.py; the report
+      claims VERIFIED "no behavior change" with no evidence attached.
+    run: >-
+      Pre-flight; create RUN-0041; registry checks pass; correlation
+      verified; the scope dimension flags the migration and auth paths; the
+      tier challenge against the method/12 floors (migrations and auth are
+      Tier 4) yields FND-0044 BLOCKING with tier_challenge true; the
+      claim-quality dimension records the evidence-free VERIFIED claim as
+      FND-0045 MAJOR; write AUD-0014 BLOCKED; request the AUDIT_BLOCKED ->
+      REMEDIATION route via legal transition; propose a bounded remediation
+      (re-tier to Tier 4 and re-approve the contract; attach evidence for
+      the claim) covering only FND-0044 and FND-0045, handed to the
+      orchestrator; generate QS-0024 for G-AUD presenting the blocked audit;
+      emit SRP-0041.
+    expected_outcome: >-
+      SRP-0041 verdict REMEDIATION_REQUIRED scoped to the INC-0011 audit;
+      AUD-0014 BLOCKED with the tier_challenge finding; the increment moves
+      toward REMEDIATION only through the legal route; the auditor fixed
+      nothing itself; no readiness claim anywhere.
+  - title: Assignment rejected on self-audit and missing evidence
+    given: >-
+      TASK-0037 assigns a deep audit of RUN-0050 (Tier 3 subject), but the
+      registry shows RUN-0050 executor equals this session's executor
+      identity, and the evidence package path named in the handoff does not
+      exist on disk.
+    run: >-
+      Create RUN-0051; the registry separation check fails — hard stop
+      before any content audit; record a CONFLICTED claim citing both
+      executor identities and an OPEN claim for the missing evidence path
+      (EVIDENCE_GAP); verdict BLOCKED with no AUD artifact emitted; generate
+      QS-0026 asking the human to reassign the audit to a different
+      executor; emit SRP-0051; stop.
+    expected_outcome: >-
+      SRP-0051 verdict BLOCKED with blockers listed; no findings issued on
+      the subject content; no AUD artifact; QS-0026 PENDING; the subject
+      registry entry keeps audited_by empty.

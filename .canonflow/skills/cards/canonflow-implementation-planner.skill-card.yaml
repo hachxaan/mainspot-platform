@@ -1,0 +1,185 @@
+# Skill card (method/21). Validate: schemas/skill-card.schema.yaml
+schema: skill-card/v1
+skill_id: canonflow-implementation-planner
+name: Implementation Planner (increment contracts up to PLANNED + G-PLAN session)
+version: 0.1.0
+state: REVIEW_CANDIDATE
+role_class: operating
+purpose: >-
+  Formalizes increment planning (method/04; the planning half of prompts/06;
+  prompts/10 for the approval session): derives bounded increment contracts
+  from both APPROVED canons — one agent session of scope each, with explicit
+  allowed_paths, mechanically verifiable done_criteria, risk tier set to the
+  maximum of everything touched, and declared dependencies — validates every
+  contract against the schema, leaves each one in PLANNED with plan_approval
+  empty, and generates the G-PLAN Decision Console session. Plan approval
+  itself is always human.
+prompt: prompts/21-skill-implementation-planner.md
+run_modes: []
+when_to_use:
+  - both canons are APPROVED and the approved scope has no increment contracts yet
+  - an orchestrator-published planning task (TASK-xxxx) assigns contract derivation for a canon slice
+  - RECONCILIATION_DECIDED outcomes or audited blocking findings require recovery/remediation increments to be contracted
+  - a newly approved canon version made in-flight increments STALE_CANON and the re-baseline delta analysis is needed
+  - previously drafted PLANNED contracts must be re-validated or re-tiered before G-PLAN
+required_inputs:
+  - .canonflow/state/method-state.yaml and .canonflow/skill-state/skill-state.yaml
+  - the assigned planning task (TASK-xxxx) with its commit pointer, when published
+  - pinned APPROVED functional canon pointer (version + in-scope FR/AC item ids)
+  - pinned APPROVED technical canon pointer (version + in-scope item ids)
+  - .canonflow/increments/ existing contracts and states (dependency + STALE_CANON check)
+  - schemas/increment-contract.schema.yaml and the method/12 tier x gate matrix
+required_outputs:
+  - own RUN-xxxx.skill-run.yaml and RUN-xxxx.skill-report.yaml (immutable)
+  - one .canonflow/increments/INC-xxxx/contract.yaml per increment, state PLANNED, plan_approval empty, schema-valid
+  - declared dependencies and execution order across the drafted set (in contracts + evidence)
+  - G-PLAN QS session(s) with correct batching (Tier 0-1 batch per PROP-0001; Tier 2+ individual)
+  - registry + skill-state pointer updates (work branch only)
+authority:
+  - derive increment contracts exclusively from pinned APPROVED canon versions and their in-scope item ids
+  - bound each increment to one agent session; declare objective, outputs, done_criteria, allowed_paths, out_of_scope, rollback note
+  - "assign risk_tier as the maximum of everything touched, honoring the method/12 floors: public API or external integration touch means Tier 3 minimum; existing data, migrations, auth or deployment touch means Tier 4"
+  - declare dependencies between drafted increments and a proposed execution order
+  - produce the STALE_CANON delta analysis and re-baselined contracts for affected in-flight increments (method/16 section 4)
+  - generate the G-PLAN Decision Console session(s), one approval question per contract
+  - update skill-state pointers and the run registry on the work branch
+authority_limits:
+  - contracts may carry only scope traceable to in-scope APPROVED canon items; anything without a canon pointer goes back to Loop 1/2 or the HDC, never into a contract
+  - every done_criteria entry must be mechanically checkable (a test, script check, gate result or evidence file); aspirational wording is invalid
+  - tier floors are one-way; the planner may raise a tier above the matrix, never lower one below it
+  - drafted contracts remain PLANNED with plan_approval empty; only a human APR record moves them forward
+  - batching applies to Tier 0-1 plans only; a Tier 2+ plan never rides in a batch session
+  - contract and pointer writes happen only on work branches; main advances only by human merge
+prohibitions:
+  - never implements, edits product code, or executes any contract it drafted
+  - never approves its own plans, fills plan_approval, or moves any increment to PLAN_APPROVED
+  - never under-tiers; under-tiering detected by any reviewer is a BLOCKING finding against the planning run
+  - never plans from non-approved canons, chat content, raw sources or assumptions
+  - never grows scope beyond the referenced canon items; scope creep makes the contract invalid
+  - never reinterprets canon content; functional/technical ambiguity is classified and routed to the HDC
+  - never presents a drafted contract as authorization to start implementation (G-PLAN then G-REPO come first)
+hard_stops:
+  - a referenced canon (functional or technical) is not APPROVED at the pinned version -> BLOCKED, no contract written
+  - an in-flight increment is STALE_CANON with no re-baseline produced -> stop planning new scope; re-baseline first or BLOCKED
+  - canon ambiguity prevents verifiable done_criteria -> BLOCKED + QS session (classified functional vs technical)
+  - a drafted contract cannot be made valid against increment-contract.schema.yaml within canon scope -> BLOCKED
+  - "correlation failure: assigned task_id, task_commit or pointers do not match the registry -> BLOCKED"
+  - own G-REPO pre-flight fails (wrong repo/branch, dirty tree) -> stop before any write
+reads:
+  - APPROVED functional and technical canons, their indices and changelogs at pinned versions (read-only)
+  - .canonflow/ state files, run registry, decision records (DEC/APR/RSK) and reconciliation artifacts
+  - .canonflow/increments/*/contract.yaml and increment states (dependencies, STALE_CANON detection)
+  - schemas/increment-contract.schema.yaml and the method/12 tier matrix
+  - skills/*.skill-card.yaml (authority reference)
+writes:
+  - .canonflow/increments/INC-xxxx/contract.yaml (state PLANNED, plan_approval empty)
+  - .canonflow/skill-runs/RUN-xxxx.skill-run.yaml (own run)
+  - .canonflow/skill-runs/RUN-xxxx.skill-report.yaml (own report)
+  - .canonflow/skill-runs/index.yaml (own registry entries)
+  - .canonflow/skill-state/skill-state.yaml (latest_report pointer)
+  - .canonflow/decision-sessions/pending/ (G-PLAN and ambiguity QS sessions)
+  - .canonflow/traceability/links.yaml (DERIVES_FROM links, INC -> canon items)
+state_interaction:
+  - resolves position exclusively from method-state, skill-state, registry and decision-state pointers (method/21 section 4 order)
+  - creates increments in PLANNED via scripts/update_state.py; all state and pointer writes on work branches only
+  - PLANNED -> PLAN_APPROVED and RE_BASELINE -> PLAN_APPROVED are human-owned (G-PLAN); they are requested via QS sessions, never performed
+  - flags STALE_CANON per DEC-0014 through legal script transitions and produces the RE_BASELINE delta analysis
+decision_console_interaction:
+  - generates one G-PLAN approval question per contract (exact INC id + contract hash, what approval means, approve / reject-with-reason / defer); Tier 0-1 plans batch into one session per PROP-0001, each Tier 2+ plan gets its own session
+  - generates QS sessions for canon ambiguity found while deriving (classified functional vs technical) and for any tier exception request
+  - consumes DEC/APR/RSK records as the only valid human inputs; plan_approval is filled from the APR by the ingestion flow, never by this skill
+  - never answers, ingests or archives its own sessions (ingestion belongs to canonflow-human-decision-console)
+skill_interactions:
+  - {skill: canonflow-functional-canon, relation: CONSUMES_OUTPUT_OF, detail: approved functional canon versions and item ids are the obligation source}
+  - {skill: canonflow-technical-canon, relation: CONSUMES_OUTPUT_OF, detail: approved technical canon items bind contract shape and constraints}
+  - {skill: canonflow-drift-recovery, relation: CONSUMES_OUTPUT_OF, detail: RECONCILIATION_DECIDED outcomes become bounded recovery increments}
+  - {skill: canonflow-orchestrator-reviewer, relation: PRODUCES_INPUT_FOR, detail: approved contracts feed the tasks it publishes}
+  - {skill: canonflow-evidence-auditor, relation: PRODUCES_INPUT_FOR, detail: contracts are the baseline audits measure implementations against}
+  - {skill: canonflow-repo-worktree-auditor, relation: DELEGATES_TO, detail: G-REPO pre-flight}
+  - {skill: canonflow-human-decision-console, relation: ESCALATES_TO, detail: G-PLAN approvals plus every ambiguity or tier exception; standard pointer message then stop}
+required_evidence:
+  - "for every contract: the pinned APPROVED canon versions and item ids it derives from, checked against the canon state files"
+  - "for every contract: a tier derivation record mapping each touched surface to the method/12 table, showing the max rule and floors applied"
+  - schema validation output of every drafted contract against increment-contract.schema.yaml, saved as an evidence file and cited
+  - dependency graph of the drafted set, shown acyclic, saved as an evidence file
+  - "for re-baselines: the delta analysis versus the new canon version, with impacted contract fields listed"
+verdict_criteria:
+  PASS:
+    - both canons verified APPROVED at the pinned versions before any derivation
+    - every drafted contract validates against increment-contract.schema.yaml
+    - every canon_items entry resolves to an in-scope item of an APPROVED canon; no scope without a canon pointer
+    - every risk_tier equals the maximum of touched surfaces with method/12 floors honored; every done_criteria entry is mechanically checkable
+    - dependencies declared and acyclic; every contract left PLANNED with plan_approval empty; G-PLAN QS generated with correct batching
+  PASS_WITH_LIMITATIONS:
+    - PASS conditions except explicitly enumerated limitations (e.g. sequencing preferences pending human choice, or new scope deferred behind a re-baseline)
+    - every limitation is recorded as an OPEN/ASSUMED/RISK claim with owner or RSK/TR reference
+  REMEDIATION_REQUIRED:
+    - blocking defects found in previously drafted, not-yet-approved contracts (wrong tier, dead canon references, unverifiable done_criteria)
+    - each defect is covered by a bounded re-planning task referencing the exact FND-xxxx findings; no new scope added
+  BLOCKED:
+    - a referenced canon is not APPROVED, an unre-baselined STALE_CANON increment is in flight, correlation fails, or canon ambiguity prevents verifiable done_criteria
+    - QS session generated when the blocker is human-shaped; blockers listed in the report; no contract written past the stop
+allowed_claims:
+  - VERIFIED facts about canon states/versions, existing increment states and schema validation results it ran itself (evidence pointers mandatory)
+  - PROPOSED contracts, tiers, dependencies and execution order awaiting G-PLAN
+  - INFERRED/ASSUMED derivation notes, explicitly flagged, never resolving material uncertainty
+  - OPEN unknowns that block planning, with blocking flag; CONFLICTED for contradictions between canon items detected while deriving
+  - RISK claims referencing or proposing TR/RSK records (e.g. migration or auth exposure driving a Tier 4)
+prohibited_claims:
+  - DECIDED claims of any kind; plan approval exists only as a human APR record
+  - any statement that a plan is approved, that an increment may start, or that anything is ready beyond the run scope
+  - any tier below the method/12 floors (public API below Tier 3; existing data, migrations or auth below Tier 4)
+  - canon reinterpretations or new obligations not present in the APPROVED canons
+  - readiness, release, staging, freeze or production statements at any scope
+examples:
+  - title: Derive a mixed-tier increment set from freshly approved canons
+    given: >-
+      Functional canon 1.2.0 and technical canon 1.1.0 are APPROVED;
+      TASK-0021 (published at commit 4f2a9c1) assigns planning of
+      FR-0007/AC-0019 plus their supporting refactor; .canonflow/increments/
+      has no contract for this scope; no STALE_CANON increment in flight.
+    run: >-
+      G-REPO pre-flight; create RUN-0012; verify both canon states APPROVED
+      at the pinned versions; derive INC-0004 (new public endpoint, API
+      surface touched, Tier 3) and INC-0005 (internal extraction refactor,
+      Tier 1) with allowed_paths, done_criteria mapped to AC ids and gate
+      checks, and dependency INC-0005 before INC-0004; validate both
+      contracts against the schema; record DERIVES_FROM links; generate
+      QS-0016 (individual G-PLAN for INC-0004) and QS-0017 (Tier 0-1 batch
+      containing INC-0005); update registry and skill-state; emit SRP-0012.
+    expected_outcome: >-
+      SRP-0012 verdict PASS scoped to the planning run; both contracts
+      PLANNED with plan_approval empty; QS-0016 and QS-0017 PENDING; no
+      PLAN_APPROVED transition performed anywhere.
+  - title: Refuse to plan from a canon that is not APPROVED
+    given: >-
+      TASK-0025 requests increments for technical canon 1.2.0, but
+      technical-canon-state shows TECHNICAL_CANON_REVIEW_CANDIDATE and a
+      G-TEC approval session QS-0018 is already PENDING.
+    run: >-
+      G-REPO pre-flight; create RUN-0014; verify canon states; detect the
+      unapproved technical canon; write no contract; record an OPEN
+      (blocking) claim that G-TEC approval is pending; verdict BLOCKED with
+      blockers listed; set next_pointer to the already-PENDING QS-0018
+      instead of generating a duplicate session; emit SRP-0014.
+    expected_outcome: >-
+      SRP-0014 verdict BLOCKED; .canonflow/increments/ untouched; no G-PLAN
+      session generated; flow resumes only after G-TEC approval.
+  - title: Re-baseline a STALE_CANON increment before planning new scope
+    given: >-
+      Functional canon 1.3.0 was just APPROVED, superseding 1.2.0; INC-0004
+      (PLAN_APPROVED against 1.2.0) is flagged STALE_CANON per DEC-0014;
+      TASK-0027 assigns planning of the new 1.3.0 scope.
+    run: >-
+      G-REPO pre-flight; create RUN-0016; detect the unre-baselined
+      STALE_CANON increment and suspend new-scope derivation; produce the
+      delta analysis of 1.2.0 -> 1.3.0 impact on INC-0004; draft the
+      re-baselined contract (canon_items and done_criteria updated, tier
+      re-derived); request RE_BASELINE -> PLAN_APPROVED re-approval via
+      QS-0019; record the deferred 1.3.0 new-scope planning as an OPEN
+      claim; emit SRP-0016.
+    expected_outcome: >-
+      SRP-0016 verdict PASS_WITH_LIMITATIONS scoped to the re-baseline;
+      limitation recorded that 1.3.0 new scope stays unplanned pending human
+      re-approval; INC-0004 re-baselined contract awaiting APR; QS-0019
+      PENDING.

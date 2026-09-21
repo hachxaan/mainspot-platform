@@ -1,0 +1,318 @@
+# Core Skill Registry fragment — Implementation capabilities (method/20).
+# Validate: schemas/skill-registry.schema.yaml. REVIEW_CANDIDATE (PROP-0006).
+# repo/branch/base_sha verification run as G-REPO under canonflow-repo-worktree-auditor
+# (method/21); scoped implementation, tests, evidence capture and report generation are
+# the Loop 3 implementation agent (prompts/06) — governed by the skill layer, NOT skill
+# cards, so their operating_role is empty; planning and remediation run under
+# canonflow-implementation-planner (method/21).
+schema: skill-registry/v1
+registry_version: 0.2.0
+level: core
+category: implementation
+source_sha: 9f223113af19bb74d3288e06373df995512b4ae2
+coverage_notes: "G-REPO pre-flight (repo-worktree-auditor), increment planning and remediation (implementation-planner), and the four Loop-3 execution capabilities whose operating_role is empty (governed by the skill layer, not a card; executor identity gap GAP-11) which therefore carry no card checksum. SUB-02 v2 additions (DEC-0043): does_not_cover, per-entry checksum, source_sha."
+does_not_cover:
+  - "functional or technical canon authoring (Loops 1 and 2)"
+  - "independent audit or AUD verdicts (audit fragment; no self-audit)"
+  - "approving G-PLAN or any human gate"
+  - "release-scope closure, merge, tag or deploy (release fragment; human acts)"
+  - "publishing next_task or converting a route (routing fragment; orchestrator monopoly)"
+skills:
+  - schema: skill-definition/v1
+    skill_id: repo_verification
+    name: Repository verification
+    category: implementation
+    level: core
+    purpose: Verify the working repository identity matches the contract/run declaration before any write (G-REPO hard stop).
+    operating_role: canonflow-repo-worktree-auditor
+    card_ref: skills/canonflow-repo-worktree-auditor.skill-card.yaml
+    checksum: "sha256:7340feab44d75cd0e0e825ad02b257fbe9e24342db357cdbbd2fafd96f95128c"
+    triggered_when:
+      - "an increment contract or skill run is about to execute against a repository"
+      - "a run's declared repo cannot be confirmed against the worktree remote"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; a wrong-repository write is catastrophic at any tier"
+    inputs:
+      - "the subject contract.yaml inputs.repo or RUN-xxxx.skill-run.yaml"
+      - "git metadata at the declared worktree"
+    outputs: ["repo-identity check result cited in RUN-xxxx.evidence/", "verdict contribution to the G-REPO pre-flight"]
+    required_templates: []
+    required_schemas: [schemas/skill-run.schema.yaml, schemas/skill-report.schema.yaml]
+    required_prompts: [prompts/25-skill-repo-worktree-auditor.md]
+    required_gates: [G-REPO]
+    evidence_required: ["git remote/identity output captured to a file", "declared repo compared to the resolved worktree"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["contract/run inputs pointer", "git remote metadata"]
+      ignores: ["file contents", "canon", "diffs"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["ambiguous remotes or mirrored/forked repositories"]
+    failure_modes: ["writing after an unverified or mismatched repo", "trusting a declared repo without confirming the worktree"]
+    related_skills: [branch_verification, base_sha_verification, scoped_implementation]
+  - schema: skill-definition/v1
+    skill_id: branch_verification
+    name: Branch verification
+    category: implementation
+    level: core
+    purpose: Verify the work branch equals the declared branch and is never main/master (DEC-0003, G-REPO hard stop).
+    operating_role: canonflow-repo-worktree-auditor
+    card_ref: skills/canonflow-repo-worktree-auditor.skill-card.yaml
+    checksum: "sha256:7340feab44d75cd0e0e825ad02b257fbe9e24342db357cdbbd2fafd96f95128c"
+    triggered_when:
+      - "a run is about to write and its target branch must be confirmed"
+      - "the checked-out branch differs from the contract/run declared branch"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; a write to a protected branch bypasses G-MERGE"
+    inputs:
+      - "the subject contract.yaml inputs.branch or RUN-xxxx.skill-run.yaml"
+      - "git current-branch metadata at the worktree"
+    outputs: ["branch check result cited in RUN-xxxx.evidence/", "verdict contribution to the G-REPO pre-flight"]
+    required_templates: []
+    required_schemas: [schemas/skill-run.schema.yaml, schemas/skill-report.schema.yaml]
+    required_prompts: [prompts/25-skill-repo-worktree-auditor.md]
+    required_gates: [G-REPO]
+    evidence_required: ["git branch output captured to a file", "declared branch is a work branch, not main/master"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["contract/run inputs pointer", "git branch metadata"]
+      ignores: ["file contents", "canon", "diffs"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["detached HEAD or ambiguous branch tracking"]
+    failure_modes: ["writing on main/master (DEC-0003 violation)", "writing on a branch other than the declared work branch"]
+    related_skills: [repo_verification, base_sha_verification, scoped_implementation]
+  - schema: skill-definition/v1
+    skill_id: base_sha_verification
+    name: Base SHA verification
+    category: implementation
+    level: core
+    purpose: Verify HEAD descends from the declared base SHA and the tree is clean or verbatim-accounted before any write (G-REPO hard stop).
+    operating_role: canonflow-repo-worktree-auditor
+    card_ref: skills/canonflow-repo-worktree-auditor.skill-card.yaml
+    checksum: "sha256:7340feab44d75cd0e0e825ad02b257fbe9e24342db357cdbbd2fafd96f95128c"
+    triggered_when:
+      - "a run must confirm it is baselined on the contract/run declared base SHA"
+      - "the worktree tree is dirty or HEAD does not descend from the declared base"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; a wrong base SHA silently rebases scope onto an unintended state"
+    inputs:
+      - "the subject contract.yaml inputs.base_sha or RUN-xxxx.skill-run.yaml"
+      - "git ancestry and status metadata at the worktree"
+    outputs: ["base-SHA ancestry and clean-tree check result cited in RUN-xxxx.evidence/", "verdict contribution to the G-REPO pre-flight"]
+    required_templates: []
+    required_schemas: [schemas/skill-run.schema.yaml, schemas/skill-report.schema.yaml]
+    required_prompts: [prompts/25-skill-repo-worktree-auditor.md]
+    required_gates: [G-REPO]
+    evidence_required: ["git merge-base/status output captured to a file", "HEAD ancestry to the declared base SHA confirmed"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["contract/run inputs pointer", "git ancestry and status metadata"]
+      ignores: ["file contents", "canon", "diffs"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["divergent history or unexplained dirty tree needing verbatim accounting"]
+    failure_modes: ["writing from a base SHA that is not an ancestor of HEAD", "accepting a dirty tree that is not verbatim-accounted"]
+    related_skills: [repo_verification, branch_verification, scoped_implementation]
+  - schema: skill-definition/v1
+    skill_id: increment_planning
+    name: Increment planning
+    category: implementation
+    level: core
+    purpose: Derive one-session increment contracts from APPROVED canon (scope, allowed_paths, done_criteria, tier), leave them PLANNED, and open the G-PLAN session; never implements or approves.
+    operating_role: canonflow-implementation-planner
+    card_ref: skills/canonflow-implementation-planner.skill-card.yaml
+    checksum: "sha256:a6f817b454f7f20d8320eb5056c570b78505c093b86f9cf4efddd6b66fe744c9"
+    triggered_when:
+      - "both functional and technical canons are APPROVED and an increment set is not yet planned"
+      - "a planning task is published in skill-state.next_task"
+    affected_loop: implementation_loop
+    risk_relevance: "elevated at T3-T4; public API >= T3, existing data/migrations/auth >= T4"
+    inputs:
+      - ".canonflow/state/method-state.yaml"
+      - ".canonflow/skill-state/skill-state.yaml"
+      - ".canonflow/skill-runs/index.yaml"
+      - "pinned APPROVED canon pointers (versions + item ids)"
+    outputs: ["INC-xxxx contracts (state PLANNED, plan_approval empty)", "G-PLAN question sessions (batched T0-1, individual Tier 2+)"]
+    required_templates: [templates/implementation/increment-contract.yaml]
+    required_schemas: [schemas/increment-contract.schema.yaml]
+    required_prompts: [prompts/21-skill-implementation-planner.md]
+    required_gates: [G-PLAN]
+    evidence_required:
+      - "each contract validates against schemas/increment-contract.schema.yaml"
+      - "each contract traces to APPROVED canon items at pinned versions"
+      - "declared tier at or above the method/12 floor for what it touches"
+    human_decision_triggers: ["G-PLAN plan approval (human only)", "canon ambiguity blocking a contract"]
+    token_profile:
+      reads: ["state pointers", "skill-runs index", "pinned canon item ids"]
+      ignores: ["full canon bodies", "code", "runtime", "unrelated increments"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["Tier 3-4 increments", "STALE_CANON delta analysis and re-baseline"]
+    failure_modes: ["planning against non-APPROVED canon", "STALE_CANON without re-baseline", "scope creep beyond one agent session", "under-tiering a contract"]
+    related_skills: [scoped_implementation, repo_verification, remediation_handling]
+  - schema: skill-definition/v1
+    skill_id: scoped_implementation
+    name: Scoped implementation
+    category: implementation
+    level: core
+    purpose: Execute the increment contract scope only, writing strictly inside allowed_paths — the Loop 3 implementation agent (prompts/06), governed by the skill layer, not itself a skill card.
+    operating_role: ""
+    checksum_note: "no operating card (operating_role empty; GAP-11 executor identity gap); no card to checksum at this index"
+    triggered_when:
+      - "an increment contract is at PLAN_APPROVED and its G-REPO pre-flight passed"
+      - "a scoped implementation task is assigned for an approved contract"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; scope escaping allowed_paths corrupts the audit surface"
+    inputs:
+      - ".canonflow/increments/INC-xxxx/contract.yaml (state PLAN_APPROVED)"
+      - "the pinned canon items listed in the contract"
+    outputs: ["code/artifact changes on the work branch strictly within allowed_paths"]
+    required_templates: []
+    required_schemas: [schemas/increment-contract.schema.yaml]
+    required_prompts: [prompts/06-implementation-agent.md]
+    required_gates: [G-REPO]
+    evidence_required: ["all changed paths fall inside contract.allowed_paths", "every assumption logged as ASSUMED in the report"]
+    human_decision_triggers: ["canon ambiguity found mid-implementation (classify functional vs technical)", "scope pressure beyond the contract"]
+    token_profile:
+      reads: ["the one contract", "the pinned canon items in scope"]
+      ignores: ["out-of-scope files", "canon outside the pinned items", "other increments"]
+      typical_cost: high
+    default_effort: high
+    max_effort_conditions: ["Tier 3-4 changes touching public API, data or auth"]
+    failure_modes: ["writing outside allowed_paths", "scope creep beyond the contract", "resolving canon ambiguity by inference instead of a Decision Console session"]
+    related_skills: [test_execution, evidence_capture, implementation_report_generation]
+  - schema: skill-definition/v1
+    skill_id: test_execution
+    name: Test execution
+    category: implementation
+    level: core
+    purpose: Run the tier-appropriate test suites for the increment and capture pass/fail as evidence (G-TEST) — the Loop 3 implementation agent (prompts/06), governed by the layer, not a skill card.
+    operating_role: ""
+    checksum_note: "no operating card (operating_role empty; GAP-11 executor identity gap); no card to checksum at this index"
+    triggered_when:
+      - "scoped implementation is complete and tier tests must run"
+      - "the contract declares G-TEST for the increment tier"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; the tier matrix (method/12) sets which suites are mandatory"
+    inputs:
+      - ".canonflow/increments/INC-xxxx/contract.yaml (risk_tier, gates)"
+      - "the project test suite for the changed scope"
+    outputs: ["test-run results captured to files (EV kind test_run)"]
+    required_templates: []
+    required_schemas: [schemas/evidence-package.schema.yaml]
+    required_prompts: [prompts/06-implementation-agent.md]
+    required_gates: [G-TEST]
+    evidence_required: ["test-run output captured to a file by a script", "tier-appropriate suites executed per the method/12 matrix"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["the contract tier and gates", "test command output"]
+      ignores: ["unrelated suites", "canon", "other increments"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["Tier 3-4 requiring contract, integration, regression, security and migration suites"]
+    failure_modes: ["skipping a tier-required suite", "reporting a pass without executed evidence", "running tests outside the increment scope"]
+    related_skills: [scoped_implementation, evidence_capture, implementation_report_generation]
+  - schema: skill-definition/v1
+    skill_id: evidence_capture
+    name: Evidence capture
+    category: implementation
+    level: core
+    purpose: Collect script-produced evidence into files and assemble the evidence package per contract (G-EVID) — the Loop 3 implementation agent (prompts/06), governed by the layer, not a skill card.
+    operating_role: ""
+    checksum_note: "no operating card (operating_role empty; GAP-11 executor identity gap); no card to checksum at this index"
+    triggered_when:
+      - "tests/builds have run and the evidence package must be assembled"
+      - "the contract lists evidence_required items not yet captured"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; evidence completeness scales with tier (light to full + deploy manifest)"
+    inputs:
+      - ".canonflow/increments/INC-xxxx/contract.yaml (evidence_required)"
+      - "test, build, lint and script outputs for the increment"
+    outputs: [".canonflow/increments/INC-xxxx/evidence-package.yaml with EV-xxxx items and their files"]
+    required_templates: [templates/implementation/evidence-package.yaml]
+    required_schemas: [schemas/evidence-package.schema.yaml]
+    required_prompts: [prompts/06-implementation-agent.md]
+    required_gates: [G-EVID]
+    evidence_required:
+      - "each EV item has id, kind, path and produced_by"
+      - "the evidence package validates against schemas/evidence-package.schema.yaml"
+      - "every contract evidence_required item is covered"
+    human_decision_triggers: []
+    token_profile:
+      reads: ["the contract evidence_required list", "script output file paths"]
+      ignores: ["evidence file bodies (cited by path, not pasted)", "canon", "other increments"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["Tier 4 full package with deploy manifest and environment fingerprint"]
+    failure_modes: ["pasting evidence into the report instead of files", "an incomplete package passing G-EVID", "evidence sourced from agent narrative rather than a script"]
+    related_skills: [test_execution, implementation_report_generation, scoped_implementation]
+  - schema: skill-definition/v1
+    skill_id: implementation_report_generation
+    name: Implementation report generation
+    category: implementation
+    level: core
+    purpose: Emit the immutable report.yaml (result, <=5-line summary, gates_checked, evidence pointers) for the increment — the Loop 3 implementation agent (prompts/06), governed by the layer, not a skill card.
+    operating_role: ""
+    checksum_note: "no operating card (operating_role empty; GAP-11 executor identity gap); no card to checksum at this index"
+    triggered_when:
+      - "scoped implementation, tests and evidence capture are complete for the increment"
+      - "the increment must move to IMPLEMENTED with an immutable report"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; the report is the audit input for G-AUD, never an approval"
+    inputs:
+      - ".canonflow/increments/INC-xxxx/contract.yaml"
+      - ".canonflow/increments/INC-xxxx/evidence-package.yaml"
+      - "gate outputs for the increment"
+    outputs: [".canonflow/increments/INC-xxxx/report.yaml (RPT-xxxx, result DONE|PARTIAL|BLOCKED)"]
+    required_templates: [templates/implementation/report.yaml]
+    required_schemas: [schemas/report.schema.yaml]
+    required_prompts: [prompts/06-implementation-agent.md]
+    required_gates: []
+    evidence_required:
+      - "the report references at least one evidence pointer"
+      - "gates_checked records each gate status"
+      - "the report validates against schemas/report.schema.yaml"
+    human_decision_triggers: []
+    token_profile:
+      reads: ["the contract", "the evidence package index", "gate status outputs"]
+      ignores: ["evidence file bodies", "canon bodies", "other increments"]
+      typical_cost: low
+    default_effort: medium
+    max_effort_conditions: ["PARTIAL or BLOCKED outcomes needing precise blocker and assumption records"]
+    failure_modes: ["a report restating narrative without evidence pointers", "result DONE while a gate failed or is absent", "editing an already-immutable report (DEC-0006)"]
+    related_skills: [evidence_capture, test_execution, scoped_implementation]
+  - schema: skill-definition/v1
+    skill_id: remediation_handling
+    name: Remediation handling
+    category: implementation
+    level: core
+    purpose: Publish and scope a bounded remediation task that references only the cited blocking FND-xxxx findings (AUDIT_BLOCKED -> REMEDIATION); no scope growth without G-PLAN.
+    operating_role: canonflow-implementation-planner
+    card_ref: skills/canonflow-implementation-planner.skill-card.yaml
+    checksum: "sha256:a6f817b454f7f20d8320eb5056c570b78505c093b86f9cf4efddd6b66fe744c9"
+    triggered_when:
+      - "an increment audit verdict is AUDIT_BLOCKED with blocking findings"
+      - "a skill report verdict is REMEDIATION_REQUIRED with cited findings"
+    affected_loop: implementation_loop
+    risk_relevance: "T0-T4; scope growth during remediation reopens the whole increment"
+    inputs:
+      - "the audit.yaml or skill report findings (FND-xxxx ids)"
+      - "the blocked increment contract.yaml"
+    outputs: ["a bounded remediation task citing only the blocking FND-xxxx ids", "a re-baselined contract when the base changed"]
+    required_templates: [templates/implementation/increment-contract.yaml]
+    required_schemas: [schemas/increment-contract.schema.yaml]
+    required_prompts: [prompts/21-skill-implementation-planner.md]
+    required_gates: [G-PLAN]
+    evidence_required:
+      - "each remediation item maps to a cited FND-xxxx finding"
+      - "no scope beyond the cited findings without a new G-PLAN approval"
+    human_decision_triggers: ["remediation that would exceed the cited findings (requires G-PLAN)", "re-tiering the increment"]
+    token_profile:
+      reads: ["the cited findings", "the blocked contract"]
+      ignores: ["the full audit narrative", "unrelated increments", "canon bodies"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["Tier 3-4 remediation", "re-baseline after STALE_CANON"]
+    failure_modes: ["scope growth beyond the cited findings", "publishing remediation without citing the blocking findings", "silently promoting partial results of a blocked run"]
+    related_skills: [increment_planning, implementation_report_generation, scoped_implementation]

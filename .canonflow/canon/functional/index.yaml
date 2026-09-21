@@ -1,0 +1,143 @@
+project: mainspot-platform
+canon_version: 0.1.0
+note: Canonización inversa acotada al área implementada (Flow B, method/18). DECIDED
+  = aprobado en la baseline v0.1 (SRC-0004/DEC-015); INFERRED = recuperado del código,
+  obligación solo por decisión humana (QS-0001).
+upstream_canon:
+  location: /home/administrador/codeart/mainspoot/mainspot-documentation
+  version: 0.1.0
+  state: CANONICAL_BASE_APPROVED_v0.1
+  decision: DEC-015
+items:
+- id: FR-0001
+  title: Gestión de identidad y sesiones propias
+  state: DECIDED
+  tier_hint: 3
+  path: items/FR-0001.md
+  source: DEC-022
+- id: FR-0002
+  title: Aislamiento lógico por cliente (tenant)
+  state: DECIDED
+  tier_hint: 4
+  path: items/FR-0002.md
+  source: DEC-018
+- id: FR-0003
+  title: RBAC declarativo con perfiles administración/operación/lectura
+  state: DECIDED
+  tier_hint: 3
+  path: items/FR-0003.md
+  source: DEC-020
+- id: FR-0004
+  title: Auditoría mínima con export y correlación
+  state: DECIDED
+  tier_hint: 3
+  path: items/FR-0004.md
+  source: DEC-021
+- id: FR-0005
+  title: Ingesta conversacional con clasificación y confirmación
+  state: DECIDED
+  tier_hint: 3
+  path: items/FR-0005.md
+  source: DEC-016
+- id: FR-0006
+  title: Preview seguro y publicación idempotente
+  state: DECIDED
+  tier_hint: 3
+  path: items/FR-0006.md
+  source: DEC-017
+- id: FR-0007
+  title: Página web administrable con subdominio simulado
+  state: DECIDED
+  tier_hint: 2
+  path: items/FR-0007.md
+  source: DEC-019
+- id: FR-0008
+  title: 'Reputación: reseñas con escalamiento y respuesta aprobada'
+  state: DECIDED
+  tier_hint: 3
+  path: items/FR-0008.md
+  source: DEC-011
+- id: FR-0009
+  title: 'Social: publicaciones y Ads básicos con gate de aprobación'
+  state: DECIDED
+  tier_hint: 3
+  path: items/FR-0009.md
+  source: DEC-017
+- id: FR-0010
+  title: Suscripciones configurables sin cobro + límites en creación
+  state: DECIDED
+  tier_hint: 3
+  path: items/FR-0010.md
+  source: DEC-024
+- id: FR-0011
+  title: 'Analítica base: export ETL paginado y agregados diarios'
+  state: DECIDED
+  tier_hint: 2
+  path: items/FR-0011.md
+  source: DEC-025
+- id: BR-0001
+  title: Los canales no sustituyen identidad
+  state: DECIDED
+  tier_hint: 4
+  path: items/BR-0001.md
+  source: DEC-006
+- id: BR-0002
+  title: Consulta sin efecto colateral
+  state: DECIDED
+  tier_hint: 2
+  path: items/BR-0002.md
+  source: DEC-003
+- id: BR-0003
+  title: Cambio visible requiere preview/aprobación
+  state: DECIDED
+  tier_hint: 3
+  path: items/BR-0003.md
+  source: DEC-011
+- id: BR-0004
+  title: Acción sensible requiere aprobación humana
+  state: DECIDED
+  tier_hint: 3
+  path: items/BR-0004.md
+  source: DEC-003
+- id: BR-0005
+  title: No inventar hechos comerciales
+  state: DECIDED
+  tier_hint: 2
+  path: items/BR-0005.md
+  source: DEC-007
+- id: BR-0006
+  title: Piloto sin cobro
+  state: DECIDED
+  tier_hint: 2
+  path: items/BR-0006.md
+  source: DEC-024
+- id: NFR-0001
+  title: Operaciones sensibles atómicas con auditoría conjunta
+  state: INFERRED
+  tier_hint: 3
+  path: items/NFR-0001.md
+  source: recovered (SRC-0006/SRC-0007)
+- id: NFR-0002
+  title: Anti-oráculo en lecturas cross-tenant
+  state: INFERRED
+  tier_hint: 3
+  path: items/NFR-0002.md
+  source: recovered (SRC-0006/SRC-0007)
+- id: NFR-0003
+  title: Modo simulado determinista
+  state: INFERRED
+  tier_hint: 2
+  path: items/NFR-0003.md
+  source: recovered (SRC-0006/SRC-0007)
+- id: NFR-0004
+  title: Rate limiting en autenticación y aprobaciones
+  state: INFERRED
+  tier_hint: 2
+  path: items/NFR-0004.md
+  source: recovered (SRC-0006/SRC-0007)
+- id: NFR-0005
+  title: Secretos fuera del repo y fuera de logs
+  state: INFERRED
+  tier_hint: 4
+  path: items/NFR-0005.md
+  source: recovered (SRC-0006/SRC-0007)

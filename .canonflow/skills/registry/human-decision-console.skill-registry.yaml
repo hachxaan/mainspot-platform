@@ -1,0 +1,227 @@
+# Core Skill Registry fragment — Human Decision Console capabilities (method/20).
+# Validate: schemas/skill-registry.schema.yaml. REVIEW_CANDIDATE (PROP-0006).
+# Capabilities are exercised by the canonflow-human-decision-console operating role (method/21).
+schema: skill-registry/v1
+registry_version: 0.2.0
+level: core
+category: human_decision_console
+source_sha: 9f223113af19bb74d3288e06373df995512b4ae2
+coverage_notes: "The mechanical HDC circuit: materialize question sessions (JSON+HTML), ingest human answers, transcribe DEC/APR/RSK; ingestion monopoly. SUB-02 v2 additions (DEC-0043): does_not_cover, per-entry checksum, source_sha."
+does_not_cover:
+  - "answering, defaulting or inferring any question (human answers only)"
+  - "deciding, approving or granting authority (it transcribes; the human decides)"
+  - "framing intent or drafting the TFR (that is canonflow-main, routing fragment)"
+  - "classifying tasks or recommending routes (routing fragment)"
+  - "editing canon, product or immutable artifacts"
+skills:
+  - schema: skill-definition/v1
+    skill_id: question_session_generation
+    name: Question session generation
+    category: human_decision_console
+    level: core
+    purpose: Generate a structured self-contained question session (QS-xxxx) whenever human intervention is needed, never a loose chat question.
+    operating_role: canonflow-human-decision-console
+    card_ref: skills/canonflow-human-decision-console.skill-card.yaml
+    checksum: "sha256:502f772278cc2b1ae8c80a13195f40aea9da2725c388cb9b078e7cba825fc268"
+    triggered_when:
+      - "a skill or gate needs human intervention (gap, confirmation, approval, alternative, risk, unblock)"
+      - "governance or scope ambiguity must be resolved by a human, not by inference"
+      - "a blocking OPEN item or CONFLICTED pair has no pending session"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; the session is how every human-owned decision and gate is framed"
+    inputs: [".canonflow/state/method-state.yaml", ".canonflow/decision-state/index.json", "blocking-context pointers from the requesting skill"]
+    outputs: [".canonflow/decision-sessions/pending/QS-xxxx.questions.json"]
+    required_templates: [templates/decision-console/question-session.json]
+    required_schemas: [schemas/question-session.schema.yaml]
+    required_prompts: [prompts/12-question-session-generator.md]
+    required_gates: []
+    evidence_required: ["QS validates against question-session.schema.yaml", "each question is self-contained with guidance and options (impact/risk/tradeoff)", "intervention_reason, affected_loop and risk_tier are set"]
+    human_decision_triggers: ["the intervention need is real but its scope, tier or owner is unclear (confirm before framing options)"]
+    token_profile:
+      reads: ["decision-state index counters", "blocking-context pointers", "the question-session template"]
+      ignores: ["full canon", "code", "runtime", "answered sessions"]
+      typical_cost: low
+    default_effort: medium
+    max_effort_conditions: ["T3-T4 approvals or risk acceptances needing precise option framing", "multi-topic sessions bundling several decisions"]
+    failure_modes: ["asking in loose chat instead of a generated session", "questions that require other documents open to answer", "missing or dishonest recommended_option", "inventing the human's likely answer as a default"]
+    related_skills: [guided_html_generation, answer_json_ingestion, open_question_management]
+  - schema: skill-definition/v1
+    skill_id: guided_html_generation
+    name: Guided HTML generation
+    category: human_decision_console
+    level: core
+    purpose: Render a self-contained QS-xxxx.html the human can open and answer offline, via scripts/render_question_session.py.
+    operating_role: canonflow-human-decision-console
+    card_ref: skills/canonflow-human-decision-console.skill-card.yaml
+    checksum: "sha256:502f772278cc2b1ae8c80a13195f40aea9da2725c388cb9b078e7cba825fc268"
+    triggered_when:
+      - "a QS-xxxx.questions.json exists in pending/ without a rendered HTML"
+      - "a session's questions changed and the HTML must be re-rendered"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; the HTML is the human's only required interface to the decision"
+    inputs: [".canonflow/decision-sessions/pending/QS-xxxx.questions.json", ".canonflow/decision-console/index.html"]
+    outputs: [".canonflow/decision-sessions/pending/QS-xxxx.html"]
+    required_templates: []
+    required_schemas: [schemas/question-session.schema.yaml]
+    required_prompts: [prompts/12-question-session-generator.md]
+    required_gates: []
+    evidence_required: ["QS-xxxx.html generated", "the embedded session JSON matches the pending QS", "the answers_expected_at path is stated in the page"]
+    human_decision_triggers: []
+    token_profile:
+      reads: ["the pending QS JSON", "the decision-console app shell"]
+      ignores: ["canon", "code", "other sessions"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["render_question_session.py unavailable, requiring an inline HTML fallback"]
+    failure_modes: ["HTML that needs network or CDN assets to render (must be self-contained)", "stale HTML not matching the current QS JSON", "missing instructions on where to save the answers file"]
+    related_skills: [question_session_generation, answer_json_ingestion]
+  - schema: skill-definition/v1
+    skill_id: answer_json_ingestion
+    name: Answer JSON ingestion
+    category: human_decision_console
+    level: core
+    purpose: Ingest the human's answers file the moment it appears in answered/, routing it to records; never invent or default an answer.
+    operating_role: canonflow-human-decision-console
+    card_ref: skills/canonflow-human-decision-console.skill-card.yaml
+    checksum: "sha256:502f772278cc2b1ae8c80a13195f40aea9da2725c388cb9b078e7cba825fc268"
+    triggered_when:
+      - "an answers file appears at .canonflow/decision-sessions/answered/QS-xxxx.answers.json (non-conversational file trigger, method/21 §4)"
+      - "the chat fallback 'Answers ready: QS-xxxx.answers.json' is received"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; ingestion turns human intent into binding records"
+    inputs: [".canonflow/decision-sessions/answered/QS-xxxx.answers.json", ".canonflow/decision-sessions/pending/QS-xxxx.questions.json"]
+    outputs: ["QS marked INGESTED in the decision-state index", "session moved to archived/", "handoff to decision_record_generation"]
+    required_templates: [templates/decision-console/answer-session.json]
+    required_schemas: [schemas/answer-session.schema.yaml, schemas/question-session.schema.yaml]
+    required_prompts: [prompts/13-answer-session-ingestion.md]
+    required_gates: []
+    evidence_required: ["question_session_id in the answers file matches the pending session", "every required question answered and each requires_comment satisfied", "no answer defaulted or inferred by the agent"]
+    human_decision_triggers: ["an answer is missing, ambiguous or self-contradictory (a clarification session is generated, never a guessed value)"]
+    token_profile:
+      reads: ["the answers file", "the matching questions file"]
+      ignores: ["canon", "code", "unrelated sessions"]
+      typical_cost: low
+    default_effort: medium
+    max_effort_conditions: ["large multi-topic sessions with interdependent answers"]
+    failure_modes: ["silently accepting a malformed or incomplete answer set", "ingesting answers for the wrong QS (id mismatch)", "the agent supplying a missing answer instead of blocking"]
+    related_skills: [answer_schema_validation, decision_record_generation, guided_html_generation]
+  - schema: skill-definition/v1
+    skill_id: answer_schema_validation
+    name: Answer schema validation
+    category: human_decision_console
+    level: core
+    purpose: Validate an answers file against answer-session.schema.yaml and its source questions before any record is written.
+    operating_role: canonflow-human-decision-console
+    card_ref: skills/canonflow-human-decision-console.skill-card.yaml
+    checksum: "sha256:502f772278cc2b1ae8c80a13195f40aea9da2725c388cb9b078e7cba825fc268"
+    triggered_when:
+      - "an answers file is about to be ingested"
+      - "answer_json_ingestion requests a schema and completeness check"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; a bad answer set must never become a record"
+    inputs: [".canonflow/decision-sessions/answered/QS-xxxx.answers.json", ".canonflow/decision-sessions/pending/QS-xxxx.questions.json"]
+    outputs: ["validation verdict (PASS or FAIL) naming the exact failing field or question"]
+    required_templates: []
+    required_schemas: [schemas/answer-session.schema.yaml, schemas/question-session.schema.yaml]
+    required_prompts: [prompts/13-answer-session-ingestion.md]
+    required_gates: []
+    evidence_required: ["scripts/validate_schemas.py output pointer", "per-question required and requires_comment check result", "each risk_acceptance answer carries an expiry"]
+    human_decision_triggers: ["a required question is unanswered or a requires_comment is missing (a follow-up session is generated, not a default)"]
+    token_profile:
+      reads: ["the answers file", "the questions file", "the answer-session schema"]
+      ignores: ["canon", "code", "records"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: []
+    failure_modes: ["passing an answers file that omits a required question", "accepting a risk_acceptance answer with no expiry", "not naming the exact failing field on FAIL"]
+    related_skills: [answer_json_ingestion, decision_record_generation]
+  - schema: skill-definition/v1
+    skill_id: decision_record_generation
+    name: Decision record generation
+    category: human_decision_console
+    level: core
+    purpose: Convert each validated material answer into an immutable DEC/APR/RSK record with a human owner; corrections SUPERSEDE, never overwrite.
+    operating_role: canonflow-human-decision-console
+    card_ref: skills/canonflow-human-decision-console.skill-card.yaml
+    checksum: "sha256:502f772278cc2b1ae8c80a13195f40aea9da2725c388cb9b078e7cba825fc268"
+    triggered_when:
+      - "an answers file passed schema and completeness validation"
+      - "material answers await conversion into records"
+    affected_loop: cross_cutting
+    risk_relevance: "T0-T4; only DECIDED and approval records create obligations"
+    inputs: [".canonflow/decision-sessions/pending/QS-xxxx.questions.json", ".canonflow/decision-sessions/answered/QS-xxxx.answers.json", ".canonflow/traceability/links.yaml"]
+    outputs: [".canonflow/decision-records/{DEC,APR,RSK}-xxxx.{json,md}", "QS->ANS->DEC/APR/RSK links in the traceability file", "updated decision-state counters"]
+    required_templates: [templates/decision-console/decision-record.json, templates/decision-console/decision-record.md]
+    required_schemas: [schemas/decision-record.schema.yaml, schemas/answer-session.schema.yaml]
+    required_prompts: [prompts/14-decision-record-generator.md]
+    required_gates: []
+    evidence_required: ["one record per material answer", "owner is the answering human, never an agent", "each record validates against decision-record.schema.yaml", "a DECIDED_BY link is appended to traceability"]
+    human_decision_triggers: ["a material answer is unclear about which artifact or version it decides (re-ask, do not infer)"]
+    token_profile:
+      reads: ["the validated answers", "the source questions", "the record templates"]
+      ignores: ["canon body", "code", "runtime"]
+      typical_cost: low
+    default_effort: medium
+    max_effort_conditions: ["approvals or risk acceptances at T3-T4 requiring precise artifact_ref and options_rejected"]
+    failure_modes: ["an agent recorded as owner", "editing an issued record instead of SUPERSEDE", "missing options_rejected on a choice decision", "record with no QS->ANS source chain"]
+    related_skills: [approval_tracking, risk_acceptance_tracking, answer_json_ingestion]
+  - schema: skill-definition/v1
+    skill_id: approval_tracking
+    name: Approval tracking
+    category: human_decision_console
+    level: core
+    purpose: Track APR records for human-owned gates and report only VERIFIED APR-xxxx exists or OPEN approval pending; never approve a gate (DEC-0007).
+    operating_role: canonflow-human-decision-console
+    card_ref: skills/canonflow-human-decision-console.skill-card.yaml
+    checksum: "sha256:502f772278cc2b1ae8c80a13195f40aea9da2725c388cb9b078e7cba825fc268"
+    triggered_when:
+      - "a human-owned gate (G-FUN, G-TEC, G-PLAN, G-AUD, G-RC, G-MERGE, G-DEPLOY) is reached"
+      - "an artifact is presented for approval and its APR status must be resolved"
+    affected_loop: cross_cutting
+    risk_relevance: "elevated at T2-T4; approvals gate progress at higher tiers"
+    inputs: [".canonflow/decision-records/", ".canonflow/decision-state/index.json", "the artifact id and version presented for the gate"]
+    outputs: ["approval status per gate: VERIFIED APR-xxxx exists for G-x, or OPEN G-x approval pending"]
+    required_templates: [templates/decision-console/decision-record.json]
+    required_schemas: [schemas/decision-record.schema.yaml]
+    required_prompts: [prompts/14-decision-record-generator.md]
+    required_gates: [G-FUN, G-TEC, G-PLAN, G-AUD, G-RC, G-MERGE, G-DEPLOY]
+    evidence_required: ["APR artifact_ref matches the exact artifact id and version approved", "the gate id is cited per APR", "no gate is reported as approved by any skill"]
+    human_decision_triggers: ["an APR artifact_ref does not match the artifact version presented for the gate", "a gate is reached with no APR (an approval session is generated)"]
+    token_profile:
+      reads: ["the decision-records index", "the presented artifact id and version"]
+      ignores: ["artifact body", "canon", "code"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["T3-T4 per-critical-artifact approvals (API, data, auth, deploy, rollback)", "G-SEC and G-MIG human checkpoints"]
+    failure_modes: ["claiming a human gate is approved (only humans approve, DEC-0007)", "matching an APR to a stale artifact version", "treating a pending approval as satisfied"]
+    related_skills: [decision_record_generation, question_session_generation, risk_acceptance_tracking]
+  - schema: skill-definition/v1
+    skill_id: risk_acceptance_tracking
+    name: Risk acceptance tracking
+    category: human_decision_console
+    level: core
+    purpose: Track RSK records that accept a RISK claim, enforcing a mandatory expiry; an expiry-less or expired risk acceptance is invalid.
+    operating_role: canonflow-human-decision-console
+    card_ref: skills/canonflow-human-decision-console.skill-card.yaml
+    checksum: "sha256:502f772278cc2b1ae8c80a13195f40aea9da2725c388cb9b078e7cba825fc268"
+    triggered_when:
+      - "a RISK claim is accepted by a human via a risk_acceptance answer"
+      - "an existing RSK record is near or past its expiry"
+    affected_loop: cross_cutting
+    risk_relevance: "elevated at T3-T4; risk acceptances most often accompany security and migration decisions"
+    inputs: [".canonflow/decision-records/RSK-xxxx.json", ".canonflow/decision-state/index.json", "the RISK claim (TR- or RSK- ref) being accepted"]
+    outputs: ["RSK record status: VALID until expiry, or EXPIRED/INVALID requiring re-decision"]
+    required_templates: [templates/decision-console/decision-record.json]
+    required_schemas: [schemas/decision-record.schema.yaml]
+    required_prompts: [prompts/14-decision-record-generator.md]
+    required_gates: []
+    evidence_required: ["every RSK record carries a non-empty expiry", "the accepted RISK claim is referenced (TR- or RSK-)", "expired acceptances are flagged for re-decision, never silently extended"]
+    human_decision_triggers: ["a risk acceptance is offered without an expiry (invalid answer, re-ask)", "an RSK record reaches expiry and the risk is still present (a re-acceptance session is generated)"]
+    token_profile:
+      reads: ["the RSK records", "the referenced RISK claim"]
+      ignores: ["artifact body", "canon", "code"]
+      typical_cost: low
+    default_effort: low
+    max_effort_conditions: ["T3-T4 security or migration risk acceptances (G-SEC and G-MIG context)"]
+    failure_modes: ["accepting a risk with no expiry", "silently extending an expired acceptance", "an agent, not a human, recorded as the risk owner"]
+    related_skills: [decision_record_generation, approval_tracking, question_session_generation]

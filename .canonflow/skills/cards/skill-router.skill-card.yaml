@@ -1,0 +1,151 @@
+# Skill card (method/21). Validate: schemas/skill-card.schema.yaml
+schema: skill-card/v1
+skill_id: skill-router
+name: Skill Router (task classification + route recommendation, meta)
+version: 0.1.0
+state: REVIEW_CANDIDATE
+role_class: meta
+authorization: null
+purpose: >-
+  Formalizes the Skill Router of FABLE_DESIGN section 6 (DD-03) as a
+  first-class meta skill: the monopoly of task classification (TCL) and route
+  recommendation (SSR/RPL). It runs before -- and within -- material tasks;
+  trivial tasks are exempt per the operational materiality criterion. It emits
+  immutable TCL/SSR(/RPL) with structured uncertainty (confidence_reason,
+  falsifiers, mechanical caps DD-10) and terminal outcomes {ROUTE_RECOMMENDED,
+  HUMAN_DECISION_REQUIRED, NO_SAFE_ROUTE}, then STOPS. It is a recommender,
+  never an authority: recommendation is not decision and a recommended route
+  is not an executable task. It is the single writer of .canonflow/routing/
+  (immutable artifacts). authorization is structurally null (OB-07, DD-03):
+  the Router never authorizes, never produces a RAR, never publishes or
+  converts next_task, never invokes executors, and never approves.
+prompt: prompts/15-skill-router.md
+run_modes: []
+when_to_use:
+  - a material task needs classification (TCL) and a recommended route (SSR, plus an RPL when coverage requires dependent steps)
+  - a TFR from canonflow-main (or a task) must be turned into a cited route recommendation with structured uncertainty
+  - coverage is absent (registry_miss), no safe route exists, or a low-confidence or material decision must be escalated to the human via QS
+  - routing evidence must be written immutably to .canonflow/routing/ with resolvable backlinks (SSR->TCL->TFR; RPL->SSR)
+required_inputs:
+  - the task or TFR to classify (verbatim framing + pointers)
+  - the installed skill registry (verified by hash against the RIM) and the skill-cards it indexes
+  - state pointers for the integrity preflight (method-state, skill-state, decision-state)
+  - CQR from canonflow when a canon doubt arises (attached as evidence, never improvised)
+  - runtime-installation evidence (RIM) to check runtime_installed for each recommended skill
+required_outputs:
+  - "a TCL (task-classification v2): mode, impact_class, cited signals, and confidence with a confidence_reason (signals / counter-signals / falsifiers)"
+  - "an SSR (skill-selection-report, artifact_kind route_recommendation): route (primary_skill, supporting_skills, composite_ref), assumptions[], alternatives[], hard_stops_evaluated[], required/missing_evidence, flags, outcome, authorization:null"
+  - an RPL (route plan) when coverage requires more than one dependent step (sequence, depends_on, parallelizable, per-step gates)
+  - a QS session (referenced from the SSR) when the outcome is HUMAN_DECISION_REQUIRED, registry_miss, or NO_SAFE_ROUTE
+authority:
+  - classify tasks (TCL) -- the sole holder of this act (monopoly)
+  - recommend routes (SSR) and compose routes (RPL) -- the sole holder of this act (monopoly)
+  - emit the terminal routing outcomes (ROUTE_RECOMMENDED / HUMAN_DECISION_REQUIRED / NO_SAFE_ROUTE), which halt the route pending authorization
+  - write immutable TCL/SSR/RPL to .canonflow/routing/ (single-writer)
+  - generate a QS (referenced from the SSR) for HUMAN_DECISION_REQUIRED, registry_miss and NO_SAFE_ROUTE
+  - request State Manager validation on dirty-state detection; consult canonflow on a canon doubt
+authority_limits:
+  - classification and recommendation only; a recommended route never starts anything -- there is always a later, external RAR with a human authority source before execution (DD-11)
+  - "mechanical confidence caps (DD-10): a critical assumption without evidence or a non-empty missing_evidence -> confidence <= medium; registry_miss or dirty_state_detected or dirty_worktree_detected -> confidence <= low; a high is legal only with no flags, no critical assumption and no missing evidence"
+  - alternatives[] are mandatory when confidence is not high or >= 2 plausible routes exist; if no alternative is clearly dominated, the outcome is HUMAN_DECISION_REQUIRED with a DEC-type QS
+  - it selects only from the installed registry and never forces the nearest capability on a registry_miss
+  - it records G-REPO signals (dirty_worktree_detected) but never authorizes writes -- per-run authorization stays with the Repo/Worktree Auditor
+  - all routing artifacts are immutable and auditable by the Evidence Auditor's routing-audit dimension; the Router itself audits nothing
+prohibitions:
+  - never executes any work
+  - never publishes next_task and never converts a route into a task (Orchestrator monopoly, DD-04)
+  - never authors or grants a RAR (execution authorization is a later artifact, external to the Router)
+  - never invokes executors, launches runs, or notifies any skill to start
+  - never approves anything -- authorization is structurally null (OB-07, DD-03)
+  - never mutates state, product or method; it writes only immutable routing artifacts in .canonflow/routing/
+  - never emits a run verdict -- its terminal states are routing outcomes, not verdicts
+  - never ingests, materializes or answers a Decision Console session (ingestion belongs to canonflow-human-decision-console)
+  - never asserts a high confidence while a flag, a critical assumption or missing evidence is present
+  - never classifies over dirty state or a stale registry (fail-closed)
+  - never treats host_projected as a source of truth for capability or authority (P-15)
+  - never improvises the method -- it consults canonflow and attaches the CQR
+hard_stops:
+  - dirty_state_detected or a state contradiction -> cap confidence <= low, request State Manager validation, and do not classify over dirty state
+  - installed-registry hash mismatch vs the RIM (stale) -> fail-closed; no routing until the index is reinstalled or regenerated
+  - "registry_miss (no capability covers the task, or coverage would violate does_not_cover) -> HUMAN_DECISION_REQUIRED or NO_SAFE_ROUTE + QS; never force the nearest capability"
+  - no route satisfies method + safety -> NO_SAFE_ROUTE + QS
+  - asked to publish or convert next_task, author a RAR, invoke an executor, or approve -> refuse; the Router is structurally incapable and its card prohibits it
+  - a critical assumption without evidence, or a non-empty required missing_evidence -> cap confidence <= medium (DD-10)
+reads:
+  - the task/TFR to classify and its pointers
+  - the installed skill registry and the skill-cards it indexes (skills/*.skill-card.yaml)
+  - .canonflow/state/*, skill-state and decision-state pointers (integrity preflight); the RIM for hash and runtime_installed checks
+  - decision records (DEC/APR/RSK) to know a human authority exists -- never to authorize
+  - CQR from canonflow; prior TCL/SSR/RPL in .canonflow/routing/ (backlink resolution)
+writes:
+  - .canonflow/routing/TCL-xxxx.task-classification.yaml (immutable)
+  - ".canonflow/routing/SSR-xxxx.skill-selection.yaml (immutable; artifact_kind route_recommendation; authorization: null)"
+  - .canonflow/routing/RPL-xxxx.route-plan.yaml (immutable; composite routes only)
+state_interaction:
+  - "preflight: reads state pointers; on dirty/contradiction sets dirty_state_detected, requests State Manager validation, and does not classify over dirty state"
+  - verifies the installed-registry hash against the RIM; a mismatch is fail-closed (no routing with a doubtful catalogue, P-18)
+  - never mutates state; writes only immutable artifacts in .canonflow/routing/ (single-writer)
+decision_console_interaction:
+  - "the outcome HUMAN_DECISION_REQUIRED / registry_miss / NO_SAFE_ROUTE sets decision_session: QS-NNNN in the immutable SSR; the HDC console materializes and ingests that session"
+  - never ingests, answers or archives its own sessions (ingestion belongs to canonflow-human-decision-console)
+  - consumes DEC/APR/RSK to know that a human authority exists, but never authorizes -- recommendation is not decision
+skill_interactions:
+  - {skill: canonflow-main, relation: CONSUMES_OUTPUT_OF, detail: consumes the TFR as routing input and returns TCL/SSR which canonflow-main presents to the human; the Router never presents or decides}
+  - {skill: canonflow-state-manager, relation: DELEGATES_TO, detail: integrity preflight; on dirty_state_detected it requests validation and does not classify over dirty state}
+  - {skill: canonflow-orchestrator-reviewer, relation: PRODUCES_INPUT_FOR, detail: emits authorized-pending SSR/RPL that the orchestrator (with a prior RAR) converts into next_task; the Router never converts or publishes}
+  - {skill: canonflow-human-decision-console, relation: ESCALATES_TO, detail: HUMAN_DECISION_REQUIRED / registry_miss / NO_SAFE_ROUTE reference a QS the console materializes and ingests}
+required_evidence:
+  - confidence_reason with cited signals (path), counter-signals and falsifiers
+  - "hard_stops_evaluated[] with a per-hard-stop result (passed|triggered) and citation"
+  - the resolved backlinks (SSR->TCL->TFR; RPL->SSR)
+  - registry_snapshot (registry_sha, rim_id) and runtime_check (all_installed, gaps)
+  - alternatives[] when confidence is not high or >= 2 plausible routes exist
+  - CQR when a canon doubt was resolved via canonflow
+verdict_criteria:
+  PASS:
+    - "outcome ROUTE_RECOMMENDED: a well-formed TCL + SSR (+ RPL when composite) with confidence_reason and falsifiers, resolved backlinks, no flags, no critical assumption and no missing evidence, written immutably; authorization is null"
+  PASS_WITH_LIMITATIONS:
+    - outcome ROUTE_RECOMMENDED at confidence <= medium (mechanical caps applied), with material assumptions and the mandatory alternatives recorded; the route still awaits a RAR before any execution
+  REMEDIATION_REQUIRED:
+    - "outcome HUMAN_DECISION_REQUIRED or registry_miss: a QS is referenced and no route is converted; the human must decide before the route can proceed"
+  BLOCKED:
+    - outcome NO_SAFE_ROUTE, or a fail-closed preflight (dirty_state_detected / dirty_worktree_detected / stale registry); the Router halts and references a QS; nothing is authorized
+  # these are routing outcomes of the Router's own run, never verdicts over another run; authorization is structurally null
+allowed_claims:
+  - VERIFIED classification and route-recommendation claims backed by cited signals (path) and a registry snapshot
+  - INFERRED assumptions, structured and classed (safe/material/critical), never resolving material uncertainty silently
+  - CONFLICTED, registry_miss and NO_SAFE_ROUTE observations with citations
+  - PROPOSED routes awaiting authorization (RAR) and human decision; falsifiers stated for every classification
+prohibited_claims:
+  - authorization, approval, or any claim that a task may start (authorization is structurally null)
+  - DECIDED claims (only human decision records carry DECIDED)
+  - any run verdict, audit verdict, or readiness/release statement
+  - a high confidence while any flag, critical assumption or missing evidence is present
+  - any claim that host-projection availability affects classification or capability
+examples:
+  - title: Recommend a route with structured uncertainty
+    given: >-
+      a TFR from canonflow-main for a bounded implementation task; state
+      pointers clean; the installed registry hash matches the RIM.
+    run: >-
+      integrity preflight (clean); classify TCL-0007 (mode, impact_class,
+      cited signals, confidence high with falsifiers); select from the
+      installed registry only; emit SSR-0007 (route with primary and
+      supporting skills, assumptions, hard_stops_evaluated, all flags false,
+      authorization null); write both immutably to .canonflow/routing/; stop.
+    expected_outcome: >-
+      TCL-0007 + SSR-0007 (outcome ROUTE_RECOMMENDED, authorization null)
+      immutable in .canonflow/routing/; no next_task, no RAR, no run launched
+      -- the route awaits a RAR.
+  - title: registry_miss -- escalate, never force the nearest capability
+    given: >-
+      a task whose coverage no capability provides (or would require violating
+      does_not_cover).
+    run: >-
+      set registry_miss true; cap confidence <= low; do NOT force the nearest
+      capability; outcome HUMAN_DECISION_REQUIRED; reference a QS offering
+      (extend the registry via the method-change flow / re-frame / reject);
+      write the immutable SSR; stop.
+    expected_outcome: >-
+      an immutable SSR with registry_miss and outcome HUMAN_DECISION_REQUIRED
+      referencing a QS; nothing routed to execution; authorization null.

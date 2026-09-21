@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>canonflow — Human Decision Console</title>
+<style>
+  :root{
+    --paper:#F4F6F5; --card:#FFFFFF; --ink:#20242C; --ink-soft:#5A6472;
+    --line:#D4DBD8; --line-soft:#E6EBE9;
+    --seal:#1F6E5C; --seal-soft:#E3F0EC; --seal-ink:#134B3F;
+    --rec:#B97C10; --rec-soft:#F8EED9;
+    --t0:#6B7280; --t1:#4B6B8A; --t2:#B97C10; --t3:#C05621; --t4:#8C2F2F;
+    --danger:#8C2F2F; --danger-soft:#F6E4E4;
+    --radius:10px; --maxw:1180px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} *{transition:none!important} }
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font:16px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
+  .eyebrow{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);font-weight:700}
+  header.session{background:var(--ink);color:#EDF1EF;padding:28px 24px 22px}
+  header.session .wrap{max-width:var(--maxw);margin:0 auto}
+  header.session h1{margin:.2em 0 .1em;font-size:1.65rem;letter-spacing:-.01em}
+  header.session .brand{color:#9FB4AC;font-size:.78rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700}
+  .meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px 22px;margin-top:16px;
+    border-top:1px solid #3A424E;padding-top:14px}
+  .meta-grid .k{font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:#9FB4AC}
+  .meta-grid .v{font-size:.92rem;margin-top:2px}
+  .chip{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.75rem;font-weight:700;letter-spacing:.03em}
+  .chip.state{background:#2E3540;color:#CFE7DE;border:1px solid #4A5560}
+  .chip.tier0{background:var(--t0);color:#fff}.chip.tier1{background:var(--t1);color:#fff}
+  .chip.tier2{background:var(--t2);color:#fff}.chip.tier3{background:var(--t3);color:#fff}
+  .chip.tier4{background:var(--t4);color:#fff}
+  .layout{max-width:var(--maxw);margin:0 auto;display:grid;grid-template-columns:250px 1fr;gap:28px;padding:26px 24px 80px}
+  @media(max-width:860px){.layout{grid-template-columns:1fr}.rail{position:static!important;max-height:none!important}}
+  /* signature element: the decision rail */
+  .rail{position:sticky;top:16px;align-self:start;max-height:calc(100vh - 32px);overflow:auto;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+  .rail .prog-num{font-size:1.9rem;font-weight:800;letter-spacing:-.02em;color:var(--seal-ink)}
+  .rail .bar{height:6px;background:var(--line-soft);border-radius:999px;margin:8px 0 14px;overflow:hidden}
+  .rail .bar i{display:block;height:100%;width:0;background:var(--seal);border-radius:999px;transition:width .25s}
+  .rail nav a{display:block;color:var(--ink-soft);text-decoration:none;font-size:.85rem;padding:5px 0;border-top:1px solid var(--line-soft)}
+  .rail nav a:hover,.rail nav a:focus-visible{color:var(--seal-ink)}
+  .rail .dots{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 14px}
+  .rail .dots button{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);background:var(--card);
+    cursor:pointer;font-size:.6rem;color:var(--ink-soft);padding:0}
+  .rail .dots button.done{background:var(--seal);border-color:var(--seal);color:#fff}
+  .rail .dots button.req{border-color:var(--rec)}
+  .rail .dots button.done.req{border-color:var(--seal)}
+  section.block{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px;margin-bottom:22px}
+  section.block>h2{display:flex;align-items:baseline;gap:12px;margin:0 0 10px;font-size:1.12rem}
+  section.block>h2 .num{color:var(--seal-ink);font-weight:800;font-size:.95rem;background:var(--seal-soft);
+    border-radius:6px;padding:2px 8px;letter-spacing:.02em}
+  .qcard{border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin:14px 0;background:#FCFDFC}
+  .qcard.invalid{border-color:var(--danger);box-shadow:0 0 0 3px var(--danger-soft)}
+  .qcard h3{margin:0 0 4px;font-size:1.02rem}
+  .qcard .qid{color:var(--ink-soft);font-weight:600}
+  .qcard .short{color:var(--ink-soft);margin:0 0 8px}
+  .qcard details{margin:8px 0;border-left:3px solid var(--line);padding-left:12px}
+  .qcard details summary{cursor:pointer;color:var(--seal-ink);font-weight:600;font-size:.88rem}
+  .qcard .why{background:var(--seal-soft);border-radius:8px;padding:8px 12px;font-size:.88rem;color:var(--seal-ink);margin:8px 0}
+  .qmeta{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px}
+  .qmeta .chip.loop{background:#E9EDF3;color:#374357}
+  .qmeta .chip.reqd{background:var(--rec-soft);color:#7A5308}
+  .opt{display:block;border:1.5px solid var(--line);border-radius:8px;padding:12px 14px;margin:8px 0;cursor:pointer;background:var(--card)}
+  .opt:hover{border-color:var(--seal)}
+  .opt.selected{border-color:var(--seal);background:var(--seal-soft)}
+  .opt input{margin-right:10px}
+  .opt .lbl{font-weight:700}
+  .opt .badge-rec{margin-left:8px;background:var(--rec);color:#fff;border-radius:999px;padding:1px 9px;font-size:.7rem;font-weight:700;
+    letter-spacing:.05em;text-transform:uppercase;vertical-align:middle}
+  .opt .desc{color:var(--ink-soft);font-size:.9rem;margin:4px 0 0 26px}
+  .opt table.guide{margin:8px 0 2px 26px;border-collapse:collapse;font-size:.82rem}
+  .opt table.guide td{padding:2px 10px 2px 0;vertical-align:top;color:var(--ink-soft)}
+  .opt table.guide td.k{font-weight:700;color:var(--ink);white-space:nowrap}
+  textarea,input[type=text],input[type=date]{width:100%;border:1.5px solid var(--line);border-radius:8px;
+    padding:10px;font:inherit;background:var(--card)}
+  textarea:focus-visible,input:focus-visible,button:focus-visible,.opt:focus-within{outline:3px solid #8FBFB2;outline-offset:1px}
+  textarea{min-height:84px;resize:vertical}
+  .comment-wrap{margin-top:10px}
+  .comment-wrap label{font-size:.85rem;font-weight:600;color:var(--ink-soft)}
+  .order-list{list-style:none;margin:8px 0;padding:0}
+  .order-list li{display:flex;align-items:center;gap:10px;border:1.5px solid var(--line);border-radius:8px;
+    padding:10px 12px;margin:6px 0;background:var(--card)}
+  .order-list .rank{font-weight:800;color:var(--seal-ink);min-width:1.4em}
+  .order-list .grow{flex:1}
+  .order-list button{border:1px solid var(--line);background:var(--paper);border-radius:6px;width:30px;height:30px;cursor:pointer}
+  .default-note{font-size:.85rem;color:var(--ink-soft);margin:4px 0}
+  .artifact-ref{background:#EEF2F0;border:1px dashed var(--line);border-radius:8px;padding:8px 12px;font-size:.88rem;margin:6px 0}
+  .summary-table{width:100%;border-collapse:collapse;font-size:.9rem}
+  .summary-table th,.summary-table td{text-align:left;border-bottom:1px solid var(--line-soft);padding:8px 10px;vertical-align:top}
+  .summary-table th{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+  .summary-table .missing{color:var(--danger);font-weight:700}
+  .btn{display:inline-block;border:0;border-radius:8px;padding:12px 22px;font:inherit;font-weight:700;cursor:pointer}
+  .btn.primary{background:var(--seal);color:#fff}
+  .btn.primary:hover{background:var(--seal-ink)}
+  .btn.ghost{background:var(--paper);border:1.5px solid var(--line);color:var(--ink)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .steps{counter-reset:step;list-style:none;margin:10px 0;padding:0}
+  .steps li{counter-increment:step;display:flex;gap:14px;margin:12px 0;align-items:flex-start}
+  .steps li::before{content:counter(step);background:var(--seal);color:#fff;border-radius:50%;
+    min-width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem}
+  .path-box{background:var(--ink);color:#CFE7DE;border-radius:8px;padding:10px 14px;margin:6px 0;overflow-x:auto}
+  .alert{border-radius:8px;padding:10px 14px;margin:10px 0;font-size:.92rem}
+  .alert.err{background:var(--danger-soft);color:var(--danger);border:1px solid #DDBCBC}
+  .alert.ok{background:var(--seal-soft);color:var(--seal-ink);border:1px solid #BBD8CE}
+  .loader{max-width:640px;margin:60px auto;background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius);padding:34px;text-align:center}
+  .loader .drop{border:2px dashed var(--line);border-radius:var(--radius);padding:40px 20px;margin:18px 0;color:var(--ink-soft)}
+  .loader .drop.hover{border-color:var(--seal);background:var(--seal-soft)}
+  .lang-switch{float:right;margin-top:-4px}
+  .lang-switch button{background:transparent;border:1px solid #4A5560;color:#CFE7DE;border-radius:6px;
+    padding:3px 10px;cursor:pointer;font-size:.78rem;margin-left:6px}
+  .lang-switch button.on{background:#CFE7DE;color:var(--ink);font-weight:700}
+  .name-wrap{margin:12px 0}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+"use strict";
+/* Session payload. render_question_session.py replaces the placeholder below
+   with the QS-xxxx.questions.json content to produce a self-contained file.
+   When null, the console offers a file picker (open any questions JSON). */
+const SESSION = /*__CANONFLOW_SESSION_JSON__*/null;
+
+/* ---------- i18n (UI chrome only; session content renders as authored) ---------- */
+const I18N = {
+  en: {
+    brand:"canonflow · Human Decision Console",
+    meta:{id:"Session ID",date:"Generated",state:"State",reason:"Why you are needed",
+      loop:"Affected loop",impact:"Decision impact",tier:"Risk tier"},
+    loops:{functional_canon_loop:"Functional Canon Loop",technical_canon_loop:"Technical Canon Loop",
+      implementation_loop:"Implementation Loop",drift_runtime_recovery_mode:"Drift / Runtime Recovery Mode",
+      release_candidate:"Release Candidate"},
+    sections:["Context","Decision required","Recommended options","Risks and impact",
+      "Questions","Answer summary","Export answers","What you must do now"],
+    progress:"answered", of:"of", required:"required",
+    ctxIntro:"The agent paused a governed flow because it needs your decision. Everything you answer here becomes a structured, traceable decision record — nothing gets lost in chat.",
+    decisionRequired:"Decision required",
+    recIntro:"Where the agent has an honest recommendation, the option is marked. You always decide; recommendations are guidance, not defaults you must accept.",
+    recNone:"No option in this session carries an explicit recommendation. Read each option's guidance and decide.",
+    riskIntro:"Overall session risk and impact, as declared by the agent:",
+    perQuestion:"Per-question tiers are shown on each card.",
+    qRequired:"Required", qOptional:"Optional",
+    fullExplanation:"Full explanation", why:"Why this matters",
+    recommendedWhen:"Choose when", impact:"Impact", risk:"Risk", tradeoff:"Tradeoff",
+    recommended:"Recommended", defaultIs:"Default:",
+    comment:"Comment", commentRequired:"Comment (required)",
+    yes:"Yes", no:"No",
+    approve:"Approve", reject:"Reject (comment required)", defer:"Defer decision",
+    artifactRef:"Artifact under approval",
+    riskAccept:"Accept this risk", riskDecline:"Do not accept",
+    expiry:"Risk acceptance expiry (required)", justification:"Justification (required)",
+    confirmDefault:"Confirm default", override:"Override",
+    moveUp:"Move up", moveDown:"Move down",
+    freeTextPh:"Write your answer…",
+    summaryQ:"Question", summaryA:"Your answer", summaryC:"Comment", notAnswered:"NOT ANSWERED",
+    review:"Refresh summary",
+    yourName:"Your name / handle (recorded as decision owner)",
+    exportBtn:"Export answers JSON", exportFs:"Save directly to a folder (browser permitting)",
+    exportIntro:"Mode 1 (default): the file downloads and you place it at the indicated path. Mode 2: if your browser supports direct saving, use the second button and pick the target folder.",
+    validationFail:"Some required answers are missing or incomplete. The first one is highlighted.",
+    exported:"Answers exported. Now follow the steps below.",
+    steps:[
+      'Click "Export answers JSON".',
+      "Save the file with this exact name:",
+      "Place it in this folder:",
+      "Return to the agent and write:"
+    ],
+    answersReady:"Answers ready:",
+    openTitle:"Open a decision session",
+    openBody:"This console has no embedded session. Open a QS-xxxx.questions.json file to answer it.",
+    openBtn:"Open questions JSON", dropHint:"…or drop the file here",
+    badFile:"That file is not a valid question session (missing question_session_id or questions)."
+  },
+  es: {
+    brand:"canonflow · Human Decision Console",
+    meta:{id:"ID de sesión",date:"Generada",state:"Estado",reason:"Por qué se te necesita",
+      loop:"Loop afectado",impact:"Impacto de la decisión",tier:"Nivel de riesgo"},
+    loops:{functional_canon_loop:"Functional Canon Loop",technical_canon_loop:"Technical Canon Loop",
+      implementation_loop:"Implementation Loop",drift_runtime_recovery_mode:"Drift / Runtime Recovery Mode",
+      release_candidate:"Release Candidate"},
+    sections:["Contexto","Decisión requerida","Opciones recomendadas","Riesgos e impacto",
+      "Preguntas","Resumen de respuestas","Exportar respuestas","Qué debes hacer ahora"],
+    progress:"respondidas", of:"de", required:"requeridas",
+    ctxIntro:"El agente pausó un flujo gobernado porque necesita tu decisión. Todo lo que respondas aquí se convierte en un registro de decisión estructurado y trazable — nada se pierde en el chat.",
+    decisionRequired:"Decisión requerida",
+    recIntro:"Donde el agente tiene una recomendación honesta, la opción está marcada. Tú siempre decides; las recomendaciones son guía, no defaults obligatorios.",
+    recNone:"Ninguna opción de esta sesión lleva recomendación explícita. Lee la guía de cada opción y decide.",
+    riskIntro:"Riesgo e impacto globales de la sesión, según lo declaró el agente:",
+    perQuestion:"El tier de cada pregunta aparece en su tarjeta.",
+    qRequired:"Requerida", qOptional:"Opcional",
+    fullExplanation:"Explicación completa", why:"Por qué importa",
+    recommendedWhen:"Elegir cuando", impact:"Impacto", risk:"Riesgo", tradeoff:"Tradeoff",
+    recommended:"Recomendada", defaultIs:"Default:",
+    comment:"Comentario", commentRequired:"Comentario (requerido)",
+    yes:"Sí", no:"No",
+    approve:"Aprobar", reject:"Rechazar (comentario requerido)", defer:"Posponer decisión",
+    artifactRef:"Artefacto bajo aprobación",
+    riskAccept:"Acepto este riesgo", riskDecline:"No lo acepto",
+    expiry:"Vencimiento de la aceptación de riesgo (requerido)", justification:"Justificación (requerida)",
+    confirmDefault:"Confirmar default", override:"Cambiar",
+    moveUp:"Subir", moveDown:"Bajar",
+    freeTextPh:"Escribe tu respuesta…",
+    summaryQ:"Pregunta", summaryA:"Tu respuesta", summaryC:"Comentario", notAnswered:"SIN RESPONDER",
+    review:"Actualizar resumen",
+    yourName:"Tu nombre / usuario (queda como dueño de la decisión)",
+    exportBtn:"Export answers JSON", exportFs:"Guardar directo en una carpeta (si el navegador lo permite)",
+    exportIntro:"Modo 1 (default): el archivo se descarga y tú lo colocas en la ruta indicada. Modo 2: si tu navegador soporta guardado directo, usa el segundo botón y elige la carpeta destino.",
+    validationFail:"Faltan respuestas requeridas o están incompletas. La primera está resaltada.",
+    exported:"Respuestas exportadas. Ahora sigue los pasos de abajo.",
+    steps:[
+      'Haz clic en "Export answers JSON".',
+      "Guarda el archivo con este nombre exacto:",
+      "Colócalo en esta ruta:",
+      "Vuelve al agente y escribe:"
+    ],
+    answersReady:"Respuestas listas:",
+    openTitle:"Abrir una sesión de decisión",
+    openBody:"Esta consola no tiene una sesión embebida. Abre un archivo QS-xxxx.questions.json para responderla.",
+    openBtn:"Abrir questions JSON", dropHint:"…o suelta el archivo aquí",
+    badFile:"Ese archivo no es una question session válida (falta question_session_id o questions)."
+  }
+};
+
+let S = null;          // session
+let L = I18N.en;       // active language pack
+let lang = "en";
+const answers = {};    // question_id -> {value, comment, overridden_default}
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const el = id => document.getElementById(id);
+
+function tierChip(t){ const n = Number.isInteger(t) ? t : "?";
+  return `<span class="chip tier${n}">Tier ${n}</span>`; }
+
+function boot(){
+  if (SESSION && SESSION.questions){ start(SESSION); return; }
+  const app = el("app");
+  const P = I18N.en, Pe = I18N.es;
+  app.innerHTML = `
+    <div class="loader">
+      <div class="eyebrow">canonflow</div>
+      <h1>${P.openTitle} / ${Pe.openTitle}</h1>
+      <p>${esc(P.openBody)}</p>
+      <div class="drop" id="drop">${esc(P.dropHint)} / ${esc(Pe.dropHint)}</div>
+      <button class="btn primary" id="pick">${esc(P.openBtn)}</button>
+      <input type="file" id="file" accept="application/json" class="hidden">
+      <div id="loadErr"></div>
+    </div>`;
+  el("pick").onclick = () => el("file").click();
+  el("file").onchange = e => readFile(e.target.files[0]);
+  const drop = el("drop");
+  ["dragover","dragenter"].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault(); drop.classList.add("hover");}));
+  ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault(); drop.classList.remove("hover");}));
+  drop.addEventListener("drop", e => readFile(e.dataTransfer.files[0]));
+}
+
+function readFile(f){
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const data = JSON.parse(r.result);
+      if (!data.question_session_id || !Array.isArray(data.questions)) throw new Error("shape");
+      start(data);
+    } catch {
+      el("loadErr").innerHTML = `<div class="alert err">${esc(I18N.en.badFile)}<br>${esc(I18N.es.badFile)}</div>`;
+    }
+  };
+  r.readAsText(f);
+}
+
+function start(session){
+  S = session;
+  lang = (S.ui_language === "es") ? "es" : "en";
+  L = I18N[lang];
+  for (const q of S.questions){
+    answers[q.question_id] = answers[q.question_id] || {value:null, comment:"", overridden_default:false};
+    if (q.default_option != null && ["single_choice","confirm_or_override"].includes(q.type)){
+      answers[q.question_id].value = String(q.default_option);
+    }
+    if (q.type === "ordered_priority" && Array.isArray(q.options)){
+      answers[q.question_id].value = q.options.map(o => o.value);
+    }
+  }
+  render();
+}
+
+function setLang(code){ lang = code; L = I18N[code]; render(); }
+
+/* ---------- rendering ---------- */
+function render(){
+  const answersPath = S.answers_expected_at ||
+    `.canonflow/decision-sessions/answered/${S.question_session_id}.answers.json`;
+  const answersDir = answersPath.slice(0, answersPath.lastIndexOf("/") + 1) || ".canonflow/decision-sessions/answered/";
+  const answersName = `${S.question_session_id}.answers.json`;
+  const app = el("app");
+  app.innerHTML = `
+  <header class="session">
+    <div class="wrap">
+      <span class="brand">${esc(L.brand)}</span>
+      <span class="lang-switch">
+        <button class="${lang==="en"?"on":""}" onclick="setLang('en')">EN</button>
+        <button class="${lang==="es"?"on":""}" onclick="setLang('es')">ES</button>
+      </span>
+      <h1>${esc(S.title)}</h1>
+      <div class="meta-grid">
+        <div><div class="k">${esc(L.meta.id)}</div><div class="v mono">${esc(S.question_session_id)}</div></div>
+        <div><div class="k">${esc(L.meta.date)}</div><div class="v">${esc(S.generated_at)}</div></div>
+        <div><div class="k">${esc(L.meta.state)}</div><div class="v"><span class="chip state">${esc(S.state)}</span></div></div>
+        <div><div class="k">${esc(L.meta.loop)}</div><div class="v">${esc(L.loops[S.affected_loop] || S.affected_loop)}</div></div>
+        <div><div class="k">${esc(L.meta.tier)}</div><div class="v">${tierChip(S.risk_tier)}</div></div>
+      </div>
+    </div>
+  </header>
+  <div class="layout">
+    <aside class="rail" aria-label="progress">
+      <div class="eyebrow">${esc(L.sections[4])}</div>
+      <div class="prog-num" id="progNum"></div>
+      <div class="bar"><i id="progBar"></i></div>
+      <div class="dots" id="dots"></div>
+      <nav>${L.sections.map((t,i)=>`<a href="#sec${i+1}">${i+1}. ${esc(t)}</a>`).join("")}</nav>
+    </aside>
+    <main>
+      <section class="block" id="sec1">
+        <h2><span class="num">1</span>${esc(L.sections[0])}</h2>
+        <p>${esc(L.ctxIntro)}</p>
+        ${S.initial_instructions ? `<p>${esc(S.initial_instructions)}</p>` : ""}
+      </section>
+      <section class="block" id="sec2">
+        <h2><span class="num">2</span>${esc(L.sections[1])}</h2>
+        <p><strong>${esc(L.meta.reason)}:</strong> ${esc(S.intervention_reason)}</p>
+        <p><strong>${esc(L.meta.impact)}:</strong> ${esc(S.decision_impact)}</p>
+      </section>
+      <section class="block" id="sec3">
+        <h2><span class="num">3</span>${esc(L.sections[2])}</h2>
+        <p>${esc(L.recIntro)}</p>
+        ${recommendedList()}
+      </section>
+      <section class="block" id="sec4">
+        <h2><span class="num">4</span>${esc(L.sections[3])}</h2>
+        <p>${esc(L.riskIntro)} ${tierChip(S.risk_tier)}</p>
+        <p>${esc(S.decision_impact)}</p>
+        <p class="default-note">${esc(L.perQuestion)}</p>
+      </section>
+      <section class="block" id="sec5">
+        <h2><span class="num">5</span>${esc(L.sections[4])}</h2>
+        ${questionsByTopic()}
+      </section>
+      <section class="block" id="sec6">
+        <h2><span class="num">6</span>${esc(L.sections[5])}</h2>
+        <button class="btn ghost" onclick="renderSummary()">${esc(L.review)}</button>
+        <div id="summary"></div>
+      </section>
+      <section class="block" id="sec7">
+        <h2><span class="num">7</span>${esc(L.sections[6])}</h2>
+        <p>${esc(L.exportIntro)}</p>
+        <div class="name-wrap">
+          <label for="who">${esc(L.yourName)}</label>
+          <input type="text" id="who" value="${esc(answers.__who || "")}"
+            oninput="answers.__who=this.value">
+        </div>
+        <div id="valMsg"></div>
+        <button class="btn primary" onclick="doExport(false)">${esc(L.exportBtn)}</button>
+        <button class="btn ghost" id="fsBtn" onclick="doExport(true)">${esc(L.exportFs)}</button>
+      </section>
+      <section class="block" id="sec8">
+        <h2><span class="num">8</span>${esc(L.sections[7])}</h2>
+        <ol class="steps">
+          <li><div>${esc(L.steps[0])}</div></li>
+          <li><div>${esc(L.steps[1])}<div class="path-box mono">${esc(answersName)}</div></div></li>
+          <li><div>${esc(L.steps[2])}<div class="path-box mono">${esc(answersDir)}</div></div></li>
+          <li><div>${esc(L.steps[3])}<div class="path-box mono">${esc(L.answersReady)} ${esc(answersName)}</div></div></li>
+        </ol>
+      </section>
+    </main>
+  </div>`;
+  if (!("showSaveFilePicker" in window)) el("fsBtn").classList.add("hidden");
+  renderDots(); renderSummary(); updateProgress();
+}
+
+function recommendedList(){
+  const recs = S.questions
+    .filter(q => q.recommended_option != null && Array.isArray(q.options))
+    .map(q => {
+      const o = q.options.find(o => String(o.value) === String(q.recommended_option));
+      return o ? `<li><strong>${esc(q.title)}:</strong> ${esc(o.label)}` +
+        (o.recommended_when ? ` <span class="default-note">(${esc(L.recommendedWhen.toLowerCase())}: ${esc(o.recommended_when)})</span>` : "") + `</li>` : "";
+    }).filter(Boolean);
+  return recs.length ? `<ul>${recs.join("")}</ul>` : `<p class="default-note">${esc(L.recNone)}</p>`;
+}
+
+function questionsByTopic(){
+  const topics = Array.isArray(S.topics) && S.topics.length ? S.topics : [{topic_id:"__all", title:""}];
+  return topics.map(t => {
+    const qs = S.questions.filter(q => (q.topic_id || "__all") === t.topic_id);
+    if (!qs.length) return "";
+    return (t.title ? `<div class="eyebrow" style="margin:16px 0 4px">${esc(t.title)}</div>` : "") +
+      qs.map(renderQuestion).join("");
+  }).join("");
+}
+
+function guideTable(o){
+  const rows = [["recommendedWhen", o.recommended_when], ["impact", o.impact],
+                ["risk", o.risk], ["tradeoff", o.tradeoff]]
+    .filter(([,v]) => v)
+    .map(([k,v]) => `<tr><td class="k">${esc(L[k])}</td><td>${esc(v)}</td></tr>`).join("");
+  return rows ? `<table class="guide">${rows}</table>` : "";
+}
+
+function optionCard(q, o, inputType, checked){
+  const rec = o.is_recommended || String(q.recommended_option ?? "") === String(o.value);
+  return `<label class="opt ${checked ? "selected" : ""}">
+    <input type="${inputType}" name="${esc(q.question_id)}" value="${esc(o.value)}"
+      ${checked ? "checked" : ""} onchange="onChoice('${esc(q.question_id)}','${esc(o.value)}','${inputType}',this.checked)">
+    <span class="lbl">${esc(o.label)}</span>${rec ? `<span class="badge-rec">${esc(L.recommended)}</span>` : ""}
+    ${o.description ? `<div class="desc">${esc(o.description)}</div>` : ""}
+    ${guideTable(o)}
+  </label>`;
+}
+
+function renderQuestion(q){
+  const a = answers[q.question_id];
+  const n = S.questions.indexOf(q) + 1;
+  let body = "";
+  const opts = Array.isArray(q.options) ? q.options : [];
+  switch (q.type){
+    case "single_choice":
+      body = opts.map(o => optionCard(q, o, "radio", String(a.value) === String(o.value))).join("");
+      break;
+    case "multi_choice":
+      body = opts.map(o => optionCard(q, o, "checkbox", Array.isArray(a.value) && a.value.includes(o.value))).join("");
+      break;
+    case "yes_no":
+      body = [{value:"yes",label:L.yes},{value:"no",label:L.no}]
+        .map(o => optionCard(q, o, "radio", a.value === o.value)).join("");
+      break;
+    case "approval":
+      body = (q.artifact_ref ? `<div class="artifact-ref"><strong>${esc(L.artifactRef)}:</strong> <span class="mono">${esc(q.artifact_ref)}</span></div>` : "") +
+        [{value:"approve",label:L.approve},{value:"reject",label:L.reject},{value:"defer",label:L.defer}]
+        .map(o => optionCard(q, o, "radio", a.value === o.value)).join("");
+      break;
+    case "risk_acceptance": {
+      const v = a.value || {};
+      body = [{value:"accept",label:L.riskAccept},{value:"decline",label:L.riskDecline}]
+        .map(o => optionCard(q, o, "radio", v.accepted === (o.value === "accept") && v.accepted !== undefined)).join("") +
+        `<div class="comment-wrap"><label>${esc(L.expiry)}</label>
+           <input type="date" value="${esc(v.expiry || "")}" onchange="onRisk('${esc(q.question_id)}','expiry',this.value)"></div>
+         <div class="comment-wrap"><label>${esc(L.justification)}</label>
+           <textarea onchange="onRisk('${esc(q.question_id)}','justification',this.value)">${esc(v.justification || "")}</textarea></div>`;
+      break;
+    }
+    case "ordered_priority": {
+      const order = Array.isArray(a.value) ? a.value : opts.map(o => o.value);
+      body = `<ol class="order-list">` + order.map((val, i) => {
+        const o = opts.find(x => String(x.value) === String(val)) || {label: val};
+        return `<li><span class="rank">${i+1}</span><span class="grow"><span class="lbl">${esc(o.label)}</span>
+          ${o.description ? `<div class="desc" style="margin-left:0">${esc(o.description)}</div>` : ""}</span>
+          <button type="button" aria-label="${esc(L.moveUp)}" onclick="moveOrder('${esc(q.question_id)}',${i},-1)">↑</button>
+          <button type="button" aria-label="${esc(L.moveDown)}" onclick="moveOrder('${esc(q.question_id)}',${i},1)">↓</button></li>`;
+      }).join("") + `</ol>`;
+      break;
+    }
+    case "free_text":
+      body = `<textarea placeholder="${esc(L.freeTextPh)}"
+        onchange="onFree('${esc(q.question_id)}',this.value)">${esc(a.value || "")}</textarea>`;
+      break;
+    case "confirm_or_override": {
+      const def = opts.find(o => String(o.value) === String(q.default_option));
+      body = (def ? `<div class="default-note"><strong>${esc(L.defaultIs)}</strong> ${esc(def.label)}</div>` : "") +
+        opts.map(o => optionCard(q, o, "radio", String(a.value) === String(o.value))).join("");
+      break;
+    }
+    default:
+      body = `<div class="alert err">Unsupported question type: ${esc(q.type)}</div>`;
+  }
+  const needsComment = q.requires_comment ||
+    (q.type === "approval" && a.value === "reject");
+  const commentBlock = (q.requires_comment || q.type === "approval") ?
+    `<div class="comment-wrap"><label>${esc(needsComment ? L.commentRequired : L.comment)}</label>
+       <textarea onchange="onComment('${esc(q.question_id)}',this.value)">${esc(a.comment || "")}</textarea></div>` : "";
+  return `<div class="qcard" id="q_${esc(q.question_id)}" data-qid="${esc(q.question_id)}">
+    <h3><span class="qid mono">${n}.</span> ${esc(q.title)}</h3>
+    <div class="qmeta">
+      ${tierChip(q.risk_tier ?? S.risk_tier)}
+      <span class="chip loop">${esc(L.loops[q.affected_loop || S.affected_loop] || "")}</span>
+      <span class="chip ${q.required ? "reqd" : "state"}">${q.required ? esc(L.qRequired) : esc(L.qOptional)}</span>
+    </div>
+    ${q.short_description ? `<p class="short">${esc(q.short_description)}</p>` : ""}
+    ${q.full_explanation ? `<details><summary>${esc(L.fullExplanation)}</summary><p>${esc(q.full_explanation)}</p></details>` : ""}
+    ${q.why_this_matters ? `<div class="why"><strong>${esc(L.why)}:</strong> ${esc(q.why_this_matters)}</div>` : ""}
+    ${body}
+    ${commentBlock}
+  </div>`;
+}
+
+/* ---------- answer handlers ---------- */
+function refreshCard(qid){
+  const q = S.questions.find(x => x.question_id === qid);
+  const card = el("q_" + qid);
+  if (q && card){ card.outerHTML = renderQuestion(q); }
+  renderDots(); updateProgress(); renderSummary();
+}
+function onChoice(qid, value, inputType, checked){
+  const q = S.questions.find(x => x.question_id === qid);
+  const a = answers[qid];
+  if (q.type === "risk_acceptance"){
+    a.value = Object.assign({}, a.value, {accepted: value === "accept"});
+  } else if (inputType === "checkbox"){
+    const cur = new Set(Array.isArray(a.value) ? a.value : []);
+    checked ? cur.add(value) : cur.delete(value);
+    a.value = [...cur];
+  } else {
+    a.value = value;
+    if (q.default_option != null) a.overridden_default = String(value) !== String(q.default_option);
+  }
+  refreshCard(qid);
+}
+function onRisk(qid, field, value){
+  answers[qid].value = Object.assign({}, answers[qid].value, {[field]: value});
+  updateProgress(); renderSummary();
+}
+function onFree(qid, value){ answers[qid].value = value; renderDots(); updateProgress(); renderSummary(); }
+function onComment(qid, value){ answers[qid].comment = value; updateProgress(); renderSummary(); }
+function moveOrder(qid, i, dir){
+  const arr = answers[qid].value.slice();
+  const j = i + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  answers[qid].value = arr;
+  refreshCard(qid);
+}
+
+/* ---------- validation / progress / summary ---------- */
+function isAnswered(q){
+  const a = answers[q.question_id];
+  if (!a) return false;
+  const v = a.value;
+  switch (q.type){
+    case "multi_choice": return Array.isArray(v) && v.length > 0;
+    case "ordered_priority": return Array.isArray(v) && v.length > 0;
+    case "free_text": return typeof v === "string" && v.trim() !== "";
+    case "risk_acceptance":
+      return v && v.accepted !== undefined &&
+        (!v.accepted || (v.expiry && (v.justification || "").trim() !== ""));
+    case "approval":
+      return v != null && (v !== "reject" || (a.comment || "").trim() !== "");
+    default: return v != null && v !== "";
+  }
+}
+function isComplete(q){
+  const a = answers[q.question_id];
+  if (!isAnswered(q)) return false;
+  if (q.requires_comment && (a.comment || "").trim() === "") return false;
+  return true;
+}
+function firstInvalid(){
+  return S.questions.find(q => q.required && !isComplete(q)) || null;
+}
+function updateProgress(){
+  const req = S.questions.filter(q => q.required);
+  const done = req.filter(isComplete).length;
+  const all = S.questions.filter(isComplete).length;
+  el("progNum").textContent = `${done} ${L.of} ${req.length}`;
+  el("progBar").style.width = req.length ? `${(done / req.length) * 100}%` : "100%";
+  el("progNum").title = `${all} ${L.progress} (${done}/${req.length} ${L.required})`;
+}
+function renderDots(){
+  el("dots").innerHTML = S.questions.map((q, i) =>
+    `<button type="button" class="${isComplete(q) ? "done" : ""} ${q.required ? "req" : ""}"
+       title="${esc(q.title)}" onclick="document.getElementById('q_${esc(q.question_id)}').scrollIntoView()">${i+1}</button>`
+  ).join("");
+}
+function answerLabel(q){
+  const a = answers[q.question_id];
+  if (!isAnswered(q)) return null;
+  const v = a.value;
+  const lbl = val => {
+    const o = (q.options || []).find(x => String(x.value) === String(val));
+    return o ? o.label : String(val);
+  };
+  switch (q.type){
+    case "multi_choice": return v.map(lbl).join("; ");
+    case "ordered_priority": return v.map((x, i) => `${i+1}) ${lbl(x)}`).join("  ");
+    case "risk_acceptance":
+      return v.accepted ? `${L.riskAccept} — ${L.expiry.split(" (")[0]}: ${v.expiry}` : L.riskDecline;
+    case "yes_no": return v === "yes" ? L.yes : L.no;
+    case "approval": return {approve:L.approve, reject:L.reject, defer:L.defer}[v] || v;
+    default: return lbl(v);
+  }
+}
+function renderSummary(){
+  const rows = S.questions.map(q => {
+    const label = answerLabel(q);
+    const a = answers[q.question_id];
+    return `<tr>
+      <td>${esc(q.title)}${q.required ? " *" : ""}</td>
+      <td>${label != null ? esc(label) : `<span class="missing">${esc(L.notAnswered)}</span>`}</td>
+      <td>${esc(a.comment || "")}</td></tr>`;
+  }).join("");
+  el("summary").innerHTML = `<table class="summary-table">
+    <thead><tr><th>${esc(L.summaryQ)}</th><th>${esc(L.summaryA)}</th><th>${esc(L.summaryC)}</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+/* ---------- export (Mode 1 download; Mode 2 File System Access API) ---------- */
+function buildAnswersJson(){
+  const num = (S.question_session_id.match(/\d+/) || ["0000"])[0];
+  return {
+    answer_session_id: "ANS-" + num,
+    question_session_id: S.question_session_id,
+    answered_by: answers.__who || "",
+    answered_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+    ui_language: lang,
+    answers: S.questions.filter(isAnswered).map(q => ({
+      question_id: q.question_id,
+      value: answers[q.question_id].value,
+      comment: answers[q.question_id].comment || "",
+      overridden_default: !!answers[q.question_id].overridden_default
+    }))
+  };
+}
+async function doExport(useFs){
+  document.querySelectorAll(".qcard.invalid").forEach(c => c.classList.remove("invalid"));
+  const bad = firstInvalid();
+  if (bad){
+    el("valMsg").innerHTML = `<div class="alert err">${esc(L.validationFail)}</div>`;
+    const card = el("q_" + bad.question_id);
+    card.classList.add("invalid");
+    card.scrollIntoView();
+    return;
+  }
+  const name = `${S.question_session_id}.answers.json`;
+  const text = JSON.stringify(buildAnswersJson(), null, 2) + "\n";
+  if (useFs && "showSaveFilePicker" in window){
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: name,
+        types: [{description: "JSON", accept: {"application/json": [".json"]}}]
+      });
+      const w = await handle.createWritable();
+      await w.write(text); await w.close();
+    } catch (e){ if (e && e.name === "AbortError") return; }
+  } else {
+    const blob = new Blob([text], {type: "application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  el("valMsg").innerHTML = `<div class="alert ok">${esc(L.exported)}</div>`;
+  el("sec8").scrollIntoView();
+}
+
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+# Skill card (method/21). Validate: schemas/skill-card.schema.yaml
+schema: skill-card/v1
+skill_id: canonflow-orchestrator-reviewer
+name: Orchestrator-Reviewer (independent operating governor)
+version: 0.1.0
+state: REVIEW_CANDIDATE
+role_class: operating
+purpose: >-
+  Formalizes the external manual operator/orchestrator/independent-auditor
+  role: resolves operational state from repository pointers, verifies
+  correlation of every report, independently reviews runs it did not execute,
+  determines scoped verdicts, publishes the next bounded task or remediation,
+  and routes every ambiguity or material decision to the Human Decision
+  Console. Keeps the repository — never a conversation — as the operating
+  source of truth.
+prompt: prompts/16-skill-orchestrator-reviewer.md
+run_modes: []
+when_to_use:
+  - skill-state.latest_report shows a report in state REPORTED with no review (registry has no audited_by)
+  - "chatless cycle start: next_task is empty and no decision session is PENDING"
+  - a report or state pointer looks inconsistent and needs correlation checking
+  - an audited run requires the next task or a bounded remediation to be published
+  - contradiction, ambiguity or a business/architecture choice needs a structured human decision
+required_inputs:
+  - .canonflow/state/method-state.yaml
+  - .canonflow/skill-state/skill-state.yaml
+  - .canonflow/skill-runs/index.yaml
+  - .canonflow/decision-state/latest.json
+  - the one report under review + its run record + task/contract pointers (when reviewing)
+required_outputs:
+  - own RUN-xxxx.skill-run.yaml and RUN-xxxx.skill-report.yaml (immutable)
+  - registry + skill-state pointer updates (work branch only)
+  - when reviewing, verdict + findings on the subject run recorded in the report
+  - when publishing, next task / remediation assignment + updated next_task pointer
+  - QS-xxxx session when a human decision is required
+authority:
+  - review and issue scoped verdicts on runs and reports produced by other executors
+  - record FND findings against reviewed runs, including under-tiering challenges
+  - publish the next bounded task derived from approved canons, approved plans, audited findings or decision records
+  - publish bounded remediation tasks covering only cited blocking/major findings
+  - delegate deep audits to canonflow-evidence-auditor (mandatory for Tier >= 2 subjects)
+  - generate Decision Console sessions and consume resulting DEC/APR/RSK records
+  - update skill-state pointers and the run registry on the work branch
+authority_limits:
+  - verdicts bind only the reviewed run scope; they are never canon, release, readiness or project-health statements
+  - published tasks may not introduce scope absent from approved canons/plans; missing scope goes to G-PLAN or the HDC, not into a task
+  - remediation tasks may only reference the FND ids that motivated them
+  - registry/pointer writes happen only on work branches; main advances only by human merge
+  - may verify that APR records exist for human gates; may never produce or infer them
+prohibitions:
+  - never executes implementation, canon writing or recovery work itself
+  - never reviews or audits a run whose executor identity matches its own
+  - never accepts implementer self-report as audit evidence; claims are checked against files, diffs and evidence
+  - never issues a second review of an AUDITED run without a DEC-xxxx instructing it
+  - never declares freeze, release, staging pass, production ready or any readiness beyond run scope
+  - never promotes PROPOSED/INFERRED/ASSUMED content into obligations; only humans decide
+  - never treats chat content, raw sources or its own assumptions as canon or as state
+hard_stops:
+  - "correlation failure: task_id, task_commit, run_id, report path or registry entry do not match -> BLOCKED"
+  - subject run already has audited_by set -> BLOCKED (double audit needs DEC-xxxx)
+  - subject run executor equals this run's executor -> BLOCKED (self-review)
+  - state pointers contradict artifacts on disk -> BLOCKED + delegate to canonflow-state-manager + QS if material
+  - own G-REPO pre-flight fails (wrong repo/branch, dirty tree) -> stop before any write
+reads:
+  - every .canonflow/ state file, registry, report, run record, task, contract, audit, decision record and evidence file
+  - repository commits, diffs and file trees at pinned SHAs
+  - approved canons and their indices (read-only)
+  - skills/*.skill-card.yaml (authority reference)
+writes:
+  - .canonflow/skill-runs/RUN-xxxx.skill-run.yaml (own run)
+  - .canonflow/skill-runs/RUN-xxxx.skill-report.yaml (own report)
+  - .canonflow/skill-runs/index.yaml (registry entries and states)
+  - .canonflow/skill-state/skill-state.yaml (latest_report, next_task pointers)
+  - .canonflow/decision-sessions/pending/ (QS sessions)
+  - .canonflow/traceability/links.yaml (AUDITS/BLOCKS links for its reviews)
+state_interaction:
+  - resolves position exclusively from method-state, skill-state, registry and decision-state pointers (method/21 section 4 order)
+  - updates skill-state.next_task and latest_report after publishing; registry states via the legal chain PUBLISHED->CLAIMED->REPORTED->AUDITED
+  - increment states advance only through scripts/update_state.py legal transitions; human-owned transitions are requested via QS, never performed
+decision_console_interaction:
+  - generates a QS session for every contradiction, governance ambiguity, tier exception or business/architecture decision detected
+  - consumes DEC/APR/RSK records as the only valid human inputs; loose chat answers are not decisions
+  - never answers, ingests or archives its own sessions (ingestion belongs to canonflow-human-decision-console)
+skill_interactions:
+  - {skill: canonflow-evidence-auditor, relation: DELEGATES_TO, detail: deep evidence/claims audit for Tier >= 2 subjects; consumes its SRP verdict}
+  - {skill: canonflow-repo-worktree-auditor, relation: DELEGATES_TO, detail: G-REPO pre-flight of its own run and of published assignments}
+  - {skill: canonflow-state-manager, relation: DELEGATES_TO, detail: state integrity repair when pointers contradict artifacts}
+  - {skill: canonflow-human-decision-console, relation: ESCALATES_TO, detail: structured human decisions; standard pointer message then stop}
+  - {skill: canonflow-implementation-planner, relation: CONSUMES_OUTPUT_OF, detail: approved increment contracts feed published tasks}
+  - {skill: canonflow-drift-recovery, relation: PRODUCES_INPUT_FOR, detail: drift suspicions found during review become DR triggers}
+  - {skill: canonflow-release-governor, relation: PRODUCES_INPUT_FOR, detail: audited increment set feeds release-scope verification}
+  - {skill: canonflow-functional-canon, relation: AUDITS_RUNS_OF}
+  - {skill: canonflow-technical-canon, relation: AUDITS_RUNS_OF}
+  - {skill: canonflow-drift-recovery, relation: AUDITS_RUNS_OF}
+required_evidence:
+  - correlation check output (ids, paths, SHAs compared) saved as an evidence file and cited
+  - registry lookup proving the subject run was not previously audited and executor differs
+  - "for every VERIFIED claim and every finding: the exact file, diff, commit or evidence path checked"
+  - "for published tasks: the approved plan/canon/decision pointer the task derives from"
+verdict_criteria:
+  PASS:
+    - correlation verified end to end (task_id, task_commit, run_id, report path, registry)
+    - every VERIFIED claim in the subject report is backed by evidence the reviewer checked independently
+    - subject stayed inside its card authority and task scope; no blocking or major findings
+  PASS_WITH_LIMITATIONS:
+    - PASS conditions except minor/note findings or explicitly enumerated limitations
+    - every limitation is recorded as an OPEN/ASSUMED/RISK claim with owner or RSK/TR reference
+  REMEDIATION_REQUIRED:
+    - blocking or major findings exist and each is covered by a published bounded remediation task
+    - subject increment (if any) routed AUDIT_BLOCKED -> REMEDIATION via legal transition request
+  BLOCKED:
+    - correlation failure, self-review or double-audit condition, missing authority, or a contradiction only a human can resolve
+    - QS session generated when the blocker is human-shaped; blockers listed in the report
+allowed_claims:
+  - VERIFIED facts about artifacts, correlation, registry state and evidence it checked itself (evidence pointers mandatory)
+  - INFERRED/ASSUMED observations, explicitly flagged, never resolving material uncertainty
+  - RISK claims referencing or proposing TR/RSK records
+  - PROPOSED next steps, remediations and reconciliations awaiting human decision
+  - OPEN unknowns with blocking flag; CONFLICTED for contradictions it detected
+prohibited_claims:
+  - any readiness, release, staging, freeze or production statement at any scope
+  - DECIDED claims (only human decision records carry DECIDED)
+  - canon obligations or reinterpretations of canon content
+  - generalizing a run PASS to increment set, project or release health
+  - restating implementer claims as VERIFIED without independent checking
+examples:
+  - title: Review a reported implementation run and publish the next task
+    given: >-
+      skill-state.latest_report = SRP-0007 (RUN-0007, canonflow reference:
+      implementation of TASK-0012 at commit abc1234), registry entry REPORTED,
+      no audited_by, no pending decision session.
+    run: >-
+      G-REPO pre-flight; create RUN-0008 (subject_ref RUN-0007); verify
+      task_id/task_commit/report path against registry and git; check the
+      report's VERIFIED claims against diff and evidence files; delegate deep
+      audit to canonflow-evidence-auditor (Tier 2); merge its findings;
+      verdict PASS; set registry RUN-0007 audited_by=RUN-0008; publish
+      TASK-0013 from the approved plan; update skill-state.next_task.
+    expected_outcome: >-
+      SRP-0008 verdict PASS scoped to RUN-0007; registry updated; next_task ->
+      TASK-0013; no readiness claim anywhere.
+  - title: Detect correlation failure in a report
+    given: >-
+      SRP-0009 claims TASK-0014 at commit deadbee but the registry and git
+      show the task was published at commit f00dfac.
+    run: >-
+      Record the mismatch as evidence; verdict BLOCKED (no review of content);
+      claim CONFLICTED with both SHAs; generate QS-0015 asking the human how
+      to proceed; stop with the standard pointer message.
+    expected_outcome: >-
+      SRP-0010 verdict BLOCKED, blockers listed, QS-0015 PENDING in
+      decision-state; no next task published.

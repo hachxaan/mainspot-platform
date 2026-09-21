@@ -1,0 +1,219 @@
+# Skill card (method/21). Validate: schemas/skill-card.schema.yaml
+schema: skill-card/v1
+skill_id: canonflow-human-decision-console
+name: Human Decision Console (session generation + answer ingestion)
+version: 0.1.0
+state: REVIEW_CANDIDATE
+role_class: operating
+purpose: >-
+  Formalizes the full Human Decision Console circuit (method/15): whenever a
+  flow or skill needs human intervention it generates a structured question
+  session (questions JSON + guided HTML) instead of loose chat questions,
+  hands the human the exact pointer and stops; when the human-authored
+  answers file appears it validates the answers, converts them into immutable
+  DEC/APR/RSK records with human ownership and timestamp, updates decision
+  state, archives the session and resumes the blocked flow from pointers.
+  It is the only skill that ingests answers, and it never produces, infers
+  or completes any answer itself.
+prompt: prompts/18-skill-human-decision-console.md
+run_modes:
+  - mode: generate
+    description: >-
+      Detect the need for human intervention (gap closure, confirmation,
+      approval, choice between alternatives, risk acceptance, unblock),
+      allocate the next QS id from decision-state counters, write
+      QS-xxxx.questions.json with self-contained guidance, render
+      QS-xxxx.html via scripts/render_question_session.py, update
+      decision-state index.json + latest.json, emit the standard method/15
+      pointer message and stop.
+    separation_rule: >-
+      Any session may run both modes, but no session ever answers questions
+      — its own or another skill's. Answers enter the system only as the
+      human-authored QS-xxxx.answers.json.
+  - mode: ingest
+    description: >-
+      Triggered without conversation by the presence of the answers file in
+      decision-sessions/answered/ (non-conversational trigger documented in
+      method/21 section 4; the chat message "Answers ready" remains a valid
+      fallback). Validate against answer-session.schema.yaml, verify
+      question_session_id and required questions, convert answers into
+      DEC/APR/RSK records (owner is the answering human, timestamped),
+      update the affected state files, archive the session and resume the
+      blocked flow by publishing the next pointer.
+    separation_rule: >-
+      Ingestion consumes only the human-authored answers file. A run that
+      generated a session may later ingest its answers, but may never write,
+      default, infer or complete any answer value.
+when_to_use:
+  - any flow or skill needs a structured human decision (gap closure, confirmation, approval, choice between alternatives, risk acceptance, unblock)
+  - another skill escalates a human-shaped blocker and a QS session must exist before that run stops
+  - "chatless cycle step 2 (method/21 section 4): decision-sessions/answered/ contains an answers file not yet ingested"
+  - "the human sends the conversational fallback trigger, e.g. Answers ready: QS-0007.answers.json"
+  - an answered session must become DEC/APR/RSK records so a blocked transition can be requested and the flow resumed
+required_inputs:
+  - .canonflow/state/method-state.yaml
+  - .canonflow/decision-state/index.json + .canonflow/decision-state/latest.json
+  - "generate mode: the blocking-context pointers the questions derive from (skill report, FND finding, gate id, contract, RC file)"
+  - "ingest mode: decision-sessions/answered/QS-xxxx.answers.json + the matching QS-xxxx.questions.json from pending/"
+  - schemas/question-session.schema.yaml, schemas/answer-session.schema.yaml, schemas/decision-record.schema.yaml
+required_outputs:
+  - own RUN-xxxx.skill-run.yaml and RUN-xxxx.skill-report.yaml (immutable)
+  - "generate mode: QS-xxxx.questions.json + QS-xxxx.html in decision-sessions/pending/, updated index.json + latest.json, the standard method/15 pointer message"
+  - "ingest mode: DEC/APR/RSK records (.md + .json) with human owner and timestamp, session moved to archived/, updated decision-state and affected state files, next pointer published"
+  - traceability links QS-xxxx -> ANS-xxxx -> DEC/APR/RSK appended to .canonflow/traceability/links.yaml
+  - "on any validation failure: a corrective message naming the exact failing field or question_id — never silent acceptance"
+authority:
+  - generate QS sessions (questions JSON + rendered HTML) for any blocked flow or escalating skill, with full per-question guidance and honest recommended options
+  - allocate QS ids from decision-state/index.json counters
+  - render session HTML via scripts/render_question_session.py; build it inline only when the script is unavailable (documented limitation)
+  - update decision-state index.json and latest.json and mirror the pending session in method-state pending_human (work branch only)
+  - validate answers files and convert each material validated answer into exactly one DEC/APR/RSK record with the answering human as owner
+  - transition session states along the legal chain PENDING -> ANSWERED -> INGESTED -> ARCHIVED and move ingested sessions to archived/
+  - resume the blocked flow after ingestion by publishing the pointer to the new records and requesting the unblocked transitions
+  - append QS -> ANS -> DEC/APR/RSK traceability links (DECIDED_BY, SUPERSEDES where applicable)
+authority_limits:
+  - questions may propose and recommend; only the human answer decides — recommended_option and default_option never substitute an answer
+  - decision records are produced only from a validated answers file (or a documented chat fallback when the environment cannot generate files); the owner is always the answering human, never the skill or a model
+  - session, record and state writes happen only on work branches; main advances only by human merge
+  - resuming a blocked flow means pointing it at the new records; deriving or publishing next tasks stays with canonflow-orchestrator-reviewer
+  - may request state transitions unblocked by new records via scripts/update_state.py; human-owned transitions (APPROVED, MERGED, DEPLOYED, release states) are only evidenced by APR records, never performed
+  - verdicts bind only the generation or ingestion run scope, never the substantive quality of the human decision itself
+prohibitions:
+  - never answers, defaults, infers or completes any question in any session — its own or another skill's; answers come only from the human answers JSON
+  - never degrades questions to informal chat when the environment can generate files; chat fallback requires the file-generation impossibility to be documented in the report
+  - never silently accepts an invalid answers file; every failure produces a corrective message naming the exact failing field or question_id
+  - never edits a published pending QS session; corrections are a new session that SUPERSEDES the old one
+  - never marks a session INGESTED or ARCHIVED before all records are written and validated
+  - never reinterprets, softens or expands an answer while converting it; the record carries the verbatim value and comment
+  - never ingests the same session twice; re-ingestion of an INGESTED/ARCHIVED session requires a DEC-xxxx instructing it
+  - never treats an APR record it wrote as its own approval act; the skill transcribes, the human approves
+hard_stops:
+  - answers file question_session_id differs from the expected session -> BLOCKED, corrective message with both ids, no record written
+  - one or more required questions unanswered, or requires_comment unmet -> BLOCKED with the exact question_id list
+  - risk_acceptance answer without expiry -> invalid answer, no RSK record, BLOCKED naming the exact field (RSK without expiry never enters the system)
+  - answers file fails answer-session.schema.yaml validation -> BLOCKED naming the exact failing field
+  - target session already INGESTED or ARCHIVED -> BLOCKED (double ingestion needs DEC-xxxx)
+  - decision-state pointers contradict session files on disk -> BLOCKED + delegate to canonflow-state-manager + QS if material
+  - own G-REPO pre-flight fails (wrong repo/branch, dirty tree) -> stop before any write
+reads:
+  - .canonflow/decision-sessions/pending/, answered/ and archived/ (session files)
+  - .canonflow/decision-state/index.json + latest.json and .canonflow/decision-records/ (existing DEC/APR/RSK for contradiction checks)
+  - .canonflow/state/method-state.yaml and .canonflow/skill-state/skill-state.yaml (pointers only)
+  - the blocking artifacts the questions derive from (skill reports, findings, contracts, audits, RC files) so questions are self-contained
+  - schemas/question-session.schema.yaml, answer-session.schema.yaml, decision-record.schema.yaml, decision-state.schema.yaml
+  - templates/decision-console/ and the decision-console/ app assets
+writes:
+  - .canonflow/skill-runs/RUN-xxxx.skill-run.yaml (own run)
+  - .canonflow/skill-runs/RUN-xxxx.skill-report.yaml (own report)
+  - .canonflow/skill-runs/index.yaml (own registry entry states)
+  - .canonflow/decision-sessions/pending/ (QS-xxxx.questions.json + QS-xxxx.html)
+  - .canonflow/decision-sessions/archived/ (ingested sessions)
+  - .canonflow/decision-records/ (DEC/APR/RSK .md + .json)
+  - .canonflow/decision-state/index.json + latest.json
+  - .canonflow/state/method-state.yaml (pending_human mirror only, work branch)
+  - .canonflow/traceability/links.yaml (DECIDED_BY / SUPERSEDES links)
+state_interaction:
+  - resolves position from method-state, decision-state latest.json/index.json and the decision-sessions/answered/ scan, in the method/21 section 4 order
+  - updates decision-state index.json + latest.json and the method-state pending_human mirror on work branches only; main advances only by human merge
+  - session states follow PENDING -> ANSWERED -> INGESTED -> ARCHIVED verbatim (method/16 section 7); no skipped or repeated transitions
+  - increment and artifact transitions unblocked by new records are requested via scripts/update_state.py legal transitions only; human-owned transitions are requested via the records, never performed
+decision_console_interaction:
+  - is the console operator itself; every other skill's ESCALATES_TO lands here as a session-generation request
+  - generates sessions on behalf of blocked flows and consumes only the human-authored answers JSON; the DEC/APR/RSK records it writes are the only valid human inputs for the rest of the layer
+  - never answers, defaults or completes any question in any session, including sessions generated in the same run or conversation
+  - when ingestion meets contradiction or governance ambiguity (an answer conflicts with existing records or approved canon), it generates a follow-up QS session instead of resolving by inference
+skill_interactions:
+  - {skill: canonflow-repo-worktree-auditor, relation: DELEGATES_TO, detail: "G-REPO pre-flight of both modes before any session, record or state write"}
+  - {skill: canonflow-state-manager, relation: DELEGATES_TO, detail: "repair when decision-state pointers contradict session files on disk"}
+  - {skill: canonflow-orchestrator-reviewer, relation: CONSUMES_OUTPUT_OF, detail: "QS sessions other skills generated await ingestion here; their reports supply the blocking context for new sessions"}
+  - {skill: canonflow-orchestrator-reviewer, relation: PRODUCES_INPUT_FOR, detail: "ingested DEC/APR/RSK records unblock reviews and next-task publication"}
+  - {skill: canonflow-implementation-planner, relation: PRODUCES_INPUT_FOR, detail: "G-PLAN APR records back PLANNED -> PLAN_APPROVED transition requests"}
+  - {skill: canonflow-release-governor, relation: PRODUCES_INPUT_FOR, detail: "G-RC APR records back release-state transition requests"}
+  - {skill: canonflow-drift-recovery, relation: PRODUCES_INPUT_FOR, detail: "reconciliation DEC records enable RECONCILIATION_DECIDED per method/09 thresholds"}
+required_evidence:
+  - "generate mode: validator output for QS-xxxx.questions.json against question-session.schema.yaml plus the paths of the JSON, the HTML and the updated index.json/latest.json"
+  - "ingest mode: validator output for the answers file against answer-session.schema.yaml plus the question_session_id match and the required-question coverage check results"
+  - "for the non-conversational trigger: the observed answers-file path under decision-sessions/answered/"
+  - paths of every DEC/APR/RSK record written and of the archived session files
+  - the QS -> ANS -> DEC/APR/RSK traceability link entries appended for the session
+verdict_criteria:
+  PASS:
+    - "generate: questions JSON validates, HTML rendered via the script, index.json + latest.json updated, standard pointer message emitted, run stopped without producing any answer"
+    - "ingest: answers file validated, session id and all required questions verified, every material answer converted to exactly one DEC/APR/RSK record with human owner and timestamp, session ARCHIVED, state updated, next pointer published"
+  PASS_WITH_LIMITATIONS:
+    - PASS conditions met except explicitly enumerated limitations, each recorded as an OPEN/ASSUMED/RISK claim with owner or RSK/TR reference
+    - "typical limitations: HTML built inline because the render script was unavailable; chat fallback used with the file-generation impossibility documented; optional non-required questions left unanswered and logged as OPEN"
+  REMEDIATION_REQUIRED:
+    - decision-state, session files or existing records are corrupt or contradictory (index counters behind session files, records missing links, sessions in illegal states) and each defect is a cited FND finding
+    - the remediation is a bounded request covering only the cited FND ids, handed to canonflow-orchestrator-reviewer for task publication; nothing is repaired by improvisation
+  BLOCKED:
+    - session id mismatch, unanswered required questions, RSK without expiry, or schema validation failure — corrective message names the exact field, no record written
+    - double ingestion attempt, decision-state contradicting session files, missing authority for the requested act, or G-REPO failure
+    - when the blocker itself is human-shaped, a QS session is generated before stopping
+allowed_claims:
+  - VERIFIED facts about session files, validation results, records written and state updates it performed, with paths as evidence (evidence pointers mandatory)
+  - OPEN for pending sessions, unanswered optional questions and flows still awaiting human input
+  - PROPOSED for recommended options and drafted alternatives inside questions; proposals never become decisions without a human answer
+  - RISK claims referencing the RSK-xxxx records it transcribed (expiry mandatory) or proposing TR/RSK entries
+  - CONFLICTED when an answer contradicts existing DEC/APR/RSK records or approved canon; a follow-up QS session accompanies the claim
+  - DECIDED only as a citation of a DEC/APR/RSK record written from a human answer; the decision owner is the answering human, never this skill
+prohibited_claims:
+  - DECIDED claims about its own choices, or any DECIDED claim without a human-owned DEC/APR/RSK reference
+  - any readiness, release, staging, freeze or production statement at any scope
+  - treating a recommended_option, default_option or its own inference as an answer, an approval or a decision
+  - '"gate approved" without the corresponding APR record existing; the maximum claim is VERIFIED that APR-xxxx exists for the gate'
+  - claims about the substantive quality or correctness of the human decision; the verdict binds session mechanics only
+examples:
+  - title: Generate a G-RC approval session for a blocked release flow and stop
+    given: >-
+      SRP-0011 (RUN-0011, canonflow-release-governor) reports BLOCKED with a
+      human-shaped blocker: G-RC approval needed for RC-0002 at hash
+      3f9ac21. decision-state/latest.json shows no PENDING session.
+    run: >-
+      G-REPO pre-flight; create RUN-0012 (mode generate); allocate QS-0007
+      from index counters; write QS-0007.questions.json with one approval
+      question (exact artifact id + hash, what approval means, findings
+      summary pointer, options approve / reject-with-reason with
+      requires_comment true / defer); render QS-0007.html via
+      scripts/render_question_session.py; update index.json + latest.json
+      (session PENDING); emit the standard method/15 pointer message; stop.
+    expected_outcome: >-
+      SRP-0012 verdict PASS scoped to session generation; QS-0007 PENDING in
+      decision-state; pointer message delivered; no answer, approval or
+      record produced; release flow paused on the pointer.
+  - title: Ingest an answers file detected by file presence and resume the flow
+    given: >-
+      QS-0007.answers.json appears in decision-sessions/answered/ (file
+      presence is the trigger, method/21 section 4; no chat message).
+      QS-0007 is PENDING and its registry expects an approval answer for
+      RC-0002.
+    run: >-
+      G-REPO pre-flight; create RUN-0013 (mode ingest); validate the file
+      against answer-session.schema.yaml; verify question_session_id equals
+      QS-0007 and all required questions are answered; convert the approve
+      answer into APR-0009 (.md + .json, owner = answering human, timestamp
+      from answered_at); request the unblocked release transition via
+      scripts/update_state.py; append DECIDED_BY links QS-0007 -> ANS-0007 ->
+      APR-0009; mark the session INGESTED, move it to archived/; update
+      index.json + latest.json; publish the next pointer naming APR-0009 and
+      the resumable flow.
+    expected_outcome: >-
+      SRP-0013 verdict PASS scoped to ingestion of QS-0007; APR-0009 exists
+      and validates; session ARCHIVED; canonflow-release-governor can resume
+      from pointers alone; no readiness claim anywhere.
+  - title: Block on a mismatched answers file with a risk acceptance missing expiry
+    given: >-
+      decision-sessions/answered/QS-0008.answers.json declares
+      question_session_id QS-0006, and its risk_acceptance answer for
+      question q3 carries no expiry.
+    run: >-
+      Create RUN-0014 (mode ingest); schema validation runs; detect the
+      session id mismatch (expected QS-0008, file says QS-0006) and the
+      missing expiry on q3; write no record; verdict BLOCKED; emit the
+      corrective message naming both exact failures; record a CONFLICTED
+      claim for the id mismatch and an OPEN claim for the un-ingested
+      session; stop.
+    expected_outcome: >-
+      SRP-0014 verdict BLOCKED with both blockers listed; no DEC/APR/RSK
+      written; decision-state untouched; the human receives the exact failing
+      fields and must return a corrected answers file.

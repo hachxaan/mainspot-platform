@@ -1,0 +1,538 @@
+# Core Skill Registry fragment — Technical Canon capabilities (method/20).
+# Validate: schemas/skill-registry.schema.yaml. REVIEW_CANDIDATE (PROP-0006).
+# Capabilities are exercised by the canonflow-technical-canon operating role (method/21);
+# technical_review runs in its reviewer mode. Every capability DERIVES_FROM a pinned
+# FUNCTIONAL_CANON_APPROVED version (G-DER, no invented scope); nothing downstream redefines upstream.
+schema: skill-registry/v1
+registry_version: 0.2.0
+level: core
+category: technical_canon
+source_sha: 9f223113af19bb74d3288e06373df995512b4ae2
+coverage_notes: "Loop 2 technical-canon derivation (builder + independent reviewer) from a pinned APPROVED functional canon; reviewer ceiling is TECHNICAL_CANON_REVIEW_CANDIDATE. SUB-02 v2 additions (DEC-0043): does_not_cover, per-entry checksum, source_sha."
+does_not_cover:
+  - "functional requirement, acceptance-criteria or business-rule extraction (functional_canon, Loop 1)"
+  - "redefining or editing the upstream functional canon"
+  - "implementation or test execution (implementation loop)"
+  - "moving canon to APPROVED or granting G-TEC (human only)"
+  - "actual security testing, penetration testing or runtime security verification (it models security; it does not test it)"
+skills:
+  - schema: skill-definition/v1
+    skill_id: architecture_derivation
+    name: Architecture derivation
+    category: technical_canon
+    level: core
+    purpose: "Derive the architecture overview and component decomposition (CMP-xxxx) from approved functional items (G-DER)."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "a FUNCTIONAL_CANON_APPROVED version has in-scope items not yet derived into architecture"
+      - "a newly approved functional version requires affected architecture to be re-derived"
+    affected_loop: technical_canon_loop
+    risk_relevance: "T2-T4; architecture choices constrain every downstream increment"
+    inputs:
+      - "the pinned FUNCTIONAL_CANON_APPROVED index (sole obligation source)"
+      - ".canonflow/canon/technical/index.yaml"
+      - "DEC-xxxx constraint records cited by the task"
+    outputs:
+      - "architecture overview + CMP-xxxx items as a staging patch, each DERIVES_FROM an FR/BR/WF"
+    required_templates: [templates/technical-canon/architecture-overview.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER]
+    evidence_required:
+      - "each CMP DERIVES_FROM at least one approved functional item"
+      - "the pinned functional version + SHA recorded in the patch"
+    human_decision_triggers:
+      - "an architecture option requires human cost, platform or compliance authority"
+    token_profile:
+      reads: ["approved functional items in scope", "technical canon index"]
+      ignores: ["out-of-scope functional canon", "code", "runtime", "other loops"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["novel or distributed architecture", "Tier 3-4 exposure"]
+    failure_modes:
+      - "invented components with no functional derivation (fails G-DER)"
+      - "an architecture choice decided by inference instead of a PROPOSED ADR"
+    related_skills: [boundary_detection, adr_generation, technical_review]
+  - schema: skill-definition/v1
+    skill_id: boundary_detection
+    name: Boundary detection
+    category: technical_canon
+    level: core
+    purpose: "Detect module/service/context boundaries and responsibilities from the derived architecture, keeping domains separated."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "architecture items exist but component or context boundaries are not yet defined"
+      - "a security or data domain must be isolated from the rest of the system"
+    affected_loop: technical_canon_loop
+    risk_relevance: "T2-T4; wrong boundaries leak across security and data domains"
+    inputs:
+      - "derived CMP-xxxx items"
+      - "the pinned FUNCTIONAL_CANON_APPROVED index"
+      - "DEC-xxxx constraint records"
+    outputs:
+      - "boundary and responsibility assignments recorded on CMP items in the staging patch"
+    required_templates: [templates/technical-canon/architecture-overview.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER, G-CON]
+    evidence_required:
+      - "each boundary traces to the functional items it serves"
+      - "no responsibility spans two conflicting domains"
+    human_decision_triggers:
+      - "a boundary split encodes an organizational or compliance decision"
+    token_profile:
+      reads: ["architecture items in scope", "technical canon index"]
+      ignores: ["code", "runtime", "unrelated components"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["many interacting bounded contexts", "Tier 3-4 trust boundaries"]
+    failure_modes:
+      - "boundaries that leak security or data domains"
+      - "overlapping responsibilities causing later contradictions (fails G-CON)"
+    related_skills: [architecture_derivation, security_modeling, integration_contract_design]
+  - schema: skill-definition/v1
+    skill_id: adr_generation
+    name: ADR generation
+    category: technical_canon
+    level: core
+    purpose: "Record material technical decisions as ADR-xxxx (PROPOSED) with options, impact, risk and tradeoff, each derivation-linked."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "a material technical choice is made during derivation and has no ADR"
+      - "an approval-critical decision must be surfaced before G-TEC"
+    affected_loop: technical_canon_loop
+    risk_relevance: "T2-T4; approval-critical decisions surface here"
+    inputs:
+      - "the technical item the decision governs"
+      - "the pinned FUNCTIONAL_CANON_APPROVED index"
+      - "DEC-xxxx constraint records"
+    outputs:
+      - "ADR-xxxx records in PROPOSED (options, impact, risk, tradeoff) linked to the items they govern"
+    required_templates: [templates/technical-canon/adr.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER]
+    evidence_required:
+      - "each ADR lists real options with impact, risk and tradeoff"
+      - "each ADR DERIVES_FROM the functional item(s) it serves"
+    human_decision_triggers:
+      - "promotion of an approval-critical ADR from PROPOSED to DECIDED (human only)"
+      - "a decision requires human cost, compliance or platform authority"
+    token_profile:
+      reads: ["the governed technical item", "related ADRs"]
+      ignores: ["unrelated canon", "code", "runtime"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["irreversible or high-blast-radius decisions"]
+    failure_modes:
+      - "a decision recorded as fact instead of a PROPOSED ADR"
+      - "single-option ADR with no real tradeoff"
+    related_skills: [architecture_derivation, security_modeling, technical_review]
+  - schema: skill-definition/v1
+    skill_id: api_contract_design
+    name: API contract design
+    category: technical_canon
+    level: core
+    purpose: "Design API contracts (API-xxxx) — endpoints, schemas, versioning, errors — derived from approved functional items."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "in-scope functional items require an external or internal API not yet contracted"
+      - "a workflow crosses a service boundary needing a contract"
+    affected_loop: technical_canon_loop
+    risk_relevance: "elevated at T3-T4; a public API is external surface"
+    inputs:
+      - "in-scope FR/WF/AC items"
+      - ".canonflow/canon/technical/index.yaml"
+      - "DEC-xxxx constraint records"
+    outputs:
+      - "API-xxxx contract items as a staging patch, each DERIVES_FROM its functional items"
+    required_templates: [templates/technical-canon/api-contract.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER, G-SEC]
+    evidence_required:
+      - "each endpoint DERIVES_FROM an FR/WF/AC"
+      - "auth, error and versioning modeled for each contract"
+    human_decision_triggers:
+      - "a public API contract is a Tier 3-4 critical artifact needing Decision Console approval"
+      - "a backward-incompatible contract change"
+    token_profile:
+      reads: ["functional items in scope", "related contracts"]
+      ignores: ["unrelated canon", "code", "runtime"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["public or externally consumed API", "Tier 3-4 exposure requiring negative security modeling"]
+    failure_modes:
+      - "an endpoint with no functional derivation (fails G-DER)"
+      - "auth and error paths unmodeled (fails G-SEC on touch)"
+    related_skills: [data_model_design, security_modeling, integration_contract_design]
+  - schema: skill-definition/v1
+    skill_id: data_model_design
+    name: Data model design
+    category: technical_canon
+    level: core
+    purpose: "Design the data model (DM-xxxx) and migration outline derived from approved functional items; Tier 4 by default."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "in-scope functional items require persisted data not yet modeled"
+      - "a schema or migration change is implied by an approved functional version"
+    affected_loop: technical_canon_loop
+    risk_relevance: "elevated at T3-T4; data and migrations are the highest-risk surface"
+    inputs:
+      - "in-scope FR/BR/AC items"
+      - ".canonflow/canon/technical/index.yaml"
+      - "DEC-xxxx constraint records"
+    outputs:
+      - "DM-xxxx entities/relations + migration outline as a staging patch, each DERIVES_FROM its functional items"
+    required_templates: [templates/technical-canon/data-model.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER, G-SEC, G-MIG]
+    evidence_required:
+      - "each entity/field DERIVES_FROM a functional item"
+      - "destructive migrations flagged with a rollback outline"
+    human_decision_triggers:
+      - "a data model / migration plan is a Tier 4 critical artifact needing Decision Console approval"
+      - "a schema change requires a destructive or non-reversible migration"
+    token_profile:
+      reads: ["functional items in scope", "existing data model items"]
+      ignores: ["unrelated canon", "code", "runtime"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["PII or regulated data", "destructive migrations", "Tier 4 data changes"]
+    failure_modes:
+      - "a field with no functional basis (fails G-DER)"
+      - "a migration without a rollback outline (fails G-MIG readiness)"
+      - "PII stored without a protection control (fails G-SEC)"
+    related_skills: [api_contract_design, security_modeling, rollback_design]
+  - schema: skill-definition/v1
+    skill_id: integration_contract_design
+    name: Integration contract design
+    category: technical_canon
+    level: core
+    purpose: "Design contracts for external/third-party integrations derived from approved functional items and constraints."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "an approved functional item requires an external system integration not yet contracted"
+      - "an existing integration must be reconciled into the technical canon"
+    affected_loop: technical_canon_loop
+    risk_relevance: "elevated at T3-T4; external integrations cross trust boundaries"
+    inputs:
+      - "in-scope FR/WF items naming external systems"
+      - ".canonflow/canon/technical/index.yaml"
+      - "DEC-xxxx constraint records"
+    outputs:
+      - "integration contract items (auth, payload, failure modes, retries) as a staging patch, each DERIVES_FROM its functional items"
+    required_templates: [templates/technical-canon/api-contract.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER, G-SEC]
+    evidence_required:
+      - "each integration DERIVES_FROM a functional item"
+      - "auth and failure/retry semantics modeled per integration"
+    human_decision_triggers:
+      - "an external integration crosses a trust or compliance boundary"
+      - "a data-sharing agreement is a compliance decision"
+    token_profile:
+      reads: ["functional items naming integrations", "related contracts"]
+      ignores: ["unrelated canon", "code", "runtime"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["third-party systems handling regulated data", "Tier 3-4 trust boundaries"]
+    failure_modes:
+      - "an integration invented with no functional basis (fails G-DER)"
+      - "failure and retry semantics unmodeled"
+      - "credential handling unmodeled (fails G-SEC)"
+    related_skills: [api_contract_design, security_modeling, boundary_detection]
+  - schema: skill-definition/v1
+    skill_id: security_modeling
+    name: Security modeling
+    category: technical_canon
+    level: core
+    purpose: "Model authn/authz, data protection and threats for in-scope items; surface controls and residual risks (T3-T4)."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "in-scope items touch auth, authz, data protection or an external trust boundary"
+      - "a Tier 3-4 slice requires a security model before review"
+    affected_loop: technical_canon_loop
+    risk_relevance: "elevated at T3-T4; auth, authz and data protection"
+    inputs:
+      - "in-scope functional and technical items"
+      - "DEC-xxxx constraint records"
+      - "existing-system security evidence (read-only)"
+    outputs:
+      - "security controls, threat notes and TR-xxxx/RSK-xxxx risk records in the staging patch, each derivation-linked"
+    required_templates: [templates/technical-canon/architecture-overview.md, templates/technical-canon/adr.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER, G-SEC]
+    evidence_required:
+      - "each control DERIVES_FROM a functional item or business rule"
+      - "negative/abuse cases modeled for Tier 3-4 exposure"
+      - "residual risks recorded as TR/RSK"
+    human_decision_triggers:
+      - "a security control or threat acceptance requires the human G-SEC checkpoint"
+      - "residual risk acceptance (RSK-xxxx)"
+    token_profile:
+      reads: ["security-relevant functional items and business rules", "existing security evidence"]
+      ignores: ["unrelated canon", "code", "runtime detail"]
+      typical_cost: high
+    default_effort: deep
+    max_effort_conditions: ["auth/authz changes", "regulated or PII data", "Tier 4 exposure with negative security modeling"]
+    failure_modes:
+      - "a control with no functional or BR basis (fails G-DER)"
+      - "only positive cases modeled (fails the G-SEC negative-test intent)"
+      - "residual risk left unrecorded"
+    related_skills: [data_model_design, api_contract_design, technical_review]
+  - schema: skill-definition/v1
+    skill_id: environment_modeling
+    name: Environment modeling
+    category: technical_canon
+    level: core
+    purpose: "Model environments, configuration and secret requirements derived from approved items; Tier 4 for production."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "in-scope items require environment-specific configuration not yet modeled"
+      - "a deployment target implies configuration or secrets not yet captured"
+    affected_loop: technical_canon_loop
+    risk_relevance: "elevated at T4; environment and secrets configuration"
+    inputs:
+      - "in-scope technical items"
+      - "DEC-xxxx constraint records"
+      - "existing-system configuration evidence (read-only)"
+    outputs:
+      - "environment registry entries (envs, config keys, secret requirements) in the staging patch, each derivation-linked"
+    required_templates: [templates/technical-canon/environment-registry.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER]
+    evidence_required:
+      - "each config key traces to a technical or functional need"
+      - "secret requirements flagged, never valued in canon"
+    human_decision_triggers:
+      - "a Tier 4 environment or secrets configuration needs Decision Console approval"
+    token_profile:
+      reads: ["config-relevant technical items", "existing config evidence"]
+      ignores: ["unrelated canon", "code", "secret values"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["multi-environment production topology", "Tier 4 secrets handling"]
+    failure_modes:
+      - "a secret value pasted into canon (must be a pointer/requirement)"
+      - "config with no derivation basis (fails G-DER)"
+    related_skills: [deployment_topology, security_modeling, observability_modeling]
+  - schema: skill-definition/v1
+    skill_id: deployment_topology
+    name: Deployment topology
+    category: technical_canon
+    level: core
+    purpose: "Model the deployment topology (runtimes, services, networking) derived from architecture and environment models; T3-T4."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "architecture and environment items exist but the deployment topology is not modeled"
+      - "a production runtime target requires a topology before planning"
+    affected_loop: technical_canon_loop
+    risk_relevance: "elevated at T3-T4; deployment and production runtime"
+    inputs:
+      - "derived CMP-xxxx items"
+      - "environment registry entries"
+      - "DEC-xxxx constraint records"
+    outputs:
+      - "deployment topology definitions (runtimes, services, networking) in the staging patch, each derivation-linked"
+    required_templates: [templates/technical-canon/environment-registry.md, templates/technical-canon/architecture-overview.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER]
+    evidence_required:
+      - "each deployed unit traces to a component and an environment"
+      - "networking and trust zones modeled for Tier 3-4"
+    human_decision_triggers:
+      - "a deployment topology is a Tier 3-4 critical artifact needing Decision Console approval"
+    token_profile:
+      reads: ["architecture and environment items"]
+      ignores: ["unrelated canon", "code", "runtime detail"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["distributed or production topology", "Tier 4 runtime exposure"]
+    failure_modes:
+      - "a topology unit with no component or environment basis (fails G-DER)"
+      - "trust zones unmodeled at Tier 3-4"
+    related_skills: [environment_modeling, boundary_detection, observability_modeling]
+  - schema: skill-definition/v1
+    skill_id: observability_modeling
+    name: Observability modeling
+    category: technical_canon
+    level: core
+    purpose: "Model logging, metrics, tracing and SLO/alerting requirements so runtime is verifiable, derived from approved items."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "in-scope items require observability signals not yet modeled"
+      - "acceptance criteria imply runtime signals to verify"
+    affected_loop: technical_canon_loop
+    risk_relevance: "T2-T4; observability underpins runtime verification"
+    inputs:
+      - "in-scope FR/AC items"
+      - "derived CMP-xxxx items"
+      - "DEC-xxxx constraint records"
+    outputs:
+      - "observability requirements (logs, metrics, traces, SLOs, alerts) in the staging patch, each derivation-linked"
+    required_templates: [templates/technical-canon/architecture-overview.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER]
+    evidence_required:
+      - "each signal DERIVES_FROM an FR/AC or component"
+      - "SLOs measurable and tied to acceptance criteria"
+    human_decision_triggers:
+      - "an SLO or alerting threshold is a risk decision"
+    token_profile:
+      reads: ["functional acceptance items", "component items"]
+      ignores: ["unrelated canon", "code", "runtime detail"]
+      typical_cost: low
+    default_effort: medium
+    max_effort_conditions: ["strict SLO or error-budget regimes", "Tier 3-4 runtime verification needs"]
+    failure_modes:
+      - "a signal with no derivation basis (fails G-DER)"
+      - "an unmeasurable SLO"
+    related_skills: [deployment_topology, test_strategy_design, environment_modeling]
+  - schema: skill-definition/v1
+    skill_id: test_strategy_design
+    name: Test strategy design
+    category: technical_canon
+    level: core
+    purpose: "Design the test strategy mapping every in-scope AC-xxxx to a tier-appropriate verification level (sets the G-TEST bar)."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "in-scope acceptance criteria have no assigned verification level"
+      - "a technical staging patch approaches candidate without a test strategy"
+    affected_loop: technical_canon_loop
+    risk_relevance: "T0-T4; the strategy sets the G-TEST bar per tier"
+    inputs:
+      - "in-scope AC-xxxx items"
+      - "API/DM/CMP items"
+      - "the risk tier of the scope"
+    outputs:
+      - "test strategy mapping each AC to a verification level (unit/acceptance/contract/integration/security) in the staging patch"
+    required_templates: [templates/technical-canon/test-strategy.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER]
+    evidence_required:
+      - "every in-scope AC-xxxx mapped to at least one verification level"
+      - "tier-appropriate levels per method/12 (negative tests for Tier 3-4)"
+    human_decision_triggers:
+      - "a verification-level waiver or acceptance threshold is a risk decision"
+    token_profile:
+      reads: ["acceptance criteria in scope", "API/DM/CMP items"]
+      ignores: ["unrelated canon", "code", "runtime"]
+      typical_cost: medium
+    default_effort: medium
+    max_effort_conditions: ["safety or security-critical scope needing negative and regression levels"]
+    failure_modes:
+      - "an in-scope AC left unmapped"
+      - "a verification level under-tiered relative to method/12"
+    related_skills: [acceptance_criteria_generation, security_modeling, technical_review]
+  - schema: skill-definition/v1
+    skill_id: rollback_design
+    name: Rollback design
+    category: technical_canon
+    level: core
+    purpose: "Design rollback/recovery plans for migrations and deployments derived from data model and deployment topology; Tier 4."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "a migration or deployment in scope has no rollback plan"
+      - "a Tier 4 change requires a rollback plan before planning"
+    affected_loop: technical_canon_loop
+    risk_relevance: "elevated at T4; rollback is the last safety net for migrations and deploys"
+    inputs:
+      - "DM-xxxx migration outlines"
+      - "deployment topology items"
+      - "DEC-xxxx constraint records"
+    outputs:
+      - "rollback/recovery plan items (triggers, steps, data recovery) in the staging patch, each derivation-linked"
+    required_templates: [templates/technical-canon/architecture-overview.md]
+    required_schemas: [schemas/technical-canon-state.schema.yaml]
+    required_prompts: [prompts/04-technical-canon-agent.md]
+    required_gates: [G-DER]
+    evidence_required:
+      - "each rollback plan traces to the migration or deployment it protects"
+      - "non-reversible steps flagged explicitly"
+    human_decision_triggers:
+      - "a rollback plan is a Tier 4 critical artifact needing Decision Console approval"
+      - "accepting a non-reversible operation"
+    token_profile:
+      reads: ["migration outlines", "deployment topology items"]
+      ignores: ["unrelated canon", "code", "runtime detail"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["destructive migrations", "Tier 4 production rollback"]
+    failure_modes:
+      - "a migration or deployment left with no rollback plan (blocks downstream G-MIG)"
+      - "a non-reversible step left unflagged"
+    related_skills: [data_model_design, deployment_topology, technical_review]
+  - schema: skill-definition/v1
+    skill_id: technical_review
+    name: Technical review
+    category: technical_canon
+    level: core
+    purpose: "Independently review a technical staging patch (G-DER, G-CON) before human G-TEC approval."
+    operating_role: canonflow-technical-canon
+    card_ref: skills/canonflow-technical-canon.skill-card.yaml
+    checksum: "sha256:42ce9c8c73b23a783ad1b49b17ef39534d5efd64608a1e9d48b00b2e08e3267f"
+    triggered_when:
+      - "a technical staging patch is complete and needs independent review before TECHNICAL_CANON_REVIEW_CANDIDATE"
+    affected_loop: technical_canon_loop
+    risk_relevance: "T0-T4; the derivation gate before human G-TEC"
+    inputs:
+      - "the builder staging patch (diff)"
+      - ".canonflow/canon/technical/index.yaml"
+      - "the pinned FUNCTIONAL_CANON_APPROVED index"
+      - "builder RUN/SRP ids and gate-check output paths"
+    outputs:
+      - "review verdict + at most TECHNICAL_CANON_REVIEW_CANDIDATE + G-TEC approval session"
+      - "FND findings and FND-bounded remediation drafts on failure"
+    required_templates: [templates/decision-console/question-session.json]
+    required_schemas: [schemas/skill-report.schema.yaml]
+    required_prompts: [prompts/05-technical-canon-reviewer.md]
+    required_gates: [G-DER, G-CON, G-TEC]
+    evidence_required:
+      - "independent G-DER/G-CON check output (never the builder self-check reused)"
+      - "derivation verified for sampled items (technical item DERIVES_FROM functional item at the pinned version)"
+      - "no CONFLICTED or blocking OPEN in scope"
+    human_decision_triggers:
+      - "G-TEC approval (human only)"
+    token_profile:
+      reads: ["staging patch (diff)", "technical canon index", "pinned functional index"]
+      ignores: ["full repository", "unrelated loops", "builder narrative"]
+      typical_cost: medium
+    default_effort: high
+    max_effort_conditions: ["large slice", "Tier 3-4 exposure", "contested derivations"]
+    failure_modes:
+      - "reviewer shares builder context (not independent)"
+      - "approving canon by inference"
+      - "restating the builder narrative instead of checking artifacts"
+    related_skills: [architecture_derivation, adr_generation, security_modeling]

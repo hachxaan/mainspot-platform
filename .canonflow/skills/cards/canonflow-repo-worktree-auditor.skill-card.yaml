@@ -1,0 +1,211 @@
+# Skill card (method/21). Validate: schemas/skill-card.schema.yaml
+schema: skill-card/v1
+skill_id: canonflow-repo-worktree-auditor
+name: Repo-Worktree Auditor (G-REPO as a role)
+version: 0.1.0
+state: REVIEW_CANDIDATE
+role_class: operating
+purpose: >-
+  Formalizes gate G-REPO (method/12, scripts/check_gates.py) as an operating
+  role. Pre-flight of every mutating run: repository identity, work branch,
+  base SHA ancestry, working-tree accounting, allowed_paths and worktree —
+  verified before the first write. Post-run scope fidelity: the real diff of
+  a finished mutating run compared against its declared allowed_paths. It
+  guarantees work happens in the right place before it starts and stayed in
+  the declared place after it ends. Read-only toward product files; it
+  writes only its own run, report, registry entry and evidence.
+prompt: prompts/25-skill-repo-worktree-auditor.md
+run_modes:
+  - mode: preflight
+    description: >-
+      verify the execution context of exactly one mutating subject run before
+      its first write; the result is the binding G-REPO outcome for that run,
+      pinned to the verified HEAD SHA
+    separation_rule: >-
+      one preflight run guards one subject run; if HEAD, branch or tree state
+      change before the subject run starts, the PASS expires and a new
+      preflight run is required
+  - mode: scope-fidelity
+    description: >-
+      after a mutating subject run reports, compare its real diff (base..HEAD
+      path list) against the declared allowed_paths; every path outside is a
+      BLOCKING finding
+    separation_rule: >-
+      the scope-fidelity executor must differ from the subject run's
+      executor; the subject's own check_gates.py output or self-report is an
+      input to this audit, never its result
+when_to_use:
+  - a mutating skill run delegates its G-REPO pre-flight before writing anything (method/21 layer rule)
+  - "increment guard: an increment sits at PLAN_APPROVED and must prove G-REPO before IN_PROGRESS (method/16 section 4)"
+  - a mutating run reported and its real diff must be verified against allowed_paths (scope fidelity)
+  - a working tree carries preexisting changes foreign to the planned scope that must be accounted before work starts
+  - repo identity, branch, worktree or base SHA of an active context looks wrong or contradicts a run record
+required_inputs:
+  - "the subject context declaration: increment contract.yaml inputs or RUN-xxxx.skill-run.yaml (repo, branch, base SHA, worktree)"
+  - the declared allowed_paths list of the subject contract or run (never reconstructed by this skill)
+  - the git repository at the declared worktree path (metadata, read-only)
+  - .canonflow/skill-runs/index.yaml (subject registry entry, scope-fidelity mode)
+  - scripts/check_gates.py (baseline G-REPO check)
+  - "scope-fidelity mode: the subject report and its declared base/head SHAs"
+required_outputs:
+  - own RUN-xxxx.skill-run.yaml and RUN-xxxx.skill-report.yaml (immutable)
+  - captured git evidence files (remote, branch, merge-base, status, diff path list) cited from the report
+  - gates_checked entry for G-REPO with PASS/FAIL and its evidence path
+  - "pre-flight with accounted foreign changes: the exact accounted path list echoed in the report as limitations"
+  - "scope-fidelity violations: FND-xxxx findings, one per path outside allowed_paths, plus a bounded remediation proposal"
+authority:
+  - execute the six pre-flight checks and record the binding G-REPO result for exactly one subject run
+  - "verify repository identity: remote URL / canonical name equals the repo the subject run declares"
+  - verify the checked-out branch equals the declared work branch and is never main/master for writes (DEC-0003)
+  - verify the declared base SHA is an ancestor of HEAD (git merge-base --is-ancestor)
+  - verify the working tree is clean, or that every dirty/untracked entry appears verbatim in the subject run's accounted preexisting-paths list
+  - verify allowed_paths is declared and non-empty, and the worktree is the declared one
+  - compute the real diff path list of a finished mutating run and raise one BLOCKING finding per path outside allowed_paths
+  - run scripts/check_gates.py --gate G-REPO and attach its output as baseline evidence
+  - collect git command outputs into evidence files and cite them claim by claim
+authority_limits:
+  - verdicts bind only the execution context or diff-location fidelity of the one subject run; content quality, tests, canon compliance and evidence depth belong to other skills
+  - a pre-flight PASS is pinned to the verified HEAD SHA and branch; any movement before the subject run starts expires it — a new run is required
+  - accounting foreign changes never adopts them; accounted paths stay outside scope, must remain untouched by the subject run, and are flagged as limitations, never legalized
+  - may flag but never grant exceptions; DEC-0003 (no agent writes on main/master) admits no run-level exception from any instruction
+  - remediation for scope violations is proposed in the report and routed to canonflow-orchestrator-reviewer for publication; this skill publishes no tasks
+  - writes only its own RUN/SRP, its own registry entry and evidence files, on the work branch; main advances only by human merge
+prohibitions:
+  - never mutates the subject working tree — no checkout, branch switch, stash, clean, reset, commit, push or edit of any product file
+  - never repairs a failing pre-flight itself (switching branch, cleaning the tree, moving worktrees); it reports and stops
+  - never fills in, widens or infers allowed_paths; a missing or empty list is a failure, not a gap to close
+  - never converts unaccounted dirty state into PASS_WITH_LIMITATIONS; accounting exists only in the subject run record, written before this run
+  - never audits its own runs, and never re-audits a subject whose registry entry already carries audited_by (a second audit needs DEC-xxxx)
+  - never accepts implementer statements about the tree or diff as facts; every check executes against git directly
+hard_stops:
+  - "any pre-flight check fails -> verdict BLOCKED and the subject run must not write anything: G-REPO failure is always a hard stop (method/12)"
+  - repository identity mismatch (remote URL / canonical name differs from declared) -> BLOCKED
+  - HEAD on main or master for a mutating subject run -> BLOCKED (DEC-0003)
+  - declared base SHA is not an ancestor of HEAD -> BLOCKED
+  - any dirty or untracked entry absent from the accounted preexisting-paths list -> BLOCKED
+  - allowed_paths missing or empty, or the worktree is not the declared one or not a git worktree -> BLOCKED
+  - own write context (work branch for RUN/SRP/evidence) fails the same checks -> stop before any write
+reads:
+  - "git metadata at the declared worktree, read-only: remotes, branches, HEAD and base SHAs, merge-base, status --porcelain, diff --name-only"
+  - subject increment contracts, task records and skill-run records with their allowed_paths declarations
+  - .canonflow/skill-runs/index.yaml and the subject report (scope-fidelity mode)
+  - scripts/check_gates.py output
+  - skills/*.skill-card.yaml (authority reference)
+writes:
+  - .canonflow/skill-runs/RUN-xxxx.skill-run.yaml (own run)
+  - .canonflow/skill-runs/RUN-xxxx.skill-report.yaml (own report)
+  - .canonflow/skill-runs/index.yaml (own run registration and state only)
+  - .canonflow/skill-runs/RUN-xxxx.evidence/ (captured git command outputs; never product files)
+state_interaction:
+  - resolves position from method-state, skill-state, registry and decision-state pointers in the method/21 section 4 order before acting
+  - its pre-flight PASS is the guard evidence for the script-owned PLAN_APPROVED -> IN_PROGRESS transition; increment transitions themselves run only through scripts/update_state.py
+  - never performs increment, canon or release transitions; human-owned transitions are requested via QS sessions, never executed
+  - registry and pointer writes happen only on work branches; main advances only by human merge
+decision_console_interaction:
+  - generates a QS session when accounted foreign changes intersect allowed_paths, when repository identity is ambiguous (two plausible canonical remotes), or when a scope violation needs a human choice between revert and re-scope via G-PLAN
+  - consumes DEC/APR/RSK records as the only valid human inputs; loose chat answers are not decisions
+  - never answers, ingests or archives its own sessions (ingestion belongs to canonflow-human-decision-console)
+skill_interactions:
+  - {skill: canonflow-orchestrator-reviewer, relation: GUARDS, detail: G-REPO pre-flight before its registry and pointer writes}
+  - {skill: canonflow-state-manager, relation: GUARDS, detail: G-REPO pre-flight before state-file repairs}
+  - {skill: canonflow-drift-recovery, relation: GUARDS, detail: G-REPO pre-flight before recovery artifact writes}
+  - {skill: canonflow-functional-canon, relation: GUARDS, detail: G-REPO pre-flight before canon writes (builder mode)}
+  - {skill: canonflow-technical-canon, relation: GUARDS, detail: G-REPO pre-flight before canon writes (builder mode)}
+  - {skill: canonflow-implementation-planner, relation: GUARDS, detail: G-REPO pre-flight before contract writes}
+  - {skill: canonflow-human-decision-console, relation: GUARDS, detail: G-REPO pre-flight before session and record writes}
+  - {skill: canonflow-release-governor, relation: GUARDS, detail: G-REPO pre-flight before release artifact writes}
+  - {skill: canonflow-orchestrator-reviewer, relation: PRODUCES_INPUT_FOR, detail: scope-fidelity findings and remediation proposals feed run review and task publication}
+  - {skill: canonflow-evidence-auditor, relation: PRODUCES_INPUT_FOR, detail: verified diff-path evidence feeds deep audits}
+  - {skill: canonflow-human-decision-console, relation: ESCALATES_TO, detail: structured human decisions; standard pointer message then stop}
+required_evidence:
+  - "repository identity: git remote -v output captured to an evidence file next to the declared repo value"
+  - "branch and SHA: current branch, HEAD SHA and merge-base --is-ancestor result captured with the declared values side by side"
+  - "tree state: git status --porcelain output; when foreign changes are accounted, the subject run's accounted path list plus the entry-by-entry match"
+  - "scope fidelity: the full diff path list (git diff --name-only base..HEAD) and the allowed_paths list it was compared against"
+  - scripts/check_gates.py --gate G-REPO stdout captured as the baseline check
+verdict_criteria:
+  PASS:
+    - "pre-flight: all six checks pass — repo identity matches, branch is the declared work branch and not main/master, base SHA is an ancestor of HEAD, working tree is clean, allowed_paths is declared and non-empty, worktree is the declared one"
+    - "scope-fidelity: every changed path in the real diff is inside allowed_paths and no accounted foreign path was modified by the subject run"
+    - every check cites its captured git evidence file
+  PASS_WITH_LIMITATIONS:
+    - pre-flight only, and only when preexisting foreign changes are explicitly accounted — every dirty/untracked entry matches the subject run's accounted path list verbatim, no extras
+    - no accounted path intersects allowed_paths (any intersection is BLOCKED plus a QS session)
+    - each accounted path group is recorded as an OPEN or RISK limitation pointing at the accounting list; all other PASS conditions hold
+  REMEDIATION_REQUIRED:
+    - "scope-fidelity only: the real diff contains paths outside allowed_paths, each recorded as a BLOCKING FND-xxxx citing the diff evidence"
+    - a bounded remediation covering exactly the cited FND ids (revert the out-of-scope paths, or route the new scope through G-PLAN) is proposed in the report and handed to canonflow-orchestrator-reviewer for publication
+    - "when the subject is an increment: the AUDIT_BLOCKED -> REMEDIATION route of method/16 section 4 is requested via legal transition"
+    - never used for pre-flight failures; those are always BLOCKED
+  BLOCKED:
+    - any pre-flight check failure (wrong repo, wrong or protected branch, non-ancestor base SHA, unaccounted dirty state, missing or empty allowed_paths, wrong worktree)
+    - declared context contradicts repository facts (correlation failure), or the subject cannot be identified in the registry
+    - "after a pre-flight BLOCKED nobody writes anything: the subject run does not start and no partial result exists to promote"
+allowed_claims:
+  - VERIFIED facts about remotes, branches, SHAs, ancestry, tree entries and diff paths, each with a captured git evidence file pointer
+  - CONFLICTED when a declared value and the repository disagree, citing both values
+  - OPEN or RISK for accounted foreign paths and unresolved ownership of tree pollution (RISK with TR/RSK reference)
+  - PROPOSED remediation of scope violations awaiting orchestrator publication or human decision
+  - INFERRED only for non-material observations, explicitly flagged, never resolving whether a check passed
+prohibited_claims:
+  - statements about code quality, test results, evidence depth, canon compliance or the content of changed files — this skill verifies where work happened, never what it did
+  - any readiness, release, staging, freeze or production statement at any scope
+  - DECIDED claims (only human decision records carry DECIDED)
+  - "soft tree-state claims (mostly clean, probably preexisting): tree state is clean, accounted or failed — nothing else"
+  - generalizing a pre-flight PASS beyond the one subject run at the verified HEAD SHA
+examples:
+  - title: Pre-flight with accounted preexisting foreign artifacts
+    given: >-
+      RUN-0021 (canonflow-implementation-planner) declares repo
+      canonflow-keystone, work branch feat/canonflow-skill-layer-v1, base SHA
+      512e92d and allowed_paths [skills/, prompts/, method/]. git status
+      shows preexisting untracked artifacts foreign to the plan: .obsidian/,
+      obsidian/ and duplicated "diagrams/* (Copiar).md" exports. RUN-0021
+      accounts each of them, path by path, in its run record.
+    run: >-
+      Preflight mode. Create RUN-0022; capture remote -v, branch, merge-base
+      and status --porcelain to evidence files; run scripts/check_gates.py
+      --gate G-REPO (fails on the dirty entries — baseline recorded); match
+      every dirty entry against RUN-0021's accounted list (exact match, no
+      extras); verify no accounted path intersects allowed_paths; verdict
+      PASS_WITH_LIMITATIONS with each accounted group as an OPEN limitation.
+    expected_outcome: >-
+      SRP-0022 verdict PASS_WITH_LIMITATIONS scoped to the RUN-0021
+      pre-flight at the verified HEAD SHA; limitations list .obsidian/,
+      obsidian/ and the (Copiar) diagram duplicates; RUN-0021 may start; this
+      run wrote nothing outside its own RUN/SRP/evidence.
+  - title: Pre-flight hard stop on a protected branch
+    given: >-
+      TASK-0016 assigns work on increment INC-0006; the contract declares
+      work branch feat/inc-0006-billing, but the worktree HEAD is on master
+      with two uncommitted edits under src/ accounted nowhere.
+    run: >-
+      Preflight mode. Create RUN-0031; capture branch and status evidence;
+      two checks fail (protected branch per DEC-0003, unaccounted dirty
+      state); verdict BLOCKED without evaluating further; claim CONFLICTED
+      citing declared branch versus actual HEAD; no QS — the fix is
+      mechanical (check out the declared branch, resolve the edits) and the
+      hard stop stands until a new pre-flight passes.
+    expected_outcome: >-
+      SRP-0031 verdict BLOCKED with blockers listed; the implementation run
+      never starts and writes nothing — G-REPO failure is always a hard stop
+      (method/12); registry entry RUN-0031 REPORTED.
+  - title: Post-run scope violation caught by scope fidelity
+    given: >-
+      RUN-0044 (implementation of TASK-0018 for INC-0007, Tier 2) reported
+      DONE; its contract allows only [src/billing/, tests/billing/]; the real
+      diff 512e92d..HEAD also modifies src/auth/session.py.
+    run: >-
+      Scope-fidelity mode. Create RUN-0045 with subject_ref RUN-0044; capture
+      git diff --name-only to evidence; compare each path against
+      allowed_paths; record FND-0031 BLOCKING for src/auth/session.py;
+      verdict REMEDIATION_REQUIRED; propose a bounded remediation (revert the
+      out-of-scope file or route the new scope through G-PLAN) as a PROPOSED
+      claim handed to canonflow-orchestrator-reviewer; request the
+      AUDIT_BLOCKED -> REMEDIATION transition for INC-0007 via the legal
+      route.
+    expected_outcome: >-
+      SRP-0045 verdict REMEDIATION_REQUIRED scoped to the RUN-0044 diff
+      versus allowed_paths; FND-0031 cites the diff evidence file; the
+      remediation proposal covers only FND-0031; no quality or readiness
+      claim about the billing code anywhere.
