@@ -1,0 +1,38 @@
+{
+  "schema": "mainspot-backup-manifest/v1",
+  "contract_version": "1.0.0",
+  "backup_id": "mainspot-db-20261022T061958Z",
+  "deployment_id": "mainspot-pilot",
+  "created_at": "2026-10-22T06:19:58Z",
+  "source": {
+    "engine": "postgresql",
+    "database": "mainspot",
+    "dump_format": "pg_dump-custom",
+    "server_version": "16.15",
+    "dump_archive_version": "1.15.0",
+    "toc_entries": 195
+  },
+  "encryption": {
+    "scheme": "openssl-enc-aes-256-cbc-pbkdf2-sha256-600000/v1",
+    "key_id": "msbk1-4bf859a355f2abcf"
+  },
+  "object": {
+    "key": "v1/mainspot-pilot/postgres/mainspot/2026/10/22/mainspot-db-20261022T061958Z.dump.enc",
+    "size_bytes": 64,
+    "sha256": "85b2bdc9efc9003ea6adc81f662a7d1570166c68dc347a17cc0b18608526812a"
+  },
+  "retention": {
+    "days": 14,
+    "policy": "DEC-0026"
+  },
+  "producer": {
+    "name": "mainspot-backup-remote",
+    "version": "1.0.0"
+  },
+  "authenticity": {
+    "alg": "HMAC-SHA256",
+    "kdf": "HKDF-SHA256",
+    "input": "mainspot-backup-manifest-mac/v1",
+    "mac": "dd6e517b7a3714c5801655fd0f458c6feae92eb16bf84763bf74a15d4f3e065a"
+  }
+}

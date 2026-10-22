@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mainspot:contract:backup-object-storage:v1:manifest",
+  "title": "MainSpot backup manifest v1",
+  "description": "Manifest stored next to each encrypted backup object (contract mainspot-backup-object-storage v1, section 5). The object key fields and the MAC input are defined in CONTRACT.md section 7.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "contract_version", "backup_id", "deployment_id", "created_at", "encryption", "object", "authenticity"],
+  "properties": {
+    "schema": {"const": "mainspot-backup-manifest/v1"},
+    "contract_version": {"type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$"},
+    "backup_id": {"type": "string", "pattern": "^mainspot-db-[0-9]{8}T[0-9]{6}Z$"},
+    "deployment_id": {"type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"},
+    "created_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "database", "dump_format"],
+      "properties": {
+        "engine": {"const": "postgresql"},
+        "database": {"type": "string", "pattern": "^[a-z_][a-z0-9_]{0,62}$"},
+        "dump_format": {"const": "pg_dump-custom"},
+        "server_version": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)*$"},
+        "dump_archive_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$"},
+        "toc_entries": {"type": "integer", "minimum": 1}
+      }
+    },
+    "encryption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "key_id"],
+      "properties": {
+        "scheme": {"const": "openssl-enc-aes-256-cbc-pbkdf2-sha256-600000/v1"},
+        "key_id": {"type": "string", "pattern": "^msbk1-[0-9a-f]{16}$"}
+      }
+    },
+    "object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "size_bytes", "sha256"],
+      "properties": {
+        "key": {"type": "string", "pattern": "^v1/[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?/postgres/[a-z_][a-z0-9_]{0,62}/[0-9]{4}/[0-9]{2}/[0-9]{2}/mainspot-db-[0-9]{8}T[0-9]{6}Z\\.dump\\.enc$"},
+        "size_bytes": {"type": "integer", "minimum": 32},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["days", "policy"],
+      "properties": {
+        "days": {"const": 14},
+        "policy": {"const": "DEC-0026"}
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"},
+        "version": {"type": "string", "pattern": "^[0-9A-Za-z.+-]{1,32}$"}
+      }
+    },
+    "authenticity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "kdf", "input", "mac"],
+      "properties": {
+        "alg": {"const": "HMAC-SHA256"},
+        "kdf": {"const": "HKDF-SHA256"},
+        "input": {"const": "mainspot-backup-manifest-mac/v1"},
+        "mac": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}
