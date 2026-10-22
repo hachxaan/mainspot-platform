@@ -3,31 +3,50 @@
 contract v1 (docs/contracts/backup-object-storage/v1/CONTRACT.md, section 14).
 
 Run it from a host OUTSIDE the service VPS that can reach the endpoint on ports 80,
-443, 3901, 3902 and 3903. It only writes objects under `_conformance/<run-id>/` and
+443, 3900, 3901, 3902 and 3903. It only writes objects under `_conformance/<run-id>/` and
 deletes them at the end. It does not change the bucket configuration, with one
 exception: if the restore key wrongly has write access, C-14 can only (re)write the
-exact section 9 rules (C-15 runs first, so a previously different configuration is
-still reported). It never prints access keys, secret keys, signatures or Authorization headers.
+exact section 9.1 rules (C-15 runs first, so a previously different configuration is
+still reported). The same applies to the guard bucket in C-21: the writer key must be
+denied; if it is wrongly allowed, the probe object is deleted again and the lifecycle
+submitted is the one the restore key read (or, when the guard bucket has no lifecycle,
+the probe is `DeleteBucketLifecycle`; when nobody could read it, the section 9.2.4
+reference rule is submitted).
+It never prints access keys, secret keys, signatures or Authorization headers.
 
 Requirements: Python >= 3.10 and boto3 >= 1.36 (`pip install 'boto3>=1.36'`).
 
 Credentials are read from files (mode 0600 or stricter) with two lines:
     AWS_ACCESS_KEY_ID=...
     AWS_SECRET_ACCESS_KEY=...
+The service's own file format (`S3_ACCESS_KEY_ID=` / `S3_SECRET_ACCESS_KEY=`, with
+optional `S3_ENDPOINT`/`S3_REGION` lines that are ignored) is accepted as well.
 
 Usage:
     python3 check_s3_backup_contract.py \\
         --writer-credentials /path/backup-writer.env \\
         --restore-credentials /path/backup-restore.env \\
         [--endpoint https://s3.mainspot.canonflow.dev] [--region garage] \\
-        [--bucket mainspot-backups] [--report report.json]
+        [--bucket mainspot-backups] [--guard-bucket mainspot-backups-guard] \\
+        [--report report.json]
+
+Protected copy (contract section 9.2): C-21 proves with the writer key that the guard
+bucket is out of reach (403 on every operation). If the guard bucket does not exist as
+an S3 bucket (HeadBucket 404) the result is MANUAL: either the copy is a volume outside
+Garage (option B, verified by published evidence) or the name is wrong. C-22 compares,
+with the restore key, the `v1/` inventory and the SHA-256 of every complete backup
+between the data bucket and the guard bucket; originals older than 14 days since their
+`created_at` are not required in the copy (section 9.2.4). When the restore key cannot
+read the guard bucket (403/404), or when nothing could be compared (empty bucket, copies
+still pending), the result is MANUAL: the correspondence must be shown by the evidence
+the service publishes (section 9.2.5).
 
 `--lab-allow-http` accepts an http:// endpoint and skips the TLS checks (C-01, C-18);
 it exists only for disposable local labs and never satisfies the contract
 (`"conformant": false` in the report).
 
-Exit code: 0 when every REQUIRED check passes (in lab mode: every check that was
-not skipped), 1 otherwise, 2 on usage errors (bad arguments, unreadable or too-open
+Exit code: 0 when every REQUIRED check passes (PASS, WARN or MANUAL; in lab mode also
+SKIP), 1 otherwise, 2 on usage errors (bad arguments, unreadable or too-open
 credential files, boto3 older than 1.36).
 """
 from __future__ import annotations
@@ -39,6 +58,7 @@ import email.utils
 import hashlib
 import json
 import os
+import re
 import socket
 import ssl
 import stat
@@ -49,20 +69,31 @@ import urllib.request
 import uuid
 
 CONTRACT = "mainspot-backup-object-storage"
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 DATA_PREFIX = "v1/"
 CONFORMANCE_PREFIX = "_conformance/"
 RETENTION_DAYS = 14
 MAX_SKEW_FAIL_S = 300
 MAX_SKEW_WARN_S = 30
-INTERNAL_PORTS = (3901, 3902, 3903)
-# Section 9: the exact lifecycle configuration of the bucket.
+INTERNAL_PORTS = (3900, 3901, 3902, 3903)
+# Section 9.1: the exact lifecycle configuration of the bucket.
 LIFECYCLE_V1 = {"Rules": [
     {"ID": "mainspot-backups-v1-retention-14d", "Status": "Enabled", "Filter": {"Prefix": DATA_PREFIX},
      "Expiration": {"Days": RETENTION_DAYS}, "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1}},
     {"ID": "mainspot-backups-conformance-1d", "Status": "Enabled", "Filter": {"Prefix": CONFORMANCE_PREFIX},
      "Expiration": {"Days": 1}, "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1}},
 ]}
+# Section 9.2 (option A): reference backstop lifecycle of the guard bucket. C-21 submits
+# it with the writer key only when nobody could read the current one (see c21()).
+GUARD_BUCKET = "mainspot-backups-guard"
+LIFECYCLE_GUARD_V1 = {"Rules": [
+    {"ID": "mainspot-backups-guard-v1-retention-14d", "Status": "Enabled", "Filter": {"Prefix": DATA_PREFIX},
+     "Expiration": {"Days": RETENTION_DAYS}, "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1}},
+]}
+# Section 9.2: the copy runs hourly; a complete backup younger than this may still lack its copy.
+GUARD_COPY_GRACE_S = 2 * 3600
+OBJECT_SUFFIX = ".dump.enc"
+MANIFEST_SUFFIX = ".manifest.json"
 
 try:
     import boto3
@@ -85,10 +116,10 @@ def load_credentials(path: str) -> tuple[str, str]:
                 continue
             k, v = line.split("=", 1)
             values[k.strip()] = v.strip().strip('"').strip("'")
-    try:
-        return values["AWS_ACCESS_KEY_ID"], values["AWS_SECRET_ACCESS_KEY"]
-    except KeyError as exc:
-        raise ValueError(f"{path}: missing {exc.args[0]}") from None
+    for kid, ksec in (("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"), ("S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY")):
+        if values.get(kid) and values.get(ksec):
+            return values[kid], values[ksec]
+    raise ValueError(f"{path}: missing AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (or S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY)")
 
 
 def client(endpoint: str, region: str, creds: tuple[str, str]):
@@ -96,7 +127,8 @@ def client(endpoint: str, region: str, creds: tuple[str, str]):
         cfg = Config(
             signature_version="s3v4",
             s3={"addressing_style": "path"},
-            retries={"max_attempts": 1, "mode": "standard"},
+            # One HTTP request per operation: botocore's max_attempts counts retries, not requests.
+            retries={"total_max_attempts": 1, "mode": "standard"},
             connect_timeout=10,
             read_timeout=120,
             # Contract §6.3/§8.4: no flexible-checksum trailers; explicit Content-MD5 and x-amz-checksum-sha256.
@@ -136,8 +168,13 @@ class Report:
         print(f"{status:<6} {cid} {detail}")
 
     def ok(self, allow_skip: bool = False) -> bool:
-        accepted = ("PASS", "WARN", "SKIP") if allow_skip else ("PASS", "WARN")
+        # MANUAL: the check could not be executed by this script and must be covered by
+        # published evidence (section 9.2); it does not block conformance by itself.
+        accepted = ("PASS", "WARN", "MANUAL", "SKIP") if allow_skip else ("PASS", "WARN", "MANUAL")
         return all(r["status"] in accepted for r in self.results if r["required"])
+
+    def manual(self) -> list[str]:
+        return [r["id"] for r in self.results if r["status"] == "MANUAL"]
 
 
 def check(report: Report, cid: str, required: bool, fn) -> None:
@@ -164,6 +201,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--endpoint", default="https://s3.mainspot.canonflow.dev")
     ap.add_argument("--region", default="garage")
     ap.add_argument("--bucket", default="mainspot-backups")
+    ap.add_argument("--guard-bucket", default=GUARD_BUCKET,
+                    help="S3 bucket of the protected copy (section 9.2, option A); C-21/C-22")
+    ap.add_argument("--guard-copy-grace", type=int, default=GUARD_COPY_GRACE_S, metavar="SECONDS",
+                    help="C-22: a complete backup younger than this may still lack its protected copy")
     ap.add_argument("--writer-credentials", required=True)
     ap.add_argument("--restore-credentials", required=True)
     ap.add_argument("--report")
@@ -380,8 +421,8 @@ def main(argv: list[str] | None = None) -> int:
         rules = restore.get_bucket_lifecycle_configuration(Bucket=bucket)["Rules"]
         got, want = lifecycle_rules(rules), lifecycle_rules(LIFECYCLE_V1["Rules"])
         if got != want:
-            return "FAIL", f"lifecycle differs from section 9: got {got}, want {want}"
-        return "PASS", (f"lifecycle exactly as section 9: {DATA_PREFIX} {RETENTION_DAYS} days, "
+            return "FAIL", f"lifecycle differs from section 9.1: got {got}, want {want}"
+        return "PASS", (f"lifecycle exactly as section 9.1: {DATA_PREFIX} {RETENTION_DAYS} days, "
                         f"{CONFORMANCE_PREFIX} 1 day, incomplete uploads aborted after 1 day")
     # C-15 runs before C-14 so that C-14 can never hide a different configuration.
     check(report, "C-15", True, c15)
@@ -389,10 +430,145 @@ def main(argv: list[str] | None = None) -> int:
     check(report, "C-12", True, lambda: expect_denied(lambda: restore.put_object(
         Bucket=bucket, Key=base + "denied.bin", Body=b"x", ContentMD5=md5_b64(b"x"))))
     check(report, "C-13", True, lambda: expect_denied(lambda: restore.delete_object(Bucket=bucket, Key=small_key)))
-    # C-14 submits the exact section 9 configuration: if the key wrongly has write access, the
+    # C-14 submits the exact section 9.1 configuration: if the key wrongly has write access, the
     # bucket still ends with the contract lifecycle (the check then fails).
     check(report, "C-14", True, lambda: expect_denied(lambda: restore.put_bucket_lifecycle_configuration(
         Bucket=bucket, LifecycleConfiguration=LIFECYCLE_V1)))
+
+    # C-21 / C-22: protected copy (section 9.2).
+    guard_bucket = args.guard_bucket
+
+    def list_all(cli, bkt: str, prefix: str) -> dict[str, dict]:
+        objs, token = {}, None
+        while True:
+            kw = {"Bucket": bkt, "Prefix": prefix}
+            if token:
+                kw["ContinuationToken"] = token
+            page = cli.list_objects_v2(**kw)
+            for o in page.get("Contents", []):
+                objs[o["Key"]] = o
+            if not page.get("IsTruncated"):
+                break
+            token = page["NextContinuationToken"]
+        return objs
+
+    def c21():
+        try:
+            writer.head_bucket(Bucket=guard_bucket)
+            head = "HeadBucket allowed"
+        except ClientError as exc:
+            code = err_code(exc)
+            if code.startswith("404"):
+                return "MANUAL", (f"no guard bucket {guard_bucket!r} in S3 (HeadBucket {code}): either the protected "
+                                  "copy is not an S3 bucket (section 9.2, option B) or the name is wrong; the absence "
+                                  "of any path from the writer key must be shown by the published evidence of section 9.2.5")
+            head = None if code.startswith("403") else f"HeadBucket {code}"
+        # The lifecycle probe must not leave the guard bucket in another state if the writer is
+        # wrongly authorised: it submits the configuration currently in place (read by the restore
+        # key, option A'); when the guard bucket has no lifecycle, the probe is DeleteBucketLifecycle
+        # (nothing to overwrite); when nobody could read it, the section 9.2.4 reference rule.
+        try:
+            guard_lc = {"Rules": restore.get_bucket_lifecycle_configuration(Bucket=guard_bucket)["Rules"]}
+        except ClientError as exc:
+            guard_lc = None if "NoSuchLifecycleConfiguration" in err_code(exc) else LIFECYCLE_GUARD_V1
+        if guard_lc is None:
+            lifecycle_probe = ("DeleteBucketLifecycle", lambda: writer.delete_bucket_lifecycle(Bucket=guard_bucket))
+        else:
+            lifecycle_probe = ("PutBucketLifecycleConfiguration", lambda: writer.put_bucket_lifecycle_configuration(
+                Bucket=guard_bucket, LifecycleConfiguration=guard_lc))
+        probe_key = base + "guard-probe.bin"
+        left: list[str] = []
+
+        def put_probe():
+            writer.put_object(Bucket=guard_bucket, Key=probe_key, Body=b"x", ContentMD5=md5_b64(b"x"))
+            try:  # the writer must never leave anything in the guard bucket
+                writer.delete_object(Bucket=guard_bucket, Key=probe_key)
+            except ClientError as exc:
+                left.append(f"probe object left in guard bucket: {probe_key} (DeleteObject {err_code(exc)})")
+        probes = [
+            ("ListObjectsV2", lambda: writer.list_objects_v2(Bucket=guard_bucket, MaxKeys=1)),
+            ("PutObject", put_probe),
+            ("DeleteObject", lambda: writer.delete_object(Bucket=guard_bucket, Key=probe_key)),
+            lifecycle_probe,
+        ]
+        allowed = [head] if head else []
+        for name, fn in probes:
+            status, detail = expect_denied(fn)
+            if status != "PASS":
+                allowed.append(f"{name}: {detail}")
+        if allowed:
+            return "FAIL", f"writer key reaches the guard bucket {guard_bucket!r}: " + "; ".join(allowed + left)
+        return "PASS", (f"writer key denied (403) on guard bucket {guard_bucket!r}: HeadBucket, ListObjectsV2, "
+                        f"PutObject, DeleteObject, {lifecycle_probe[0]}")
+    check(report, "C-21", True, c21)
+
+    def sha256_of(cli, bkt: str, key: str, size: int) -> str:
+        head = cli.head_object(Bucket=bkt, Key=key, ChecksumMode="ENABLED")
+        if head["ContentLength"] != size:
+            return f"size:{head['ContentLength']}"
+        checksum = head.get("ChecksumSHA256", "")
+        # A multipart object's checksum is a composite of the part checksums, not the SHA-256 of
+        # the body: AWS marks it `…-N`; Garage v2.4.1 omits the suffix but keeps it on the ETag.
+        multipart = "-" in checksum or re.search(r'-\d+"?$', head.get("ETag", "")) is not None
+        if checksum and not multipart:
+            return base64.b64decode(checksum).hex()
+        h = hashlib.sha256()
+        for chunk in cli.get_object(Bucket=bkt, Key=key)["Body"].iter_chunks(1024 * 1024):
+            h.update(chunk)
+        return h.hexdigest()
+
+    def c22():
+        try:
+            restore.head_bucket(Bucket=guard_bucket)
+        except ClientError as exc:
+            code = err_code(exc)
+            if code.startswith("404"):
+                return "MANUAL", (f"no guard bucket {guard_bucket!r} in S3 ({code}): copy/original correspondence "
+                                  "must be shown by the published evidence of the service (section 9.2, option B)")
+            if code.startswith("403"):
+                return "MANUAL", (f"restore key cannot read the guard bucket {guard_bucket!r} ({code}): "
+                                  "correspondence must be shown by published evidence (section 9.2, option A without A')")
+            raise
+        originals = list_all(restore, bucket, DATA_PREFIX)
+        copies = list_all(restore, guard_bucket, DATA_PREFIX)
+        now = dt.datetime.now(dt.timezone.utc)
+        complete = [k for k in originals if k.endswith(OBJECT_SUFFIX)
+                    and k[:-len(OBJECT_SUFFIX)] + MANIFEST_SUFFIX in originals]
+        missing, pending, mismatch, checked, aged = [], [], [], 0, 0
+        for obj_key in sorted(complete):
+            man_key = obj_key[:-len(OBJECT_SUFFIX)] + MANIFEST_SUFFIX
+            age = (now - originals[man_key]["LastModified"]).total_seconds()
+            m_ = re.search(r"-(\d{8}T\d{6}Z)\.dump\.enc$", obj_key)
+            created = dt.datetime.strptime(m_.group(1), "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.timezone.utc) if m_ else None
+            if created and now - created >= dt.timedelta(days=RETENTION_DAYS):
+                aged += 1  # the copy legitimately expired (section 9.2.4); the original goes at the next lifecycle run
+                continue
+            for key in (obj_key, man_key):
+                if key not in copies:
+                    (pending if age < args.guard_copy_grace else missing).append(key)
+                    continue
+                size = originals[key]["Size"]
+                if copies[key]["Size"] != size:
+                    mismatch.append(f"{key} (size {copies[key]['Size']} != {size})")
+                    continue
+                a, b = sha256_of(restore, bucket, key, size), sha256_of(restore, guard_bucket, key, size)
+                checked += 1
+                if a != b:
+                    mismatch.append(f"{key} (sha256 differs)")
+        extra = len([k for k in copies if k not in originals])
+        summary = (f"{len(complete)} complete backups under {DATA_PREFIX} in {bucket!r}, {checked} objects compared "
+                   f"with {guard_bucket!r} by size and SHA-256; {len(pending)} pending (< {args.guard_copy_grace} s), "
+                   f"{aged} originals past {RETENTION_DAYS} d (copy expired as required), "
+                   f"{extra} copies without original (deleted originals are expected to survive in the guard)")
+        if missing or mismatch:
+            hint = ("; a missing copy may also mean the copier rejected the manifest (section 9.2.3): validate it "
+                    "with manifest_tool.py verify") if missing else ""
+            return "FAIL", f"{summary}; missing copies: {missing[:5]}; mismatches: {mismatch[:5]}{hint}"
+        if checked == 0:
+            return "MANUAL", (f"{summary}; nothing compared: run with the synthetic pairs of section 9.2.6 present "
+                              "or rely on the evidence of section 9.2.5")
+        return "PASS", summary
+    check(report, "C-22", True, c22)
 
     def c17():
         anon = urllib.parse.urlunsplit((url.scheme, url.netloc, f"/{bucket}/{urllib.parse.quote(small_key)}", "", ""))
@@ -425,17 +601,19 @@ def main(argv: list[str] | None = None) -> int:
 
     out = {
         "contract": CONTRACT, "contract_version": CONTRACT_VERSION, "endpoint": args.endpoint,
-        "region": args.region, "bucket": bucket, "run": run, "lab_mode": args.lab_allow_http,
+        "region": args.region, "bucket": bucket, "guard_bucket": guard_bucket, "run": run,
+        "lab_mode": args.lab_allow_http,
         "started_at": started.isoformat(timespec="seconds"),
         "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "conformant": report.ok() and not args.lab_allow_http,
+        "manual": report.manual(),
         "results": report.results,
     }
     if args.report:
         with open(args.report, "w", encoding="utf-8") as fh:
             json.dump(out, fh, indent=2)
             fh.write("\n")
-    print(json.dumps({k: out[k] for k in ("contract_version", "endpoint", "run", "lab_mode", "conformant")}))
+    print(json.dumps({k: out[k] for k in ("contract_version", "endpoint", "run", "lab_mode", "conformant", "manual")}))
     return 0 if report.ok(allow_skip=args.lab_allow_http) else 1
 
 
