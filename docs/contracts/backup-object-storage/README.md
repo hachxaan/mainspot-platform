@@ -6,7 +6,7 @@ respaldos (Garage en Hostinger KVM 4, `https://s3.mainspot.canonflow.dev`, bucke
 
 | Versión | Ruta | Commit | Estado |
 |---|---|---|---|
-| 1.1.0 | [`v1/CONTRACT.md`](v1/CONTRACT.md) | `<SHA v1.1.0>` (se rellena al publicar) | Publicado; aprobado con condiciones por el propietario (DEC-0045…DEC-0054; §2 del contrato); copia protegida exigida antes de activar; transferencia remota **no activada** (puerta de activación en §2.3) |
+| 1.1.0 | [`v1/CONTRACT.md`](v1/CONTRACT.md) | `0cbdfcf008ed84f9cddea399c5d49915ca24e828` (rama `contract/backup-object-storage-v1`) | Publicado; aprobado con condiciones por el propietario (DEC-0045…DEC-0054; §2 del contrato); copia protegida exigida antes de activar; transferencia remota **no activada** (puerta de activación en §2.3) |
 | 1.0.0 | [`v1/CONTRACT.md`](v1/CONTRACT.md) en ese commit | `21537dee08bd439df823f350c87d17d754da17a6` (rama `contract/backup-object-storage-v1`) | Publicado; aprobación parcial; sustituido por 1.1.0 |
 
 Cambios entre versiones: [`v1/CHANGELOG.md`](v1/CHANGELOG.md). El manifiesto no ha
