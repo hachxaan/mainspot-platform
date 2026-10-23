@@ -1,0 +1,12 @@
+# Timer de USUARIO — primer domingo de cada mes a las 04:00 hora local (DEC-0026).
+[Unit]
+Description=MainSpot — prueba mensual de restauración (primer domingo 04:00 local)
+
+[Timer]
+OnCalendar=Sun *-*-01..07 04:00:00
+Persistent=true
+AccuracySec=1min
+Unit=mainspot-db-restore-test.service
+
+[Install]
+WantedBy=timers.target

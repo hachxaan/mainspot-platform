@@ -1,0 +1,12 @@
+# Timer de USUARIO — respaldo diario a las 03:15 hora local (DEC-0026).
+[Unit]
+Description=MainSpot — respaldo diario de mainspot-db (03:15 local)
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+AccuracySec=1min
+Unit=mainspot-db-backup.service
+
+[Install]
+WantedBy=timers.target

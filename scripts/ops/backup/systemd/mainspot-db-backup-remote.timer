@@ -1,0 +1,17 @@
+# Timer de USUARIO — reintento horario del productor remoto (contrato v1 §8.2:
+# justo después de cada respaldo local y al menos cada hora mientras un respaldo
+# de menos de 24 h no tenga copia remota completa). NO INSTALADO NI HABILITADO
+# (DEC-0047 / DEC-0049 §7). Minuto 20 de cada hora: 5 min después del respaldo
+# local de las 03:15.
+[Unit]
+Description=MainSpot — copia remota del respaldo cifrado, cada hora (desactivada por defecto)
+After=mainspot-db-backup.service
+
+[Timer]
+OnCalendar=*-*-* *:20:00
+Persistent=true
+AccuracySec=1min
+Unit=mainspot-db-backup-remote.service
+
+[Install]
+WantedBy=timers.target

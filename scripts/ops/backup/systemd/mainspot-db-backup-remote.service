@@ -1,0 +1,24 @@
+# Unidad systemd de USUARIO (administrador) — copia remota del respaldo cifrado
+# (contrato mainspot-backup-object-storage v1, §8). NO INSTALADA NI HABILITADA:
+# la transferencia remota está desactivada (DEC-0047 / DEC-0049 §7) y el script
+# termina con status=DISABLED mientras no exista ~/.config/mainspot/backup/remote.env
+# con MAINSPOT_REMOTE_BACKUP_ENABLED=1. Instalar: ver scripts/ops/backup/README.md.
+[Unit]
+Description=MainSpot — copia remota del respaldo cifrado a Garage S3 (contrato v1 §8; desactivada por defecto)
+Documentation=file:///home/administrador/codeart/mainspoot/mainspot-platform/scripts/ops/backup/README.md
+# Nunca en paralelo con el respaldo local: si ambos arrancan a la vez, este espera.
+After=mainspot-db-backup.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/administrador/codeart/mainspoot/mainspot-platform
+# boto3 está en el site-packages de usuario (~/.local/lib/python3.12/site-packages).
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /home/administrador/codeart/mainspoot/mainspot-platform/scripts/ops/backup/db-backup-remote.py
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# Plazo total del productor: 30 min (§12) más margen.
+TimeoutStartSec=35min

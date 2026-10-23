@@ -1,0 +1,17 @@
+# Unidad systemd de USUARIO (administrador) — respaldo diario cifrado (DEC-0026).
+# Instalar: ver scripts/ops/backup/README.md (no se habilita automáticamente).
+[Unit]
+Description=MainSpot — respaldo diario cifrado de mainspot-db (DEC-0026)
+Documentation=file:///home/administrador/codeart/mainspoot/mainspot-platform/scripts/ops/backup/README.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/administrador/codeart/mainspoot/mainspot-platform
+# lxc vive en /snap/bin (no está en el PATH por defecto del manager de usuario).
+Environment=PATH=/snap/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/administrador/codeart/mainspoot/mainspot-platform/scripts/ops/backup/db-backup.sh
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=1h

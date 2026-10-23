@@ -1,0 +1,17 @@
+# Unidad systemd de USUARIO (administrador) — prueba mensual de restauración (DEC-0026).
+# Instalar: ver scripts/ops/backup/README.md (no se habilita automáticamente).
+[Unit]
+Description=MainSpot — prueba mensual de restauración del último respaldo (DEC-0026)
+Documentation=file:///home/administrador/codeart/mainspoot/mainspot-platform/scripts/ops/backup/README.md
+# No coincidir con un respaldo en curso.
+After=mainspot-db-backup.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/administrador/codeart/mainspoot/mainspot-platform
+# docker en /usr/bin; node (para scripts/retention-run.ts) vía nvm: ajustar si cambia la versión.
+Environment=PATH=/home/administrador/.nvm/versions/node/v24.16.0/bin:/snap/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/administrador/codeart/mainspoot/mainspot-platform/scripts/ops/backup/db-restore-test.sh
+UMask=0077
+Nice=10
+TimeoutStartSec=2h
