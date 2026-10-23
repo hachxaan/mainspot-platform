@@ -79,6 +79,7 @@ blocks:
       - evidence/contracts/backup-object-storage-v1/07-lab-v1.1-review-fixes-garage-v2.4.1.txt
       - evidence/contracts/backup-object-storage-v1/08-publish-v1.1.0.txt
       - .canonflow/skill-runs/RUN-0010.skill-report.yaml
+      - docs/contracts/backup-object-storage/integration-status.md
       - evidence/coordination/03-kvm-reconciliation-158ec59.md
       - evidence/contracts/backup-object-storage-v1/09-external-conformance-2026-10-23.md
     open_items:
