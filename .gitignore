@@ -11,3 +11,29 @@
 
 # Node
 node_modules/
+npm-debug.log*
+yarn-error.log
+
+# Entornos — .env.example sí se versiona
+.env
+.env.local
+.env.*.local
+
+# Tests
+coverage/
+
+# Logs y runtime
+*.log
+pids/
+*.pid
+
+# Sistema y editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Cognitive Jev private runtime (config and synthetic input remain versioned).
+out/cognitive/
+__pycache__/

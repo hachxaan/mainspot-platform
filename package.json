@@ -24,7 +24,10 @@
     "evidence": "bash scripts/capture-evidence.sh",
     "matrix": "node scripts/print-matrix.ts",
     "export:audit": "node scripts/export-audit.ts",
-    "rollback:simulate": "node scripts/simulate-rollback.ts"
+    "rollback:simulate": "node scripts/simulate-rollback.ts",
+    "jev:evaluate": "node scripts/jev-evaluate.ts",
+    "retention:run": "node scripts/retention-run.ts",
+    "tenant:exit": "node scripts/tenant-exit.ts"
   },
   "dependencies": {
     "express": "^4.21.2",

@@ -1,5 +1,5 @@
-# E2E INC-002 + INC-003 — transcript (run 2026-08-20T15:19:06.795Z)
-# HEAD: 194465d4878abe29fffc4a82bdf5a1ca04684442
+# E2E INC-002 + INC-003 — transcript (run 2026-10-23T09:35:10.518Z)
+# HEAD: 088c687e53fd8aab5dac23e7d1d0d7790c678030
 # canal: simulated (DEC-026); Telegram real requiere TELEGRAM_BOT_TOKEN
 # DB: mainspot_test (recreada por scripts/test-prep.ts)
 
@@ -21,9 +21,9 @@ PASS 14. contenido publicado versionado (website_content)
 PASS 15. segunda aprobación → already_published
 PASS 16. UNA sola publicación (no duplica)
 PASS 17. contenido publicado UNA vez por propuesta (sin duplicado por replay)
-PASS 18a. auditoría del mensaje contiene conversation.received (request_id=3732afc5…)
-PASS 18a. auditoría del mensaje contiene conversation.classified (request_id=3732afc5…)
-PASS 18a. auditoría del mensaje contiene conversation.proposal.created (request_id=3732afc5…)
+PASS 18a. auditoría del mensaje contiene conversation.received (request_id=27f9e9e3…)
+PASS 18a. auditoría del mensaje contiene conversation.classified (request_id=27f9e9e3…)
+PASS 18a. auditoría del mensaje contiene conversation.proposal.created (request_id=27f9e9e3…)
 PASS 18b. auditoría de la propuesta contiene conversation.confirmed
 PASS 18b. auditoría de la propuesta contiene conversation.preview.created
 PASS 18b. auditoría de la propuesta contiene conversation.approved
@@ -34,11 +34,11 @@ PASS 20. subdominio simulado provisto al publicar
 PASS 21. DNS + certificado simulados activos
 
 === Resumen E2E ===
-solicitud: request_id=3732afc5-a4e3-4cbd-af6e-0f1ebf01038b
-propuesta: prop_63b04738-679e-48ea-a3e9-7fa83d4e2285
-preview: /preview/pv_aa311db05be012c41ec7f7e7ad914c46c0bb9914d9d8a23f
-publicación: pub_prop_63b04738-679e-48ea-a3e9-7fa83d4e2285_1 (el-sol.sim.mainspot.local::website:v2)
-audit events correlacionados: 4
+solicitud: request_id=27f9e9e3-20a0-4c00-9fcb-6a71631283d5
+propuesta: prop_500a9132-c2f5-44c9-8bb2-dba5921257c8
+preview: /preview/pv_d6bf0d7020f0c83e1339949c55c04a26bf6677573b1fd74b
+publicación: pub_prop_500a9132-c2f5-44c9-8bb2-dba5921257c8_1 (el-sol.sim.mainspot.local::website:v2)
+audit events correlacionados: 6
 === Fin E2E ===
 
 # Fin de transcript

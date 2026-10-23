@@ -9,7 +9,7 @@ Implementación de los contratos canónicos:
 - `INC-004` — Google Business Profile y reputación (`DEC-011` respuesta pública = preview/aprobación, `DEC-023` umbral configurable default `<4`, `DEC-026` modo simulado): detección → sugerencia (3 borradores) → escalamiento humano → aprobación → publicación UNA vez; SIN manipulación de opiniones.
 - `INC-005` — Facebook publicaciones y Ads básicos (`DEC-017`, `DEC-026`): crear/adaptar/programar/consultar; publicación SOLO con preview/aprobación; cola programada con tick manual; campañas avanzadas/Instagram FUERA (permiso bloqueado).
 - `INC-006` — suscripciones, planes y límites (`DEC-024`): catálogo CONFIGURABLE sin precios, enforcement de límites en creación (deny 403 `limit_exceeded` auditado), `PaymentProvider` abstracto + simulado (sin cobro).
-- `INC-007` base — analítica mínima (`DEC-025`): export ETL JSON/CSV paginado por tenant, retención configurable (default 90 días) con DRY-RUN seguro, agregados diarios básicos; dashboards/research son fase 2.
+- `INC-007` base — analítica mínima (`DEC-025`): export ETL JSON/CSV paginado por tenant y agregados diarios básicos; dashboards/research son fase 2. La retención es global y automática (QS-0006, §10.1).
 
 Stack (gate humano 2026-08-19): **TypeScript (Node ≥ 24, type-stripping nativo) + PostgreSQL 16 + sesión/JWT propio mínimo + Docker Compose local**. Aislamiento **LÓGICO por cliente** (`DEC-018`: `tenant_id` + contexto + fail-closed). Integraciones externas bajo `DEC-026`: interfaz de adaptador + implementación real opcional + **modo simulado funcional** (E2E y piloto sin credenciales externas).
 
@@ -28,21 +28,24 @@ mainspot-platform/
 │   ├── audit/       C4  evento mínimo, sink fail-closed, consulta/export con correlación
 │   ├── hooks/       C5  contratos INC-001 (resolve_identity / check_authorization / audit_sink)
 │   ├── channels/    INC-002 adaptador de canal (Telegram real opcional + SimulatedChannel funcional, DEC-026)
-│   ├── conversation/INC-002 clasificador determinista (TENTATIVA), pipeline de ingesta, repos, state machine FLOW-002
+│   ├── conversation/INC-002 clasificador determinista (TENTATIVA), pipeline de ingesta, repos, state machine FLOW-002, Jev como clasificador disabled/shadow/primary (APR-0002)
 │   ├── publishing/  contrato Publisher genérico (reutilizable INC-003/004/005) + Stub/Website/Reputation/Social publishers
 │   ├── website/     INC-003 plantilla de sitio (XSS-safe), editor asistido por LN (básico), repositorio
 │   ├── domain/      INC-003 DomainProvider (Hostinger real opcional + SimulatedHostinger, DEC-019/026)
 │   ├── reputation/  INC-004 ReputationProvider (GBP real opcional + SimulatedReviews determinista), engine FLOW-004, publisher
 │   ├── social/      INC-005 SocialProvider (Meta real opcional + SimulatedMeta determinista), servicio + cola de programación, publisher
-│   ├── subscriptions/ INC-006 catálogo de planes/límites (EntitlementService/checkLimit), PaymentProvider abstracto + simulado
-│   ├── analytics/   INC-007 base ExportService (JSON/CSV paginado), RetentionService (DRY-RUN), AnalyticsService (agregados diarios)
+│   ├── subscriptions/ INC-006 catálogo de planes/límites (EntitlementService), QuotaLedger (consumo atómico, DEC-0005), PaymentProvider abstracto + simulado
+│   ├── analytics/   INC-007 base ExportService (JSON/CSV paginado), AnalyticsService (agregados diarios)
+│   ├── retention/   QS-0006 RetentionService: purga diaria por plazo, baja con exportación, anonimización verificada y re-aplicación tras restaurar (DEC-0021..0027)
+│   ├── jev/         núcleo cliente Jev/TypeSafe (vendorizado de hyper-jev; lo usan el clasificador Jev y su evaluación, APR-0002)
 │   ├── api/         API HTTP mínima + UX + rutas conversacionales/preview + reputation/social/subscriptions/analytics
 │   ├── db/          pool PostgreSQL
 │   └── shared/      config, logger estructurado, contexto por request (ALS), JWT propio, errores
 ├── migrations/      0001_schema + 0002_seed + 0003_login_unique + 0004_conversation_preview
 │                    0005_website_domain + 0006_permissions + 0007_reputation_reviews
 │                    0008_social_posts + 0009_subscriptions_plans + 0010_analytics_summary
-├── scripts/         migrate / seed / db-setup / test-prep / matrix / export-audit / rollback / evidence
+│                    0011_social_approval_gate + 0012_jev_classification
+├── scripts/         migrate / seed / db-setup / test-prep / matrix / export-audit / rollback / evidence / jev-evaluate
 ├── tests/           unit (sin DB) · integration (con DB + 2 tenants) · smoke · e2e (canal simulado + INC-004/005/006)
 ├── evidence/        evidencia real capturada (AC-009)
 └── docker-compose.yml
@@ -77,6 +80,10 @@ npm run db:setup     # asegura la BD, aplica migraciones + seed (idempotente)
   - `0009_subscriptions_plans.sql` — `plan`, `plan_limit`, `subscription` + **seed de planes sin precio** (`Piloto 1` único) y asignación a los 2 tenants + permisos `subscription.*`.
   - `0010_analytics_summary.sql` — `analytics_daily_summary` + índice de retención sobre `audit_event(ts)` + permisos `analytics.*`.
   - `0011_social_approval_gate.sql` — PR-01 (Reviewer): la cola `scheduled_post` SOLO existe tras aprobación humana. Amplía el CHECK de estado (`scheduled`/`blocked`), añade `scheduled_post.proposal_id → action_proposal` (FK RESTRICT + índice) y **backfill** de filas legacy: con evidencia de aprobación → `scheduled`; huérfanas → `blocked` (nunca auto-publicadas).
+  - `0012_jev_classification.sql` — APR-0002 (sustituye a la `0012_jev_shadow_evaluation.sql` de DEC-0001, que nunca se aplicó fuera de bases de prueba temporales): `jev_classification` (una fila por `conversation_request` clasificada con Jev; FK compuesta `(request_id, tenant_id)` sobre el índice único `uq_conversation_request_request_tenant` ⇒ siempre del mismo tenant) con modo efectivo, origen y motivo de la decisión (CHECK de coherencia D1–D4), clasificación determinista y final, lectura completa de Jev (intent, capability_target, distribuciones, confianzas), modelos, usage/costo, día del presupuesto, latencia, código de error seguro y cuerpos JSON exactos (sin cabeceras ni credencial); y `jev_evaluation_run` (evaluaciones sintéticas del gate D4, sin datos de tenant). Ver §5.1.
+  - `0013_jev_gate_final_outcome.sql` — DEC-0033/DEC-0034: `jev_evaluation_run` añade `risk_definition` (`jev_only` en las ejecuciones anteriores, `final_outcome` desde DEC-0033), `jev_risky_misses` (cifra de Jev solo, informativa; backfill = `risky_misses` en las anteriores) y `decision_code_sha256` (bytes de `classifier.ts` + `jev-classifier.ts` evaluados). CHECK: una fila `final_outcome` exige hash de 64 hex y `jev_risky_misses`.
+  - `0014_quota_reservation.sql` — DEC-0005 + NFR-0001: `quota_reservation` (una fila por consumo o reserva de cuota: `reserved` → `committed` | `released` | `expired`), única por `(tenant_id, capability, idempotency_key)`; FK a `client` RESTRICT; índices parciales de reservas vigentes y de vencimiento. Sin datos personales.
+  - `0015_retention_policy.sql` — QS-0006 (DEC-0021..0027): `content_purged_at` en `conversation_request`/`action_proposal`/`jev_classification` (el CHECK de Jev admite cuerpos raw purgados), `retention_run` (informe de cada ejecución, solo totales; una programada completada por día UTC), estados de `client` `exiting`/`anonymized`, `tenant_exit` (baja confirmada con sha256 del export; anonimización ≥ 30 días después) y `anonymized_tenant` (solo sha256 del id, para no reintroducir bajas al restaurar). Permiso `analytics.purge` → `analytics.retention`.
 - El runner registra archivos en `schema_migrations` con advisory lock (replay seguro). Seeds 0002/0005/0009 idempotentes (`ON CONFLICT DO NOTHING`).
 - **Regeneración de BD dev/test**: `npm run db:setup` (dev) o `npm run test:integration`/`test:e2e` (recrean `mainspot_test` desde cero con `scripts/test-prep.ts`). Si una BD existente ya tiene datos, `npm run migrate` aplica 0011 y convierte los legacy de `scheduled_post` automáticamente (no se pierde la intención de las filas aprobadas).
 
@@ -200,7 +207,7 @@ Rutas INC-007 base (analítica):
 | `GET /api/backoffice/analytics/export` | `analytics.export` | Export ETL JSON/CSV paginado con filtros `from/to/action/page/page_size` |
 | `GET /api/backoffice/analytics/summary` | `analytics.read` | Agregados diarios por acción/resultado (en vivo) |
 | `POST /api/backoffice/analytics/refresh-summary` | `analytics.export` | Materializa `analytics_daily_summary` (upsert idempotente) |
-| `POST /api/backoffice/analytics/purge` | `analytics.purge` | Retención ON-DEMAND; **default DRY-RUN** (no borra; `dry_run=false` aplica) |
+| `GET /api/backoffice/analytics/retention` | `analytics.retention` | Vista previa de lo que purgará la retención automática para el tenant, plazos, baja (si existe) y última ejecución. No borra nada (§10.1) |
 
 ### 4.1 Deploy local LXD (contenedores LXC/LXD)
 
@@ -208,7 +215,7 @@ Para un piloto **sin Docker**, la plataforma se despliega en contenedores
 `LXC/LXD` locales con [`scripts/deploy/deploy-lxd.sh`](scripts/deploy/deploy-lxd.sh)
 (idempotente): dos contenedores `mainspot-db` (PostgreSQL 16) y `mainspot-app`
 (Node ≥ 24, type-stripping nativo), app expuesta en `http://localhost:3000` vía
-device proxy LXD. Aplica migraciones 0001→0011 + seed y genera secretos
+device proxy LXD. Aplica migraciones 0001→0012 + seed y genera secretos
 aleatorios **fuera** del repo (`~/.config/mainspot/mainspot-secrets.env`, 0600).
 
 Ver [`scripts/deploy/README-deploy-lxd.md`](scripts/deploy/README-deploy-lxd.md)
@@ -233,6 +240,30 @@ Flujo implementado (según `INC-002`, AC-004..AC-007, FLOW-001/002/003):
 6. **Preview seguro** (CAP-008, TENTATIVA): token aleatorio (`pv_…`), SOLO hash en BD, expiración configurable (`PREVIEW_TOKEN_TTL_MINUTES`), alcance limitado a un proposal, single-use; botón **Aplicar cambios** en `POST /preview/:token/apply`.
 7. **Auditoría**: toda acción emite eventos (`conversation.received/classified/answered/prohibited/proposal.created/confirmed/preview.created/approved/published/publish_attempt/rejected/expired`) con `request_id`; sin secretos (el token y las contraseñas jamás llegan a audit).
 
+### 5.1 Jev como clasificador semántico: disabled / shadow / primary (APR-0002)
+
+DEC-0001 (Q-CLASSIFIER = `override`, "Debe ser con TypeSave/Jev") abrió la evaluación de Jev. APR-0002 aprueba la arquitectura `MSP-JEV-CLASSIFIER-MODES v1` (`.canonflow/state/jev-classifier-modes-proposal.md`) con sus puntos de decisión: D1 escalar a aprobación humana (DEC-0028), D2 respaldo determinista (DEC-0029), D3 pedir aclaración (DEC-0030), D4 primary automático al superar la evaluación (DEC-0031) y D5 USD 1/día (DEC-0032). QS-0008 sustituye en parte a DEC-0031: un fallo de riesgo se mide sobre el resultado final del sistema con D1–D3 (DEC-0033) y solo un conjunto reservado v3 nuevo puede abrir primary (DEC-0034); los criterios se corrigen según DEC-0035 y DEC-0036. **DEC-0019 no acepta** enviar mensajes reales de clientes: solo salen textos de tenants sintéticos.
+
+| Variable | Default | Regla |
+|---|---|---|
+| `JEV_MODE` | `disabled` | `disabled` \| `shadow` \| `primary`. Con `disabled` no se construye cliente ni sale nada. `JEV_ENABLED` y `JEV_SHADOW_MODE` ya no existen: si están definidas, el arranque falla. |
+| `JEV_PROVIDER` | — | Con `shadow`/`primary` debe ser exactamente `typesafe` (explícito, sin fallback; nunca se cambia de proveedor ante un fallo). Otro valor ⇒ el arranque falla. |
+| `TYPESAFE_API_KEY` | — | Requerida (no vacía) con `shadow`/`primary`. Nunca se loguea, audita, persiste ni aparece en mensajes de error. |
+| `JEV_MODEL` | alias del proveedor (`jev-latest`) | Modelo solicitado; cada fila guarda además el modelo versionado que respondió. Se recomienda fijar uno versionado. |
+| `JEV_DATA_SCOPE` | `synthetic` | Único valor válido (DEC-0019). |
+| `JEV_SYNTHETIC_TENANTS` | — | Requerida con `shadow`/`primary`: tenants con datos sintéticos (p. ej. `client_a,client_b`). Los demás se procesan como `disabled` y su auditoría lleva `jev_skipped=data_scope`. |
+| `JEV_DAILY_BUDGET_USD` | `1` | `0 < valor ≤ 1` (DEC-0032). Libro por proceso y día UTC, sembrado desde la BD (clasificaciones + evaluaciones); agotado ⇒ D2. |
+
+- **Flujo** (`src/conversation/jev-classifier.ts`, cliente en `src/jev/`): una llamada con dos preguntas Choice, `intent` (los 8 intents de `classifier.ts` + `other`) y `capability_target`; `actionClass` se deriva en código con la tabla del determinista. Un intento, deadline 10 s, máx. 16 llamadas simultáneas por proceso, mensajes de hasta 8 KiB.
+  - `shadow`: decide `classifyIntent`; Jev se evalúa **sin await** y solo deja evidencia.
+  - `primary`: si la **última** evaluación de `(política, JEV_MODEL, bytes del conjunto reservado, bytes del código que decide)` en `jev_evaluation_run` está calculada con la definición `final_outcome` y cumple los umbrales (≥ 200 casos, ≥ 90 % de acierto del intent de Jev, 0 fallos de riesgo; recalculados en código, caché 60 s), Jev determina la clasificación con la política pura `decidePrimary`: D2 (no disponible, error, presupuesto o modelo resuelto no evaluado ⇒ determinista marcado) → D1 (discrepancia que involucra prohibited o human_approval_required ⇒ aprobación humana) → D3 (`other` o probabilidad < 0,70 ⇒ aclaración). D1 va antes que D3 por ser la salida más conservadora. Con el gate cerrado, `primary` se comporta como `shadow` (`primary_gated`).
+  - El backend conserva identidad, tenant, RBAC, cuotas, preview/confirmación, aprobación humana, bloqueo y auditoría: Jev nunca ejecuta, aprueba ni publica.
+- **Auditoría**: `conversation.classified` añade el origen al `result` (`<intent>:<clase>;source=deterministic|jev|deterministic_fallback|human_escalation`, más `;jev=<motivo>` o `;jev_skipped=data_scope`).
+- **Evaluación (gate D4)**: `jev-intent-eval-set.v1.json` (`dev`) sirve para ajustar los criterios; `jev-intent-eval-set.v3.json` (`gate`, DEC-0034) lo escribió un agente separado sin acceso a v1, v2 ni a sus resultados, no comparte mensajes con ellos y es el único que abre `primary`. `jev-intent-eval-set.v2.json` (gate anterior, 6 fallos con la definición de Jev solo) se conserva solo como evidencia de RUN-0004. Para cada caso la evaluación calcula las reglas deterministas y el resultado final con `decidePrimary`; un **fallo de riesgo** (DEC-0033) es un caso etiquetado prohibited o human_approval_required cuyo resultado final no es bloqueo, aprobación humana ni aclaración (`isContained`). La cifra de Jev solo se guarda como información (`jev_risky_misses`), junto con las rutas de decisión (carga de escalados de D1). El gate exige los bytes exactos del conjunto y de `classifier.ts` + `jev-classifier.ts`: cambiar las reglas, los criterios o la política invalida los aprobados. `npm run jev:evaluate` evalúa el conjunto `gate` con TypeSafe real (presupuesto D5) y guarda métricas por intent, matriz de confusión, rutas de decisión y resultado por caso en `jev_evaluation_run`; si supera los umbrales, `primary` se abre solo. `-- --set=dev` evalúa el conjunto de desarrollo (se guarda, nunca abre el gate). `-- --mock` usa el proveedor simulado, sin red ni persistencia (solo prueba el cableado). Política vigente: `intent-classifier-v3` (v2 más DEC-0035: las preguntas informativas sobre las condiciones de MainSpot son consultas; y DEC-0036: una queja sin petición concreta pide aclaración).
+- **Datos que salen**: solo el **texto del mensaje** de tenants de `JEV_SYNTHETIC_TENANTS` más las preguntas fijas, hacia `https://api.typesafe.ai/v1/systemone`. No se envían tenant, actor, nombres ni tokens. **No se asume ZDR** (zero data retention) del proveedor.
+- **Evidencia** (`jev_classification`, tenant-scoped): ver la migración 0012. No guarda más datos sensibles que `conversation_request.raw_message`; la retención de conversaciones (DEC-0021, §10.1) pone sus cuerpos raw a `NULL` a los 90 días.
+- **Apagado**: con Jev habilitado, `SIGTERM`/`SIGINT` esperan las clasificaciones pendientes de persistir. `npm start` no carga `.env` por sí mismo (usar el entorno del proceso, `docker compose` o `node --env-file=.env`).
+
 ## 6. INC-003 — Website administration + dominio subdominio MainSpot (modo simulado)
 
 - **WebsiteService** (`src/website/`): plantilla estática XSS-safe con datos de negocio (nombre, giro, servicios, horarios, contacto); render determinista; **editor asistido por LN** (`edit-mapper.ts`, TENTATIVA/básico): "cambia el teléfono a …", "agrega la sección servicios", "agrega un servicio llamado …", etc. → parche estructurado → propuesta del INC-002.
@@ -256,21 +287,42 @@ Flujo implementado (según `INC-002`, AC-004..AC-007, FLOW-001/002/003):
 ## 9. INC-006 — Suscripciones y límites (CAP-012, DEC-024)
 
 - **Catálogo CONFIGURABLE en BD** (`plan`, `plan_limit`, `subscription`): plan **"Piloto 1"** único sin precio + planes opcionales sin precio (RULE-006). Una suscripción activa por tenant (seed para los 2 tenants).
-- **EntitlementService** (`src/subscriptions/entitlements.ts`): asignar plan (admin), consultar entitlements (los 3 perfiles), `checkLimit(tenant, capability)` en el punto de creación — exceso ⇒ **403 `limit_exceeded` auditado**; sin plan activo ⇒ 403 `subscription_required` (fail-closed). `remainingQuota(tenant, capability)` permite validar LOTES antes de insertar (PR-03).
-- **Enforcement por capacidad (PR-02, Reviewer)**:
-  - `conversations` — verificado en `pipeline.ingest()` (todo mensaje entrante exige plan activo y cuota; deny 403 + audit en la ruta).
-  - `website` — verificado en `POST /website` (creación del sitio, INC-003/PR-02): sin plan ⇒ 403 `subscription_required`; uso completo ⇒ 403 `limit_exceeded`; un sitio por tenant (UNIQUE) + 409 si ya existe. La provisión de dominio/publicación NO cuenta como creación (no rompe el flujo de tenants con sitio de seed).
-  - `social_posts`/`social_ads` — verificado en `social.createDraft`.
-  - `reviews_managed` — verificado en `reputation` sync/ingesta con validación de LOTE atómica (PR-03).
-  - `agents` — SIN enforcement en esta tanda (no existe creación de agentes todavía; solo lectura del límite). Ver §15.
+- **EntitlementService** (`src/subscriptions/entitlements.ts`): asignar plan (admin), consultar entitlements (los 3 perfiles), conteo de uso por capacidad y mensajes de límite.
+- **QuotaLedger** (`src/subscriptions/quota.ts`, DEC-0005 + NFR-0001): la comprobación y el consumo de cuota son **atómicos por tenant**. Uso = filas de dominio + unidades reservadas vigentes, leído bajo `pg_advisory_xact_lock(tenant, capacidad)`: las operaciones concurrentes del mismo tenant y capacidad se serializan y nunca superan el límite; los demás tenants no comparten candado ni filas. Exceso ⇒ **403 `limit_exceeded`**; sin plan activo ⇒ 403 `subscription_required` (fail-closed; la ruta audita el deny).
+  - **Un paso** (`consumeInTx`): candado, comprobación, creación del recurso, fila `committed` y evento `quota.consumed` en la MISMA transacción (si la auditoría falla, no queda ni el recurso ni el consumo).
+  - **Dos pasos** (`reserve` → `commitInTx` | `release`) cuando hay trabajo externo en medio (clasificación Jev): la reserva aparta la unidad 120 s (`quota.reserved`); se confirma con la solicitud persistida o se devuelve (`quota.released`). Si el proceso cae a mitad, la reserva deja de contar al vencer y la **reconciliación** (cada 60 s en el servidor; `quota.expired`, actor `system:quota-reconciler`) la cierra e informa del uso por encima del límite (p. ej. tras un cambio de plan), sin borrar nada.
+  - **Idempotencia**: cabecera opcional `Idempotency-Key` (1–128 caracteres `A-Za-z0-9._:-`) en `POST /conversation/messages`, `POST /website` y `POST /social/posts`. Repetir la clave devuelve el resultado original con **200 `replayed: true`** sin consumir otra vez (los mensajes no se reenvían por el canal); repetirla mientras la primera sigue en curso ⇒ **409 `request_in_progress`**; tras un fallo la misma clave puede reintentarse. Sin cabecera, la clave es el `request_id` (sin deduplicación). Las claves son por tenant.
+- **Enforcement por capacidad**:
+  - `conversations` — reserva en `pipeline.ingest()` antes de clasificar; consumo en la transacción que persiste la solicitud.
+  - `website` — `POST /website`: un paso; un sitio por tenant (UNIQUE) + 409 si ya existe (revierte también el consumo). La provisión de dominio/publicación NO cuenta como creación.
+  - `social_posts`/`social_ads` — `social.createDraft`: un paso.
+  - `reviews_managed` — `reputation.sync`: el lote se mide y se consume entero bajo el candado, en la transacción de las inserciones (sin estado parcial).
+  - `agents` — SIN enforcement (DEC-0006: no existe creación de agentes todavía). Ver §15.
 - **Política sin plan (PR-02, decisión del owner)**: **DENY 403 `subscription_required`** en toda operación que CREA recursos (mensajes, posts, reseñas, sitios, facturación); las lecturas (entitlements, data.read, listados, analítica de lectura) siguen permitidas. Documentada en §15.
 - **Pago** (`src/subscriptions/payment.ts`): `PaymentProvider` abstracto + `SimulatedPaymentProvider` (siempre ok, sin llamadas externas). `POST /subscriptions/invoice` con plan SIN precio ⇒ **PROHIBITED** + audit deny (`no_price_prohibited`). El piloto NO cobra.
 
 ## 10. INC-007 base — Analítica mínima + export ETL (CAP-014 base, DEC-025)
 
 - **ExportService** (`src/analytics/export.ts`): exporta eventos de auditoría por tenant con filtros `from/to/action`, formato JSON/CSV, paginación (page/page_size, `has_more`), auditoría del exporte.
-- **RetentionService** (`src/analytics/retention.ts`): retención configurable (`RETENTION_DAYS`, default 90) ON-DEMAND; la operación es **DRY-RUN por defecto** (no borra) y solo con `dry_run=false` elimina (scope por tenant; la retención global de plataforma queda como limitación documentada).
+- **Retención**: ya no hay purga manual ni `RETENTION_DAYS`; la aplica la retención global automática (§10.1).
 - **Agregados** (`src/analytics/summary.ts` + `analytics_daily_summary`): contadores por día/acción/resultado con SELECT en vivo; `refresh-summary` materializa (upsert idempotente). **Dashboards completos, ETL externo y research/recomendaciones son INC-007 fase 2 (fuera de este bloque).**
+
+### 10.1 Retención global, baja y anonimización (QS-0006: DEC-0021..DEC-0027)
+
+`src/retention/service.ts` (`RetentionService`). Plazos fijos por decisión (no configurables):
+
+| Dato | Plazo | Qué hace la purga |
+|---|---|---|
+| Contenido conversacional (DEC-0021) | 90 días desde `conversation_request.created_at` | Mensaje → texto fijo de "contenido eliminado", respuesta → `NULL`; propuestas de esa solicitud: resumen → texto fijo, `detail` → `{}`, las abiertas pasan a `expired` (ya no se pueden aplicar); `jev_classification.raw_request/raw_response` → `NULL`. Se conservan intención, clase, estado y fechas |
+| Auditoría (DEC-0022) | 2 años (`audit_event.ts`) | Borrado |
+| Agregados de analítica (DEC-0023) | 2 años (`analytics_daily_summary.day`) | Borrado |
+| Registro de anonimizados | 30 días (respaldos de 14 días + margen) | Borrado de la huella |
+
+- **Ejecución automática diaria (DEC-0025)**: el servidor comprueba cada 15 min y, a partir de las 03:00 UTC, corre una ejecución `scheduled` por día UTC (candado consultivo entre procesos; una ejecución interrumpida queda `running` y se reintenta; una con fallos no se repite hasta el día siguiente y la purga por plazo recupera lo pendiente). Cada tenant va en **su propia transacción con su evento `retention.purged`** (conteos, actor `system:retention`, NFR-0001); si el evento no se puede escribir, ese tenant se revierte y los demás siguen. `retention_run` guarda el informe (solo totales, sin ids de tenant).
+- **Manual**: `npm run retention:run -- --dry-run` (informe sin cambios) o `npm run retention:run`; `GET /api/backoffice/analytics/retention` muestra la vista previa por tenant.
+- **Baja (DEC-0024/DEC-0027)**: la decide una persona; el vencimiento de una prueba **no** es una baja. `npm run tenant:exit -- confirm --tenant=<id> --by=<operador> [--export-dir=<dir>]` exporta primero los datos del negocio (JSON 0600, sin `password_hash` ni `token_hash`; por defecto `MAINSPOT_EXPORT_DIR` o `/var/lib/mainspot/exports`, fuera del directorio que reemplaza el despliegue) y luego, en una transacción: `tenant_exit` con el sha256 del export, cliente `exiting` (sin login ni sesiones vigentes), suscripción `cancelled` y evento `tenant.exit_confirmed`. `npm run tenant:exit -- status --tenant=<id>` la consulta.
+- **Anonimización (≥ 30 días después, en la ejecución diaria)**: una transacción por tenant: cliente nuevo `anon_<uuid>` (`Negocio anonimizado`, estado `anonymized`); agregados y auditoría pasan a ese id, con actores y `request_id` sustituidos por tokens aleatorios sin correspondencia guardada (se conservan los actores `system:*`), `resource` reducido a su tipo y `evidence_ref` a `NULL`; se borran todas las filas operativas del tenant (orden compatible con las FK) y se registra `anonymized_tenant` (sha256) y `tenant.anonymized`. **Antes de confirmar** se verifica que ningún identificador técnico o de contacto (id del tenant, correo, ids y logins de usuarios, slug, subdominio, ids de solicitud, request_id propios) aparece en **ninguna** columna de texto/JSON de la base, y que los nombres (negocio, personas, sitio) no quedan en lo que se conserva; si algo aparece, se revierte todo, la ejecución queda `failed` y el log nombra la tabla y columna (nunca el valor). Una mención del tenant en datos de otro bloquea su anonimización hasta resolverla.
+- **Respaldos (DEC-0026/DEC-0027)**: tras restaurar, `npm run retention:run -- --reapply-exits` vuelve a anonimizar los tenants cuya huella está en el registro restaurado; si se restaura un respaldo **anterior** al más reciente, primero `npm run retention:run -- --export-registry > registry.json` sobre la base más reciente disponible (o una copia restaurada del último respaldo) y después `--reapply-exits --registry=registry.json`. Un respaldo previo a la migración 0015 necesita migrar antes (`npm run migrate`). `scripts/ops/backup/db-restore-test.sh` ejecuta la re-aplicación en cada prueba mensual.
 
 ## 11. Validaciones (AC-001/002/003/004/005/006/007/009)
 
@@ -312,8 +364,8 @@ La salida real queda en `evidence/` (00-14): environment, typecheck, permission 
 
 1. Deshabilitar aprobaciones/publicaciones: `npm run rollback:simulate` revoca sesiones activas; ningún token previo sigue siendo válido.
 2. Marcar previews pendientes como expired y conservar el intake read-only (rollback mínimo INC-002): `UPDATE preview_session SET status='expired' WHERE status='active'; UPDATE action_proposal SET status='expired' WHERE status IN ('confirmed','preview_ready');` — las consultas `read_only` siguen funcionando (FLOW-003).
-3. Preservar auditoría: nunca se borran `audit_event` (salvo la purga explícita de retención INC-007 con `dry_run=false`).
-4. Revertir código: `git revert` del commit de la tanda. La matriz RBAC vive en `src/rbac/matrix.ts` (migraciones espejo 0006/0007/0008/0009/0010).
+3. Preservar auditoría: `audit_event` solo se borra por la retención automática a los 2 años (DEC-0022) y solo se re-etiqueta al anonimizar una baja (DEC-0024).
+4. Revertir código: `git revert` del commit de la tanda. La matriz RBAC vive en `src/rbac/matrix.ts` (migraciones espejo 0006/0007/0008/0009/0010/0015).
 
 ## 14. Mapa AC → implementación y evidencia
 
@@ -330,14 +382,17 @@ La salida real queda en `evidence/` (00-14): environment, typecheck, permission 
 | **INC-004** (DEC-011/023) | `reputation/` + `publishing/reputation` + preview/aprobación INC-002 | `tests/integration/reputation-inc004.test.ts`, `tests/unit/reputation.test.ts` |
 | **INC-005** (DEC-017/026) | `social/` + `publishing/social` + cola `scheduled_post` (gate PR-01) | `tests/integration/social-inc005.test.ts`, `tests/unit/social.test.ts` |
 | **INC-006** (DEC-024) | `subscriptions/` (planes/límites/pago simulado) + enforcement conversaciones/sitios (PR-02) | `tests/integration/subscriptions-inc006.test.ts`, `tests/unit/subscriptions.test.ts` |
-| **INC-007 base** (DEC-025) | `analytics/` (export/retention/summary) | `tests/integration/analytics-inc007.test.ts`, `tests/unit/analytics.test.ts` |
-| **PR-03** sync atomic | `reputation/engine.ts` (capacidad de lote + transacción) + `entitlements.remainingQuota` | `tests/integration/subscriptions-inc006.test.ts` |
+| **INC-007 base** (DEC-025) | `analytics/` (export/summary) | `tests/integration/analytics-inc007.test.ts`, `tests/unit/analytics.test.ts` |
+| **QS-0006** retención, baja y anonimización (DEC-0021..0027) | `retention/service.ts` + `scripts/retention-run.ts` + `scripts/tenant-exit.ts` + ejecución diaria en `api/server.ts` + migración 0015 | `tests/integration/retention.test.ts` (plazos y límites, dry-run, NFR-0001 por tenant, programación diaria concurrente, baja con export, anonimización sin rastros, reversión si queda un rastro, re-aplicación tras restaurar y caducidad del registro) |
+| **DEC-0005** cuotas atómicas + **NFR-0001** | `subscriptions/quota.ts` (`QuotaLedger`) + rutas y servicios que consumen cuota + migración 0014 | `tests/integration/quota-toctou.test.ts`, `tests/integration/nfr-0001-atomicity.test.ts` |
+| **APR-0002** Jev disabled/shadow/primary (D1–D5) | `conversation/jev-classifier.ts` + `jev-repository.ts` + `jev-evaluation.ts` + `scripts/jev-evaluate.ts` + `jev/` + `pipeline.ts` + `jev_classification`/`jev_evaluation_run` | `tests/unit/jev-classifier.test.ts`, `tests/unit/jev-evaluation.test.ts`, `tests/unit/config.test.ts`, `tests/integration/jev-classifier.test.ts` |
+| **PR-03** sync atomic | `reputation/engine.ts` (lote medido y consumido bajo el candado de `QuotaLedger`, en la transacción de las inserciones) | `tests/integration/subscriptions-inc006.test.ts` |
 
 ## 15. Decisiones TENTATIVA (a validar/cerrar; el canon no las fija)
 
 | Tema | Decisión tomada | Marca |
 |---|---|---|
-| Clasificador de intención | DETERMINISTA por reglas/keywords en español (sin ML) | TENTATIVA e iterable |
+| Clasificador de intención | DETERMINISTA por reglas/keywords en español; Jev puede determinar la clasificación en `JEV_MODE=primary` tras superar la evaluación sintética (APR-0002, §5.1), con el determinista como respaldo (D2) y contraste de seguridad (D1) | TENTATIVA e iterable (umbral D3 a recalibrar con la evaluación) |
 | Canal Telegram real | `TelegramAdapter` con fetch a Bot API; ingesta por webhook y mapeo canal→cliente SIN implementar (identidad resuelta por sesión) | TENTATIVA |
 | Enlace de preview | token aleatorio alto entropía, hash SHA-256 en BD, expiración configurable, single-use, alcance `proposal_publish` | TENTATIVA (canon 05: audiencia/revocación pendiente) |
 | Publisher | contrato genérico `Publisher` (reutilizando INC-003/004/005) con `WebsitePublisher`/`ReputationPublisher`/`SocialPublisher`; `StubPublisher` como fallback | TENTATIVA |
@@ -348,11 +403,11 @@ La salida real queda en `evidence/` (00-14): environment, typecheck, permission 
 | Umbral de reseñas | `REVIEW_THRESHOLD` configurable por env, default `<4` (DEC-023); el valor definitivo queda para investigación con datos (Q-013) | TENTATIVA (decisión con dato diferida) |
 | Sugerencia de respuesta | plantillas deterministas (3 borradores, sin generativo); sin inventar hechos comerciales (RULE-005) | TENTATIVA e iterable |
 | Revisión de Google/API Meta reales | esqueleto con fetch; mapeo exacto a endpoints sin validar; sin credenciales NO se llaman | TENTATIVA |
-| Límites por capacidad | enforcement en el punto de creación: `conversations` (ingesta), `website` (creación de sitio), `social_posts`/`social_ads` (crear borrador), `reviews_managed` (ingesta con validación de lote); TOCTOU entre check e insert aceptado en piloto | TENTATIVA (endurecer con UNIQUE/claims en fase productiva) |
+| Límites por capacidad | enforcement en el punto de creación: `conversations` (ingesta), `website` (creación de sitio), `social_posts`/`social_ads` (crear borrador), `reviews_managed` (ingesta con validación de lote); comprobación y consumo atómicos por tenant con reserva idempotente (`QuotaLedger`, §9) | Decidido (DEC-0005) |
 | `agents` sin enforcement | no existe creación de agentes en esta tanda: el límite se muestra en entitlements pero no se verifica en ninguna operación (futuro INC agente) | TENTATIVA (deuda registrada) |
 | Política sin plan | **DENY 403 `subscription_required`** en toda operación que CREA recursos (mensajes/posts/reseñas/sitios/facturación); lecturas permitidas — decisión PR-02 de owner | TENTATIVA (configurable con plan "libre" si el piloto lo pide) |
 | Sync de reseñas (PR-03) | validación de capacidad del LOTE antes de insertar + ingesta y auditoría en UNA transacción (sin estado parcial) | TENTATIVA (mejora del ítem anterior) |
-| Retención/analítica | purge ON-DEMAND DRY-RUN por defecto, scope por tenant; retención global de plataforma y dashboards = fase 2 | TENTATIVA (INC-007 base) |
+| Retención/analítica | retención global automática diaria con plazos fijos, baja con exportación y anonimización verificada (§10.1); dashboards = fase 2 | Decidido (DEC-0021..DEC-0027) |
 | `website.publish` (permiso) | reservado en matriz para endpoints de publicación operativa futura; sin ruta expuesta en esta tanda | TENTATIVA |
 
 ## 16. Seguridad y notas operativas (INC-001 + INC-002..007)
@@ -361,7 +416,7 @@ La salida real queda en `evidence/` (00-14): environment, typecheck, permission 
 - **Gate de aprobación social (PR-01)**: la cola `scheduled_post` solo existe tras aprobación humana (`proposal_id` + `status='scheduled'`); el tick verifica evidencia de publicación por fila y bloquea las que no la tengan (audit deny `not_approved`). `updateStatus` impide `→ published` sin estado previo `scheduled`.
 - **Anti-oráculo (IR-01)**: propuestas/requests/reseñas/publicaciones de otro tenant responden 404 idéntico (la ruta de aprobación cross-tenant devuelve 404 igual que inexistente y audita `not_found`).
 - **Auditoría sin secretos**: tokens de preview (hash), contraseñas y credenciales de integraciones jamás se persisten/loguean; el sink y logger rechazan campos con nombre sensible.
-- **Sin llamadas HTTP reales sin token**: los adaptadores Meta/Google/Hostinger solo se instancian con credenciales; por defecto el sistema usa simuladores deterministas (DEC-026).
+- **Sin llamadas HTTP reales sin token**: los adaptadores Meta/Google/Hostinger solo se instancian con credenciales; por defecto el sistema usa simuladores deterministas (DEC-026). Jev/TypeSafe solo se contacta con `JEV_MODE=shadow|primary` + `JEV_PROVIDER=typesafe` + `TYPESAFE_API_KEY`, solo para tenants de `JEV_SYNTHETIC_TENANTS` y dentro del presupuesto diario (§5.1); los tests simulan `fetch` y nunca usan la red.
 - **No manipulación de opiniones**: no existe endpoint efectivo para ocultar/borrar reseñas; el intento se bloquea y audita como deny.
 - **Rate limiting**: login (IR-06) y aprobación/rechazo sensibles (IP + operador + propuesta; `APPROVAL_RATE_LIMIT_*`) — incluye `approve` de reputación y social que generan propuestas (PR-06).
 - **JWT_SECRET (IR-02)**: requerido fuera de `test`; sin default en código/compose.

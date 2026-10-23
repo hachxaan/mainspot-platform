@@ -81,9 +81,15 @@ cada commit que solo afecte código.
 
 | Archivo | Ubicación | Permisos | Contenido |
 |---|---|---|---|
-| secrets files | `~/.config/mainspot/mainspot-secrets.env` | 0600 | `POSTGRES_PASSWORD`, `JWT_SECRET` |
-| env de producción (dentro del contenedor) | `mainspot-app:/etc/mainspot/mainspot.env` | 0600 (user `mainspot`) | todas las variables de la app, incluidas las secretas |
-| config no secreta (opcional) | `~/.config/mainspot/mainspot-deploy.env` | 0600 | overrides documentados en `mainspot-deploy.env.example` |
+| secrets files | `~/.config/mainspot/mainspot-secrets.env` | 0600 | `POSTGRES_PASSWORD`, `JWT_SECRET`; opcional `TYPESAFE_API_KEY` (Jev, APR-0002), añadida a mano |
+| env de producción (dentro del contenedor) | `mainspot-app:/etc/mainspot/mainspot.env` | 0600 (user `mainspot`) | todas las variables de la app, incluidas las secretas; el deploy completo lo regenera (incluidas las `JEV_*`), `--update-code` no lo toca |
+| config no secreta (opcional) | `~/.config/mainspot/mainspot-deploy.env` | 0600 | overrides documentados en `mainspot-deploy.env.example` (incluidas las `JEV_*` no secretas) |
+
+Jev como clasificador (README §5.1): fija `JEV_MODE`, `JEV_PROVIDER`, `JEV_MODEL` y
+`JEV_SYNTHETIC_TENANTS` en `mainspot-deploy.env`, añade `TYPESAFE_API_KEY` al archivo
+de secretos y ejecuta el deploy completo (regenera el env y aplica migraciones). Para
+abrir `primary`, corre la evaluación reservada dentro del contenedor:
+`lxc exec mainspot-app -- bash -c 'set -a; . /etc/mainspot/mainspot.env; set +a; cd /opt/mainspot-platform && npm run -s jev:evaluate'`.
 
 La app arranca en fail-fast (IR-02): sin `JWT_SECRET` real el proceso aborta
 (`src/shared/config.ts`), por lo que un deploy mal configurado nunca sirve tráfico.
@@ -137,3 +143,21 @@ Salidas reales capturadas en `evidence/deploy-lxd/*.txt` (00-env, 01-containers,
   (insuficiente); el script añade el repo NodeSource para Node 24.
 - **mainspot_test**: se crea vacía (owner `mainspot`) para futuras corridas de
   test; no se migra en el deploy (los tests la recrean con `scripts/test-prep.ts`).
+
+## Respaldos de la BD (DEC-0026)
+
+Respaldo diario cifrado de `mainspot-db` (retención 14 días) y prueba de
+restauración mensual (con re-aplicación de bajas, DEC-0027), ejecutados en el
+**host** con timers systemd de usuario (habilitados en este host desde
+2026-10-22; en otra máquina instalarlos según el README de respaldos):
+
+```bash
+scripts/ops/backup/db-backup.sh          # pg_dump -Fc → cifrado → ~/.local/share/mainspot/backups/
+scripts/ops/backup/db-restore-test.sh    # restaura el último en postgres:16 desechable + sanidad
+```
+
+La clave vive en `~/.config/mainspot/backup/backup.key` (0600; generada en la
+primera ejecución). `--destroy`/`--reset` no la tocan, pero la purga
+`rm -rf ~/.config/mainspot` sí la borra y deja los respaldos irrecuperables:
+guardar una copia fuera del host. Detalles, instalación de los timers y
+evidencia: [`scripts/ops/backup/README.md`](../ops/backup/README.md).

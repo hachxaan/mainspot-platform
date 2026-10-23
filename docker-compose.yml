@@ -45,6 +45,14 @@ services:
       HOSTINGER_API_TOKEN: ${HOSTINGER_API_TOKEN:-}
       MAINSPOT_DOMAIN_SUFFIX: ${MAINSPOT_DOMAIN_SUFFIX:-sim.mainspot.local}
       PREVIEW_TOKEN_TTL_MINUTES: ${PREVIEW_TOKEN_TTL_MINUTES:-1440}
+      # APR-0002: Jev como clasificador (disabled | shadow | primary); ver .env.example.
+      JEV_MODE: ${JEV_MODE:-disabled}
+      JEV_PROVIDER: ${JEV_PROVIDER:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      JEV_MODEL: ${JEV_MODEL:-}
+      JEV_DATA_SCOPE: ${JEV_DATA_SCOPE:-synthetic}
+      JEV_SYNTHETIC_TENANTS: ${JEV_SYNTHETIC_TENANTS:-}
+      JEV_DAILY_BUDGET_USD: ${JEV_DAILY_BUDGET_USD:-1}
     ports:
       - "${APP_PORT:-3000}:3000"
     command: ["sh", "-c", "test -n \"$JWT_SECRET\" || { echo 'FATAL: JWT_SECRET is required for the app. Generate one (openssl rand -hex 32) and set it in .env (see .env.example). There is no default secret (IR-02).'; exit 1; }; node scripts/db-setup.ts && node src/api/server.ts"]

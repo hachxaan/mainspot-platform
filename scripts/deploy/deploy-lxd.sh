@@ -10,7 +10,8 @@
 #
 # Secretos (NUNCA en el repo):
 #   ~/.config/mainspot/mainspot-secrets.env        (0600) POSTGRES_PASSWORD + JWT_SECRET
-#   generados aleatoriamente (openssl rand -hex) en el primer deploy.
+#   generados aleatoriamente (openssl rand -hex) en el primer deploy; opcional
+#   TYPESAFE_API_KEY (añadida a mano) para JEV_MODE=shadow|primary (APR-0002).
 # Config NO secreta overrideable:
 #   ~/.config/mainspot/mainspot-deploy.env         (ver mainspot-deploy.env.example)
 #
@@ -69,7 +70,13 @@ SOCIAL_PROVIDER="${SOCIAL_PROVIDER:-simulated}"
 META_GRAPH_TOKEN="${META_GRAPH_TOKEN:-}"
 META_GRAPH_BASE_URL="${META_GRAPH_BASE_URL:-https://graph.facebook.com}"
 PAYMENT_PROVIDER="${PAYMENT_PROVIDER:-simulated}"
-RETENTION_DAYS="${RETENTION_DAYS:-90}"
+# APR-0002: Jev como clasificador (la clave TYPESAFE_API_KEY va en el archivo de secretos).
+JEV_MODE="${JEV_MODE:-disabled}"
+JEV_PROVIDER="${JEV_PROVIDER:-}"
+JEV_MODEL="${JEV_MODEL:-}"
+JEV_DATA_SCOPE="${JEV_DATA_SCOPE:-synthetic}"
+JEV_SYNTHETIC_TENANTS="${JEV_SYNTHETIC_TENANTS:-}"
+JEV_DAILY_BUDGET_USD="${JEV_DAILY_BUDGET_USD:-1}"
 
 # --- ubicaciones derivadas ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -275,7 +282,13 @@ SOCIAL_PROVIDER=${SOCIAL_PROVIDER}
 META_GRAPH_TOKEN=${META_GRAPH_TOKEN}
 META_GRAPH_BASE_URL=${META_GRAPH_BASE_URL}
 PAYMENT_PROVIDER=${PAYMENT_PROVIDER}
-RETENTION_DAYS=${RETENTION_DAYS}
+JEV_MODE=${JEV_MODE}
+JEV_PROVIDER=${JEV_PROVIDER}
+TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
+JEV_MODEL=${JEV_MODEL}
+JEV_DATA_SCOPE=${JEV_DATA_SCOPE}
+JEV_SYNTHETIC_TENANTS=${JEV_SYNTHETIC_TENANTS}
+JEV_DAILY_BUDGET_USD=${JEV_DAILY_BUDGET_USD}
 EOF
   chmod 600 "$APP_ENV_TMP"
   lxc exec "$APP_CONTAINER" -- bash -c 'mkdir -p /etc/mainspot && useradd -r -s /usr/sbin/nologin mainspot 2>/dev/null || true'
