@@ -77,41 +77,19 @@ test('INC-007: export JSON paginado + CSV con filtro por acción', async () => {
   console.log('TEST_PASS INC-007 export paginado + CSV + filtro por acción');
 });
 
-test('INC-007: retención en DRY-RUN no borra; purge real requiere dry_run=false', async () => {
+test('QS-0006: la retención es automática; el tenant solo ve una vista previa sin efectos', async () => {
   const admin = await login(t.baseUrl, SEED.a.admin.login, SEED.a.admin.password, SEED.a.tenant);
-  const beforeCount = await t.pool.query<{ n: string }>('SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1', [SEED.a.tenant]);
-  assert.ok(Number(beforeCount.rows[0]?.n ?? 0) >= 1, 'client_a tiene eventos');
-
-  // DRY-RUN (default seguro): computa pero NO borra.
-  const dry = await api(t.baseUrl, '/api/backoffice/analytics/purge', {
-    method: 'POST', headers: authHeaders(admin.token), body: JSON.stringify({ dry_run: true }),
+  const before = await t.pool.query<{ n: string }>('SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1', [SEED.a.tenant]);
+  const preview = await api(t.baseUrl, '/api/backoffice/analytics/retention', { headers: authHeaders(admin.token) });
+  assert.equal(preview.status, 200);
+  assert.deepEqual([preview.body.policy.conversationContent.interval, preview.body.policy.auditEvents.interval], ['90 days', '2 years']);
+  assert.equal(typeof preview.body.pending.conversations, 'number');
+  const after = await t.pool.query<{ n: string }>('SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1', [SEED.a.tenant]);
+  assert.ok(Number(after.rows[0]?.n) >= Number(before.rows[0]?.n), 'la vista previa no borra nada');
+  const removed = await api(t.baseUrl, '/api/backoffice/analytics/purge', {
+    method: 'POST', headers: authHeaders(admin.token), body: JSON.stringify({ dry_run: false }),
   });
-  assert.equal(dry.status, 200);
-  assert.equal(dry.body.dry_run, true);
-  assert.equal(dry.body.events_deleted, 0, 'dry-run no elimina filas');
-  const afterDry = await t.pool.query<{ n: string }>('SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1', [SEED.a.tenant]);
-  // El único evento nuevo es la propia auditoría del purge (analytics.purge allow);
-  // no se borró NADA (beforeCount + 1, no menos).
-  assert.equal(
-    Number(afterDry.rows[0]?.n ?? 0),
-    Number(beforeCount.rows[0]?.n ?? 0) + 1,
-    'dry-run NO borró nada (solo suma el evento de auditoría del purge)',
-  );
-
-  // Purga real con cutoff futuro (simula retención que alcanza todos los eventos):
-  // se ejecuta a nivel de servicio con el conteo actual como baseline.
-  const { RetentionService } = await import('../../src/analytics/retention.ts');
-  const service = new RetentionService({ pool: t.pool, retentionDays: 1 });
-  const current = await t.pool.query<{ n: string }>('SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1', [SEED.a.tenant]);
-  const real = await service.purge(SEED.a.tenant, { dryRun: false, cutoff: new Date(Date.now() + 24 * 60 * 60 * 1000) });
-  assert.equal(real.events_deleted, Number(current.rows[0]?.n ?? 0), 'purga real borra todos los eventos del tenant');
-  const afterReal = await t.pool.query<{ n: string }>('SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1', [SEED.a.tenant]);
-  assert.equal(Number(afterReal.rows[0]?.n ?? 0), 0, 'sin eventos anteriores al cutoff');
-
-  // Aislamiento: la purga por tenant no afecta a client_b.
-  const bCount = await t.pool.query<{ n: string }>('SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1', [SEED.b.tenant]);
-  assert.ok(Number(bCount.rows[0]?.n ?? 0) > 0, 'client_b conserva sus eventos');
-  console.log('TEST_PASS INC-007 DRY-RUN no borra + purge real con scope tenant');
+  assert.equal(removed.status, 404, 'la purga manual ya no existe (DEC-0025)');
 });
 
 test('INC-007: agregados diarios básicos (count por acción) y refresh del resumen', async () => {

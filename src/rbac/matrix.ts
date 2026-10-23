@@ -45,7 +45,8 @@ export const ACTIONS = [
   // INC-007 (CAP-014, base): analítica mínima y export ETL (DEC-025).
   'analytics.read',
   'analytics.export',
-  'analytics.purge',
+  // QS-0006 (DEC-0025): la retención es automática; solo se consulta su vista previa.
+  'analytics.retention',
 ] as const;
 
 export type ActionName = (typeof ACTIONS)[number];
@@ -141,7 +142,7 @@ export const ACTION_LABELS: Record<ActionName, string> = {
   'subscription.read': 'Ver el plan y los límites del cliente',
   'analytics.read': 'Ver resúmenes de actividad del cliente',
   'analytics.export': 'Exportar eventos de auditoría del cliente',
-  'analytics.purge': 'Aplicar la retención de eventos del cliente',
+  'analytics.retention': 'Ver qué datos purgará la retención automática',
 };
 
 export const ROLE_LABELS: Record<RoleName, string> = {

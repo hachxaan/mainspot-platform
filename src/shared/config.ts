@@ -17,6 +17,9 @@ const DOMAIN_PROVIDERS = ['simulated', 'hostinger'] as const;
 const REPUTATION_PROVIDERS = ['simulated', 'google_business_profile'] as const;
 const SOCIAL_PROVIDERS = ['simulated', 'meta'] as const;
 const PAYMENT_PROVIDERS = ['simulated', 'stripe'] as const;
+const JEV_MODES = ['disabled', 'shadow', 'primary'] as const;
+const JEV_PROVIDERS = ['typesafe'] as const;
+const JEV_DATA_SCOPES = ['synthetic'] as const;
 
 export type AppEnv = (typeof APP_ENVS)[number];
 export type AuditMode = (typeof AUDIT_MODES)[number];
@@ -26,6 +29,36 @@ export type DomainProviderName = (typeof DOMAIN_PROVIDERS)[number];
 export type ReputationProviderName = (typeof REPUTATION_PROVIDERS)[number];
 export type SocialProviderName = (typeof SOCIAL_PROVIDERS)[number];
 export type PaymentProviderName = (typeof PAYMENT_PROVIDERS)[number];
+export type JevProviderName = (typeof JEV_PROVIDERS)[number];
+export type JevMode = (typeof JEV_MODES)[number];
+export type JevDataScope = (typeof JEV_DATA_SCOPES)[number];
+
+/**
+ * Jev como clasificador semántico (MSP-JEV-CLASSIFIER-MODES v1, APR-0002).
+ * `disabled`: sin cliente ni salida de datos. `shadow`: decide el determinista
+ * y Jev queda como evidencia. `primary`: Jev decide la clasificación cuando la
+ * evaluación sintética abrió el gate (DEC-0031). En ambos modos solo se envía
+ * a TypeSafe el texto de tenants sintéticos (DEC-0019).
+ */
+export type JevConfig =
+  | { mode: 'disabled' }
+  | {
+      mode: Exclude<JevMode, 'disabled'>;
+      provider: JevProviderName;
+      /** TYPESAFE_API_KEY — never logged, audited, persisted or echoed in errors. */
+      apiKey: string;
+      /** JEV_MODEL; null ⇒ the provider alias chosen by the client (jev-latest). */
+      model: string | null;
+      /** DEC-0019: only synthetic data may leave the system. */
+      dataScope: JevDataScope;
+      /** Tenants whose messages may be sent to TypeSafe (JEV_SYNTHETIC_TENANTS). */
+      syntheticTenants: readonly string[];
+      /** DEC-0032: daily TypeSafe budget (USD, UTC day, per process). */
+      dailyBudgetUsd: number;
+    };
+
+/** DEC-0032: presupuesto diario aprobado para desarrollo y pruebas. */
+export const JEV_MAX_DAILY_BUDGET_USD = 1;
 
 export interface AppConfig {
   port: number;
@@ -66,8 +99,8 @@ export interface AppConfig {
   metaGraphBaseUrl: string;
   // INC-006 subscriptions (DEC-024 catálogo configurable, sin cobro real)
   paymentProvider: PaymentProviderName;
-  // INC-007 analytics (DEC-025 retención configurable, default 90 días)
-  retentionDays: number;
+  // APR-0002: Jev como clasificador semántico (disabled | shadow | primary).
+  jev: JevConfig;
 }
 
 export interface LoadConfigOptions {
@@ -84,6 +117,58 @@ function enumValue<T extends string>(name: string, value: string | undefined, al
     );
   }
   return hit;
+}
+
+/**
+ * JEV_* (APR-0002, DEC-0019, DEC-0032). Fail-fast on any value outside the
+ * approved envelope: explicit mode, provider `typesafe` (no fallback), key
+ * required when not disabled, synthetic data scope only, at least one
+ * synthetic tenant and a daily budget of at most USD 1. Messages never include
+ * the key value.
+ */
+function loadJevConfig(): JevConfig {
+  const replaced = ['JEV_ENABLED', 'JEV_SHADOW_MODE'].filter((name) => process.env[name] !== undefined);
+  if (replaced.length > 0) {
+    throw new Error(
+      `${replaced.join(' and ')} no longer exist: use JEV_MODE=disabled|shadow|primary ` +
+      '(MSP-JEV-CLASSIFIER-MODES v1, APR-0002) and remove the old variables.',
+    );
+  }
+  const mode = enumValue<JevMode>('JEV_MODE', process.env.JEV_MODE, JEV_MODES, 'disabled');
+  const providerRaw = process.env.JEV_PROVIDER;
+  const provider = providerRaw ? enumValue<JevProviderName>('JEV_PROVIDER', providerRaw, JEV_PROVIDERS, 'typesafe') : null;
+  if (mode === 'disabled') return { mode };
+  if (!provider) {
+    throw new Error(
+      `JEV_PROVIDER is required when JEV_MODE=${mode}. Allowed values: typesafe ` +
+      '(explicit selection; there is no provider fallback).',
+    );
+  }
+  const apiKey = (process.env.TYPESAFE_API_KEY ?? '').trim();
+  if (!apiKey) {
+    throw new Error(
+      `TYPESAFE_API_KEY is required when JEV_MODE=${mode}. Set it in the environment ` +
+      '(.env — see .env.example) or set JEV_MODE=disabled.',
+    );
+  }
+  const dataScope = enumValue<JevDataScope>('JEV_DATA_SCOPE', process.env.JEV_DATA_SCOPE, JEV_DATA_SCOPES, 'synthetic');
+  const syntheticTenants = [...new Set((process.env.JEV_SYNTHETIC_TENANTS ?? '').split(',').map((t) => t.trim()).filter(Boolean))];
+  if (syntheticTenants.length === 0) {
+    throw new Error(
+      `JEV_SYNTHETIC_TENANTS is required when JEV_MODE=${mode}: a comma-separated list of tenants ` +
+      'with synthetic data only. Real customer messages must not reach TypeSafe (DEC-0019).',
+    );
+  }
+  const budgetRaw = (process.env.JEV_DAILY_BUDGET_USD ?? '').trim();
+  const dailyBudgetUsd = budgetRaw === '' ? JEV_MAX_DAILY_BUDGET_USD : Number(budgetRaw);
+  if (!Number.isFinite(dailyBudgetUsd) || dailyBudgetUsd <= 0 || dailyBudgetUsd > JEV_MAX_DAILY_BUDGET_USD) {
+    throw new Error(
+      `Invalid JEV_DAILY_BUDGET_USD=${budgetRaw}. It must be a number greater than 0 and at most ` +
+      `${JEV_MAX_DAILY_BUDGET_USD} (DEC-0032).`,
+    );
+  }
+  const model = (process.env.JEV_MODEL ?? '').trim();
+  return { mode, provider, apiKey, model: model || null, dataScope, syntheticTenants, dailyBudgetUsd };
 }
 
 export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigOptions = {}): AppConfig {
@@ -150,8 +235,8 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     // INC-006: proveedor de pago — SOLO esqueleto simulado en piloto (DEC-024,
     // sin cobro ni procesador real). 'stripe' es TENTATIVA y requiere token.
     paymentProvider: enumValue<PaymentProviderName>('PAYMENT_PROVIDER', process.env.PAYMENT_PROVIDER, PAYMENT_PROVIDERS, 'simulated'),
-    // INC-007: retención de auditoría/eventos configurable (DEC-025), default 90 días.
-    retentionDays: Number(process.env.RETENTION_DAYS ?? 90),
+    // APR-0002: Jev disabled|shadow|primary, solo tenants sintéticos (DEC-0019).
+    jev: loadJevConfig(),
   };
 
   return { ...config, ...overrides };

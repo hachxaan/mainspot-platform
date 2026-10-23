@@ -1,12 +1,11 @@
 /**
- * Unit — INC-007 base analytics: CSV determinista, paginación y cutoff de
- * retención (DEC-025, default 90 días, DRY-RUN seguro).
+ * Unit — INC-007 base analytics: CSV determinista y paginación. La retención
+ * (DEC-0021..0027) se prueba contra la BD en tests/integration/retention.test.ts.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { csvEscape, rowsToCsv, normalizePagination, EXPORT_COLUMNS } from '../../src/analytics/export.ts';
-import { retentionCutoff } from '../../src/analytics/retention.ts';
 
 test('analytics: CSV escape RFC4180 básico (comas, comillas, saltos)', () => {
   assert.equal(csvEscape('simple'), 'simple');
@@ -35,14 +34,4 @@ test('analytics: paginación normalizada (page>=1, pageSize 1..100)', () => {
   assert.equal(normalizePagination({ page: 0, pageSize: 0 }).page, 1);
   assert.equal(normalizePagination({ pageSize: 0 }).pageSize, 1);
   assert.equal(normalizePagination({ pageSize: 5000 }).pageSize, 100);
-});
-
-test('analytics: cutoff de retención configurable (default 90 días)', () => {
-  const now = new Date('2026-08-20T12:00:00Z');
-  const cutoff = retentionCutoff(90, now);
-  const expected = new Date('2026-05-22T12:00:00Z');
-  assert.equal(cutoff.getTime(), expected.getTime());
-  const c30 = retentionCutoff(30, now);
-  const expected30 = new Date('2026-07-21T12:00:00Z');
-  assert.equal(c30.getTime(), expected30.getTime());
 });

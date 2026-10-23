@@ -2,9 +2,11 @@
  * EntitlementService (INC-006, CAP-012, REQ-019, DEC-024).
  *
  * Catálogo de planes CONFIGURABLE en BD (seed idempotente), SIN precios reales.
- * Un cliente tiene UNA suscripción activa. checkLimit() es el enforcement de
- * límites en el punto de creación (website/social/reputation): exceso ⇒ deny
- * 403 'limit_exceeded' (auditado por la capa de rutas).
+ * Un cliente tiene UNA suscripción activa. El consumo de cuota en el punto de
+ * creación (website/social/reputation/conversaciones) lo hace `QuotaLedger`
+ * (quota.ts): comprobación y consumo atómicos por tenant (DEC-0005) con
+ * auditoría en la misma transacción (NFR-0001). Este módulo aporta las piezas
+ * compartidas: límites del plan, conteo de uso y mensajes.
  *
  * Fail-closed: sin suscripción activa no hay entitlements (deny
  * 'subscription_required'); un plan sin precio NO se puede facturar
@@ -56,10 +58,34 @@ export interface EntitlementView {
 export const KNOWN_CAPABILITIES = ['website', 'social_posts', 'social_ads', 'reviews_managed', 'agents', 'conversations'] as const;
 export type CapabilityName = (typeof KNOWN_CAPABILITIES)[number];
 
-/** Función pura del límite (unit-testable): usage >= max ⇒ denegado. */
-export function usageWithinLimit(limit: number | null, usage: number): boolean {
-  if (limit === null) return false; // sin límite configurado ⇒ fail-closed deny
-  return usage < limit;
+/** Función pura del límite: ¿caben `units` más sobre `usage`? Sin límite configurado ⇒ no (fail-closed). */
+export function fitsLimit(limit: number | null, usage: number, units = 1): boolean {
+  if (limit === null) return false;
+  return usage + units <= limit;
+}
+
+export const SUBSCRIPTION_REQUIRED_MESSAGE =
+  'Este cliente no tiene un plan activo. Consulta con el administrador del plan de MainSpot.';
+
+export function limitExceededMessage(capability: CapabilityName, max: number | null): string {
+  return `Se alcanzó el límite del plan para ${capabilityLabel(capability)} (${max ?? 0} de ${max ?? 0}). El plan Piloto puede ajustarse según las necesidades del negocio.`;
+}
+
+/**
+ * Uso actual de una capacidad = filas de dominio del tenant. Recibe la conexión de la
+ * transacción del llamador para contar dentro del candado de cuota (DEC-0005).
+ */
+export async function countCapabilityUsage(db: Pool | PoolClient, tenantId: string, capability: CapabilityName): Promise<number> {
+  const sql: Record<CapabilityName, string> = {
+    website: 'SELECT count(*) AS n FROM client_website WHERE tenant_id = $1',
+    social_posts: "SELECT count(*) AS n FROM social_post WHERE tenant_id = $1 AND content_type = 'post'",
+    social_ads: "SELECT count(*) AS n FROM social_post WHERE tenant_id = $1 AND content_type = 'ad'",
+    reviews_managed: 'SELECT count(*) AS n FROM review WHERE tenant_id = $1',
+    agents: 'SELECT count(*) AS n FROM internal_user WHERE tenant_id = $1',
+    conversations: 'SELECT count(*) AS n FROM conversation_request WHERE tenant_id = $1',
+  };
+  const res = await db.query<{ n: string }>(sql[capability], [tenantId]);
+  return Number(res.rows[0]?.n ?? 0);
 }
 
 export class SubscriptionRepository {
@@ -133,24 +159,6 @@ export class EntitlementService {
     return this.deps.paymentProvider ?? new SimulatedPaymentProvider();
   }
 
-  /** Asigna el plan (una suscripción activa por tenant; upsert idempotente). */
-  async assignPlan(tenantId: string, planId: string, actorId: string, requestId: string): Promise<SubscriptionRow> {
-    const plan = await this.repo.plan(planId);
-    if (!plan) {
-      throw new AppError(404, DENY_CODES.NOT_FOUND, 'No se encontró el plan solicitado.');
-    }
-    if (!plan.active) {
-      throw new AppError(409, 'validation_error', 'El plan no está activo para asignarse.');
-    }
-    const subscription = await this.repo.assign(tenantId, planId);
-    await this.deps.sink.write({
-      tenant_id: tenantId, actor_id: actorId, actor_role: null,
-      action: 'subscription.assigned', resource: `subscription/${subscription.subscription_id}`,
-      request_id: requestId, decision: 'allow', result: `plan:${planId}`,
-    });
-    return subscription;
-  }
-
   /** Entitlements del tenant (plan + límites por capacidad). */
   async getEntitlements(tenantId: string): Promise<EntitlementView | null> {
     const subscription = await this.repo.findByTenant(tenantId);
@@ -161,79 +169,6 @@ export class EntitlementService {
     const limits: Record<string, number> = {};
     for (const l of limitRows) limits[l.capability] = l.max_value;
     return { tenant_id: tenantId, subscription, plan, limits };
-  }
-
-  /**
-   * Enforcement básico de límites en el punto de creación (DEC-024).
-   * Exceso ⇒ AppError 403 'limit_exceeded' (la capa de rutas lo audita y
-   * responde). Sin suscripción activa ⇒ 'subscription_required' (fail-closed).
-   */
-  async checkLimit(tenantId: string, capability: string): Promise<void> {
-    if (!(KNOWN_CAPABILITIES as readonly string[]).includes(capability)) {
-      throw new AppError(400, 'validation_error', 'La capacidad consultada no está definida en el catálogo de límites.');
-    }
-    const subscription = await this.repo.findByTenant(tenantId);
-    if (!subscription || subscription.status !== 'active') {
-      throw new AppError(403, DENY_CODES.SUBSCRIPTION_REQUIRED,
-        'Este cliente no tiene un plan activo. Consulta con el administrador del plan de MainSpot.');
-    }
-    const limit = await this.repo.limitFor(subscription.plan_id, capability);
-    const max = limit?.max_value ?? null;
-    const usage = await this.countUsage(tenantId, capability as CapabilityName);
-    if (!usageWithinLimit(max, usage)) {
-      throw new AppError(403, DENY_CODES.LIMIT_EXCEEDED,
-        `Se alcanzó el límite del plan para ${capabilityLabel(capability)} (${max ?? 0} de ${max ?? 0}). El plan Piloto puede ajustarse según las necesidades del negocio.`);
-    }
-  }
-
-  /**
-   * Cuota disponible (max - usage) para una capacidad. Fail-closed: sin plan
-   * activo ⇒ AppError 403 'subscription_required'; sin fila de límite ⇒ 0.
-   * Usado para validar LOTES antes de insertar (PR-03: sync de reseñas).
-   */
-  async remainingQuota(tenantId: string, capability: string): Promise<number> {
-    if (!(KNOWN_CAPABILITIES as readonly string[]).includes(capability)) {
-      throw new AppError(400, 'validation_error', 'La capacidad consultada no está definida en el catálogo de límites.');
-    }
-    const subscription = await this.repo.findByTenant(tenantId);
-    if (!subscription || subscription.status !== 'active') {
-      throw new AppError(403, DENY_CODES.SUBSCRIPTION_REQUIRED,
-        'Este cliente no tiene un plan activo. Consulta con el administrador del plan de MainSpot.');
-    }
-    const limit = await this.repo.limitFor(subscription.plan_id, capability);
-    const max = limit?.max_value ?? null;
-    if (max === null) return 0; // sin límite configurado ⇒ 0 (fail-closed)
-    const usage = await this.countUsage(tenantId, capability as CapabilityName);
-    return max - usage;
-  }
-
-  /** Cuenta el uso actual por capacidad (SELECT simple; sin ETL externo). */
-  private async countUsage(tenantId: string, capability: CapabilityName): Promise<number> {
-    const pool = this.deps.pool;
-    let res;
-    switch (capability) {
-      case 'website':
-        res = await pool.query<{ n: string }>('SELECT count(*) AS n FROM client_website WHERE tenant_id = $1', [tenantId]);
-        break;
-      case 'social_posts':
-        res = await pool.query<{ n: string }>("SELECT count(*) AS n FROM social_post WHERE tenant_id = $1 AND content_type = 'post'", [tenantId]);
-        break;
-      case 'social_ads':
-        res = await pool.query<{ n: string }>("SELECT count(*) AS n FROM social_post WHERE tenant_id = $1 AND content_type = 'ad'", [tenantId]);
-        break;
-      case 'reviews_managed':
-        res = await pool.query<{ n: string }>('SELECT count(*) AS n FROM review WHERE tenant_id = $1', [tenantId]);
-        break;
-      case 'agents':
-        res = await pool.query<{ n: string }>('SELECT count(*) AS n FROM internal_user WHERE tenant_id = $1', [tenantId]);
-        break;
-      case 'conversations':
-        res = await pool.query<{ n: string }>('SELECT count(*) AS n FROM conversation_request WHERE tenant_id = $1', [tenantId]);
-        break;
-      default:
-        throw new AppError(400, 'validation_error', 'Capacidad de límite desconocida.');
-    }
-    return Number(res.rows[0]?.n ?? 0);
   }
 
   /**
@@ -266,12 +201,14 @@ export class EntitlementService {
       tenantId, subscriptionId: subscription.subscription_id,
       amountCents: plan.price_cents, currency: plan.currency ?? 'USD',
     });
+    // NFR-0001: el registro del cobro es sensible; si no se puede auditar, la
+    // operación falla (nunca un cobro sin rastro).
     await this.deps.sink.write({
       tenant_id: tenantId, actor_id: actorId, actor_role: null,
       action: 'subscription.invoice', resource: `subscription/${subscription.subscription_id}`, request_id: requestId,
       decision: payment.ok ? 'allow' : 'deny', result: payment.ok ? 'simulated_charge' : 'charge_failed',
       evidence_ref: payment.external_ref,
-    }).catch(() => undefined);
+    });
     return { ok: payment.ok, result: payment.ok ? 'simulated_charge' : 'charge_failed', evidence_ref: payment.external_ref };
   }
 
@@ -282,8 +219,8 @@ export class EntitlementService {
   }
 }
 
-function capabilityLabel(capability: string): string {
-  const labels: Record<string, string> = {
+function capabilityLabel(capability: CapabilityName): string {
+  const labels: Record<CapabilityName, string> = {
     website: 'páginas web',
     social_posts: 'publicaciones en redes',
     social_ads: 'anuncios en redes',
@@ -291,5 +228,5 @@ function capabilityLabel(capability: string): string {
     agents: 'agentes',
     conversations: 'conversaciones',
   };
-  return labels[capability] ?? capability;
+  return labels[capability];
 }

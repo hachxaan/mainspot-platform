@@ -18,6 +18,9 @@ export const DENY_CODES = {
   PROHIBITED: 'prohibited',
   LIMIT_EXCEEDED: 'limit_exceeded',
   SUBSCRIPTION_REQUIRED: 'subscription_required',
+  // DEC-0005: idempotencia y reservas de cuota.
+  REQUEST_IN_PROGRESS: 'request_in_progress',
+  QUOTA_RESERVATION_EXPIRED: 'quota_reservation_expired',
 } as const;
 
 export type DenyCode = (typeof DENY_CODES)[keyof typeof DENY_CODES];

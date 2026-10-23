@@ -49,9 +49,17 @@ export const SENSITIVE_ACTIONS = new Set<string>([
   // contractual/administrativa sensibles (fail-closed con auditoría atómica).
   'subscription.assigned',
   'subscription.invoice',
-  // INC-007 (DEC-025): la purga elimina datos; el evento debe ser confiable
-  // (fail-closed) para reconstruir la decisión.
-  'analytics.purge',
+  // QS-0006 (DEC-0021..0027) + NFR-0001: la retención redacta o borra datos, y la baja
+  // y la anonimización eliminan un tenant: el evento debe ser confiable (fail-closed).
+  'retention.purged',
+  'tenant.exit_confirmed',
+  'tenant.anonymized',
+  // DEC-0005 + NFR-0001 (DEC-0014): reservar, consumir, devolver o vencer cuota
+  // se registra en la MISMA transacción que la transición (fail-closed).
+  'quota.reserved',
+  'quota.consumed',
+  'quota.released',
+  'quota.expired',
 ]);
 
 export const READ_ACTIONS = new Set<string>(['data.read', 'audit.read', 'audit.export']);

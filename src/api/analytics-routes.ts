@@ -4,8 +4,8 @@
  * - GET /analytics/export  (analytics.export) export ETL JSON/CSV paginado.
  * - GET /analytics/summary (analytics.read) agregados por día/acción.
  * - POST /analytics/refresh-summary (analytics.export) materializa resumen.
- * - POST /analytics/purge  (analytics.purge) retención ON-DEMAND; default
- *   DRY-RUN (seguro): solo cuenta; con dry_run=false borra de verdad.
+ * - GET /analytics/retention (analytics.retention) qué purgará la retención automática
+ *   diaria (DEC-0025) para el tenant, sus plazos y la última ejecución. No borra nada.
  * Fail-closed: scope por tenant de la sesión + auditoría con request_id.
  */
 
@@ -16,7 +16,7 @@ import { getRequestContext, type SessionSummary } from '../shared/context.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import type { AuditSink } from '../audit/sink.ts';
 import type { ExportService, ExportFilters } from '../analytics/export.ts';
-import type { RetentionService } from '../analytics/retention.ts';
+import type { RetentionService } from '../retention/service.ts';
 import type { AnalyticsService } from '../analytics/summary.ts';
 import { denyAndRespond, type LooseRequest } from '../boundary/middleware.ts';
 import { requirePermission } from '../boundary/middleware.ts';
@@ -123,25 +123,21 @@ export function analyticsRouter(deps: AnalyticsRouteDeps): Router {
     return res.json({ upserted, message: 'Resumen diario actualizado.' });
   }));
 
-  // Purga por retención (ON-DEMAND; default DRY-RUN).
-  router.post('/analytics/purge', requirePermission('analytics.purge', deps.sink, deps.pool), ah(async (req, res) => {
+  // Retención automática diaria (DEC-0021..0025): vista previa por tenant, sin efectos.
+  router.get('/analytics/retention', requirePermission('analytics.retention', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
-    const { dry_run } = (req.body ?? {}) as { dry_run?: boolean };
-    const dryRun = dry_run !== false; // default seguro: DRY-RUN (no borra)
-    const result = await deps.retention.purge(session.tenant_id, { dryRun: dryRun });
+    const preview = await deps.retention.preview(session.tenant_id);
     await deps.sink.write({
       tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
-      action: 'analytics.purge', resource: 'analytics/purge', request_id: rc.request_id,
-      decision: 'allow',
-      result: `dry_run:${result.dry_run}:events:${result.events_deleted}:summaries:${result.summaries_deleted}`,
+      action: 'data.read', resource: 'analytics/retention', request_id: rc.request_id,
+      decision: 'allow', result: 'success',
     });
     return res.json({
-      ...result,
-      message: dryRun
-        ? 'Simulación de retención: no se borró nada. Revisa los conteos y ejecuta con dry_run=false para aplicar.'
-        : 'Retención aplicada: los eventos anteriores a la fecha de retención fueron eliminados.',
+      tenant_id: session.tenant_id,
+      ...preview,
+      message: 'La retención se aplica automáticamente cada día: estos son los datos que purgará en la próxima ejecución.',
     });
   }));
 

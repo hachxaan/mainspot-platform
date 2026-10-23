@@ -3,15 +3,13 @@
  *
  * Asignar plan (admin) → consulta de entitlements por rol → límite excedido
  * deny+audit (HTTP) → facturación de plan sin precio PROHIBITED → límite de
- * reseñas gestionadas en la ingesta (sync) → checkLimit directo (website).
+ * reseñas gestionadas en la ingesta (sync). La atomicidad del consumo
+ * (DEC-0005) está en quota-toctou.test.ts.
  */
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { bootApi, login, authHeaders, api, SEED, type TestApi } from '../helpers/testdb.ts';
-import { EntitlementService, usageWithinLimit } from '../../src/subscriptions/entitlements.ts';
-import { AuditSink } from '../../src/audit/sink.ts';
-import { AppError } from '../../src/shared/errors.ts';
 
 let t: TestApi;
 
@@ -256,32 +254,4 @@ test('PR-02: creación de sitio — política sin suscripción (deny subscriptio
   });
   assert.equal(again.status, 409);
   console.log('TEST_PASS PR-02 creación de sitio: sin plan 403 + con plan 201 + duplicado 409');
-});
-
-test('INC-006: checkLimit directo (website) — fail-closed y lógica pura', async () => {
-  const admin = await login(t.baseUrl, SEED.a.admin.login, SEED.a.admin.password, SEED.a.tenant);
-  await assignPlan(admin.token, 'plan_basico'); // website=1
-  const entitlements = new EntitlementService({ pool: t.pool, sink: new AuditSink(t.pool) });
-  // Uso actual de client_a: 1 sitio (seed). plan_basico website=1 ⇒ no cabe otro.
-  await assert.rejects(entitlements.checkLimit(SEED.a.tenant, 'website'), (err: unknown) => {
-    return err instanceof AppError && err.status === 403 && err.code === 'limit_exceeded';
-  });
-  // Con un plan de límite mayor sí cabe (catálogo configurable).
-  await t.pool.query(
-    `INSERT INTO plan (plan_id, name, description, price_cents, currency, is_pilot, active) VALUES
-       ('plan_test_web', 'Plan Test Web', 'Plan de test (catálogo configurable)', NULL, NULL, false, true)
-     ON CONFLICT (plan_id) DO NOTHING`,
-  );
-  await t.pool.query(
-    `INSERT INTO plan_limit (limit_id, plan_id, capability, max_value) VALUES
-       ('limit_test_web', 'plan_test_web', 'website', 5)
-     ON CONFLICT (limit_id) DO NOTHING`,
-  );
-  await assignPlan(admin.token, 'plan_test_web');
-  await assert.doesNotReject(entitlements.checkLimit(SEED.a.tenant, 'website'));
-  await assignPlan(admin.token, 'plan_piloto_1');
-  // Lógica pura de límites (misma unidad que usa el servicio).
-  assert.equal(usageWithinLimit(5, 1), true);
-  assert.equal(usageWithinLimit(1, 1), false);
-  console.log('TEST_PASS INC-006 checkLimit directo website (deny/allow configurable)');
 });

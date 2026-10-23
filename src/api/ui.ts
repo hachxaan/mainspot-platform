@@ -320,7 +320,7 @@ const ACTION_LABELS = {
   'subscription.read': 'Ver el plan y los límites del cliente',
   'analytics.read': 'Ver resúmenes de actividad del cliente',
   'analytics.export': 'Exportar eventos de auditoría del cliente',
-  'analytics.purge': 'Aplicar la retención de eventos del cliente',
+  'analytics.retention': 'Ver qué datos purgará la retención automática',
 };
 
 async function init() {
