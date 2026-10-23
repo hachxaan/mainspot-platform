@@ -91,7 +91,7 @@ export function reputationRouter(deps: ReputationRouteDeps): Router {
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
     try {
-      const { outcome, reviews } = await deps.engine.sync(session.tenant_id, session.user_id, rc.request_id);
+      const { outcome, reviews } = await deps.engine.sync(session.tenant_id, session.user_id, rc.request_id, session.role_name);
       await deps.sink.write({
         tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
         action: 'reputation.synced', resource: 'reviews/sync', request_id: rc.request_id,

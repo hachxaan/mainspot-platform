@@ -23,6 +23,8 @@ import { AppError } from '../shared/errors.ts';
 import { buildInc001Hooks } from '../hooks/contracts.ts';
 import { ConversationRepository } from '../conversation/repositories.ts';
 import { ConversationPipeline } from '../conversation/pipeline.ts';
+import { createJevClassifier, type JevClassifier } from '../conversation/jev-classifier.ts';
+import { JevRepository } from '../conversation/jev-repository.ts';
 import type { StateMachineDeps } from '../conversation/state-machine.ts';
 import { WebsiteRepository } from '../website/repository.ts';
 import { DomainService } from '../domain/service.ts';
@@ -42,10 +44,11 @@ import { SocialPublisher } from '../social/publisher.ts';
 import { socialRouter } from './social-routes.ts';
 // INC-006 subscriptions (CAP-012, DEC-024)
 import { EntitlementService, SubscriptionRepository } from '../subscriptions/entitlements.ts';
+import { QuotaLedger } from '../subscriptions/quota.ts';
 import { subscriptionRouter } from './subscription-routes.ts';
 // INC-007 analytics base (CAP-014, DEC-025)
 import { ExportService } from '../analytics/export.ts';
-import { RetentionService } from '../analytics/retention.ts';
+import { RetentionService } from '../retention/service.ts';
 import { AnalyticsService } from '../analytics/summary.ts';
 import { analyticsRouter } from './analytics-routes.ts';
 
@@ -57,6 +60,12 @@ export interface AppHandle {
   identityRepo: IdentityRepository;
   conversationRepo: ConversationRepository;
   conversationRoutesDeps: ConversationRouteDeps;
+  /** APR-0002: clasificador Jev (solo con JEV_MODE=shadow|primary); drain() en apagado/tests. */
+  jev?: JevClassifier;
+  /** DEC-0005: libro de cuotas (reconciliación periódica en main; tests la invocan directamente). */
+  quota: QuotaLedger;
+  /** QS-0006: retención global (ejecución diaria en main; tests y scripts la invocan directamente). */
+  retention: RetentionService;
 }
 
 /** IR-13: basic security headers (CSP baseline, HSTS, nosniff, frame guard). */
@@ -97,16 +106,18 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   publishers.register(new ReputationPublisher(pool, reputationProvider, sink));
   const socialProvider = createSocialProvider(config);
   publishers.register(new SocialPublisher(pool, socialProvider, sink));
-  // INC-006: entitlements (límites por plan configurable, DEC-024).
+  // INC-006: entitlements (límites por plan configurable, DEC-024); DEC-0005:
+  // consumo atómico de cuota por tenant con auditoría conjunta (NFR-0001).
   const entitlements = new EntitlementService({ pool, sink });
+  const quota = new QuotaLedger({ pool, sink });
   const subscriptionRepo = new SubscriptionRepository(pool);
   // INC-004: reputación (engine)
-  const reputationEngine = new ReputationEngine({ pool, config, sink, provider: reputationProvider, conversationRepo, entitlements });
+  const reputationEngine = new ReputationEngine({ pool, config, sink, provider: reputationProvider, conversationRepo, quota });
   // INC-005: social (service + cola de programación)
-  const socialService = new SocialService({ pool, config, sink, provider: socialProvider, conversationRepo, entitlements });
-  // INC-007: analítica mínima (export/retention/summary)
+  const socialService = new SocialService({ pool, config, sink, provider: socialProvider, conversationRepo, quota });
+  // INC-007: analítica mínima (export/summary); QS-0006: retención global automática.
   const exporter = new ExportService(pool);
-  const retention = new RetentionService({ pool, retentionDays: config.retentionDays });
+  const retention = new RetentionService({ pool, sink });
   const analyticsService = new AnalyticsService({ pool });
   const machine: StateMachineDeps = {
     pool,
@@ -115,7 +126,10 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     publishers,
     previewTtlMinutes: config.previewTokenTtlMinutes,
   };
-  const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo, entitlements });
+  // APR-0002: Jev como clasificador — UN cliente por proceso, solo con
+  // JEV_MODE=shadow|primary y solo para tenants sintéticos (DEC-0019).
+  const jev = createJevClassifier(config.jev, new JevRepository(pool));
+  const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo, quota, jev });
   const approvalRateLimiter = new ActionRateLimiter(
     config.approvalRateLimitMax,
     config.approvalRateLimitWindowMs,
@@ -144,7 +158,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     websiteRepo,
     domainService,
     channel,
-    entitlements,
+    quota,
   };
 
   const app = express();
@@ -200,14 +214,45 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     }
   });
 
-  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps };
+  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention };
 }
 
+/** DEC-0005: cada cuánto se cierran las reservas de cuota vencidas (caídas a mitad). */
+export const QUOTA_RECONCILE_INTERVAL_MS = 60_000;
+/** DEC-0025: cada cuánto se comprueba si toca la ejecución diaria de retención. */
+export const RETENTION_CHECK_INTERVAL_MS = 15 * 60_000;
+
 async function main(): Promise<void> {
-  const { app, config } = createApp();
+  const { app, config, jev, quota, retention } = createApp();
   app.listen(config.port, () => {
     log.info('server.started', `mainspot-platform listening on :${config.port}`, { port: config.port });
   });
+  const reconcile = () => {
+    quota.reconcile().catch((err: unknown) => {
+      log.error('quota.reconcile.failed', 'quota reconciliation failed', { error_name: err instanceof Error ? err.name : 'unknown' });
+    });
+  };
+  reconcile();
+  const reconcileTimer = setInterval(reconcile, QUOTA_RECONCILE_INTERVAL_MS);
+  reconcileTimer.unref();
+  const retain = () => {
+    retention.runScheduledIfDue().catch((err: unknown) => {
+      log.error('retention.scheduled.failed', 'scheduled retention run failed', { error_name: err instanceof Error ? err.name : 'unknown' });
+    });
+  };
+  retain();
+  const retentionTimer = setInterval(retain, RETENTION_CHECK_INTERVAL_MS);
+  retentionTimer.unref();
+  if (jev) {
+    // Apagado ordenado: espera las clasificaciones Jev pendientes de persistir
+    // (cada llamada acotada a 10 s) antes de salir.
+    const shutdown = (signal: string) => {
+      log.info('server.stopping', `received ${signal}; draining Jev classifications`, {});
+      void jev.drain().finally(() => process.exit(0));
+    };
+    process.once('SIGTERM', () => shutdown('SIGTERM'));
+    process.once('SIGINT', () => shutdown('SIGINT'));
+  }
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop() ?? '')) {

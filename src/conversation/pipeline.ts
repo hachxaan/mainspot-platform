@@ -11,13 +11,16 @@
  * + auditoría deny.
  */
 
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { AppConfig } from '../shared/config.ts';
 import type { AuditSink } from '../audit/sink.ts';
 import type { Inc001Hooks } from '../hooks/contracts.ts';
+import { AppError, DENY_CODES } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
+import { resourceIdOf, type QuotaLedger, type QuotaReservationRow } from '../subscriptions/quota.ts';
 import { classifyIntent } from './classifier.ts';
-import type { IngestOutcome, ProposalDraft } from './intents.ts';
+import type { CapabilityTarget, ClassificationResult, IngestOutcome, ProposalDraft } from './intents.ts';
+import type { JevClassifier } from './jev-classifier.ts';
 import { ConversationRepository, newConversationIds, type ConversationRequestRow } from './repositories.ts';
 import { buildReadOnlyAnswer } from './read-answers.ts';
 import { editWebsiteByInstruction, sentenceList } from '../website/edit-mapper.ts';
@@ -32,6 +35,8 @@ export interface IngestInput {
   channel: 'telegram' | 'simulated';
   text: string;
   requestId: string;
+  /** DEC-0005: clave de idempotencia (cabecera Idempotency-Key o el request_id). */
+  idempotencyKey?: string;
 }
 
 export interface PipelineDeps {
@@ -41,8 +46,10 @@ export interface PipelineDeps {
   hooks: Inc001Hooks;
   repo: ConversationRepository;
   websiteRepo: WebsiteRepository;
-  /** Opcional: enforcement de límites del plan (DEC-024) en la ingesta. */
-  entitlements?: { checkLimit(tenantId: string, capability: string): Promise<void> };
+  /** DEC-0005: cuota 'conversations' reservada antes de procesar y consumida con la solicitud. */
+  quota?: QuotaLedger;
+  /** Opcional (JEV_MODE=shadow|primary, APR-0002): Jev como clasificador; ver jev-classifier.ts. */
+  jev?: JevClassifier;
 }
 
 /** Senencia de confirmación detallada (AC-006) en lenguaje claro. */
@@ -73,14 +80,44 @@ export class ConversationPipeline {
       throw new Error('FAIL-CLOSED: empty message cannot be ingested');
     }
 
-    // PR-02 (Reviewer, DEC-024): enforcement del límite 'conversations' en el
-    // punto de ingesta, ANTES de procesar (fail-closed 403 limit_exceeded /
-    // subscription_required; la capa de rutas audita el deny). Sin plan activo
-    // la conversación NO se procesa (política documentada en README §15).
-    if (this.deps.entitlements) {
-      await this.deps.entitlements.checkLimit(input.tenantId, 'conversations');
+    // DEC-0005: reserva ATÓMICA de la cuota 'conversations' ANTES de procesar
+    // (fail-closed 403 limit_exceeded / subscription_required; la ruta audita el
+    // deny). La reserva se consume en la misma transacción que persiste la
+    // solicitud; si el procesamiento falla antes, se devuelve (o vence sola).
+    let reservation: QuotaReservationRow | null = null;
+    if (this.deps.quota) {
+      const claim = await this.deps.quota.reserve({
+        tenantId: input.tenantId, capability: 'conversations', units: 1,
+        idempotencyKey: input.idempotencyKey ?? input.requestId, requestId: input.requestId,
+        actorId: input.actorId, actorRole: input.actorRole,
+      });
+      if (claim.kind === 'replay') return this.replay(input.tenantId, claim.reservation);
+      reservation = claim.reservation;
     }
+    try {
+      return await this.process(input, reservation);
+    } catch (err) {
+      if (reservation) await this.deps.quota?.release(reservation, input.actorRole, 'not_persisted');
+      throw err;
+    }
+  }
 
+  /** Misma clave de idempotencia ya consumida: el resultado original, sin reprocesar. */
+  private async replay(tenantId: string, reservation: QuotaReservationRow): Promise<IngestOutcome> {
+    const found = await this.deps.repo.findRequestScoped(tenantId, resourceIdOf(reservation.resource_ref));
+    if (!found.found || !found.in_tenant || !found.row) {
+      throw new AppError(404, DENY_CODES.NOT_FOUND, 'La solicitud original ya no está disponible.');
+    }
+    const r = found.row;
+    // capability_target se escribió desde una ClassificationResult (columna TEXT).
+    const capabilityTarget = r.capability_target as CapabilityTarget;
+    return {
+      requestId: r.request_id, actionClass: r.action_class, intent: r.intent, capabilityTarget,
+      requestStatus: r.status, responseText: r.response_message ?? '', proposalId: r.proposal_id ?? undefined, replayed: true,
+    };
+  }
+
+  private async process(input: IngestInput, reservation: QuotaReservationRow | null): Promise<IngestOutcome> {
     const ids = newConversationIds();
     const { sink } = this.deps;
 
@@ -91,20 +128,55 @@ export class ConversationPipeline {
       request_id: input.requestId, decision: 'allow', result: 'received',
     });
 
-    // 2) Clasificación (AC-004/005, REQ-004).
-    const classification = classifyIntent(input.text);
+    // 2) Clasificación (AC-004/005, REQ-004). Sin Jev decide el determinista.
+    const deterministic = classifyIntent(input.text);
+
+    // 2b) APR-0002: en shadow decide el determinista y Jev queda como
+    // evidencia; en primary con el gate abierto Jev determina la clasificación
+    // (D1–D3). La fila de Jev se guarda solo si la solicitud quedó persistida.
+    const jev = this.deps.jev
+      ? await this.deps.jev.decide({ tenantId: input.tenantId, requestId: input.requestId, text: input.text, deterministic })
+      : null;
+    const classification = jev?.classification ?? deterministic;
+    const auditTag = `;source=${jev?.source ?? 'deterministic'}${jev?.audit ?? ''}`;
+    try {
+      const outcome = await this.route(input, ids, classification, auditTag, reservation);
+      jev?.commit();
+      return outcome;
+    } catch (err) {
+      jev?.abandon();
+      throw err;
+    }
+  }
+
+  /** NFR-0001: la solicitud persistida y el consumo de su cuota (con su evento) van en la misma transacción. */
+  private async consumeReservation(client: PoolClient, reservation: QuotaReservationRow | null, input: IngestInput): Promise<void> {
+    if (reservation && this.deps.quota) {
+      await this.deps.quota.commitInTx(client, reservation, `conversation_request/${input.requestId}`, input.actorRole);
+    }
+  }
+
+  /** Audita la clasificación y enruta (respuesta, borrador, propuesta, escalamiento o bloqueo). */
+  private async route(
+    input: IngestInput,
+    ids: ReturnType<typeof newConversationIds>,
+    classification: ClassificationResult,
+    auditTag: string,
+    reservation: QuotaReservationRow | null,
+  ): Promise<IngestOutcome> {
+    const { sink } = this.deps;
     await sink.write({
       tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole,
       action: 'conversation.classified',
       resource: `request:${input.requestId}`,
       request_id: input.requestId,
       decision: classification.actionClass === 'prohibited' ? 'deny' : 'allow',
-      result: `${classification.intent}:${classification.actionClass}`,
+      result: `${classification.intent}:${classification.actionClass}${auditTag}`,
     });
 
     switch (classification.actionClass) {
       case 'prohibited': {
-        return this.handleProhibited(input, input.requestId, classification);
+        return this.handleProhibited(input, input.requestId, classification, reservation);
       }
       case 'human_approval_required': {
         const draft: ProposalDraft = {
@@ -114,7 +186,7 @@ export class ConversationPipeline {
           summary: 'Es una decisión sensible que requiere aprobación humana explícita.',
           detail: { hints: classification.reason },
         };
-        const outcome = await this.createProposal(input, ids, classification.intent, draft, { status: 'needs_approval', responseMessage: escalationText(draft), blocked: false });
+        const outcome = await this.createProposal(input, ids, classification.intent, draft, { status: 'needs_approval', responseMessage: escalationText(draft), blocked: false }, reservation);
         await sink.write({
           tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole,
           action: 'conversation.proposal.created', resource: `action_proposal/${outcome.proposalId}`,
@@ -126,7 +198,7 @@ export class ConversationPipeline {
         if (classification.intent === 'request.needs_clarification') {
           // Ambigüedad: sin efecto, pedir aclaración (FLOW-001 alternativa).
           const request = await this.persistRequest(input, input.requestId, classification, 'needs_clarification',
-            'No entendí bien tu solicitud. Puedes pedirme por ejemplo: "cambia el teléfono", "agrega la sección servicios" o preguntarme por el horario de tu negocio.');
+            'No entendí bien tu solicitud. Puedes pedirme por ejemplo: "cambia el teléfono", "agrega la sección servicios" o preguntarme por el horario de tu negocio.', reservation);
           return {
             requestId: request.request_id, actionClass: 'draft', intent: classification.intent,
             capabilityTarget: classification.capabilityTarget, requestStatus: 'needs_clarification',
@@ -140,7 +212,7 @@ export class ConversationPipeline {
           summary: 'Propuesta borrador: sugerencia de contenido.', // TENTATIVA: sin generativo en esta tanda
           detail: { hints: classification.reason, suggestion: input.text },
         };
-        const outcome = await this.createProposal(input, ids, classification.intent, draft, { status: 'classified', responseMessage: 'Aquí está mi propuesta (borrador): no se publica nada sin tu aprobación.' });
+        const outcome = await this.createProposal(input, ids, classification.intent, draft, { status: 'classified', responseMessage: 'Aquí está mi propuesta (borrador): no se publica nada sin tu aprobación.' }, reservation);
         await sink.write({
           tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole,
           action: 'conversation.proposal.created', resource: `action_proposal/${outcome.proposalId}`,
@@ -151,7 +223,7 @@ export class ConversationPipeline {
       case 'read_only': {
         // RULE-002: responde sin approval gate y sin efectos externos (AC-005).
         const answer = await buildReadOnlyAnswer(this.deps.websiteRepo, input.tenantId, classification, input.text);
-        const request = await this.persistRequest(input, input.requestId, classification, 'answered', answer);
+        const request = await this.persistRequest(input, input.requestId, classification, 'answered', answer, reservation);
         await sink.write({
           tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole,
           action: 'conversation.answered', resource: `request:${request.request_id}`,
@@ -176,7 +248,7 @@ export class ConversationPipeline {
           detail: { after: edit.after, diff_sentences: edit.sentences, patches: edit.patches },
           patches: sentenceList(edit.patches),
         };
-        const outcome = await this.createProposal(input, ids, classification.intent, draft, { status: 'awaiting_confirmation', responseMessage: confirmationText(draft), blocked: false });
+        const outcome = await this.createProposal(input, ids, classification.intent, draft, { status: 'awaiting_confirmation', responseMessage: confirmationText(draft), blocked: false }, reservation);
         await sink.write({
           tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole,
           action: 'conversation.proposal.created', resource: `action_proposal/${outcome.proposalId}`,
@@ -191,24 +263,30 @@ export class ConversationPipeline {
     }
   }
 
+  /** Persiste la solicitud y consume su cuota en UNA transacción (NFR-0001). */
   private async persistRequest(
     input: IngestInput,
     requestId: string,
     classification: ReturnType<typeof classifyIntent>,
     status: ConversationRequestRow['status'],
     responseMessage: string,
+    reservation: QuotaReservationRow | null,
   ): Promise<ConversationRequestRow> {
-    return this.deps.repo.createRequest({
-      requestId,
-      tenantId: input.tenantId,
-      actorId: input.actorId,
-      channel: input.channel,
-      rawMessage: input.text,
-      intent: classification.intent,
-      capabilityTarget: classification.capabilityTarget,
-      actionClass: classification.actionClass,
-      status,
-      responseMessage,
+    return runAtomic(this.deps.pool, async (client) => {
+      const request = await this.deps.repo.createRequest({
+        requestId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        channel: input.channel,
+        rawMessage: input.text,
+        intent: classification.intent,
+        capabilityTarget: classification.capabilityTarget,
+        actionClass: classification.actionClass,
+        status,
+        responseMessage,
+      }, client);
+      await this.consumeReservation(client, reservation, input);
+      return request;
     });
   }
 
@@ -217,6 +295,7 @@ export class ConversationPipeline {
     input: IngestInput,
     requestId: string,
     classification: ReturnType<typeof classifyIntent>,
+    reservation: QuotaReservationRow | null,
   ): Promise<IngestOutcome> {
     const responseText = classification.intent === 'capability.unsupported'
       ? 'Todavía no puedo hacer cambios en redes sociales o publicaciones. Puedo ayudarte con tu página web.'
@@ -230,7 +309,7 @@ export class ConversationPipeline {
       proposalType: null,
       confidence: 'high',
       reason: 'blocked_without_effect',
-    }, 'blocked', responseText);
+    }, 'blocked', responseText, reservation);
     await this.deps.sink.write({
       tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole,
       action: 'conversation.prohibited', resource: `request:${request.request_id}`,
@@ -252,6 +331,7 @@ export class ConversationPipeline {
     intent: string,
     draft: ProposalDraft,
     opts: { status: ConversationRequestRow['status']; responseMessage: string; blocked?: boolean },
+    reservation: QuotaReservationRow | null,
   ): Promise<IngestOutcome> {
     const request = await runAtomic(this.deps.pool, async (client) => {
       const r = await this.deps.repo.createRequest({
@@ -279,6 +359,7 @@ export class ConversationPipeline {
         status: draft.actionClass === 'human_approval_required' ? 'drafted' : draft.actionClass === 'draft' ? 'drafted' : 'awaiting_confirmation',
         createdBy: input.actorId,
       }, client);
+      await this.consumeReservation(client, reservation, input);
       return r;
     });
 

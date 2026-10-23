@@ -74,3 +74,94 @@ test('IR-10 unit: valid enums are accepted', () => {
     },
   );
 });
+
+// --- APR-0002: JEV_* (Jev como clasificador: disabled | shadow | primary) ----
+
+const FAKE_KEY = 'ts-fake-key-0123456789abcdef';
+const JEV_UNSET = {
+  APP_ENV: 'test',
+  JWT_SECRET: 'test-secret',
+  JEV_ENABLED: undefined,
+  JEV_SHADOW_MODE: undefined,
+  JEV_MODE: undefined,
+  JEV_PROVIDER: undefined,
+  TYPESAFE_API_KEY: undefined,
+  JEV_MODEL: undefined,
+  JEV_DATA_SCOPE: undefined,
+  JEV_SYNTHETIC_TENANTS: undefined,
+  JEV_DAILY_BUDGET_USD: undefined,
+};
+const JEV_ON = { JEV_PROVIDER: 'typesafe', TYPESAFE_API_KEY: FAKE_KEY, JEV_SYNTHETIC_TENANTS: 'client_a' };
+
+function jevThrows(env: Record<string, string | undefined>, pattern: RegExp): void {
+  withEnv({ ...JEV_UNSET, ...env }, () => {
+    assert.throws(
+      () => loadConfig(),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, pattern);
+        assert.ok(!err.message.includes(FAKE_KEY), 'the key never appears in config errors');
+        return true;
+      },
+    );
+  });
+}
+
+test('APR-0002 unit: Jev is disabled by default and disabled needs no key', () => {
+  withEnv(JEV_UNSET, () => {
+    assert.deepEqual(loadConfig().jev, { mode: 'disabled' });
+  });
+  withEnv({ ...JEV_UNSET, JEV_MODE: 'disabled', TYPESAFE_API_KEY: FAKE_KEY }, () => {
+    assert.deepEqual(loadConfig().jev, { mode: 'disabled' });
+  });
+});
+
+test('APR-0002 unit: shadow and primary configs are accepted with synthetic scope and default budget', () => {
+  for (const mode of ['shadow', 'primary'] as const) {
+    withEnv(
+      { ...JEV_UNSET, ...JEV_ON, JEV_MODE: mode, TYPESAFE_API_KEY: ` ${FAKE_KEY} `, JEV_MODEL: 'jev-latest', JEV_SYNTHETIC_TENANTS: ' client_a, client_b ,client_a,' },
+      () => {
+        assert.deepEqual(loadConfig().jev, {
+          mode, provider: 'typesafe', apiKey: FAKE_KEY, model: 'jev-latest', dataScope: 'synthetic',
+          syntheticTenants: ['client_a', 'client_b'], dailyBudgetUsd: 1,
+        });
+      },
+    );
+  }
+  withEnv({ ...JEV_UNSET, ...JEV_ON, JEV_MODE: 'shadow', JEV_DAILY_BUDGET_USD: '0.25' }, () => {
+    const jev = loadConfig().jev;
+    assert.ok(jev.mode === 'shadow');
+    assert.equal(jev.model, null, 'blank JEV_MODEL ⇒ provider alias');
+    assert.equal(jev.dailyBudgetUsd, 0.25);
+  });
+});
+
+test('APR-0002 unit: the replaced JEV_ENABLED / JEV_SHADOW_MODE variables abort startup', () => {
+  jevThrows({ JEV_ENABLED: 'false' }, /JEV_ENABLED no longer exist: use JEV_MODE=disabled\|shadow\|primary/);
+  jevThrows({ JEV_SHADOW_MODE: 'true', JEV_MODE: 'shadow', ...JEV_ON }, /JEV_SHADOW_MODE no longer exist/);
+  jevThrows({ JEV_ENABLED: '', JEV_SHADOW_MODE: '' }, /JEV_ENABLED and JEV_SHADOW_MODE no longer exist/);
+});
+
+test('APR-0002 unit: enabled modes without key, provider or synthetic tenants fail fast', () => {
+  jevThrows({ ...JEV_ON, JEV_MODE: 'shadow', TYPESAFE_API_KEY: undefined }, /TYPESAFE_API_KEY is required when JEV_MODE=shadow/);
+  jevThrows({ ...JEV_ON, JEV_MODE: 'primary', TYPESAFE_API_KEY: '   ' }, /TYPESAFE_API_KEY is required when JEV_MODE=primary/);
+  jevThrows({ ...JEV_ON, JEV_MODE: 'shadow', JEV_PROVIDER: undefined }, /JEV_PROVIDER is required when JEV_MODE=shadow/);
+  jevThrows({ ...JEV_ON, JEV_MODE: 'primary', JEV_SYNTHETIC_TENANTS: ' , ' }, /JEV_SYNTHETIC_TENANTS is required when JEV_MODE=primary/);
+});
+
+test('APR-0002 unit: only typesafe, synthetic scope and known modes are accepted', () => {
+  jevThrows({ ...JEV_ON, JEV_MODE: 'shadow', JEV_PROVIDER: 'openrouter' }, /JEV_PROVIDER=openrouter\. Allowed values: typesafe/);
+  jevThrows({ JEV_PROVIDER: 'mock' }, /JEV_PROVIDER=mock\. Allowed values: typesafe/);
+  jevThrows({ ...JEV_ON, JEV_MODE: 'shadow', JEV_DATA_SCOPE: 'real' }, /JEV_DATA_SCOPE=real\. Allowed values: synthetic/);
+  jevThrows({ JEV_MODE: 'authoritative' }, /JEV_MODE=authoritative\. Allowed values: disabled, shadow, primary/);
+});
+
+test('DEC-0032 unit: the daily budget must be positive and at most USD 1', () => {
+  for (const bad of ['0', '-1', '1.01', 'abc', 'Infinity']) {
+    jevThrows({ ...JEV_ON, JEV_MODE: 'shadow', JEV_DAILY_BUDGET_USD: bad }, /JEV_DAILY_BUDGET_USD=.*at most 1 \(DEC-0032\)/);
+  }
+  withEnv({ ...JEV_UNSET, ...JEV_ON, JEV_MODE: 'shadow', JEV_DAILY_BUDGET_USD: '1' }, () => {
+    const jev = loadConfig().jev;
+    assert.equal(jev.mode !== 'disabled' && jev.dailyBudgetUsd, 1);
+  });
+});

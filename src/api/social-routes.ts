@@ -14,6 +14,7 @@ import { getRequestContext, type SessionSummary } from '../shared/context.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import type { AuditSink } from '../audit/sink.ts';
 import type { SocialService, SocialPostStatus } from '../social/service.ts';
+import { resolveIdempotencyKey } from '../subscriptions/quota.ts';
 import type { ActionRateLimiter } from '../boundary/action-ratelimit.ts';
 import { denyAndRespond, type LooseRequest } from '../boundary/middleware.ts';
 import { requirePermission } from '../boundary/middleware.ts';
@@ -60,16 +61,21 @@ async function handleDomainDeny(req: Request, res: Response, lreq: LooseRequest,
 export function socialRouter(deps: SocialRouteDeps): Router {
   const router = Router();
 
-  // Crear borrador (social.create). Límite del plan verificado (DEC-024).
+  // Crear borrador (social.create). DEC-0005: cuota consumida en la misma
+  // transacción que el borrador; Idempotency-Key opcional (replay ⇒ 200).
   router.post('/social/posts', requirePermission('social.create', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
     const { text, image_url, content_type } = (req.body ?? {}) as { text?: string; image_url?: string | null; content_type?: 'post' | 'ad' };
     try {
-      const post = await deps.service.createDraft(session.tenant_id, session.user_id, rc.request_id, {
+      const { post, replayed } = await deps.service.createDraft(session.tenant_id, session.user_id, rc.request_id, {
         text: text ?? '', imageUrl: image_url ?? null, contentType: content_type,
+        idempotencyKey: resolveIdempotencyKey(req.get('idempotency-key'), rc.request_id), actorRole: session.role_name,
       });
+      if (replayed) {
+        return res.status(200).json({ post, replayed: true, message: 'Esta solicitud ya se había procesado: el borrador ya existe.' });
+      }
       return res.status(201).json({ post, message: 'Borrador creado. Para publicarlo pasa por revisión y aprobación.' });
     } catch (err) {
       if (await handleDomainDeny(req, res, lreq, err, deps.pool)) return undefined;

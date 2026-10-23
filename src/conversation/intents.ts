@@ -66,4 +66,6 @@ export interface IngestOutcome {
   proposalId?: string;
   previewUrl?: string;
   requestStatus: RequestStatus;
+  /** DEC-0005: resultado de una petición anterior con la misma clave de idempotencia. */
+  replayed?: boolean;
 }

@@ -6,7 +6,8 @@
 import type { AddressInfo, Server } from 'node:net';
 import pg from 'pg';
 import { createApp } from '../../src/api/server.ts';
-import { loadConfig } from '../../src/shared/config.ts';
+import { loadConfig, type AppConfig } from '../../src/shared/config.ts';
+import type { JevClassifier } from '../../src/conversation/jev-classifier.ts';
 
 const { Pool } = pg;
 
@@ -20,17 +21,22 @@ export const TEST_CONFIG = {
   jwtSecret: 'test-secret-for-verification-only',
   appEnv: 'test' as const,
   logLevel: 'debug' as const,
+  // Nunca Jev real en tests, aunque el shell exporte JEV_*; los tests que lo
+  // necesitan lo habilitan explícitamente con fetch simulado (sin red).
+  jev: { mode: 'disabled' as const },
 };
 
 export interface TestApi {
   baseUrl: string;
   pool: pg.Pool;
+  /** Presente solo si la config habilita Jev (shadow o primary). */
+  jev?: JevClassifier;
   close: () => Promise<void>;
 }
 
-export async function bootApi(): Promise<TestApi> {
+export async function bootApi(configOverrides: Partial<AppConfig> = {}): Promise<TestApi> {
   const pool = new Pool({ connectionString: TEST_URL, max: 5 });
-  const { app } = createApp({ config: TEST_CONFIG, pool });
+  const { app, jev } = createApp({ config: { ...TEST_CONFIG, ...configOverrides }, pool });
   const server: Server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
@@ -38,8 +44,10 @@ export async function bootApi(): Promise<TestApi> {
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     pool,
+    jev,
     close: async () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      await jev?.drain();
       await pool.end();
     },
   };

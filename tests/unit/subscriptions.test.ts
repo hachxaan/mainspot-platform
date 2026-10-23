@@ -5,19 +5,22 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { usageWithinLimit, KNOWN_CAPABILITIES } from '../../src/subscriptions/entitlements.ts';
+import { fitsLimit, KNOWN_CAPABILITIES } from '../../src/subscriptions/entitlements.ts';
 import { SimulatedPaymentProvider } from '../../src/subscriptions/payment.ts';
 import { authorize } from '../../src/rbac/engine.ts';
 
-test('subscriptions: límites fail-closed puros (usage >= max ⇒ deny)', () => {
+test('subscriptions: límites fail-closed puros (usage + units > max ⇒ deny)', () => {
   // Sin límite configurado ⇒ deny (nada no-listado se permite).
-  assert.equal(usageWithinLimit(null, 0), false);
-  // Con límite: permitido solo si usage < max (todavía cabe otro).
-  assert.equal(usageWithinLimit(10, 0), true);
-  assert.equal(usageWithinLimit(10, 9), true);
-  assert.equal(usageWithinLimit(10, 10), false);
-  assert.equal(usageWithinLimit(1, 1), false, 'al alcanzar el máximo no se permite crear más');
-  assert.equal(usageWithinLimit(0, 0), false, 'límite cero ⇒ nada permitido');
+  assert.equal(fitsLimit(null, 0), false);
+  // Una unidad: permitido solo si todavía cabe otra.
+  assert.equal(fitsLimit(10, 0), true);
+  assert.equal(fitsLimit(10, 9), true);
+  assert.equal(fitsLimit(10, 10), false);
+  assert.equal(fitsLimit(1, 1), false, 'al alcanzar el máximo no se permite crear más');
+  assert.equal(fitsLimit(0, 0), false, 'límite cero ⇒ nada permitido');
+  // Lotes (DEC-0005): el lote entero cabe o no se consume nada.
+  assert.equal(fitsLimit(10, 6, 4), true, 'exactamente hasta el máximo');
+  assert.equal(fitsLimit(10, 7, 4), false, 'un lote que se pasa por una unidad se rechaza entero');
 });
 
 test('subscriptions: catálogo de capacidades conocido y estable', () => {

@@ -16,7 +16,7 @@
  * (audit deny + AppError 403); no se publica nada sin preview/aprobación.
  */
 
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { AppConfig } from '../shared/config.ts';
 import type { AuditSink } from '../audit/sink.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
@@ -26,6 +26,7 @@ import { belowThreshold, classifyReview } from './provider.ts';
 import { ConversationRepository, newConversationIds } from '../conversation/repositories.ts';
 import { runAtomic } from '../conversation/state-machine.ts';
 import type { TenantBoundaryResult } from '../conversation/repositories.ts';
+import type { QuotaLedger } from '../subscriptions/quota.ts';
 
 export type ReviewState =
   | 'detected'
@@ -70,15 +71,8 @@ export interface ReputationEngineDeps {
   sink: AuditSink;
   provider: ReputationProvider;
   conversationRepo: ConversationRepository;
-  /**
-   * Opcional: enforcement de límites del plan (DEC-024) en la ingesta.
-   * checkLimit lanza 'limit_exceeded'/'subscription_required' por ítem;
-   * remainingQuota permite validar LOTES ANTES de insertar (PR-03).
-   */
-  entitlements?: {
-    checkLimit(tenantId: string, capability: string): Promise<void>;
-    remainingQuota?(tenantId: string, capability: string): Promise<number>;
-  };
+  /** DEC-0005: cuota `reviews_managed` consumida en la transacción del lote. */
+  quota: QuotaLedger;
 }
 
 export class ReviewRepository {
@@ -117,7 +111,7 @@ export class ReviewRepository {
   async ingest(input: {
     reviewId: string; tenantId: string; r: ReviewInput; classification: ReviewClassification;
     state: ReviewState; suggestedOptions: string[]; responseText: string | null;
-  }, db: Pool | import('pg').PoolClient = this.pool): Promise<{ row: ReviewRow; created: boolean }> {
+  }, db: Pool | PoolClient = this.pool): Promise<{ row: ReviewRow; created: boolean }> {
     const t = this.assertTenant(input.tenantId);
     const res = await db.query<ReviewRow>(
       `INSERT INTO review
@@ -138,10 +132,10 @@ export class ReviewRepository {
     return { row: existingRow as ReviewRow, created: false };
   }
 
-  /** source_review_id ya presentes del tenant (para validar capacidad de lote). */
-  async existingSourceIds(tenantId: string): Promise<Set<string>> {
+  /** source_review_id ya presentes del tenant (para medir el lote dentro del candado de cuota). */
+  async existingSourceIds(tenantId: string, db: Pool | PoolClient = this.pool): Promise<Set<string>> {
     const t = this.assertTenant(tenantId);
-    const res = await this.pool.query<{ source_review_id: string }>(
+    const res = await db.query<{ source_review_id: string }>(
       'SELECT source_review_id FROM review WHERE tenant_id = $1',
       [t],
     );
@@ -157,7 +151,7 @@ export class ReviewRepository {
     state: ReviewState,
     meta: { responseText?: string | null; decidedBy?: string; proposalId?: string | null } = {},
     fromStates: readonly ReviewState[] = [],
-    db: Pool | import('pg').PoolClient = this.pool,
+    db: Pool | PoolClient = this.pool,
   ): Promise<TenantBoundaryResult<ReviewRow>> {
     const t = this.assertTenant(tenantId);
     const sets = ['state = $3', 'updated_at = now()'];
@@ -242,67 +236,44 @@ export class ReputationEngine {
   /**
    * Sincroniza/ingesta las reseñas del proveedor (simulado determinista).
    *
-   * PR-03 (Reviewer): el lote se valida ANTES de insertar (una sola
-   * comprobación de capacidad contra uso actual + tamaño del lote) y las
-   * inserciones + auditoría se ejecutan en UNA transacción atómica. Si el
-   * lote excede el límite ⇒ 403 'limit_exceeded' SIN estado parcial; si un
-   * insert falla a mitad ⇒ ROLLBACK (nunca quedan filas sueltas).
+   * DEC-0005 + NFR-0001: el lote se mide, se comprueba contra la cuota
+   * `reviews_managed` y se inserta con su auditoría en UNA transacción, con el
+   * candado de cuota del tenant tomado: dos sincronizaciones concurrentes no
+   * pueden superar el límite. Si el lote no cabe ⇒ 403 'limit_exceeded' sin
+   * estado parcial; si un insert falla a mitad ⇒ ROLLBACK (sin filas ni consumo).
+   * El lote ya es idempotente por source_review_id; la clave de cuota es el request_id.
    */
-  async sync(tenantId: string, actorId: string, requestId: string): Promise<{ outcome: SyncOutcome; reviews: ReviewRow[] }> {
+  async sync(tenantId: string, actorId: string, requestId: string, actorRole: string | null = null): Promise<{ outcome: SyncOutcome; reviews: ReviewRow[] }> {
     const reviews = await this.deps.provider.listReviews(tenantId);
-    const pending = reviews;
-    if (this.deps.entitlements) {
-      // 1) Capacidad del LOTE (no por fila): cuántas reseñas NUEVAS (no
-      //    existentes) pretende insertar el lote vs la cuota restante.
-      const existingForTenant = await this.repo.existingSourceIds(tenantId);
-      const fresh = pending.filter((r) => !existingForTenant.has(r.source_review_id));
-      if (fresh.length > 0) {
-        const remaining = this.deps.entitlements.remainingQuota
-          ? await this.deps.entitlements.remainingQuota(tenantId, 'reviews_managed')
-          // Fallback: sin remainingQuota, validar por fila (conserva el
-          // comportamiento previo de checkLimit).
-          : await this.remainingViaCheckLimit(tenantId, fresh.length > 0);
-        if (remaining < fresh.length) {
-          throw new AppError(403, DENY_CODES.LIMIT_EXCEEDED,
-            `Se alcanzó el límite del plan para reseñas gestionadas: el lote de ${fresh.length} reseñas nuevas no cabe en la cuota disponible (${Math.max(0, remaining)} restantes). Ninguna reseña fue registrada.`);
-        }
-      }
-    }
-
-    // 2) Ingesta atómica por lote: insert + auditoría en la MISMA transacción.
     const outcome: SyncOutcome = { synced: 0, skipped: 0, classified: { acknowledged: 0, suggested: 0 } };
     await runAtomic(this.deps.pool, async (client) => {
-      for (const r of reviews) {
-        const { row, created } = await this.ingestTracked(tenantId, actorId, requestId, r, client);
-        if (!created) { outcome.skipped += 1; continue; }
-        outcome.synced += 1;
-        if (row.state === 'acknowledged') outcome.classified.acknowledged += 1;
-        if (row.state === 'suggested') outcome.classified.suggested += 1;
+      await this.deps.quota.lock(client, tenantId, 'reviews_managed');
+      const existing = await this.repo.existingSourceIds(tenantId, client);
+      const fresh = reviews.filter((r) => !existing.has(r.source_review_id)).length;
+      if (fresh > 0) {
+        await this.deps.quota.consumeInTx(client, {
+          tenantId, capability: 'reviews_managed', units: fresh, idempotencyKey: requestId, requestId, actorId, actorRole,
+        }, async () => {
+          for (const r of reviews) {
+            const { row, created } = await this.ingestTracked(tenantId, actorId, requestId, r, client);
+            if (!created) { outcome.skipped += 1; continue; }
+            outcome.synced += 1;
+            if (row.state === 'acknowledged') outcome.classified.acknowledged += 1;
+            if (row.state === 'suggested') outcome.classified.suggested += 1;
+          }
+          return { resourceRef: `review_batch/${requestId}`, value: undefined };
+        });
+      } else {
+        outcome.skipped = reviews.length;
       }
     });
     const list = await this.repo.list(tenantId);
     return { outcome, reviews: list };
   }
 
-  /** Fallback antiguo (por fila) cuando el proveedor de límites no expone
-   *  remainingQuota: validar con checkLimit con la primera reseña nueva. */
-  private async remainingViaCheckLimit(tenantId: string, hasNew: boolean): Promise<number> {
-    if (!hasNew) return Number.MAX_SAFE_INTEGER;
-    await (this.deps.entitlements as NonNullable<ReputationEngineDeps['entitlements']>).checkLimit(tenantId, 'reviews_managed');
-    // checkLimit solo dice "cabe una más"; para un lote desconocido asumimos
-    // capacidad 1 (fallback conservador, nunca permite lote parcial).
-    return 1;
-  }
-
-  /** Ingesta una review: inserta (idempotente), clasifica y enruta por umbral. */
-  async ingest(tenantId: string, actorId: string, requestId: string, r: ReviewInput): Promise<ReviewRow> {
-    const { row } = await this.ingestTracked(tenantId, actorId, requestId, r);
-    return row;
-  }
-
   private async ingestTracked(
     tenantId: string, actorId: string, requestId: string, r: ReviewInput,
-    db?: import('pg').PoolClient,
+    db?: PoolClient,
   ): Promise<{ row: ReviewRow; created: boolean }> {
     const classification = classifyReview(r.star_rating);
     const business = await this.repo.businessName(tenantId);
@@ -344,14 +315,15 @@ export class ReputationEngine {
       if (review.state === 'awaiting_human') return review; // idempotente
       throw new AppError(409, 'validation_error', 'La reseña ya no puede escalarse en su estado actual.');
     }
-    const updated = await this.repo.updateState(tenantId, reviewId, 'awaiting_human', {}, ['suggested', 'edited', 'detected']);
-    const row = updated.row as ReviewRow;
-    await this.deps.sink.write({
-      tenant_id: tenantId, actor_id: actorId, actor_role: null,
-      action: 'reputation.escalated', resource: `review/${reviewId}`,
-      request_id: requestId, decision: 'allow', result: 'awaiting_human',
+    return runAtomic(this.deps.pool, async (client) => {
+      const updated = await this.repo.updateState(tenantId, reviewId, 'awaiting_human', {}, ['suggested', 'edited', 'detected'], client);
+      await this.deps.sink.write({
+        tenant_id: tenantId, actor_id: actorId, actor_role: null,
+        action: 'reputation.escalated', resource: `review/${reviewId}`,
+        request_id: requestId, decision: 'allow', result: 'awaiting_human',
+      }, client);
+      return updated.row as ReviewRow;
     });
-    return row;
   }
 
   /** Edita el borrador de respuesta — SOLO antes de aprobar (DEC-011). */
@@ -372,14 +344,15 @@ export class ReputationEngine {
     if (!(allowed as readonly string[]).includes(review.state)) {
       throw new AppError(409, 'validation_error', 'La respuesta solo puede editarse antes de aprobarse.');
     }
-    const updated = await this.repo.updateState(tenantId, reviewId, 'edited', { responseText: clean }, allowed);
-    const row = updated.row as ReviewRow;
-    await this.deps.sink.write({
-      tenant_id: tenantId, actor_id: actorId, actor_role: null,
-      action: 'reputation.response.edited', resource: `review/${reviewId}`,
-      request_id: requestId, decision: 'allow', result: 'edited',
+    return runAtomic(this.deps.pool, async (client) => {
+      const updated = await this.repo.updateState(tenantId, reviewId, 'edited', { responseText: clean }, allowed, client);
+      await this.deps.sink.write({
+        tenant_id: tenantId, actor_id: actorId, actor_role: null,
+        action: 'reputation.response.edited', resource: `review/${reviewId}`,
+        request_id: requestId, decision: 'allow', result: 'edited',
+      }, client);
+      return updated.row as ReviewRow;
     });
-    return row;
   }
 
   /**
@@ -448,13 +421,13 @@ export class ReputationEngine {
         throw new AppError(409, 'validation_error',
           'La reseña cambió de estado mientras se procesaba. Revisa el estado actual e inténtalo de nuevo.');
       }
+      await this.deps.sink.write({
+        tenant_id: tenantId, actor_id: actorId, actor_role: null,
+        action: 'reputation.approved', resource: `review/${reviewId}`,
+        request_id: requestId, decision: 'allow', result: 'proposal_created', evidence_ref: ids.proposalId,
+      }, client);
     });
     const updated = (await this.repo.findScoped(tenantId, reviewId)).row as ReviewRow;
-    await this.deps.sink.write({
-      tenant_id: tenantId, actor_id: actorId, actor_role: null,
-      action: 'reputation.approved', resource: `review/${reviewId}`,
-      request_id: requestId, decision: 'allow', result: 'proposal_created', evidence_ref: ids.proposalId,
-    });
     return { review: updated, proposalId: ids.proposalId };
   }
 
@@ -470,14 +443,15 @@ export class ReputationEngine {
     if (review.state === 'published') {
       throw new AppError(409, DENY_CODES.PROHIBITED, 'La respuesta ya fue publicada y no puede rechazarse.');
     }
-    const updated = await this.repo.updateState(tenantId, reviewId, 'rejected', { decidedBy: actorId }, allowed);
-    const row = updated.row as ReviewRow;
-    await this.deps.sink.write({
-      tenant_id: tenantId, actor_id: actorId, actor_role: null,
-      action: 'reputation.rejected', resource: `review/${reviewId}`,
-      request_id: requestId, decision: 'allow', result: 'rejected',
+    return runAtomic(this.deps.pool, async (client) => {
+      const updated = await this.repo.updateState(tenantId, reviewId, 'rejected', { decidedBy: actorId }, allowed, client);
+      await this.deps.sink.write({
+        tenant_id: tenantId, actor_id: actorId, actor_role: null,
+        action: 'reputation.rejected', resource: `review/${reviewId}`,
+        request_id: requestId, decision: 'allow', result: 'rejected',
+      }, client);
+      return updated.row as ReviewRow;
     });
-    return row;
   }
 
   /**

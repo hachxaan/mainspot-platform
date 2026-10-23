@@ -26,7 +26,7 @@ import type { ChannelAdapter } from '../channels/types.ts';
 import { denyAndRespond, type LooseRequest } from '../boundary/middleware.ts';
 import { requirePermission } from '../boundary/middleware.ts';
 import type { ProposalStatus, RequestStatus } from '../conversation/intents.ts';
-import type { EntitlementService } from '../subscriptions/entitlements.ts';
+import { resolveIdempotencyKey, resourceIdOf, type QuotaLedger } from '../subscriptions/quota.ts';
 
 export interface ConversationRouteDeps {
   pool: Pool;
@@ -39,7 +39,7 @@ export interface ConversationRouteDeps {
   websiteRepo: WebsiteRepository;
   domainService: DomainService;
   channel: ChannelAdapter;
-  entitlements: EntitlementService;
+  quota: QuotaLedger;
 }
 
 function rcOf(lreq: LooseRequest): { request_id: string; session: SessionSummary | null } {
@@ -85,11 +85,12 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
     if (!text || !text.trim()) {
       return res.status(400).json({ error: { code: 'validation_error', message: 'Escribe tu solicitud para poder ayudarte.' } });
     }
+    const idempotencyKey = resolveIdempotencyKey(req.get('idempotency-key'), rc.request_id);
 
     let outcome;
     try {
-      // PR-02: el pipeline verifica el límite 'conversations' del plan antes de
-      // procesar; si se excede, la ruta responde 403 + audit deny.
+      // DEC-0005: el pipeline reserva la cuota 'conversations' antes de procesar
+      // y la consume con la solicitud; sin cupo ⇒ 403 + audit deny en la ruta.
       outcome = await deps.pipeline.ingest({
         tenantId: session.tenant_id,
         actorId: session.user_id,
@@ -97,10 +98,22 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
         channel: channel === 'telegram' ? 'telegram' : 'simulated',
         text: text.trim(),
         requestId: rc.request_id,
+        idempotencyKey,
       });
     } catch (err) {
       if (await handleDomainDeny(req, res, lreq, err, deps.pool)) return undefined;
       throw err;
+    }
+
+    const body = {
+      request: { request_id: outcome.requestId, status: outcome.requestStatus, action_class: outcome.actionClass, intent: outcome.intent, capability_target: outcome.capabilityTarget },
+      proposal_id: outcome.proposalId ?? null,
+      response: outcome.responseText,
+      reply: outcome.responseText,
+    };
+    if (outcome.replayed) {
+      // Misma clave de idempotencia: el resultado original, sin reenviar por el canal.
+      return res.status(200).json({ ...body, channel_sent: false, replayed: true });
     }
 
     // Respuesta por el canal (best-effort; el outcome JSON es la respuesta API).
@@ -111,13 +124,7 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
       request_id: rc.request_id, decision: 'allow', result: outcome.actionClass,
     });
 
-    return res.status(201).json({
-      request: { request_id: outcome.requestId, status: outcome.requestStatus, action_class: outcome.actionClass, intent: outcome.intent, capability_target: outcome.capabilityTarget },
-      proposal_id: outcome.proposalId ?? null,
-      response: outcome.responseText,
-      channel_sent: channelSent.ok,
-      reply: outcome.responseText,
-    });
+    return res.status(201).json({ ...body, channel_sent: channelSent.ok });
   }));
 
   // --- Requests del tenant (conversation.read). -----------------------------
@@ -303,9 +310,11 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
   }));
 
   // --- Website: crear sitio (website.provision) -----------------------------
-  // PR-02: enforcement del límite 'website' en el punto de CREACIÓN (DEC-024).
-  // Sin plan activo ⇒ 403 'subscription_required'; con uso actual >= límite ⇒
-  // 403 'limit_exceeded' (audit deny por la ruta). Un sitio por tenant (UNIQUE).
+  // DEC-0005 + NFR-0001: la cuota 'website' se comprueba y consume en la MISMA
+  // transacción que crea el sitio y escribe su auditoría. Sin plan activo ⇒ 403
+  // 'subscription_required'; sin cupo ⇒ 403 'limit_exceeded' (audit deny por la
+  // ruta). Un sitio por tenant (UNIQUE). Idempotency-Key: repetir la clave
+  // devuelve el sitio ya creado (200) sin consumir de nuevo.
   router.post('/website', requirePermission('website.provision', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
@@ -314,21 +323,30 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
     if (!slug?.trim() || !site_name?.trim()) {
       return res.status(400).json({ error: { code: 'validation_error', message: 'Escribe el nombre del sitio y un subdominio para crearlo.' } });
     }
+    const idempotencyKey = resolveIdempotencyKey(req.get('idempotency-key'), rc.request_id);
     try {
-      await deps.entitlements.checkLimit(session.tenant_id, 'website');
+      const out = await runAtomic(deps.pool, (client) => deps.quota.consumeInTx(client, {
+        tenantId: session.tenant_id, capability: 'website', units: 1, idempotencyKey,
+        requestId: rc.request_id, actorId: session.user_id, actorRole: session.role_name,
+      }, async () => {
+        const site = await deps.websiteRepo.createSite(session.tenant_id, slug.trim().toLowerCase(), site_name.trim(), client);
+        await deps.sink.write({
+          tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
+          action: 'website.created', resource: `client_website/${site.website_id}`, request_id: rc.request_id,
+          decision: 'allow', result: 'created',
+        }, client);
+        return { resourceRef: `client_website/${site.website_id}`, value: site };
+      }));
+      if (out.kind === 'consumed') {
+        return res.status(201).json({ website: out.value, message: 'Página web creada. Ahora puedes editar su contenido y publicarla.' });
+      }
+      const site = await deps.websiteRepo.websiteForTenant(session.tenant_id);
+      if (!site || site.website_id !== resourceIdOf(out.reservation.resource_ref)) {
+        return res.status(404).json({ error: { code: 'not_found', message: 'La página web creada con esta solicitud ya no existe.' } });
+      }
+      return res.status(200).json({ website: site, replayed: true, message: 'Esta solicitud ya se había procesado: la página web ya existe.' });
     } catch (err) {
       if (await handleDomainDeny(req, res, lreq, err, deps.pool)) return undefined;
-      throw err;
-    }
-    try {
-      const site = await deps.websiteRepo.createSite(session.tenant_id, slug.trim().toLowerCase(), site_name.trim());
-      await deps.sink.write({
-        tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
-        action: 'website.created', resource: `client_website/${site.website_id}`, request_id: rc.request_id,
-        decision: 'allow', result: 'created',
-      });
-      return res.status(201).json({ website: site, message: 'Página web creada. Ahora puedes editar su contenido y publicarla.' });
-    } catch (err) {
       if (isUniqueViolation(err)) {
         await deps.sink.write({
           tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,

@@ -20,7 +20,7 @@
  * campaña avanzada = PROHIBITED (permiso social.campaign_advanced bloqueado).
  */
 
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { AppConfig } from '../shared/config.ts';
 import type { AuditSink } from '../audit/sink.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
@@ -29,7 +29,7 @@ import type { SocialContentType, SocialProvider } from './provider.ts';
 import { ConversationRepository, newConversationIds } from '../conversation/repositories.ts';
 import { runAtomic } from '../conversation/state-machine.ts';
 import type { TenantBoundaryResult } from '../conversation/repositories.ts';
-import type { EntitlementService } from '../subscriptions/entitlements.ts';
+import { resourceIdOf, type QuotaLedger } from '../subscriptions/quota.ts';
 
 export type SocialPostStatus = 'draft' | 'awaiting_approval' | 'scheduled' | 'published' | 'rejected' | 'failed';
 export type ScheduledStatus = 'pending' | 'scheduled' | 'published' | 'skipped' | 'blocked';
@@ -69,7 +69,7 @@ export interface SocialServiceDeps {
   sink: AuditSink;
   provider: SocialProvider;
   conversationRepo: ConversationRepository;
-  entitlements: EntitlementService;
+  quota: QuotaLedger;
 }
 
 export class SocialRepository {
@@ -105,9 +105,9 @@ export class SocialRepository {
 
   async create(input: {
     postId: string; tenantId: string; contentType: SocialContentType; text: string; imageUrl: string | null; createdBy: string;
-  }): Promise<SocialPostRow> {
+  }, db: Pool | PoolClient = this.pool): Promise<SocialPostRow> {
     const t = this.assertTenant(input.tenantId);
-    const res = await this.pool.query<SocialPostRow>(
+    const res = await db.query<SocialPostRow>(
       `INSERT INTO social_post (post_id, tenant_id, network, content_type, text, image_url, status, created_by)
        VALUES ($1,$2,'facebook',$3,$4,$5,'draft',$6) RETURNING *`,
       [input.postId, t, input.contentType, input.text, input.imageUrl, input.createdBy],
@@ -235,31 +235,46 @@ export class SocialService {
     return new SocialRepository(this.deps.pool);
   }
 
-  /** Crea un borrador (límite del plan verificado, DEC-024). */
+  /**
+   * Crea un borrador. DEC-0005 + NFR-0001: la cuota del plan (social_posts o
+   * social_ads) se comprueba y consume en la MISMA transacción que crea el
+   * borrador y escribe su auditoría. La misma clave de idempotencia devuelve el
+   * borrador ya creado (`replayed`) sin consumir otra vez.
+   */
   async createDraft(
     tenantId: string, actorId: string, requestId: string,
-    input: { text: string; imageUrl?: string | null; contentType?: SocialContentType },
-  ): Promise<SocialPostRow> {
+    input: { text: string; imageUrl?: string | null; contentType?: SocialContentType; idempotencyKey: string; actorRole: string | null },
+  ): Promise<{ post: SocialPostRow; replayed: boolean }> {
     const text = input.text?.trim() ?? '';
     if (!text) {
       throw new AppError(400, 'validation_error', 'Escribe el texto de la publicación.');
     }
     const contentType = input.contentType === 'ad' ? 'ad' : 'post';
-    await this.deps.entitlements.checkLimit(tenantId, contentType === 'ad' ? 'social_ads' : 'social_posts');
-    const post = await this.repo.create({
-      postId: `post_${crypto.randomUUID()}`,
-      tenantId,
-      contentType,
-      text,
-      imageUrl: input.imageUrl ?? null,
-      createdBy: actorId,
-    });
-    await this.deps.sink.write({
-      tenant_id: tenantId, actor_id: actorId, actor_role: null,
-      action: 'social.created', resource: `social_post/${post.post_id}`,
-      request_id: requestId, decision: 'allow', result: 'draft',
-    });
-    return post;
+    const out = await runAtomic(this.deps.pool, (client) => this.deps.quota.consumeInTx(client, {
+      tenantId, capability: contentType === 'ad' ? 'social_ads' : 'social_posts', units: 1,
+      idempotencyKey: input.idempotencyKey, requestId, actorId, actorRole: input.actorRole,
+    }, async () => {
+      const post = await this.repo.create({
+        postId: `post_${crypto.randomUUID()}`,
+        tenantId,
+        contentType,
+        text,
+        imageUrl: input.imageUrl ?? null,
+        createdBy: actorId,
+      }, client);
+      await this.deps.sink.write({
+        tenant_id: tenantId, actor_id: actorId, actor_role: input.actorRole,
+        action: 'social.created', resource: `social_post/${post.post_id}`,
+        request_id: requestId, decision: 'allow', result: 'draft',
+      }, client);
+      return { resourceRef: `social_post/${post.post_id}`, value: post };
+    }));
+    if (out.kind === 'consumed') return { post: out.value, replayed: false };
+    const found = await this.repo.findScoped(tenantId, resourceIdOf(out.reservation.resource_ref));
+    if (!found.found || !found.in_tenant) {
+      throw new AppError(404, DENY_CODES.NOT_FOUND, 'La publicación creada con esta solicitud ya no existe.');
+    }
+    return { post: found.row as SocialPostRow, replayed: true };
   }
 
   /** Programa una publicación DRAFT (PR-01).
@@ -280,13 +295,15 @@ export class SocialService {
     if (Number.isNaN(at.getTime())) {
       throw new AppError(400, 'validation_error', 'La fecha de programación no es válida.');
     }
-    const updated = await this.repo.updateStatus(tenantId, postId, 'awaiting_approval', { scheduledAt: at.toISOString() }, ['draft']);
-    await this.deps.sink.write({
-      tenant_id: tenantId, actor_id: actorId, actor_role: null,
-      action: 'social.scheduled', resource: `social_post/${postId}`,
-      request_id: requestId, decision: 'allow', result: 'awaiting_approval',
+    return runAtomic(this.deps.pool, async (client) => {
+      const updated = await this.repo.updateStatus(tenantId, postId, 'awaiting_approval', { scheduledAt: at.toISOString() }, ['draft'], client);
+      await this.deps.sink.write({
+        tenant_id: tenantId, actor_id: actorId, actor_role: null,
+        action: 'social.scheduled', resource: `social_post/${postId}`,
+        request_id: requestId, decision: 'allow', result: 'awaiting_approval',
+      }, client);
+      return updated.row as SocialPostRow;
     });
-    return updated.row as SocialPostRow;
   }
 
   /**
@@ -341,13 +358,13 @@ export class SocialService {
         throw new AppError(409, 'validation_error',
           'La publicación cambió de estado mientras se procesaba. Revisa el estado actual e inténtalo de nuevo.');
       }
+      await this.deps.sink.write({
+        tenant_id: tenantId, actor_id: actorId, actor_role: null,
+        action: 'social.approved', resource: `social_post/${postId}`,
+        request_id: requestId, decision: 'allow', result: 'proposal_created', evidence_ref: ids.proposalId,
+      }, client);
     });
     const updated = (await this.repo.findScoped(tenantId, postId)).row as SocialPostRow;
-    await this.deps.sink.write({
-      tenant_id: tenantId, actor_id: actorId, actor_role: null,
-      action: 'social.approved', resource: `social_post/${postId}`,
-      request_id: requestId, decision: 'allow', result: 'proposal_created', evidence_ref: ids.proposalId,
-    });
     return { post: updated, proposalId: ids.proposalId };
   }
 
@@ -363,16 +380,18 @@ export class SocialService {
       throw new AppError(409, DENY_CODES.PROHIBITED, 'La publicación ya fue publicada y no puede rechazarse.');
     }
     const scheduled = await this.repo.scheduledForPost(tenantId, postId);
-    if (scheduled && scheduled.status === 'pending') {
-      await this.repo.markScheduled(tenantId, scheduled.scheduled_post_id, 'skipped', null);
-    }
-    const updated = await this.repo.updateStatus(tenantId, postId, 'rejected', {}, ['draft', 'awaiting_approval', 'scheduled']);
-    await this.deps.sink.write({
-      tenant_id: tenantId, actor_id: actorId, actor_role: null,
-      action: 'social.rejected', resource: `social_post/${postId}`,
-      request_id: requestId, decision: 'allow', result: 'rejected',
+    return runAtomic(this.deps.pool, async (client) => {
+      if (scheduled && scheduled.status === 'pending') {
+        await this.repo.markScheduled(tenantId, scheduled.scheduled_post_id, 'skipped', null, client);
+      }
+      const updated = await this.repo.updateStatus(tenantId, postId, 'rejected', {}, ['draft', 'awaiting_approval', 'scheduled'], client);
+      await this.deps.sink.write({
+        tenant_id: tenantId, actor_id: actorId, actor_role: null,
+        action: 'social.rejected', resource: `social_post/${postId}`,
+        request_id: requestId, decision: 'allow', result: 'rejected',
+      }, client);
+      return updated.row as SocialPostRow;
     });
-    return updated.row as SocialPostRow;
   }
 
   /** Listado de publicaciones del tenant. */
@@ -399,15 +418,20 @@ export class SocialService {
       // Gate de aprobación (PR-01): sin propuesta aprobada/publicación ⇒ deny.
       const approved = await this.repo.approvalEvidence(tenantId, post);
       if (!approved) {
-        const marked = await this.repo.markScheduled(tenantId, s.scheduled_post_id, 'blocked', null);
+        const marked = await runAtomic(this.deps.pool, async (client) => {
+          const ok = await this.repo.markScheduled(tenantId, s.scheduled_post_id, 'blocked', null, client);
+          if (ok) {
+            await this.deps.sink.write({
+              tenant_id: tenantId, actor_id: 'social_scheduler', actor_role: null,
+              action: 'social.published', resource: `social_post/${post.post_id}`,
+              request_id: requestId, decision: 'deny', result: 'not_approved',
+              evidence_ref: s.scheduled_post_id,
+            }, client);
+          }
+          return ok;
+        });
         if (marked) {
           blocked += 1;
-          await this.deps.sink.write({
-            tenant_id: tenantId, actor_id: 'social_scheduler', actor_role: null,
-            action: 'social.published', resource: `social_post/${post.post_id}`,
-            request_id: requestId, decision: 'deny', result: 'not_approved',
-            evidence_ref: s.scheduled_post_id,
-          }, this.deps.pool, false).catch(() => undefined);
           log.warn('social.scheduler.blocked', 'scheduled row without approval evidence blocked', {
             tenant_id: tenantId, post_id: post.post_id, scheduled_post_id: s.scheduled_post_id,
           });
@@ -422,19 +446,22 @@ export class SocialService {
         contentType: post.content_type,
       });
       if (!result.ok) continue;
-      const marked = await this.repo.markScheduled(tenantId, s.scheduled_post_id, 'published', result.external_ref);
-      if (!marked) continue; // otro tick ganó la carrera (idempotencia)
-      const updated = await this.repo.updateStatus(tenantId, post.post_id, 'published', {
-        publishedAt: new Date().toISOString(), externalRef: result.external_ref,
-      }, ['scheduled']);
-      if (updated.found && updated.in_tenant) {
-        published.push(updated.row as SocialPostRow);
-        await this.deps.sink.write({
-          tenant_id: tenantId, actor_id: 'social_scheduler', actor_role: null,
-          action: 'social.published', resource: `social_post/${post.post_id}`,
-          request_id: requestId, decision: 'allow', result: 'scheduled_published', evidence_ref: result.external_ref,
-        });
-      }
+      const updated = await runAtomic(this.deps.pool, async (client) => {
+        const marked = await this.repo.markScheduled(tenantId, s.scheduled_post_id, 'published', result.external_ref, client);
+        if (!marked) return null; // otro tick ganó la carrera (idempotencia)
+        const u = await this.repo.updateStatus(tenantId, post.post_id, 'published', {
+          publishedAt: new Date().toISOString(), externalRef: result.external_ref,
+        }, ['scheduled'], client);
+        if (u.found && u.in_tenant) {
+          await this.deps.sink.write({
+            tenant_id: tenantId, actor_id: 'social_scheduler', actor_role: null,
+            action: 'social.published', resource: `social_post/${post.post_id}`,
+            request_id: requestId, decision: 'allow', result: 'scheduled_published', evidence_ref: result.external_ref,
+          }, client);
+        }
+        return u;
+      });
+      if (updated?.found && updated.in_tenant) published.push(updated.row as SocialPostRow);
     }
     if (published.length || blocked) {
       log.info('social.scheduler', 'scheduled ticks processed', {
