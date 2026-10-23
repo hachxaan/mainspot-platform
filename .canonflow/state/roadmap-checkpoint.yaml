@@ -79,9 +79,12 @@ blocks:
       - evidence/contracts/backup-object-storage-v1/07-lab-v1.1-review-fixes-garage-v2.4.1.txt
       - evidence/contracts/backup-object-storage-v1/08-publish-v1.1.0.txt
       - .canonflow/skill-runs/RUN-0010.skill-report.yaml
+      - evidence/coordination/03-kvm-reconciliation-158ec59.md
+      - evidence/contracts/backup-object-storage-v1/09-external-conformance-2026-10-23.md
     open_items:
-      - "KVM 4 (hachxaan/mainspot-s3-backups): implementar H-01/H-02 (vigilante sin borrado ni retención >16 d), H-03 (copia protegida opción B, DEC-0056), H-04 (canal de alertas Telegram, DEC-0055), H-05 (credenciales), H-06 (bucket de lab); citar contrato 0cbdfcf."
-    next_gate: "Cambios en KVM 4 (H-01..H-06); entrega de credenciales por el propietario; conformidad real con \"conformant\": true; prueba de restauración remota y desde copia protegida"
+      - "KVM 4 @ 158ec59 (servicio 824a4529): H-01/H-02 (lifecycle único borrador, vigilante sin borrado) y H-03 (copia protegida opción B) implementados y probados por el operador. Falta H-04: alertas Telegram según DEC-0055/DEC-0058 §1."
+      - "Conformidad externa no ejecutada: el host local no tiene credenciales writer/restore ni autorización como ejecutor externo."
+    next_gate: "Propietario autoriza el ejecutor externo y entrega writer.env/restore.env; informe externo con \"conformant\": true (C-21/C-22 MANUAL con la evidencia del guard); Telegram implementado y mensaje sintético confirmado"
   - id: R3-remote-producer
     title: Productor de respaldo remoto (desactivado)
     state: IMPLEMENTED_DISABLED
@@ -97,6 +100,7 @@ blocks:
       - evidence/remediation/R3-remote-producer/03-adversarial-validation.md
       - evidence/remediation/R3-remote-producer/05-fixes-tests.txt
       - evidence/remediation/R3-remote-producer/06-adversarial-retest.txt
+      - evidence/remediation/R3-remote-producer/07-regression-2026-10-23.txt
     open_items:
       - "O-1..O-3 (baja/informativa) del productor para la auditoría fable-max previa a la condición 7."
       - "Prueba contra el servicio real y restauración remota (condiciones 5–6) requieren credenciales del servicio entregadas por el propietario."
