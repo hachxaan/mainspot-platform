@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0055",
+  "kind": "decision",
+  "title": "Canal de aviso fuera del KVM 4: bot de Telegram del propietario con chat privado (token e identificador del chat solo en el KVM 4, revocable por el propietario)",
+  "decision": "Respuesta a Q-ALERT-CHANNEL «¿Por qué canal, fuera del KVM 4, quieres recibir los avisos del vigilante y de la copia protegida?»: `telegram_bot_propietario` — «Bot de Telegram tuyo con chat privado: token del bot e identificador del chat solo en el KVM 4 (0600); tú puedes revocar el token». Condiciones declaradas en Q-NOTES (DEC-0058).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-23T09:52:30Z",
+  "source": "QS-0012/ANS-0013 Q-ALERT-CHANNEL",
+  "source_ref": {
+    "question_session_id": "QS-0012",
+    "answer_session_id": "ANS-0013",
+    "question_ids": [
+      "Q-ALERT-CHANNEL"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "correo_smtp_propietario — Correo SMTP a una dirección tuya desde una cuenta de envío dedicada cuya contraseña vive solo en el KVM 4 (0600)",
+    "otro_en_notas — Otro canal (indícalo en las notas, con quién custodia su credencial)"
+  ],
+  "affected_items": [
+    "DEC-0047",
+    "DEC-0049",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "DEC-0058"
+  ],
+  "expiry": "",
+  "comment": ""
+}

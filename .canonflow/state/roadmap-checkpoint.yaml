@@ -3,7 +3,7 @@
 # Orden vigente: DEC-0037 (TOCTOU → retención global → producto → dashboards fase 2 → agentes)
 # y, dentro del producto, DEC-0044 (alta y panel → Telegram → publicación real).
 schema: mainspot-roadmap-checkpoint/v1
-updated_at: "2026-10-22T17:30:00Z"
+updated_at: "2026-10-23T10:15:00Z"
 blocks:
   - id: R0-runtime-jev
     title: Credencial TypeSafe rotada en el runtime y modelo Jev fijado
@@ -61,7 +61,7 @@ blocks:
   - id: C1-s3-backup-contract
     title: Contrato de integración MainSpot ↔ Garage S3 (KVM 4) para respaldos remotos
     state: PUBLISHED_V1_1
-    implements: [DEC-0026, DEC-0027, DEC-0045, DEC-0046, DEC-0047, DEC-0048, DEC-0049, DEC-0052, DEC-0053]
+    implements: [DEC-0026, DEC-0027, DEC-0045, DEC-0046, DEC-0047, DEC-0048, DEC-0049, DEC-0052, DEC-0053, DEC-0055, DEC-0056, DEC-0057, DEC-0058]
     summary: >-
       QS-0010 (ANS-0012) y QS-0011 (ANS-0011) ingeridas en RUN-0010 → DEC-0045..DEC-0054. Contrato 1.1.0
       publicado en hachxaan/mainspot-platform, rama contract/backup-object-storage-v1: commit del contrato
@@ -69,7 +69,9 @@ blocks:
       (fast-forward desde 21537dee, sin force-push, verificado con clon anónimo). Incluye estado APROBADO por DEC,
       lectura literal de DEC-0046 (la regla del bucket borra; el vigilante del KVM 4 no borra), copia protegida §9.2
       (S-16, C-21, C-22), reconciliación con hachxaan/mainspot-s3-backups@ab046d24 (versión redactada publicada;
-      íntegra solo en evidence/). Revisión independiente: 1 BLOCKER + 3 MAJOR + 14 MINOR corregidos antes de publicar.
+      íntegra solo en evidence/). QS-0012 (ANS-0013) ingerida en RUN-0012 → DEC-0055 (canal de alertas: Telegram
+      privado), DEC-0056 (copia protegida: opción B volumen propio), DEC-0057 (retención: regla del bucket borra,
+      proceso vigila), DEC-0058 (notas íntegras con condiciones de activación).
     evidence:
       - docs/contracts/backup-object-storage/v1/VERIFICATION.md
       - docs/contracts/backup-object-storage/v1/CHANGELOG.md
@@ -78,13 +80,12 @@ blocks:
       - evidence/contracts/backup-object-storage-v1/08-publish-v1.1.0.txt
       - .canonflow/skill-runs/RUN-0010.skill-report.yaml
     open_items:
-      - "KVM 4 (hachxaan/mainspot-s3-backups): H-01/H-02 vigilante sin borrado ni retención >16 d, H-03 copia protegida, H-04 canal de aviso, H-05 nombres/formato de credenciales, H-06 bucket de laboratorio; citar el contrato por 0cbdfcf."
-      - "QS-0012 (RUN-0011) pendiente: Q-ALERT-CHANNEL (P-3), Q-GUARD-OPTION (P-2), Q-RETENTION-READING (P-1)."
-    next_gate: "Respuesta a QS-0012; cambios H-01..H-06 en el KVM 4; conformidad real con \"conformant\": true citando el commit del servicio (condiciones 1–3 de §2.3)"
+      - "KVM 4 (hachxaan/mainspot-s3-backups): implementar H-01/H-02 (vigilante sin borrado ni retención >16 d), H-03 (copia protegida opción B, DEC-0056), H-04 (canal de alertas Telegram, DEC-0055), H-05 (credenciales), H-06 (bucket de lab); citar contrato 0cbdfcf."
+    next_gate: "Cambios en KVM 4 (H-01..H-06); entrega de credenciales por el propietario; conformidad real con \"conformant\": true; prueba de restauración remota y desde copia protegida"
   - id: R3-remote-producer
     title: Productor de respaldo remoto (desactivado)
     state: IMPLEMENTED_DISABLED
-    implements: [DEC-0026, DEC-0045, DEC-0046, DEC-0047, DEC-0049]
+    implements: [DEC-0026, DEC-0045, DEC-0046, DEC-0047, DEC-0049, DEC-0055, DEC-0056, DEC-0057, DEC-0058]
     summary: >-
       scripts/ops/backup/db-backup-remote.py según §8, §10.1, §12, §13 y §16.3 del contrato; sin configuración
       termina status=DISABLED sin red; unidades systemd escritas y no instaladas. 23 pruebas del autor y 29 de la

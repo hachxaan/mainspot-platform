@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0056",
+  "kind": "decision",
+  "title": "Copia protegida en el KVM 4: opción B, volumen propio fuera de Garage con usuario de sistema propio, verificable por la evidencia publicada del KVM 4",
+  "decision": "Respuesta a Q-GUARD-OPTION «¿Qué forma de copia protegida debe construir el KVM 4: un volumen propio fuera de Garage (opción B) o un segundo bucket en Garage (opción A/A')?»: `opcion_b_volumen` — «Opción B: volumen propio fuera de Garage, con usuario de sistema propio; verificable por la evidencia publicada del KVM 4 (audit.jsonl, sha256sum -c, simulacro de restauración)». Condiciones declaradas en Q-NOTES (DEC-0058).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-23T09:52:30Z",
+  "source": "QS-0012/ANS-0013 Q-GUARD-OPTION",
+  "source_ref": {
+    "question_session_id": "QS-0012",
+    "answer_session_id": "ANS-0013",
+    "question_ids": [
+      "Q-GUARD-OPTION"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "opcion_a_bucket_guard — Opción A/A': segundo bucket mainspot-backups-guard en Garage, con lectura para la credencial de restauración (A'); verificable desde fuera con C-21 y C-22"
+  ],
+  "affected_items": [
+    "DEC-0047",
+    "DEC-0048",
+    "DEC-0049",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "DEC-0058"
+  ],
+  "expiry": "",
+  "comment": ""
+}

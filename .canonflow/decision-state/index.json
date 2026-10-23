@@ -168,23 +168,30 @@
     },
     {
       "question_session_id": "QS-0012",
-      "state": "PENDING",
+      "state": "ARCHIVED",
       "generated_at": "2026-10-22T17:04:02Z",
-      "records": [],
-      "session_label": "Contrato 1.1.0 de respaldos remotos (KVM 4): canal de aviso, copia protegida y retención"
+      "records": [
+        "DEC-0055",
+        "DEC-0056",
+        "DEC-0057",
+        "DEC-0058"
+      ],
+      "answered_at": "2026-10-23T09:52:30Z",
+      "session_label": "Contrato 1.1.0 de respaldos remotos (KVM 4): canal de aviso, copia protegida y retención",
+      "answer_session_id": "ANS-0013"
     }
   ],
   "counters": {
     "qs": 12,
-    "ans": 12,
-    "dec": 54,
+    "ans": 13,
+    "dec": 58,
     "apr": 2,
     "rsk": 0
   },
   "latest": "QS-0012",
   "reconstructed": {
-    "at": "2026-10-22T17:04:02Z",
-    "by": "RUN-0011 (canonflow-human-decision-console)",
+    "at": "2026-10-23T09:59:52Z",
+    "by": "RUN-0012 (canonflow-human-decision-console)",
     "source": "artifacts+lifecycle+legacy-snapshots; state = evidence-derived effective state",
     "preserved": true
   }

@@ -1,0 +1,31 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0012
+skill_id: canonflow-human-decision-console
+mode: ingest
+executor: "omp agent session (anthropic/claude-fable-5-1) — agent, never a decision owner"
+objective: >-
+  Ingest the human-authored answers ANS-0013 (QS-0012, answered 2026-10-23T09:52:30Z):
+  validate, transcribe each answered question as one DEC (DEC-0055 Q-ALERT-CHANNEL,
+  DEC-0056 Q-GUARD-OPTION, DEC-0057 Q-RETENTION-READING, DEC-0058 Q-NOTES transcribed
+  verbatim), publish records + links + INGESTED, archive the session and update
+  decision/method state. Index/latest writes run with mainspot-hdc.service stopped
+  (HDC-0007). No answer is written or inferred; nothing is activated.
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 1c031ee43578568a57f84701a26678e1dc11648a
+inputs:
+  - ".canonflow/decision-sessions/answered/QS-0012.answers.json (ANS-0013, payload sha256:34aef4ecc66830ed583e2558415023d181d1fce07ba8ccb287061ca2138fb006, file sha256:5ba69f3b46547757fa5bef96aedd981ec238a7e47adf50f437a885963ce51c83)"
+  - ".canonflow/decision-sessions/pending/QS-0012.questions.json (sha256:0df8c9d87467029d87b1e6c7d94a415bd6d0601007a7adfa3c82adf7ab637a14)"
+  - ".canonflow/decision-records/DEC-0045..DEC-0054 (cited by QS-0012; affected_items of the new records)"
+  - "canonflow-keystone@5e3dc307a4089f462b9742b76fd002cf910102fa decision-console/app/canonflow_hdc (profiles.validate_document, publish-ingestion, mark-session)"
+expected_outputs:
+  - .canonflow/decision-records/DEC-0055..DEC-0058.{json,md}
+  - .canonflow/decision-state/sessions/QS-0012.lifecycle.json
+  - .canonflow/decision-sessions/archived/QS-0012.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow/skill-runs/RUN-0012.skill-report.yaml
+created_at: "2026-10-23T09:56:15Z"

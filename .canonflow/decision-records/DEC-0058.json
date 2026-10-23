@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0058",
+  "kind": "decision",
+  "title": "Confirmación de canal de alertas, copia protegida y retención (notas del humano en QS-0012)",
+  "decision": "Respuesta a Q-NOTES «Notas para el registro» (texto libre del humano, transcrito íntegro en el campo comment; forma parte de la decisión).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-23T09:52:30Z",
+  "source": "QS-0012/ANS-0013 Q-NOTES",
+  "source_ref": {
+    "question_session_id": "QS-0012",
+    "answer_session_id": "ANS-0013",
+    "question_ids": [
+      "Q-NOTES"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [],
+  "affected_items": [
+    "DEC-0055",
+    "DEC-0056",
+    "DEC-0057",
+    "DEC-0046",
+    "DEC-0047",
+    "DEC-0048",
+    "DEC-0049",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md"
+  ],
+  "expiry": "",
+  "comment": "**QS-0012 — Confirmación de canal de alertas, copia protegida y retención**\n\nApruebo las opciones seleccionadas con las siguientes condiciones:\n\n**1. Canal de alertas**\n\nSe autoriza utilizar un bot privado de Telegram dedicado exclusivamente a alertas operativas de Garage S3 y su copia protegida.\n\n- El propietario creará o proporcionará el bot y autorizará su chat privado.\n- Las credenciales se entregarán por un canal privado y residirán exclusivamente en el KVM 4, con permisos restrictivos.\n- No reutilizar credenciales del bot comercial de MainSpot ni de CanonFlow/HDC.\n- No transmitir secretos, tokens, datos personales, contenido de respaldos ni información interna innecesaria.\n- Priorizar alertas claras con severidad, tipo de incidente, hora, servicio afectado y código de error.\n- Implementar control de duplicados, reintentos limitados y aviso cuando falle la entrega.\n- Probar con un mensaje sintético cuya recepción confirme el propietario.\n- Mantener auditoría local del envío sin almacenar credenciales.\n\n**2. Copia protegida**\n\nSe confirma la opción B: contenedor independiente y volumen propio fuera del espacio operativo de Garage.\n\nLa implementación actual de `mainspot-garage-guard` deberá verificarse contra los invariantes del contrato v1.1.0 y las evidencias de pruebas publicadas.\n\nLa credencial writer de MainSpot no podrá borrar, sobrescribir ni modificar la copia protegida.\n\nLa protección deberá ser recuperable aunque los objetos originales de Garage desaparezcan.\n\nSe reconoce que comparte el VPS físico y no ofrece redundancia geográfica.\n\n**3. Retención**\n\nSe confirma la interpretación del contrato v1.1.0:\n\n- El lifecycle nativo de Garage es el único mecanismo de eliminación de los originales.\n- El vigilante verifica las reglas, detecta alteraciones, restaura la configuración contractual, audita y alerta.\n- El vigilante no elimina ni prolonga por decisión propia la retención de los originales.\n- La copia protegida aplica su propia expiración conforme a `created_at` y los límites contractuales.\n- Mantener pruebas de borrado oportuno, detección de manipulaciones y recuperación.\n\n**4. Activación**\n\nEstas decisiones no autorizan activar automáticamente el productor remoto.\n\nAntes de solicitar la autorización final deberán presentarse:\n\n- Conformidad realizada desde fuera del KVM 4.\n- Evidencia de recepción de alertas externas.\n- Contrato e implementación reconciliados por commits verificables.\n- Restauración probada desde el almacenamiento remoto y desde la copia protegida.\n- Productor MainSpot validado con datos sintéticos.\n- Riesgos residuales claramente documentados.\n\nMantener desactivada la transferencia productiva hasta la autorización explícita del propietario mediante HDC."
+}

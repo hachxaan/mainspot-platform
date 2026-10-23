@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "question_session_id": "QS-0012",
+  "question_sha256": "sha256:0df8c9d87467029d87b1e6c7d94a415bd6d0601007a7adfa3c82adf7ab637a14",
+  "events": [
+    {
+      "state": "INGESTED",
+      "at": "2026-10-23T09:59:51Z",
+      "actor": "omp agent session (anthropic/claude-fable-5-1) RUN-0012",
+      "reason": "answers ingested; records published (RUN-0012)",
+      "answer_session_id": "ANS-0013",
+      "records": [
+        "DEC-0055",
+        "DEC-0056",
+        "DEC-0057",
+        "DEC-0058"
+      ],
+      "outcomes": [
+        {
+          "question_id": "Q-ALERT-CHANNEL",
+          "record_ids": [
+            "DEC-0055"
+          ]
+        },
+        {
+          "question_id": "Q-GUARD-OPTION",
+          "record_ids": [
+            "DEC-0056"
+          ]
+        },
+        {
+          "question_id": "Q-RETENTION-READING",
+          "record_ids": [
+            "DEC-0057"
+          ]
+        },
+        {
+          "question_id": "Q-NOTES",
+          "record_ids": [
+            "DEC-0058"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "from": "ANS-0013",
+          "to": "QS-0012",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-23T09:52:30Z"
+        },
+        {
+          "from": "DEC-0055",
+          "to": "ANS-0013",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-23T09:52:30Z"
+        },
+        {
+          "from": "DEC-0056",
+          "to": "ANS-0013",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-23T09:52:30Z"
+        },
+        {
+          "from": "DEC-0057",
+          "to": "ANS-0013",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-23T09:52:30Z"
+        },
+        {
+          "from": "DEC-0058",
+          "to": "ANS-0013",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-23T09:52:30Z"
+        }
+      ]
+    },
+    {
+      "state": "ARCHIVED",
+      "at": "2026-10-23T09:59:51Z",
+      "actor": "omp agent session (anthropic/claude-fable-5-1) RUN-0012",
+      "reason": "ingestion complete (RUN-0012): every answered question has a published DEC outcome; session closed"
+    }
+  ]
+}
