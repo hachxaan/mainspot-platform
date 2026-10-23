@@ -1,0 +1,106 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0001
+run_id: RUN-0001
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Ingestion of ANS-0001 (QS-0001), ANS-0002 (QS-0002) and ANS-0003 (QS-0003), and
+  generation of the follow-up session QS-0004, only. No statement about the
+  substantive quality of the human decisions, canon readiness or release.
+human_summary: |
+  14 records transcribed from the three answer files (DEC-0001..DEC-0013, APR-0001), owner Carlos Pinacho; QS-0001..0003 INGESTED and ARCHIVED.
+  The answers send four items back to the human: NFR-0001..0003 re-presentation, a dependency conflict in the DEC-0009 order, the meaning of "cuenta Trial" (DEC-0007) and the data risk of the Jev shadow classifier; all are in QS-0004.
+  APR-0001 is valid but cannot be exercised: its proposal expired (2026-10-21T10:31:40Z) before the approval (18:23:36Z); a renewed hash-bound proposal is required.
+  Next: answer QS-0004 at https://mainspot.hdc.com/#/sessions/QS-0004; canon skills consume DEC-0001..DEC-0013 for the v0.2 staging patch.
+claims:
+  - class: VERIFIED
+    statement: "ANS-0001, ANS-0002 and ANS-0003 validate against the v2 answer-session profile; question_session_id, question_sha256 and payload_sha256 bind to the exact QS bytes; no required question is unanswered and every requires_comment is satisfied (QS-0001 Q-NOTES is the only optional question left unanswered)."
+    evidence: [.canonflow/skill-runs/RUN-0001/evidence/EV-0001-answers-validation.jsonl]
+    refs: []
+  - class: VERIFIED
+    statement: "DEC-0001..DEC-0009 (ANS-0001), DEC-0010..DEC-0013 (ANS-0002) and APR-0001 (ANS-0003) were published through canonflow-hdc publish-ingestion under the governance lock, one record per answered question, with DERIVES_FROM links ANS->QS and REC->ANS; a replay returns replay=true with the same record sets."
+    evidence: [.canonflow/skill-runs/RUN-0001/evidence/EV-0002-publish-ingestion-replay.jsonl]
+    refs: [DEC-0001, DEC-0013, APR-0001]
+  - class: VERIFIED
+    statement: "QS-0001, QS-0002 and QS-0003 carry INGESTED and ARCHIVED lifecycle events, their QS files sit in decision-sessions/archived/, and both the reconciler and the running HDC report them ARCHIVED with confirmed evidence; QS-0004 is PENDING and answerable."
+    evidence: [.canonflow/skill-runs/RUN-0001/evidence/EV-0003-reconcile.json, .canonflow/skill-runs/RUN-0001/evidence/EV-0005-hdc-live-sessions.json]
+    refs: []
+  - class: VERIFIED
+    statement: "scripts/canonflow-jev.py review-live --approval APR-0001 passes the framework human-source and artifact-binding checks and stops with ACTIVATION_EXPIRED before reading the credential; no provider request was made."
+    evidence: [.canonflow/skill-runs/RUN-0001/evidence/EV-0004-launcher-apr-0001.txt]
+    refs: [APR-0001]
+  - class: DECIDED
+    statement: "The deterministic classifier is not closed; ML/generative evaluation with TypeSafe/Jev comes first."
+    refs: [DEC-0001]
+  - class: DECIDED
+    statement: "Atomic per-tenant check-and-consume of quota is required before enabling the limited operations (TOCTOU not accepted in the pilot)."
+    refs: [DEC-0005]
+  - class: DECIDED
+    statement: "NFR-0004 and NFR-0005 are promoted to canon obligations in the v0.2 staging patch; NFR-0001..NFR-0003 are presented again."
+    refs: [DEC-0008]
+  - class: CONFLICTED
+    statement: "DEC-0009 orders agents_enforcement first while DEC-0006 (same answer set) defers it until agent creation exists and DEC-0011 keeps CAP-006 out of immediate scope; the dependency validation requested in DEC-0009 is returned to the human as QS-0004 Q-PRIORITY-ORDER."
+    refs: [DEC-0006, DEC-0009, DEC-0011]
+  - class: OPEN
+    statement: "The DEC-0007 comment 'Por lo menos debe tener creada una cuenta Trial' has more than one reading and no Trial plan exists; clarification requested in QS-0004 Q-TRIAL."
+    refs: [DEC-0007]
+  - class: RISK
+    statement: "The JEV_* shadow classifier implemented on the APR-0001 comment sends the text of real customer messages to api.typesafe.ai whenever JEV_ENABLED=true (current local .env); APR-0001 covered one synthetic call only. A risk acceptance with expiry is requested in QS-0004 Q-JEV-DATA; no RSK exists yet."
+    refs: [DEC-0001, APR-0001]
+  - class: OPEN
+    statement: "APR-0001 cannot authorize the one-shot synthetic call: the bound proposal valid_until (2026-10-21T10:31:40.759930+00:00) precedes the approval (2026-10-21T18:23:36Z). A renewed proposal with a new hash-bound session is required (docs/COGNITIVE-JEV.md, Recovery step 5)."
+    refs: [APR-0001]
+  - class: OPEN
+    statement: "DEC-0004 (real domain and real DNS in the pilot) names no domain; registration, brand approval and provider credentials remain human prerequisites before implementation."
+    refs: [DEC-0004]
+  - class: OPEN
+    statement: "G-REPO dirty-tree pre-flight was not satisfied: the work branch carried uncommitted output of earlier sessions (HDC submission views, cognitive setup, .canonflow-updates HDC-0001..0004, deploy files). RUN-0001 proceeded on the human's explicit request; a human review/commit closes it."
+    refs: []
+findings:
+  - id: FND-0001
+    severity: MINOR
+    description: >-
+      canonflow-hdc rebuild-index writes `view.declared_state or view.effective_state`
+      into decision-state/index.json; v2 QS always declare PENDING, so a rebuild reports
+      archived sessions as PENDING. RUN-0001 regenerated index.json/latest.json with the
+      same derivation but the evidence-derived state (legacy bytes preserved first).
+      Upstream candidate: lifecycle.rebuild_index should write the effective state when
+      evidence_status is confirmed.
+    evidence: .canonflow/skill-runs/RUN-0001/evidence/EV-0003-reconcile.json
+  - id: FND-0002
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT (WARN) remains for QS-0001..QS-0003 by design: published v2
+      sessions are immutable and declare PENDING; the evidence chain prevails.
+    evidence: .canonflow/skill-runs/RUN-0001/evidence/EV-0003-reconcile.json
+limitations:
+  - "G-REPO: tree not clean at run start (see OPEN claim); no path outside the run's declared outputs was modified by the HDC instruments."
+  - "functional-canon-state.yaml / technical-canon-state.yaml blocking_open and method-state current_focus still name QS-0001/QS-0002: outside this card's writes; canonflow-functional-canon, canonflow-technical-canon and the orchestrator update them when they consume DEC-0001..DEC-0013. Only the method-state pending_human mirror was changed (update_state.py)."
+  - "The product implementation of the JEV_* variables requested in the APR-0001 comment is outside this card; it was done in the same work session and its verification is EV-0006."
+evidence:
+  - .canonflow/skill-runs/RUN-0001/evidence/EV-0001-answers-validation.jsonl
+  - .canonflow/skill-runs/RUN-0001/evidence/EV-0002-publish-ingestion-replay.jsonl
+  - .canonflow/skill-runs/RUN-0001/evidence/EV-0003-reconcile.json
+  - .canonflow/skill-runs/RUN-0001/evidence/EV-0004-launcher-apr-0001.txt
+  - .canonflow/skill-runs/RUN-0001/evidence/EV-0005-hdc-live-sessions.json
+  - .canonflow/skill-runs/RUN-0001/evidence/EV-0006-jev-implementation-verification.txt
+outputs:
+  - .canonflow/decision-records/DEC-0001.json .. DEC-0013.json (+ .md companions)
+  - .canonflow/decision-records/APR-0001.json (+ .md companion)
+  - .canonflow/decision-state/sessions/QS-0001.lifecycle.json
+  - .canonflow/decision-state/sessions/QS-0002.lifecycle.json
+  - .canonflow/decision-state/sessions/QS-0003.lifecycle.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/decision-sessions/archived/QS-0001.questions.json
+  - .canonflow/decision-sessions/archived/QS-0002.questions.json
+  - .canonflow/decision-sessions/archived/QS-0003.questions.json
+  - .canonflow/decision-sessions/pending/QS-0004.questions.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+gates_checked:
+  - {gate: G-REPO, status: FAIL, evidence: "uncommitted prior-session paths at run start; see OPEN claim and limitations"}
+blockers: []
+next_pointer: ".canonflow/decision-sessions/pending/QS-0004.questions.json (https://mainspot.hdc.com/#/sessions/QS-0004)"
+created_at: "2026-10-21T18:56:25Z"

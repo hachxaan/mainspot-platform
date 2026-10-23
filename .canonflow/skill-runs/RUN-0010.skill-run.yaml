@@ -1,0 +1,31 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0010
+skill_id: canonflow-human-decision-console
+mode: ingest
+executor: "omp agent session (anthropic/claude-fable-5-1) — agent, never a decision owner"
+objective: >-
+  Ingest the human-authored answers ANS-0011 (QS-0011, answered 09:16:37Z) and
+  ANS-0012 (QS-0010, answered 10:52:59Z), in that chronological order: validate,
+  transcribe each answered question as one DEC (DEC-0045..DEC-0049 for QS-0011,
+  DEC-0050..DEC-0054 for QS-0010; Q-NOTES comments transcribed verbatim), publish
+  records + links + INGESTED, archive both sessions and update decision/method
+  state. Index/latest writes run with mainspot-hdc.service stopped (HDC-0007).
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 088c687e53fd8aab5dac23e7d1d0d7790c678030
+inputs:
+  - ".canonflow/decision-sessions/answered/QS-0011.answers.json (ANS-0011, payload sha256:846dd75d1adfcf7d85a8fb063722dee499c14e27f7a73ecf9e87de429d362735)"
+  - ".canonflow/decision-sessions/pending/QS-0011.questions.json (sha256:47c2658950ce6aea057fa0cb8b59542e5ddfd9aa75d466e9491d8d73b2686c3f)"
+  - ".canonflow/decision-sessions/answered/QS-0010.answers.json (ANS-0012, payload sha256:28191d0a9adce9617748a613c6e275389bf5e295bebb6c6ca1bc0337ee11c5da)"
+  - ".canonflow/decision-sessions/pending/QS-0010.questions.json (sha256:cf215735b70fe1df61e6be094ade5141b124e321be25f78ea294de0e1da4f777)"
+  - "canonflow-keystone@5e3dc307a4089f462b9742b76fd002cf910102fa decision-console/app/canonflow_hdc (publish-ingestion, mark-session)"
+expected_outputs:
+  - .canonflow/decision-records/DEC-0045..DEC-0054.{json,md}
+  - .canonflow/decision-state/sessions/QS-0011.lifecycle.json
+  - .canonflow/decision-state/sessions/QS-0010.lifecycle.json
+  - .canonflow/decision-sessions/archived/QS-0011.questions.json
+  - .canonflow/decision-sessions/archived/QS-0010.questions.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/skill-runs/RUN-0010.skill-report.yaml
+created_at: "2026-10-22T11:36:34Z"

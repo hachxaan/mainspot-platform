@@ -1,0 +1,219 @@
+{
+  "schema_version": 2,
+  "question_session_id": "QS-0007",
+  "session_label": "Arquitectura Jev: modos disabled / shadow / primary",
+  "title": "Aprobar la arquitectura de Jev como clasificador semántico principal (modos disabled, shadow y primary)",
+  "generated_at": "2026-10-21T22:22:50Z",
+  "state": "PENDING",
+  "ui_language": "es",
+  "risk_tier": 3,
+  "affected_loop": "technical_canon_loop",
+  "intervention_reason": "Pedida en DEC-0019: «Solicito una decisión HDC específica para aprobar esta arquitectura y su implementación.» La propuesta MSP-JEV-CLASSIFIER-MODES v1 describe el contrato actual verificado, los modos, lo que conserva el backend, el alcance de datos sintético y el plan de implementación; cinco puntos de decisión quedan para ti.",
+  "decision_impact": "Aprobar autoriza implementar los tres modos y usar primary solo con tenants sintéticos según D4 y D5. No autoriza enviar mensajes reales de clientes (requiere su propia decisión, DEC-0019) ni modifica DEC-0001.",
+  "initial_instructions": "Lee la propuesta enlazada. Las recomendaciones no son vinculantes y nada va preseleccionado. Nunca escribas claves en esta consola.",
+  "topics": [
+    {
+      "topic_id": "arquitectura",
+      "title": "Aprobación"
+    },
+    {
+      "topic_id": "decisiones",
+      "title": "Puntos de decisión D1–D5"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-JEV-ARCH",
+      "type": "approval",
+      "topic_id": "arquitectura",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 3,
+      "title": "¿Apruebas la arquitectura MSP-JEV-CLASSIFIER-MODES v1 y su plan de implementación?",
+      "short_description": "JEV_MODE=disabled|shadow|primary; en primary Jev elige intent y capability_target; el backend conserva identidad, permisos, cuotas, gates humanos y auditoría; solo tenants sintéticos.",
+      "full_explanation": "Resumen: §2 contrato actual verificado; §3.1 configuración (JEV_MODE sustituye a JEV_ENABLED y JEV_SHADOW_MODE; JEV_DATA_SCOPE=synthetic; JEV_SYNTHETIC_TENANTS; JEV_DAILY_BUDGET_USD); §3.2 modos; §3.3 lo que nunca decide Jev; §3.4 alcance de datos; §3.5 medición y presupuesto; §3.6 persistencia; §3.7 evaluación sintética; §3.8 plan.\n\nDocumentos:\n- Propuesta completa: .canonflow/state/jev-classifier-modes-proposal.md\n- DEC-0001, APR-0001, DEC-0019: .canonflow/decision-records/\n- Implementación actual: src/conversation/jev-shadow.ts, src/shared/config.ts",
+      "why_this_matters": "Cambia quién determina el nivel de autonomía del agente ante cada mensaje.",
+      "artifact_ref": "MSP-JEV-CLASSIFIER-MODES v1",
+      "artifact_binding": {
+        "artifact_ref": "MSP-JEV-CLASSIFIER-MODES v1",
+        "path": ".canonflow/state/jev-classifier-modes-proposal.md",
+        "sha256": "ef33139b9e569c2ac00be693faeaa693b627a99367f0e8fe5f06cff8b2631cad"
+      }
+    },
+    {
+      "question_id": "Q-JEV-SAFETY",
+      "type": "single_choice",
+      "topic_id": "decisiones",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 3,
+      "title": "D1 — En primary, ¿qué pasa si Jev y las reglas discrepan sobre algo prohibido o sensible?",
+      "short_description": "Ejemplo: las reglas detectan «inventa un precio» (prohibido, RULE-005) y Jev lo clasifica como borrador.",
+      "full_explanation": "Fuera de estos casos Jev decide sin que el determinista tenga prioridad (DEC-0019). Esta pregunta solo cubre discrepancias donde una de las dos clasificaciones es prohibited o human_approval_required.\n\nDocumentos:\n- Propuesta completa: .canonflow/state/jev-classifier-modes-proposal.md\n- DEC-0001, APR-0001, DEC-0019: .canonflow/decision-records/\n- Implementación actual: src/conversation/jev-shadow.ts, src/shared/config.ts",
+      "why_this_matters": "Define si un solo clasificador puede ser la última palabra sobre acciones prohibidas o sensibles.",
+      "recommended_option": "escalar_humano",
+      "options": [
+        {
+          "value": "escalar_humano",
+          "label": "Escalar a aprobación humana",
+          "impact": "ninguna acción automática con riesgo discutido; Jev sigue decidiendo el resto",
+          "risk": "más aprobaciones manuales",
+          "recommended_when": "mientras no haya evidencia de calibración con mensajes reales"
+        },
+        {
+          "value": "jev_decide",
+          "label": "Decide Jev; las reglas solo se registran",
+          "impact": "primary puro",
+          "risk": "un fallo de Jev en RULE-005 llega a borrador (los cambios visibles siguen pasando por preview y aprobación)"
+        },
+        {
+          "value": "mas_estricta",
+          "label": "Se aplica automáticamente la clase más estricta",
+          "impact": "suelo de seguridad sin carga humana",
+          "risk": "las palabras clave deterministas se imponen a Jev en esos casos"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-JEV-FALLBACK",
+      "type": "single_choice",
+      "topic_id": "decisiones",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "D2 — En primary, ¿qué hacer si Jev no responde, falla o se agota el presupuesto?",
+      "short_description": "Un intento, 10 s; también aplica cuando el presupuesto diario se agota.",
+      "full_explanation": "Cada decisión tomada así queda registrada con decision_source y se cuenta en las métricas de disponibilidad.\n\nDocumentos:\n- Propuesta completa: .canonflow/state/jev-classifier-modes-proposal.md\n- DEC-0001, APR-0001, DEC-0019: .canonflow/decision-records/\n- Implementación actual: src/conversation/jev-shadow.ts, src/shared/config.ts",
+      "why_this_matters": "Determina si el servicio sigue respondiendo cuando el proveedor no está disponible.",
+      "recommended_option": "determinista_respaldo",
+      "options": [
+        {
+          "value": "determinista_respaldo",
+          "label": "Usar el clasificador determinista como respaldo, marcado como tal",
+          "impact": "el servicio sigue respondiendo",
+          "risk": "durante la caída decide el determinista"
+        },
+        {
+          "value": "aclaracion",
+          "label": "Responder que se reintente más tarde, sin acción",
+          "impact": "nunca decide el determinista",
+          "risk": "servicio degradado"
+        },
+        {
+          "value": "escalar_humano",
+          "label": "Pasar la solicitud a la cola de aprobación humana",
+          "impact": "control humano",
+          "risk": "carga humana durante caídas"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-JEV-LOWCONF",
+      "type": "single_choice",
+      "topic_id": "decisiones",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "D3 — En primary, ¿qué hacer cuando la confianza de Jev es baja o responde «other»?",
+      "short_description": "Umbral inicial 0,70, a recalibrar con el conjunto sintético antes de activar primary.",
+      "full_explanation": "La probabilidad del intent elegido se compara con el umbral; el umbral calibrado se registrará con la evaluación.\n\nDocumentos:\n- Propuesta completa: .canonflow/state/jev-classifier-modes-proposal.md\n- DEC-0001, APR-0001, DEC-0019: .canonflow/decision-records/\n- Implementación actual: src/conversation/jev-shadow.ts, src/shared/config.ts",
+      "why_this_matters": "Evita actuar sobre interpretaciones dudosas.",
+      "recommended_option": "aclaracion",
+      "options": [
+        {
+          "value": "aclaracion",
+          "label": "Pedir al usuario que precise su mensaje (needs_clarification)",
+          "impact": "sin acción dudosa",
+          "risk": "una interacción más"
+        },
+        {
+          "value": "escalar_humano",
+          "label": "Escalar a aprobación humana",
+          "impact": "control humano",
+          "risk": "carga humana"
+        },
+        {
+          "value": "aplicar_igual",
+          "label": "Aplicar la clase más probable igualmente",
+          "impact": "menos fricción",
+          "risk": "acciones sobre interpretaciones dudosas"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-JEV-GATE",
+      "type": "single_choice",
+      "topic_id": "decisiones",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 3,
+      "title": "D4 — ¿Cuándo puede activarse primary en desarrollo y pruebas?",
+      "short_description": "Siempre limitado a tenants sintéticos (JEV_DATA_SCOPE=synthetic).",
+      "full_explanation": "Conjunto sintético etiquetado de al menos 200 mensajes en español, con los 8 intents y casos límite de RULE-004/RULE-005. Umbral propuesto: ≥ 90 % de acierto de intent y 0 fallos en prohibited/human_approval_required.\n\nDocumentos:\n- Propuesta completa: .canonflow/state/jev-classifier-modes-proposal.md\n- DEC-0001, APR-0001, DEC-0019: .canonflow/decision-records/\n- Implementación actual: src/conversation/jev-shadow.ts, src/shared/config.ts",
+      "why_this_matters": "Pone evidencia entre la implementación y el uso de Jev como autoridad.",
+      "recommended_option": "evaluacion_y_aprobacion",
+      "options": [
+        {
+          "value": "evaluacion_y_aprobacion",
+          "label": "Tras la evaluación sintética y una aprobación HDC de sus resultados",
+          "impact": "decisión humana con evidencia",
+          "risk": "una sesión HDC más"
+        },
+        {
+          "value": "tras_evaluacion",
+          "label": "Automáticamente al superar los umbrales de la evaluación",
+          "impact": "sin espera humana",
+          "risk": "sin revisión humana de los errores"
+        },
+        {
+          "value": "inmediata_sintetica",
+          "label": "Inmediatamente tras implementar, solo con tenants sintéticos",
+          "impact": "iteración rápida",
+          "risk": "primary sin evidencia de calidad"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-JEV-BUDGET",
+      "type": "single_choice",
+      "topic_id": "decisiones",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "D5 — Presupuesto diario de TypeSafe en desarrollo y pruebas",
+      "short_description": "Al agotarse, Jev se trata como no disponible (D2) hasta el día siguiente (UTC).",
+      "full_explanation": "[ESTIMACIÓN] ~600 tokens de entrada por clasificación a USD 0,042/millón ≈ USD 0,000025 por llamada (≈ 40.000 llamadas por USD). No medido aún con el modelo real; el coste observado se registrará por llamada. No se compra crédito ni se activa recarga automática.\n\nDocumentos:\n- Propuesta completa: .canonflow/state/jev-classifier-modes-proposal.md\n- DEC-0001, APR-0001, DEC-0019: .canonflow/decision-records/\n- Implementación actual: src/conversation/jev-shadow.ts, src/shared/config.ts",
+      "why_this_matters": "Limita el gasto mientras se usa Jev habitualmente con datos sintéticos.",
+      "recommended_option": "usd_1",
+      "options": [
+        {
+          "value": "usd_0_25",
+          "label": "USD 0,25 al día",
+          "impact": "gasto mínimo",
+          "risk": "puede agotarse en evaluaciones grandes"
+        },
+        {
+          "value": "usd_1",
+          "label": "USD 1 al día",
+          "impact": "cubre la evaluación y el uso diario estimados",
+          "risk": "ninguno relevante con el volumen estimado"
+        },
+        {
+          "value": "usd_5",
+          "label": "USD 5 al día",
+          "impact": "margen amplio",
+          "risk": "gasto mayor si algo se repite en bucle"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NOTES",
+      "type": "free_text",
+      "topic_id": "decisiones",
+      "required": false,
+      "title": "Notas para el registro",
+      "short_description": "Opcional: condiciones o ajustes a la propuesta.",
+      "options": []
+    }
+  ]
+}

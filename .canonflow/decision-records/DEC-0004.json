@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0004",
+  "kind": "decision",
+  "title": "Q-SUBDOMAIN: registrar dominio real y usar DNS real en el piloto",
+  "decision": "Respuesta a Q-SUBDOMAIN «Esquema de subdominio simulado para el piloto»: opción `dominio_real_piloto` — «Registrar dominio real y usar DNS real en el piloto» (sustituye el default `sim_local`).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:01:48Z",
+  "source": "QS-0001/ANS-0001 Q-SUBDOMAIN",
+  "source_ref": {
+    "question_session_id": "QS-0001",
+    "answer_session_id": "ANS-0001",
+    "question_ids": [
+      "Q-SUBDOMAIN"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "sim_local — Mantener <slug>.sim.mainspot.local (simulado)"
+  ],
+  "affected_items": [
+    "FR-0007",
+    "DI-0002",
+    "esquema <slug>.sim.mainspot.local (DEC-019/DEC-026 upstream)"
+  ],
+  "expiry": "",
+  "comment": ""
+}

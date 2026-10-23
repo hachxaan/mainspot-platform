@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0008",
+  "kind": "decision",
+  "title": "Q-NFR: NFR-0004 y NFR-0005 se promueven a obligación del canon v0.2; NFR-0001..0003 se vuelven a presentar",
+  "decision": "Respuesta a Q-NFR «¿Cuáles NFR recuperados de la implementación se promueven a obligatorio del canon v0.2?»: seleccionadas `nfr_0004` («NFR-0004 rate limiting») y `nfr_0005` («NFR-0005 secretos fuera de repo/logs»). Efecto declarado por la pregunta: «Estos cinco elementos se recuperaron del código/tests (INFERRED, DR-0001). Los que selecciones se promueven a obligación canónica en el staging patch v0.2; los no seleccionados quedan PROPOSED sin obligation.» Comentario literal del humano: «Volver a presentar las no seleccionadas para el próximo HDC pero los NFR con descripciones y links de enlace a los documentos.»",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:01:48Z",
+  "source": "QS-0001/ANS-0001 Q-NFR",
+  "source_ref": {
+    "question_session_id": "QS-0001",
+    "answer_session_id": "ANS-0001",
+    "question_ids": [
+      "Q-NFR"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [],
+  "affected_items": [
+    "NFR-0004",
+    "NFR-0005",
+    "NFR-0001",
+    "NFR-0002",
+    "NFR-0003",
+    "DI-0001"
+  ],
+  "expiry": "",
+  "comment": "Volver a presentar las no seleccionadas para el próximo HDC pero los NFR con descripciones y links de enlace a los documentos."
+}

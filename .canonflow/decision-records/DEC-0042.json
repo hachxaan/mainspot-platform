@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0042",
+  "kind": "decision",
+  "title": "Publicación real: MainSpot sirve el sitio publicado en el subdominio; Hostinger solo gestiona el DNS (canon sin cambios)",
+  "decision": "Respuesta a Q-HOSTINGER-PUBLISH «Publicación real de sitios: ¿dónde vive el sitio publicado?»: `web_en_mainspot` — «Como dice el canon: MainSpot sirve el sitio publicado en el subdominio y Hostinger solo gestiona el DNS». Condiciones declaradas por la sesión: la vista previa y la aprobación siguen en MainSpot (FLOW-002), cada versión publicada se conserva en la base de datos para poder volver a publicarla y el token de Hostinger sigue fuera del repositorio.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T04:41:16Z",
+  "source": "QS-0008/ANS-0008 Q-HOSTINGER-PUBLISH",
+  "source_ref": {
+    "question_session_id": "QS-0008",
+    "answer_session_id": "ANS-0008",
+    "question_ids": [
+      "Q-HOSTINGER-PUBLISH"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "hosting_hostinger — Hostinger aloja el sitio publicado: MainSpot crea el subdominio en el hosting, sube el HTML aprobado, lo despliega por API y Hostinger gestiona el SSL",
+    "diferir — Seguir con la publicación simulada por ahora"
+  ],
+  "affected_items": [
+    "DEC-0004",
+    "DEC-0037",
+    "src/domain/hostinger.ts",
+    "src/publishing/website.ts"
+  ],
+  "expiry": "",
+  "comment": ""
+}

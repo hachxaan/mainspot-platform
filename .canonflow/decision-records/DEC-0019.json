@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0019",
+  "kind": "decision",
+  "title": "Q-JEV-DATA: no se acepta enviar mensajes reales de clientes a TypeSafe en la evaluación en sombra",
+  "decision": "Respuesta a Q-JEV-DATA «¿Aceptas, con vencimiento, que el texto de mensajes reales de clientes se envíe a TypeSafe para la evaluación en sombra del clasificador (DEC-0001)?»: `accepted: false` (riesgo NO aceptado). Valor literal enviado: {\"accepted\": false, \"expiry\": \"2026-12-31\"}; la justificación literal está en el campo comment. Consecuencia declarada por la pregunta: «Si no aceptas: hay que poner JEV_ENABLED=false en .env antes de arrancar la API; el código queda y no sale ningún dato.»",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T22:14:51Z",
+  "source": "QS-0004/ANS-0004 Q-JEV-DATA",
+  "source_ref": {
+    "question_session_id": "QS-0004",
+    "answer_session_id": "ANS-0004",
+    "question_ids": [
+      "Q-JEV-DATA"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "accept — Aceptar el riesgo (envío de texto de mensajes reales a TypeSafe)"
+  ],
+  "affected_items": [
+    "DEC-0001",
+    "APR-0001",
+    "src/conversation/jev-shadow.ts",
+    ".env (JEV_ENABLED)"
+  ],
+  "expiry": "",
+  "comment": "La configuración actual utiliza `JEV_ENABLED=true` y `JEV_SHADOW_MODE=true`.\n\nMi intención no es mantener Jev permanentemente en modo sombra. Quiero que Jev sea el clasificador semántico principal de MainSpot.\n\nSolicito verificar el contrato actual y evolucionar la integración existente para permitir modos explícitos `disabled`, `shadow` y `primary`, sin que el clasificador determinista tenga prioridad obligatoria en la interpretación semántica.\n\nJev determinará la clasificación; el backend conservará el control de identidad, permisos, cuotas y autorización de operaciones.\n\nEl costo de TypeSafe permite considerar su uso habitual en desarrollo y pruebas con datos sintéticos, acompañado de medición y presupuestos.\n\nPara habilitar mensajes reales de clientes, deben resolverse previamente las políticas de datos personales, minimización, retención y límites de consumo.\n\nSolicito una decisión HDC específica para aprobar esta arquitectura y su implementación. La autorización de envío de datos reales debe gestionarse separadamente de la decisión de utilizar Jev como clasificador primario.\n\nNo modificar DEC-0001 ni habilitar modo primario sin la correspondiente autorización canónica."
+}

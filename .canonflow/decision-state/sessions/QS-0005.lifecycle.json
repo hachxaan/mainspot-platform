@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "question_session_id": "QS-0005",
+  "question_sha256": "sha256:ae9944a9157189d7bb1f7ce323a88e923c45b87160c3a7505e748d37cf67ed70",
+  "events": [
+    {
+      "state": "INGESTED",
+      "at": "2026-10-21T23:16:55Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0003",
+      "reason": "answers ingested; records published (RUN-0003)",
+      "answer_session_id": "ANS-0005",
+      "records": [
+        "DEC-0020"
+      ],
+      "outcomes": [
+        {
+          "question_id": "Q-PRIORITY-RESOLVE",
+          "record_ids": [
+            "DEC-0020"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "from": "ANS-0005",
+          "to": "QS-0005",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T22:43:01Z"
+        },
+        {
+          "from": "DEC-0020",
+          "to": "ANS-0005",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T22:43:01Z"
+        },
+        {
+          "from": "DEC-0020",
+          "to": "DEC-0009",
+          "type": "SUPERSEDES",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T22:43:01Z"
+        }
+      ]
+    },
+    {
+      "state": "ARCHIVED",
+      "at": "2026-10-21T23:16:55Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0003",
+      "reason": "ingestion complete (RUN-0003): every answered question has a published DEC outcome; session closed"
+    }
+  ]
+}

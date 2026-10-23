@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0013",
+  "kind": "decision",
+  "title": "Q-NOTES: la capa operativa no aplica por ahora ni en el futuro próximo",
+  "decision": "Respuesta libre a Q-NOTES «Notas comerciales para el registro» (texto literal): «Confirmo que la capa operativa que se ha mencionado, no aplica por ahora ni en el futuro próximo. Esto será una evolución orgánica.»",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:18:26Z",
+  "source": "QS-0002/ANS-0002 Q-NOTES",
+  "source_ref": {
+    "question_session_id": "QS-0002",
+    "answer_session_id": "ANS-0002",
+    "question_ids": [
+      "Q-NOTES"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [],
+  "affected_items": [
+    "DEC-012 (canon upstream): capa operativa de niveles 2-3"
+  ],
+  "expiry": "",
+  "comment": ""
+}

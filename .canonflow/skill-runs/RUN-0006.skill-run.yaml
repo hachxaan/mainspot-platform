@@ -1,0 +1,28 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0006
+skill_id: canonflow-human-decision-console
+mode: ingest
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  Ingest the human-authored answers ANS-0008 (QS-0008): validate, transcribe one
+  decision record per answered question (DEC-0033..DEC-0043), publish records +
+  links + INGESTED, archive the session and update decision/method state. Q-PRODUCT-ORDER
+  carries a value and a comment with different orders: transcribe both without
+  choosing and generate the follow-up QS-0009. Index/latest writes run with
+  mainspot-hdc.service stopped (HDC-0007).
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 088c687e53fd8aab5dac23e7d1d0d7790c678030
+inputs:
+  - ".canonflow/decision-sessions/answered/QS-0008.answers.json (ANS-0008, payload sha256:c22f9e41de3ce038aa463f2d5f341bc96b82ae9d09f9d83e90c88d11f9a36293)"
+  - ".canonflow/decision-sessions/pending/QS-0008.questions.json (sha256:092ecaa2d6f0c91c07be4e096181a6df7f64c964966b56a80e973a76b3263fbe)"
+  - "canonflow-keystone@5e3dc307a4089f462b9742b76fd002cf910102fa decision-console/app/canonflow_hdc (publish-ingestion, mark-session, publish-session)"
+expected_outputs:
+  - .canonflow/decision-records/DEC-0033..DEC-0043.{json,md}
+  - .canonflow/decision-state/sessions/QS-0008.lifecycle.json
+  - .canonflow/decision-sessions/archived/QS-0008.questions.json
+  - .canonflow/decision-sessions/pending/QS-0009.questions.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/skill-runs/RUN-0006.skill-report.yaml
+created_at: "2026-10-22T04:44:48Z"

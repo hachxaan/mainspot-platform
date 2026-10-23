@@ -1,0 +1,1 @@
+SYNTHETIC TEST ONLY. Before: a visible website edit requires human approval. After: the same preview and human approval remain mandatory, while the draft adds a plain-language summary. No real business, customer, code change or approval is represented.

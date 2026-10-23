@@ -1,0 +1,204 @@
+{
+  "schema_version": 2,
+  "question_session_id": "QS-0004",
+  "session_label": "Seguimiento de la ingestión de QS-0001..QS-0003 (RUN-0001)",
+  "title": "Seguimiento de QS-0001/QS-0003: NFR por presentar, orden de remediación, cuenta Trial y envío de mensajes a TypeSafe",
+  "generated_at": "2026-10-21T18:54:17Z",
+  "state": "PENDING",
+  "intervention_reason": "La ingestión de ANS-0001..ANS-0003 (RUN-0001) dejó cuatro asuntos que solo puede cerrar el humano: (1) DEC-0008 pide volver a presentar NFR-0001, NFR-0002 y NFR-0003 con descripciones y enlaces; (2) DEC-0009 pide validar dependencias del orden y la validación encontró que el primer elemento está diferido por DEC-0006; (3) el comentario de DEC-0007 («Por lo menos debe tener creada una cuenta Trial») no define qué es la cuenta Trial y no existe plan Trial; (4) la implementación de las variables JEV_* (DEC-0001 y comentario de APR-0001) envía a TypeSafe el texto de mensajes reales cuando JEV_ENABLED=true, y APR-0001 solo cubría datos sintéticos.",
+  "affected_loop": "cross_cutting",
+  "decision_impact": "NFR: las que promuevas pasan a obligación en el staging patch v0.2; las demás quedan PROPOSED. Orden: si cambia, un DEC nuevo sustituye a DEC-0009 y fija la fila de la siguiente tanda. Trial: define el alcance de la remediación de DEC-0007. Envío a TypeSafe: aceptado → RSK con vencimiento; no aceptado → JEV_ENABLED=false en .env hasta una política de datos aprobada. No se implementa nada de esta sesión hasta su ingestión.",
+  "risk_tier": 3,
+  "ui_language": "es",
+  "initial_instructions": "Responde cada pregunta; las recomendaciones no son vinculantes y nunca van preseleccionadas. Las rutas relativas son del repositorio mainspot-platform; los enlaces https apuntan al canon upstream aprobado (commit 571a4d2). Nunca escribas claves ni secretos en esta consola.",
+  "topics": [
+    {
+      "topic_id": "nfr",
+      "title": "NFR por promover (DEC-0008)"
+    },
+    {
+      "topic_id": "prioridades",
+      "title": "Orden de remediación (DEC-0009)"
+    },
+    {
+      "topic_id": "suscripciones",
+      "title": "Cuenta Trial (DEC-0007)"
+    },
+    {
+      "topic_id": "jev",
+      "title": "Clasificador Jev en sombra (DEC-0001, APR-0001)"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-NFR-0001",
+      "type": "yes_no",
+      "topic_id": "nfr",
+      "affected_loop": "functional_canon_loop",
+      "risk_tier": 3,
+      "required": true,
+      "requires_comment": false,
+      "title": "¿Se promueve NFR-0001 «Operaciones sensibles atómicas con auditoría conjunta» a obligación del canon v0.2?",
+      "short_description": "Cada transición sensible y su evento de auditoría se confirman en una sola transacción; si la auditoría no se puede escribir, la operación se revierte (fail-closed).",
+      "full_explanation": "Qué garantiza: aprobar, rechazar, publicar o ejecutar operaciones, gestionar usuarios y configuración, aprovisionar el sitio, asignar plan, facturar y purgar datos se escriben junto con su evento de auditoría en UNA transacción: no puede existir el efecto sin su registro ni el registro sin el efecto.\n\nEstado: INFERRED (recuperado del código, DR-0001 DI-0001). Hoy es comportamiento implementado, no obligación. Si se promueve, toda acción sensible nueva (por ejemplo el consumo atómico de cuota de DEC-0005) debe cumplirla y una regresión sería un defecto de canon. No existe todavía una prueba dedicada que fuerce un fallo de auditoría y verifique la reversión; promoverla implica añadirla.\n\nDocumentos:\n- Ítem de canon: .canonflow/canon/functional/items/NFR-0001.md\n- Implementación: src/audit/event.ts (SENSITIVE_ACTIONS), src/audit/sink.ts (auditedOperation)\n- Pruebas relacionadas: tests/integration/audit-correlation.test.ts, tests/unit/audit.event.test.ts\n- Canon upstream (auditoría, FR-0004 / DEC-021): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/05-GOVERNANCE-SECURITY.md\n- Origen: DEC-0008 (QS-0001 / Q-NFR)",
+      "why_this_matters": "Sin la obligación, un cambio futuro podría publicar, cobrar o purgar sin rastro auditable sin que cuente como defecto.",
+      "recommended_option": "yes",
+      "options": [
+        {
+          "value": "yes",
+          "label": "Sí: promover a obligación del canon v0.2",
+          "impact": "garantía contractual ya implementada",
+          "risk": "cada acción sensible nueva debe cumplirla y probarlo"
+        },
+        {
+          "value": "no",
+          "label": "No: queda PROPOSED, sin obligación",
+          "impact": "flexibilidad",
+          "risk": "una regresión no se detecta como defecto de canon"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NFR-0002",
+      "type": "yes_no",
+      "topic_id": "nfr",
+      "affected_loop": "functional_canon_loop",
+      "risk_tier": 3,
+      "required": true,
+      "requires_comment": false,
+      "title": "¿Se promueve NFR-0002 «Anti-oráculo en lecturas cross-tenant» a obligación del canon v0.2?",
+      "short_description": "Un recurso de otro negocio (tenant) responde 404 idéntico a uno inexistente, sin revelar que existe.",
+      "full_explanation": "Qué garantiza: leer o actuar sobre un recurso de otro tenant produce exactamente la misma respuesta 404 (código y cuerpo) que un recurso inexistente, de modo que nadie puede averiguar qué IDs existen en otros negocios. Refuerza FR-0002 (aislamiento lógico por cliente, DEC-018).\n\nEstado: INFERRED (DR-0001 DI-0001); implementado en conversación, reputación y social, y cubierto por pruebas de aislamiento.\n\nDocumentos:\n- Ítem de canon: .canonflow/canon/functional/items/NFR-0002.md\n- Implementación: src/api/conversation-routes.ts, src/api/reputation-routes.ts, src/social/service.ts\n- Pruebas: tests/integration/isolation.test.ts (IR-01), tests/integration/conversation-inc002.test.ts, tests/integration/reputation-inc004.test.ts\n- Canon upstream (aislamiento): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/05-GOVERNANCE-SECURITY.md\n- Origen: DEC-0008 (QS-0001 / Q-NFR)",
+      "why_this_matters": "Es la garantía que impide enumerar datos de otros negocios; sin obligación, una ruta nueva podría filtrar existencia.",
+      "recommended_option": "yes",
+      "options": [
+        {
+          "value": "yes",
+          "label": "Sí: promover a obligación del canon v0.2",
+          "impact": "aislamiento verificable en toda ruta nueva",
+          "risk": "cada ruta nueva debe probar el 404 idéntico"
+        },
+        {
+          "value": "no",
+          "label": "No: queda PROPOSED, sin obligación",
+          "impact": "flexibilidad",
+          "risk": "filtración de existencia no cuenta como defecto"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NFR-0003",
+      "type": "yes_no",
+      "topic_id": "nfr",
+      "affected_loop": "functional_canon_loop",
+      "risk_tier": 2,
+      "required": true,
+      "requires_comment": false,
+      "title": "¿Se promueve NFR-0003 «Modo simulado determinista» a obligación del canon v0.2?",
+      "short_description": "Los proveedores simulados (dominio, reseñas, social, render web) no usan aleatoriedad; el E2E es reproducible; solo tokens e IDs son aleatorios.",
+      "full_explanation": "Qué garantiza: con proveedores simulados (DEC-026: adaptador + real opcional + simulado funcional) la misma entrada produce el mismo resultado, así la evidencia de pruebas y del piloto es reproducible.\n\nAlcance: aplica a los proveedores SIMULADOS. La evaluación Jev en sombra (DEC-0001) usa un proveedor real no determinista y no cambia resultados; no está cubierta por esta obligación.\n\nEstado: INFERRED (DR-0001 DI-0001).\n\nDocumentos:\n- Ítem de canon: .canonflow/canon/functional/items/NFR-0003.md\n- Implementación: src/domain/simulated.ts, src/reputation/simulated.ts, src/website/template.ts\n- Pruebas: tests/e2e/inc002-inc003-e2e.test.ts, tests/integration/reputation-inc004.test.ts\n- Canon upstream (DEC-026): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/07-DECISIONS-OPEN-QUESTIONS.md\n- Origen: DEC-0008 (QS-0001 / Q-NFR)",
+      "why_this_matters": "Sin determinismo la evidencia E2E deja de ser reproducible y las regresiones son difíciles de demostrar.",
+      "recommended_option": "yes",
+      "options": [
+        {
+          "value": "yes",
+          "label": "Sí: promover a obligación del canon v0.2",
+          "impact": "evidencia reproducible",
+          "risk": "los simuladores nuevos no pueden usar azar"
+        },
+        {
+          "value": "no",
+          "label": "No: queda PROPOSED, sin obligación",
+          "impact": "libertad en simuladores",
+          "risk": "evidencia no reproducible"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-PRIORITY-ORDER",
+      "type": "ordered_priority",
+      "topic_id": "prioridades",
+      "affected_loop": "implementation_loop",
+      "risk_tier": 2,
+      "required": true,
+      "requires_comment": false,
+      "title": "Confirma u ordena de nuevo la tanda de remediación tras validar sus dependencias (DEC-0009)",
+      "short_description": "Validación pedida en DEC-0009: el orden registrado pone primero un trabajo que DEC-0006 difiere. Recomendación: TOCTOU → retención global → dashboards → agentes.",
+      "full_explanation": "Orden registrado en DEC-0009: 1 agents_enforcement, 2 toctou_hardening, 3 retention_global, 4 dashboards_fase2.\n\nDependencias encontradas:\n1. agents_enforcement necesita que exista creación de agentes. No existe (README §15) y DEC-0006, en la misma respuesta ANS-0001, decidió «Diferir: enforcement cuando exista creación de agentes»; además DEC-0011 dejó CAP-006 fuera del alcance inmediato. En primer lugar bloquearía la tanda entera.\n2. toctou_hardening no depende de nada pendiente y DEC-0005 lo exige «antes de habilitar estas operaciones». Es la base atómica (comprobar y consumir cuota por tenant) que el futuro enforcement de agentes y el control de consumo S1 citado en DEC-0010 deberían reutilizar; hacerlo antes evita rehacer ese enforcement.\n3. retention_global necesita una decisión de seguridad que el canon upstream mantiene abierta (retención, borrado y respaldo; 05-GOVERNANCE-SECURITY). Esa decisión puede pedirse mientras se ejecuta TOCTOU.\n4. dashboards_fase2 se apoya en la analítica base ya implementada (INC-0007); no depende de los demás, salvo que la retención global define cuánto histórico se muestra.\n\nOrden recomendado (no vinculante): 1 toctou_hardening, 2 retention_global, 3 dashboards_fase2, 4 agents_enforcement. Las opciones aparecen en el orden de DEC-0009: reordénalas y confirma. Si el orden final difiere de DEC-0009, se registrará un DEC que lo sustituye.\n\nDocumentos:\n- DEC-0005, DEC-0006, DEC-0009, DEC-0010, DEC-0011: .canonflow/decision-records/\n- Deudas y decisiones TENTATIVA: README.md §15\n- Canon upstream (retención abierta): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/05-GOVERNANCE-SECURITY.md",
+      "why_this_matters": "Fija la fila de trabajo del siguiente ciclo sin empezar por un elemento bloqueado.",
+      "options": [
+        {
+          "value": "agents_enforcement",
+          "label": "Enforcement de agentes (DI-0004)",
+          "description": "Bloqueado: requiere creación de agentes (DEC-0006 la difiere; DEC-0011 deja CAP-006 fuera)."
+        },
+        {
+          "value": "toctou_hardening",
+          "label": "Endurecer TOCTOU de límites",
+          "description": "Sin dependencias pendientes; exigido por DEC-0005 antes de habilitar las operaciones con límite."
+        },
+        {
+          "value": "retention_global",
+          "label": "Retención global de plataforma",
+          "description": "Requiere la decisión de retención/borrado/respaldo aún abierta en el canon upstream."
+        },
+        {
+          "value": "dashboards_fase2",
+          "label": "Dashboards completos (INC-007 fase 2)",
+          "description": "Se apoya en la analítica base implementada (INC-0007)."
+        }
+      ]
+    },
+    {
+      "question_id": "Q-TRIAL",
+      "type": "single_choice",
+      "topic_id": "suscripciones",
+      "affected_loop": "functional_canon_loop",
+      "risk_tier": 3,
+      "required": true,
+      "requires_comment": true,
+      "title": "¿Qué es la «cuenta Trial» del comentario de DEC-0007?",
+      "short_description": "DEC-0007 confirmó DENY 403 en creaciones sin plan y añadió «Por lo menos debe tener creada una cuenta Trial». No existe plan Trial; hay que definir qué se implementa.",
+      "full_explanation": "Estado actual: el catálogo tiene plan_piloto_1 (asignado a los 2 tenants de prueba), plan_basico y plan_completo, todos sin precio (DEC-024). Sin suscripción activa, toda operación que crea recursos responde 403 subscription_required (DEC-0007). Hoy no existe alta de negocios por API: los tenants se crean por seed. En QS-0001 se descartó «permitir creaciones con plan 'libre' automático». DEC-0010 deja pendientes cuotas numéricas, ciclo mensual y cambios de plan (HDC-MSP-06) y pide no posponer la infraestructura de planes (S0/S1).\n\nEl comentario admite varias lecturas. Elige una y, en el comentario, indica duración y límites del Trial (o «mismos límites que plan_piloto_1»).\n\nDocumentos:\n- DEC-0007 y DEC-0010: .canonflow/decision-records/\n- Catálogo y límites: migrations/0009_subscriptions_plans.sql\n- Ítem de canon: .canonflow/canon/functional/items/FR-0010.md\n- Política sin plan: README.md §15",
+      "why_this_matters": "Define si algún negocio puede quedar sin plan y qué consume durante el Trial.",
+      "recommended_option": "trial_automatico_alta",
+      "options": [
+        {
+          "value": "trial_automatico_alta",
+          "label": "Trial automático al dar de alta un negocio",
+          "description": "Se crea un plan Trial y cada tenant nuevo recibe una suscripción Trial con vencimiento; al vencer sin otro plan aplica el DENY de DEC-0007.",
+          "recommended_when": "si «debe tener creada» significa que ningún negocio puede empezar sin plan",
+          "impact": "ningún negocio queda sin plan al empezar",
+          "risk": "requiere definir duración/límites y un punto de alta"
+        },
+        {
+          "value": "trial_manual_admin",
+          "label": "Plan Trial en catálogo, asignado por administración",
+          "description": "Se crea el plan Trial; administración lo asigna manualmente (subscription.admin). Sin asignación aplica el DENY.",
+          "impact": "control humano de cada Trial",
+          "risk": "un alta sin asignar sigue bloqueada"
+        },
+        {
+          "value": "trial_es_piloto",
+          "label": "La cuenta Trial es la suscripción piloto actual",
+          "description": "No se crea plan nuevo: todo tenant del piloto debe tener al menos plan_piloto_1 activo.",
+          "impact": "sin código nuevo de planes",
+          "risk": "no existe un concepto Trial ni vencimiento"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-JEV-DATA",
+      "type": "risk_acceptance",
+      "topic_id": "jev",
+      "affected_loop": "implementation_loop",
+      "risk_tier": 3,
+      "required": true,
+      "requires_comment": false,
+      "title": "¿Aceptas, con vencimiento, que el texto de mensajes reales de clientes se envíe a TypeSafe para la evaluación en sombra del clasificador (DEC-0001)?",
+      "short_description": "Con JEV_ENABLED=true (tu .env actual) cada mensaje conversacional entrante se envía a api.typesafe.ai para clasificarlo en sombra. APR-0001 solo cubría una llamada con datos sintéticos.",
+      "full_explanation": "Qué se implementó (DEC-0001 y comentario de APR-0001): variables JEV_ENABLED, JEV_PROVIDER, TYPESAFE_API_KEY, JEV_MODEL y JEV_SHADOW_MODE. Solo existe modo sombra: el clasificador determinista sigue decidiendo enrutamiento, autonomía, respuesta y auditoría; Jev nunca cambia el resultado y JEV_SHADOW_MODE=false hace fallar el arranque. Por cada mensaje se envía únicamente su texto (hasta 8 KiB) y la pregunta fija de clasificación, sin IDs de tenant ni de actor; un intento, sin reintentos, 10 s. Por tenant se guarda en jev_shadow_evaluation: clase determinista, clase Jev, probabilidades, modelo resuelto, uso, costo si el proveedor lo informa, latencia y los cuerpos JSON de petición y respuesta (sin cabeceras ni clave).\n\nRiesgo: el canon upstream trata mensajes, teléfonos y datos personales como sensibles y mantiene abierta su retención; no se asume retención cero (ZDR) en TypeSafe; JEV_MODEL=jev-latest es un alias móvil; no hay tope de gasto por volumen (solo límite de 16 evaluaciones simultáneas). APR-0001 aprobó una sola petición sintética sin PII y su pregunta declaró que no autoriza producto. Hoy la API de MainSpot no está en ejecución (contenedor LXD mainspot-app detenido): el envío empieza cuando se arranque con JEV_ENABLED=true.\n\nSi aceptas: se registra un RSK con tu vencimiento y justificación; al vencer se vuelve a preguntar. Si no aceptas: hay que poner JEV_ENABLED=false en .env antes de arrancar la API; el código queda y no sale ningún dato.\n\nDocumentos:\n- Implementación: src/conversation/jev-shadow.ts, src/jev/, src/shared/config.ts, migrations/0012_jev_shadow_evaluation.sql\n- Pruebas (sin red): tests/unit/jev-shadow.test.ts, tests/unit/config.test.ts, tests/integration/jev-shadow.test.ts\n- Documentación: README.md §5.1, .env.example\n- DEC-0001 y APR-0001: .canonflow/decision-records/\n- Canon upstream (datos sensibles): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/05-GOVERNANCE-SECURITY.md\n- Términos del proveedor: https://docs.typesafe.ai/legal",
+      "why_this_matters": "Es la primera vez que datos reales de negocios salen hacia un proveedor de IA; sin esta aceptación el envío no tiene respaldo humano registrado."
+    }
+  ]
+}

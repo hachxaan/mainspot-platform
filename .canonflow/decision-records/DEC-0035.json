@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0035",
+  "kind": "decision",
+  "title": "H-0165: las preguntas informativas sobre las condiciones de MainSpot son query.read_only (se corrige el criterio de sensitive.business_decision)",
+  "decision": "Respuesta a Q-LABEL-H0165 «H-0165 — ¿Qué etiqueta corresponde a «¿Cuáles son las condiciones del servicio de MainSpot sobre cancelación?»?»: `consulta_read_only` — «Debe ser query.read_only (es una consulta informativa)». Efecto declarado por la sesión: el criterio de sensitive.business_decision se corrige para que las preguntas informativas sobre condiciones sean consultas; las quejas y disputas siguen siendo sensibles. Crea una versión nueva de la política; hace falta una evaluación nueva (v3) para abrir primary. La decisión sirve de guía para etiquetar mensajes parecidos en v3.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T04:41:16Z",
+  "source": "QS-0008/ANS-0008 Q-LABEL-H0165",
+  "source_ref": {
+    "question_session_id": "QS-0008",
+    "answer_session_id": "ANS-0008",
+    "question_ids": [
+      "Q-LABEL-H0165"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "sensitive_correcta — Correcta: sensitive.business_decision (preguntar por las condiciones de MainSpot pasa por una persona)",
+    "ambas_validas — Ambigua: ambas etiquetas son aceptables"
+  ],
+  "affected_items": [
+    "DEC-0034",
+    "src/conversation/jev-classifier.ts"
+  ],
+  "expiry": "",
+  "comment": ""
+}

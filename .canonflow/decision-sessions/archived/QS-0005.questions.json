@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "question_session_id": "QS-0005",
+  "session_label": "Aclaración de ANS-0004: orden de remediación",
+  "title": "Aclarar qué orden de remediación queda vigente (valor y comentario de ANS-0004 no coinciden)",
+  "generated_at": "2026-10-21T22:22:50Z",
+  "state": "PENDING",
+  "ui_language": "es",
+  "risk_tier": 2,
+  "affected_loop": "implementation_loop",
+  "intervention_reason": "En QS-0004, Q-PRIORITY-ORDER se envió con el orden mostrado sin mover filas (el mismo de DEC-0009), pero el comentario confirma otro orden y pide sustituir DEC-0009. DEC-0017 transcribe ambos; el agente no puede elegir entre ellos.",
+  "decision_impact": "Si queda el orden del comentario, se registrará un DEC que sustituye a DEC-0009 (enlace SUPERSEDES; DEC-0009 se conserva como historia). Si queda el del valor, DEC-0009 sigue vigente. La siguiente tanda de remediación empieza por el primer elemento elegido.",
+  "initial_instructions": "Una sola pregunta. La recomendación no es vinculante y no va preseleccionada.",
+  "questions": [
+    {
+      "question_id": "Q-PRIORITY-RESOLVE",
+      "type": "single_choice",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Qué orden de remediación queda vigente?",
+      "short_description": "El valor enviado en ANS-0004 y tu comentario indican órdenes distintos.",
+      "full_explanation": "Valor enviado (orden confirmado en la consola):\n1. agents_enforcement (Enforcement de agentes (DI-0004))\n2. toctou_hardening (Endurecer TOCTOU de límites)\n3. retention_global (Retención global de plataforma)\n4. dashboards_fase2 (Dashboards completos (INC-007 fase 2))\n\nOrden escrito en tu comentario («Confirmo el nuevo orden de remediación y autorizo que sustituya la prioridad registrada en DEC-0009»):\n1. toctou_hardening (Endurecer TOCTOU de límites)\n2. retention_global (Retención global de plataforma)\n3. dashboards_fase2 (Dashboards completos (INC-007 fase 2))\n4. agents_enforcement (Enforcement de agentes (DI-0004))\n\nEl valor coincide con el orden mostrado inicialmente: las filas no se movieron antes de confirmar.\n\nDocumentos:\n- DEC-0009 (orden original) y DEC-0017 (transcripción de ANS-0004): .canonflow/decision-records/\n- Dependencias validadas: DEC-0005, DEC-0006, DEC-0011; README.md §15",
+      "why_this_matters": "Fija por dónde empieza la siguiente tanda; un DEC no puede apoyarse en una respuesta contradictoria.",
+      "recommended_option": "orden_comentario",
+      "options": [
+        {
+          "value": "orden_comentario",
+          "label": "El de mi comentario: TOCTOU → retención global → dashboards → agentes (sustituye a DEC-0009)",
+          "description": "Se registra un DEC nuevo con este orden y un enlace SUPERSEDES hacia DEC-0009.",
+          "recommended_when": "si el comentario expresa tu intención y el valor quedó así por no mover las filas",
+          "impact": "empieza por el endurecimiento TOCTOU exigido por DEC-0005",
+          "risk": "ninguno adicional"
+        },
+        {
+          "value": "orden_valor",
+          "label": "El valor enviado: agentes → TOCTOU → retención global → dashboards (DEC-0009 sigue vigente)",
+          "description": "No se sustituye DEC-0009.",
+          "impact": "mantiene el orden original",
+          "risk": "el primer elemento está diferido por DEC-0006 y bloquea el arranque de la tanda"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+diff --git a/decision-console/app/canonflow_hdc/reconcile.py b/decision-console/app/canonflow_hdc/reconcile.py
+index bda92e1..46bf348 100644
+--- a/decision-console/app/canonflow_hdc/reconcile.py
++++ b/decision-console/app/canonflow_hdc/reconcile.py
+@@ -338,7 +338,12 @@ def reconcile(project_root: Path, files: list[ArtifactFile] | None = None) -> Re
+         view.evidence_status = evidence
+         if effective != INDETERMINATE:
+             view.blocked_reason = block_reason
+-        if view.declared_state and effective not in (INDETERMINATE,) and view.declared_state != effective:
++        # A v2 QS declares its immutable initial state, PENDING (§5.2), not the
++        # current one: that declaration is never a conflict. Legacy QS (§8) and a
++        # v2 QS declaring anything else still warn.
++        v2_initial = qs_file.profile == "v2" and view.declared_state == "PENDING"
++        if (not v2_initial and view.declared_state
++                and effective not in (INDETERMINATE,) and view.declared_state != effective):
+             rec.add(Diagnostic("DECLARED_STATE_CONFLICT", WARN, qs_id,
+                                f"QS declares {view.declared_state}; effective state is {effective} "
+                                "(evidence chain prevails)",
+diff --git a/decision-console/app/tests/test_submission_lifecycle.py b/decision-console/app/tests/test_submission_lifecycle.py
+index 20d0bd5..8a7acee 100644
+--- a/decision-console/app/tests/test_submission_lifecycle.py
++++ b/decision-console/app/tests/test_submission_lifecycle.py
+@@ -12,6 +12,7 @@ import pytest
+ from canonflow_hdc import lifecycle, local_data, paths
+ from canonflow_hdc.locks import FileLock, LockBusy
+ from canonflow_hdc.projection import Projection
++from canonflow_hdc.reconcile import reconcile
+ from canonflow_hdc.submission import SubmissionError, submit
+ from canonflow_hdc.web import ProjectionManager, create_app
+ 
+@@ -390,6 +391,55 @@ def test_publish_ingestion_writes_records_links_event(answered_project: Path, fi
+     assert lifecycle.load_lifecycle(root, "QS-0001")["events"][-1]["state"] == "ARCHIVED"
+ 
+ 
++@pytest.mark.parametrize("stage", ["ANSWERED", "INGESTED", "ARCHIVED"])
++def test_v2_initial_pending_declaration_is_not_a_state_conflict(answered_project: Path, stage: str):
++    """§5.2: a v2 QS always declares PENDING, its immutable initial state, so
++    answering, ingesting or archiving it must not raise DECLARED_STATE_CONFLICT
++    (legacy QS-0028 still does: test_qs0028_shows_ingested_with_folder_warning)."""
++    root = answered_project
++    if stage != "ANSWERED":
++        record = {
++            "schema_version": 2, "record_id": "DEC-0001", "kind": "decision",
++            "title": "fixture decision", "decision": "incremental", "owner": "Fixture Owner",
++            "decided_at": "2026-09-21", "source": "QS-0001/ANS-0001",
++            "source_ref": {"question_session_id": "QS-0001", "answer_session_id": "ANS-0001",
++                           "question_ids": ["Q-SINGLE"]},
++        }
++        lifecycle.publish_ingestion(root, {
++            "question_session_id": "QS-0001", "answer_session_id": "ANS-0001",
++            "actor": "agent-instrument", "records": [record],
++            "links": [{"from": "ANS-0001", "to": "QS-0001", "type": "DERIVES_FROM",
++                       "by": "Fixture Owner", "at": "2026-09-21T10:00:00Z"}],
++            "outcomes": [{"question_id": "Q-SINGLE", "record_ids": ["DEC-0001"]}]})
++    if stage == "ARCHIVED":
++        lifecycle.mark_session(root, {
++            "question_session_id": "QS-0001",
++            "event": {"state": "ARCHIVED", "actor": "agent-instrument", "reason": "completed"}})
++    rec = reconcile(root)
++    view = rec.sessions["QS-0001"]
++    assert (view.declared_state, view.effective_state) == ("PENDING", stage)
++    codes = {d.code for d in rec.diagnostics.values() if d.scope == "QS-0001"}
++    assert "DECLARED_STATE_CONFLICT" not in codes
++
++
++def test_v2_declaring_a_non_initial_state_still_warns(answered_project: Path):
++    """A v2 QS declaring anything but PENDING breaks §5.2: keep it visible."""
++    import hashlib
++    root = answered_project
++    qs_path = paths.sessions_dir(root, "pending") / "QS-0001.questions.json"
++    qs = json.loads(qs_path.read_text())
++    qs["state"] = "ARCHIVED"
++    qs_path.write_text(json.dumps(qs))
++    ans_path = paths.sessions_dir(root, "answered") / "QS-0001.answers.json"
++    ans = json.loads(ans_path.read_text())
++    ans["submission"]["question_sha256"] = "sha256:" + hashlib.sha256(qs_path.read_bytes()).hexdigest()
++    ans_path.write_text(json.dumps(ans))
++    rec = reconcile(root)
++    assert rec.sessions["QS-0001"].effective_state == "ANSWERED"
++    codes = {d.code for d in rec.diagnostics.values() if d.scope == "QS-0001"}
++    assert "DECLARED_STATE_CONFLICT" in codes
++
++
+ def test_external_answer_import_without_reinterpretation(empty_project: Path, fixtures_dir: Path):
+     root = empty_project
+     (paths.sessions_dir(root, "pending") / "QS-0001.questions.json").write_text(

@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0002",
+  "kind": "decision",
+  "title": "Q-APPROVALS: solo el perfil administración aprueba operaciones sensibles",
+  "decision": "Respuesta a Q-APPROVALS «¿Qué perfiles aprueban operaciones sensibles (publicar/aprobar/ejecutar)?»: opción `solo_administracion` — «Solo administración (como está)».",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:01:48Z",
+  "source": "QS-0001/ANS-0001 Q-APPROVALS",
+  "source_ref": {
+    "question_session_id": "QS-0001",
+    "answer_session_id": "ANS-0001",
+    "question_ids": [
+      "Q-APPROVALS"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "admin_mas_operacion — Administración + operación",
+    "configurable_por_tenant — Configurable por tenant"
+  ],
+  "affected_items": [
+    "FR-0003",
+    "BR-0004",
+    "DI-0002",
+    "operation.approve/reject, reputation.approve, social.approve (matriz RBAC)"
+  ],
+  "expiry": "",
+  "comment": ""
+}

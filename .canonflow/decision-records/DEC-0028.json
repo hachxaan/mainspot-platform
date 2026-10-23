@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0028",
+  "kind": "decision",
+  "title": "D1 — Discrepancia sobre algo prohibido o sensible entre Jev y las reglas: escalar a aprobación humana",
+  "decision": "Respuesta a Q-JEV-SAFETY «D1 — En primary, ¿qué pasa si Jev y las reglas discrepan sobre algo prohibido o sensible?»: `escalar_humano` — «Escalar a aprobación humana». Punto de decisión de MSP-JEV-CLASSIFIER-MODES v1 (APR-0002).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T00:47:02Z",
+  "source": "QS-0007/ANS-0007 Q-JEV-SAFETY",
+  "source_ref": {
+    "question_session_id": "QS-0007",
+    "answer_session_id": "ANS-0007",
+    "question_ids": [
+      "Q-JEV-SAFETY"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "jev_decide — Decide Jev; las reglas solo se registran",
+    "mas_estricta — Se aplica automáticamente la clase más estricta"
+  ],
+  "affected_items": [
+    "APR-0002",
+    "DEC-0019"
+  ],
+  "expiry": "",
+  "comment": ""
+}

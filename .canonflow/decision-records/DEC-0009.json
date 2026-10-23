@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0009",
+  "kind": "decision",
+  "title": "Q-PRIORITY: orden de la siguiente tanda de remediación de deudas técnicas",
+  "decision": "Respuesta a Q-PRIORITY «Ordena las deudas técnicas para la siguiente tanda de remediación»: orden 1 `agents_enforcement` («Enforcement de agentes (DI-0004)»), 2 `toctou_hardening` («Endurecer TOCTOU de límites»), 3 `retention_global` («Retención global de plataforma»), 4 `dashboards_fase2` («Dashboards completos (INC-007 fase 2)»). Comentario literal del humano: «De cualquier forma, validar el orden para evitar dependencias en la secuencia.»",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:01:48Z",
+  "source": "QS-0001/ANS-0001 Q-PRIORITY",
+  "source_ref": {
+    "question_session_id": "QS-0001",
+    "answer_session_id": "ANS-0001",
+    "question_ids": [
+      "Q-PRIORITY"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [],
+  "affected_items": [
+    "DI-0004",
+    "INC-0007",
+    "endurecimiento TOCTOU de límites",
+    "retención global de plataforma"
+  ],
+  "expiry": "",
+  "comment": "De cualquier forma, validar el orden para evitar dependencias en la secuencia."
+}

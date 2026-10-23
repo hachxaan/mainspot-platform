@@ -1,0 +1,24 @@
+[Unit]
+Description=MainSpot Human Decision Console (existing CanonFlow installation)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/administrador/codeart/mainspoot/mainspot-platform
+Environment=PYTHONPATH=/home/administrador/codeart/canonflow-keystone/decision-console/app
+Environment=PYTHONDONTWRITEBYTECODE=1
+UnsetEnvironment=TYPESAFE_API_KEY JEV_API_KEY OPENROUTER_API_KEY
+ExecStart=/home/administrador/.local/share/mainspot/cognitive-jev/venv/bin/python -B -m canonflow_hdc.cli serve --project /home/administrador/codeart/mainspoot/mainspot-platform --port 8765 --no-browser
+Restart=always
+RestartSec=3s
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStopSec=15s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

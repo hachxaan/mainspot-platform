@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0027",
+  "kind": "decision",
+  "title": "Política de baja y anonimización de tenants (notas del humano en QS-0006)",
+  "decision": "Respuesta a Q-NOTES «Notas: obligaciones legales, excepciones o plazos por tipo de dato no cubiertos» (texto libre del humano, transcrito íntegro en el campo comment; forma parte de la decisión).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T23:14:28Z",
+  "source": "QS-0006/ANS-0006 Q-NOTES",
+  "source_ref": {
+    "question_session_id": "QS-0006",
+    "answer_session_id": "ANS-0006",
+    "question_ids": [
+      "Q-NOTES"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [],
+  "affected_items": [
+    "DEC-0024",
+    "DEC-0023",
+    "DEC-0026",
+    "DEC-0018",
+    "retention_global"
+  ],
+  "expiry": "",
+  "comment": "**Política de baja y anonimización de tenants**\n\nA los 30 días de confirmarse la baja de un negocio, eliminar sus datos personales, mensajes originales, credenciales, documentos y demás información operativa identificable.\n\nConservar únicamente métricas históricas agregadas y estructuras que hayan sido efectivamente anonimizadas, sin posibilidad razonable de reconstruir la identidad del negocio, sus usuarios o sus clientes.\n\nLa anonimización deberá verificarse mediante pruebas específicas, incluyendo texto libre, identificadores indirectos, relaciones entre tablas, registros de auditoría y datos derivados de modelos de IA.\n\nLos datos que no puedan anonimizarse de manera confiable deberán eliminarse, salvo obligaciones legales de conservación debidamente justificadas.\n\nLos agregados anónimos conservarán el horizonte de dos años definido para analítica, salvo que una política específica justifique otro plazo.\n\nEl vencimiento del Trial no constituye una baja. La operación requiere baja confirmada, posibilidad de exportación previa y ejecución auditada.\n\nNo declarar un dato como anónimo cuando solamente se haya seudonimizado. No conservar indefinidamente estructuras o identificadores sin una finalidad justificada.\n\nLos respaldos deberán cumplir su propia política de expiración y evitar la reintroducción operativa de datos dados de baja.\n\nEsta decisión define el resultado requerido; no autoriza ejecutar anonimización destructiva antes de implementar y validar los mecanismos correspondientes."
+}

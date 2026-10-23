@@ -1,0 +1,20 @@
+# PROPOSED ONLY. Not the default config and not permission to make a request.
+# scripts/canonflow-jev.py requires an ingested HDC approval bound to the exact
+# activation proposal, this file, the synthetic input and its complete manifest.
+enabled: true
+data_policy_approved: true
+model: jev-1.13.0
+timeout_seconds: 10
+max_calls: 1
+max_cost_usd: 0.001
+max_request_bytes: 16384
+max_response_bytes: 8192
+max_input_tokens: 17408
+max_output_tokens: 9216
+advisory_confidence_floor: 0.8
+pricing:
+  # Local observation identifier, NOT a vendor-published price-version identifier.
+  version: typesafe-models-observed-2026-10-20-jev-1.13.0
+  model: jev-1.13.0
+  input_per_million: 0.042
+  output_per_million: 0

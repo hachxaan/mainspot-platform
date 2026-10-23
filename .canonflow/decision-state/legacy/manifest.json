@@ -27,6 +27,391 @@
       "original_path": ".canonflow/decision-state/index.json",
       "sha256": "001680819d3abd970092d9e53802479e8b8863dbf566e385aa9ff279ff53ff1b",
       "snapshot_path": ".canonflow/decision-state/legacy/index.json.001680819d3abd970092d9e53802479e8b8863dbf566e385aa9ff279ff53ff1b.json"
+    },
+    {
+      "bytes": 126,
+      "captured_at": "2026-10-20T10:53:25Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "d0045ce9e65ab8ab3580ba6bcc40176bc0ed08d7be3bac6b0e1c6216b92ec24a",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.d0045ce9e65ab8ab3580ba6bcc40176bc0ed08d7be3bac6b0e1c6216b92ec24a.json"
+    },
+    {
+      "bytes": 328,
+      "captured_at": "2026-10-21T18:01:48Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "e5abee82fb3615bcebfc225a25acce779910dd0fb217aedae27c0b3ab4d2df1b",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.e5abee82fb3615bcebfc225a25acce779910dd0fb217aedae27c0b3ab4d2df1b.json"
+    },
+    {
+      "bytes": 237,
+      "captured_at": "2026-10-21T18:01:48Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "ad930d216d24247bbffe90a47e7d6841ffe2f3c817621b44801ac9fc864638b8",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.ad930d216d24247bbffe90a47e7d6841ffe2f3c817621b44801ac9fc864638b8.json"
+    },
+    {
+      "bytes": 491,
+      "captured_at": "2026-10-21T18:18:27Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "7f08c3c4d06e230d658235dba223ebe87a0210337b5218f66b5deaf48f52efd9",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.7f08c3c4d06e230d658235dba223ebe87a0210337b5218f66b5deaf48f52efd9.json"
+    },
+    {
+      "bytes": 237,
+      "captured_at": "2026-10-21T18:18:27Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "2aa80e4c6f48672c6930f7d1f89821a756c9296da4f062065577627c2bbf754c",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.2aa80e4c6f48672c6930f7d1f89821a756c9296da4f062065577627c2bbf754c.json"
+    },
+    {
+      "bytes": 654,
+      "captured_at": "2026-10-21T18:23:36Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "5aad103c205e3428a996abb26016d742c82a30989f6b23d57b03e1f7488a5d05",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.5aad103c205e3428a996abb26016d742c82a30989f6b23d57b03e1f7488a5d05.json"
+    },
+    {
+      "bytes": 237,
+      "captured_at": "2026-10-21T18:23:36Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "ade57510766dd514524e0853c19003778a9ca11ea5a89b43e2172d027b87ddac",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.ade57510766dd514524e0853c19003778a9ca11ea5a89b43e2172d027b87ddac.json"
+    },
+    {
+      "bytes": 1775,
+      "captured_at": "2026-10-21T18:41:28Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "a55454445da1780577e6832e80c5e186ae12e0ecdf95f4c3cad0fd2ba00258c6",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.a55454445da1780577e6832e80c5e186ae12e0ecdf95f4c3cad0fd2ba00258c6.json"
+    },
+    {
+      "bytes": 1775,
+      "captured_at": "2026-10-21T18:54:19Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "b6b4096c4c54a9eb118357ec0a394ad76f6d7b8568f063d3dc585d5fbee1c130",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.b6b4096c4c54a9eb118357ec0a394ad76f6d7b8568f063d3dc585d5fbee1c130.json"
+    },
+    {
+      "bytes": 1862,
+      "captured_at": "2026-10-21T18:54:52Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "a00c86027b2380a780aa16cbbda57f05ec965b64a316daee578015516d065450",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.a00c86027b2380a780aa16cbbda57f05ec965b64a316daee578015516d065450.json"
+    },
+    {
+      "bytes": 88,
+      "captured_at": "2026-10-21T18:54:52Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "180c93af6e6deed037b5006929741c8ae47459660daa47402748114ce75abfcd",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.180c93af6e6deed037b5006929741c8ae47459660daa47402748114ce75abfcd.json"
+    },
+    {
+      "bytes": 1984,
+      "captured_at": "2026-10-21T22:14:51Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "8a8c953d1450e3d8f5ab5f385922bd98545109263b37328079f33361da20cc0a",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.8a8c953d1450e3d8f5ab5f385922bd98545109263b37328079f33361da20cc0a.json"
+    },
+    {
+      "bytes": 237,
+      "captured_at": "2026-10-21T22:14:51Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "839430c9dc538e0373f6437585c3a3d2dbfe93df9ed287ea0479915540f77d5c",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.839430c9dc538e0373f6437585c3a3d2dbfe93df9ed287ea0479915540f77d5c.json"
+    },
+    {
+      "bytes": 1984,
+      "captured_at": "2026-10-21T22:23:04Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "45e407a45e4fd437a2d84430178571f3073ba2f67a5c8dd322de295537345283",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.45e407a45e4fd437a2d84430178571f3073ba2f67a5c8dd322de295537345283.json"
+    },
+    {
+      "bytes": 1984,
+      "captured_at": "2026-10-21T22:23:05Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "145db9ae4168c9cdd3805daca5657e3540783969658f8abbe0ac7a32985ae0a3",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.145db9ae4168c9cdd3805daca5657e3540783969658f8abbe0ac7a32985ae0a3.json"
+    },
+    {
+      "bytes": 1984,
+      "captured_at": "2026-10-21T22:23:05Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "4c754f95a107b028fb723ba605cc1159e5e1a99c35397840bdc0adc314bc56d2",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.4c754f95a107b028fb723ba605cc1159e5e1a99c35397840bdc0adc314bc56d2.json"
+    },
+    {
+      "bytes": 2730,
+      "captured_at": "2026-10-21T22:23:07Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "65bab803212db1dc5a721d15d8e9b25e3d3ab12c87e6e7e04d80302c30229a1c",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.65bab803212db1dc5a721d15d8e9b25e3d3ab12c87e6e7e04d80302c30229a1c.json"
+    },
+    {
+      "bytes": 88,
+      "captured_at": "2026-10-21T22:23:07Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "e64e53ad5b5168000e28e6c948d2bafe1a6657d0e3ecb91727a0a73dbc1448b5",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.e64e53ad5b5168000e28e6c948d2bafe1a6657d0e3ecb91727a0a73dbc1448b5.json"
+    },
+    {
+      "bytes": 2852,
+      "captured_at": "2026-10-21T22:43:01Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "a4726eedcbee776f1fc519ae46b701ec8db184a9bbe93cea7c2780db85026749",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.a4726eedcbee776f1fc519ae46b701ec8db184a9bbe93cea7c2780db85026749.json"
+    },
+    {
+      "bytes": 2937,
+      "captured_at": "2026-10-21T23:14:28Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "0808907faed84a829f6c1fd57d79e1368db81f520b63531d6720296d572e5643",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.0808907faed84a829f6c1fd57d79e1368db81f520b63531d6720296d572e5643.json"
+    },
+    {
+      "bytes": 3072,
+      "captured_at": "2026-10-21T23:16:57Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "e2c66a84f9844fae2f28186137c336ce8f86d84ee1fbd3bd689415511fa8c3a9",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.e2c66a84f9844fae2f28186137c336ce8f86d84ee1fbd3bd689415511fa8c3a9.json"
+    },
+    {
+      "bytes": 88,
+      "captured_at": "2026-10-21T23:16:57Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "acbb43198f9a8bb40b7a0b540b0b2fee0695638b14a26089705f3dc9c5161f1d",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.acbb43198f9a8bb40b7a0b540b0b2fee0695638b14a26089705f3dc9c5161f1d.json"
+    },
+    {
+      "bytes": 3194,
+      "captured_at": "2026-10-22T00:47:02Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "e044d522e192338968cb083f0cf00dde0c2e4d3a8984c5e642777b5eb54507e4",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.e044d522e192338968cb083f0cf00dde0c2e4d3a8984c5e642777b5eb54507e4.json"
+    },
+    {
+      "bytes": 237,
+      "captured_at": "2026-10-22T00:47:02Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "e0317a5a22cfbeb6e23a5a4d0217949b5a2a912463cb38e6a3185ef720c58c86",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.e0317a5a22cfbeb6e23a5a4d0217949b5a2a912463cb38e6a3185ef720c58c86.json"
+    },
+    {
+      "bytes": 3283,
+      "captured_at": "2026-10-22T00:51:38Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "6464a993a1a817fd34632630767d85eef9d8939b468b6c02d8e1148db86f0704",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.6464a993a1a817fd34632630767d85eef9d8939b468b6c02d8e1148db86f0704.json"
+    },
+    {
+      "bytes": 89,
+      "captured_at": "2026-10-22T00:51:38Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "381ac0bb8834b0940a3e9c34b64b364e7a0b2274a7c53b4926c1cdc9aab29f9e",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.381ac0bb8834b0940a3e9c34b64b364e7a0b2274a7c53b4926c1cdc9aab29f9e.json"
+    },
+    {
+      "bytes": 3283,
+      "captured_at": "2026-10-22T02:04:20Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "054173b6ac5913b3576e39ade688c5dece30a4cf8e7f96a5b6070fd66301881c",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.054173b6ac5913b3576e39ade688c5dece30a4cf8e7f96a5b6070fd66301881c.json"
+    },
+    {
+      "bytes": 3502,
+      "captured_at": "2026-10-22T02:04:21Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "72ef64497c234fdf89b454e7898f19a4351aef416794cb89937a34344dd2fee1",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.72ef64497c234fdf89b454e7898f19a4351aef416794cb89937a34344dd2fee1.json"
+    },
+    {
+      "bytes": 88,
+      "captured_at": "2026-10-22T02:04:21Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "79fa6b184cee0c1a0312a857958b4960f5f7401f28a99b6ed5950375298e6f36",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.79fa6b184cee0c1a0312a857958b4960f5f7401f28a99b6ed5950375298e6f36.json"
+    },
+    {
+      "bytes": 3624,
+      "captured_at": "2026-10-22T04:41:17Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "557833b5e05dd8ceef852305bf22795d52cf149b89023ce96ea71f50629c7a6c",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.557833b5e05dd8ceef852305bf22795d52cf149b89023ce96ea71f50629c7a6c.json"
+    },
+    {
+      "bytes": 237,
+      "captured_at": "2026-10-22T04:41:17Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "44583407d799c98f11d249d5802fdd896e5ecee91c9df7f09c7f210edf59fedf",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.44583407d799c98f11d249d5802fdd896e5ecee91c9df7f09c7f210edf59fedf.json"
+    },
+    {
+      "bytes": 3624,
+      "captured_at": "2026-10-22T04:47:36Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "a999f574ca1b04403df435e50869ce37f1586a44d798675a7258037f6ab9a6c7",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.a999f574ca1b04403df435e50869ce37f1586a44d798675a7258037f6ab9a6c7.json"
+    },
+    {
+      "bytes": 4038,
+      "captured_at": "2026-10-22T04:47:37Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "b9371beb227e522ffb1bf1b236c45aa05a440bd5430a4cefbc8cdffca14861ab",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.b9371beb227e522ffb1bf1b236c45aa05a440bd5430a4cefbc8cdffca14861ab.json"
+    },
+    {
+      "bytes": 88,
+      "captured_at": "2026-10-22T04:47:37Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "90b1218d5255bba24011d922c501d005799769a07d095ce24d8ffa36a7156228",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.90b1218d5255bba24011d922c501d005799769a07d095ce24d8ffa36a7156228.json"
+    },
+    {
+      "bytes": 4160,
+      "captured_at": "2026-10-22T05:11:57Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "59d1d8bd3bfc882c8b54e6ffe29dfb868ffb39ead282dbdd07614f01690334cd",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.59d1d8bd3bfc882c8b54e6ffe29dfb868ffb39ead282dbdd07614f01690334cd.json"
+    },
+    {
+      "bytes": 237,
+      "captured_at": "2026-10-22T05:11:57Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "5172a56f70ed8020201145449e25b931995635544701f47bd1d1366ce8f3c091",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.5172a56f70ed8020201145449e25b931995635544701f47bd1d1366ce8f3c091.json"
+    },
+    {
+      "bytes": 4149,
+      "captured_at": "2026-10-22T05:36:14Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "bb5489557bb23c3abeec16510f7cf2cf6f3caf93eba21a8d66770b99304f8065",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.bb5489557bb23c3abeec16510f7cf2cf6f3caf93eba21a8d66770b99304f8065.json"
+    },
+    {
+      "bytes": 89,
+      "captured_at": "2026-10-22T05:36:14Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "4679dab60cf72101d1702f6cadd5657d539073fd3ffd20ecc0207c6cd4b3e132",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.4679dab60cf72101d1702f6cadd5657d539073fd3ffd20ecc0207c6cd4b3e132.json"
+    },
+    {
+      "bytes": 4150,
+      "captured_at": "2026-10-22T06:23:24Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "6f752e61fbd638d62a4b0cd656b73310654af7e18c55f3b804b1ab3d7ef49073",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.6f752e61fbd638d62a4b0cd656b73310654af7e18c55f3b804b1ab3d7ef49073.json"
+    },
+    {
+      "bytes": 4372,
+      "captured_at": "2026-10-22T06:23:25Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "1eb576832f19636dd461ce9e9ffd34f0c1524222cf930817f7b185e8016f97ce",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.1eb576832f19636dd461ce9e9ffd34f0c1524222cf930817f7b185e8016f97ce.json"
+    },
+    {
+      "bytes": 88,
+      "captured_at": "2026-10-22T06:23:25Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "e5d54e936320c039146a779d1d8c015ee0c1c43597dfaf9567e99286c58cd08b",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.e5d54e936320c039146a779d1d8c015ee0c1c43597dfaf9567e99286c58cd08b.json"
+    },
+    {
+      "bytes": 4365,
+      "captured_at": "2026-10-22T06:24:34Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "6dbbabda1d0fafcdf2278e9a8862c111b7ccfc9d3e6ebd6c561190b3e61e3679",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.6dbbabda1d0fafcdf2278e9a8862c111b7ccfc9d3e6ebd6c561190b3e61e3679.json"
+    },
+    {
+      "bytes": 88,
+      "captured_at": "2026-10-22T06:24:34Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "2985eebd87714658443fb7816712582ac31a2e7b3a8e24c5d3199897b32e21e0",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.2985eebd87714658443fb7816712582ac31a2e7b3a8e24c5d3199897b32e21e0.json"
+    },
+    {
+      "bytes": 4365,
+      "captured_at": "2026-10-22T08:29:34Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "9b0c38b7da1dde7932fd556863ad28d1bef8aa53ac5307bacf5e7a6e44afbeeb",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.9b0c38b7da1dde7932fd556863ad28d1bef8aa53ac5307bacf5e7a6e44afbeeb.json"
+    },
+    {
+      "bytes": 4588,
+      "captured_at": "2026-10-22T08:29:35Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "05268d2ead2338be9bde20a760a4f80fb14ecebd512bd37ca2fb5ba999357770",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.05268d2ead2338be9bde20a760a4f80fb14ecebd512bd37ca2fb5ba999357770.json"
+    },
+    {
+      "bytes": 88,
+      "captured_at": "2026-10-22T08:29:35Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "1311d9c0c0720b2d25bb182e5f49d782d43f45e6a143b5ac6553bf0842dc928f",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.1311d9c0c0720b2d25bb182e5f49d782d43f45e6a143b5ac6553bf0842dc928f.json"
+    },
+    {
+      "bytes": 4711,
+      "captured_at": "2026-10-22T09:09:53Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "66467aedb364a1e02c4b471d5ed022a0cbaac057f25ca6119546b715e7efed19",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.66467aedb364a1e02c4b471d5ed022a0cbaac057f25ca6119546b715e7efed19.json"
+    },
+    {
+      "bytes": 4796,
+      "captured_at": "2026-10-22T09:16:38Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "25bfa88f9bbca0b640aa1ff3d40aef8c6430c58fee1ef447d318a1372e27a594",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.25bfa88f9bbca0b640aa1ff3d40aef8c6430c58fee1ef447d318a1372e27a594.json"
+    },
+    {
+      "bytes": 237,
+      "captured_at": "2026-10-22T09:16:38Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "6d352414d0bc13a419b90b31e9dda230619f215b7b3ae24776b2228776bc3431",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.6d352414d0bc13a419b90b31e9dda230619f215b7b3ae24776b2228776bc3431.json"
+    },
+    {
+      "bytes": 4796,
+      "captured_at": "2026-10-22T10:52:59Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "b54db22c74e79219895f4f9587ba89a37c93daf7493dbacf83ac06b33f8130cf",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.b54db22c74e79219895f4f9587ba89a37c93daf7493dbacf83ac06b33f8130cf.json"
+    },
+    {
+      "bytes": 4971,
+      "captured_at": "2026-10-22T11:40:37Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "86953d1427e1a9912919096a0d05c47b73ad972fa6d2066bf00f1bc5d0809dd2",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.86953d1427e1a9912919096a0d05c47b73ad972fa6d2066bf00f1bc5d0809dd2.json"
+    },
+    {
+      "bytes": 89,
+      "captured_at": "2026-10-22T11:40:37Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "bf6c5146b2fd78f9adcb6eb4db0bcbfa8b3f302c06565199ccf25070af9ff988",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.bf6c5146b2fd78f9adcb6eb4db0bcbfa8b3f302c06565199ccf25070af9ff988.json"
+    },
+    {
+      "bytes": 4971,
+      "captured_at": "2026-10-22T17:04:02Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "479b92ec2ceede886f3f62f54e020cbe991e33736ae630a6fb52ba21546bb0f1",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.479b92ec2ceede886f3f62f54e020cbe991e33736ae630a6fb52ba21546bb0f1.json"
+    },
+    {
+      "bytes": 5232,
+      "captured_at": "2026-10-22T17:04:04Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "6ba66c99518ef8a6d3709dd68b34781996d86588747901020a3aaf9736dca0a6",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.6ba66c99518ef8a6d3709dd68b34781996d86588747901020a3aaf9736dca0a6.json"
+    },
+    {
+      "bytes": 88,
+      "captured_at": "2026-10-22T17:04:04Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "c04e70d76c4265f3c8d4b9378c967d4e94fdf4eeb59aa07ae43b1a9c790f5298",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.c04e70d76c4265f3c8d4b9378c967d4e94fdf4eeb59aa07ae43b1a9c790f5298.json"
     }
   ],
   "schema_version": 1,

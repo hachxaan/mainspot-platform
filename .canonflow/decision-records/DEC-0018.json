@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0018",
+  "kind": "decision",
+  "title": "Q-TRIAL: cuenta Trial = plan `trial` en catálogo asignado por administración",
+  "decision": "Respuesta a Q-TRIAL «¿Qué es la «cuenta Trial» del comentario de DEC-0007?»: opción `trial_manual_admin` — «Plan Trial en catálogo, asignado por administración». Las condiciones (vigencia, límites, vencimiento, alcance) están en el comentario literal del humano (campo comment), que forma parte de la decisión.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T22:14:51Z",
+  "source": "QS-0004/ANS-0004 Q-TRIAL",
+  "source_ref": {
+    "question_session_id": "QS-0004",
+    "answer_session_id": "ANS-0004",
+    "question_ids": [
+      "Q-TRIAL"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "trial_automatico_alta — Trial automático al dar de alta un negocio",
+    "trial_es_piloto — La cuenta Trial es la suscripción piloto actual"
+  ],
+  "affected_items": [
+    "DEC-0007",
+    "DEC-0010",
+    "FR-0010",
+    "migrations/0009_subscriptions_plans.sql (catálogo de planes)"
+  ],
+  "expiry": "",
+  "comment": "Se define «cuenta Trial» como un negocio (tenant) con una suscripción temporal, explícita y vigente al plan `trial`.\n\n**Decisión para el MVP actual:**\n\n- Crear `trial` como plan del catálogo.\n- Su asignación será administrativa (`subscription.admin`), no automática durante esta etapa.\n- Vigencia inicial propuesta: **30 días naturales desde su activación**, con fecha de vencimiento registrada.\n- Límites y funcionalidades: **los mismos que `plan_piloto_1`**, sujetos al enforcement efectivo de cuotas.\n- El consumo de recursos, llamadas de IA y tokens durante Trial se contabiliza por tenant contra los límites de esa suscripción. No existe consumo ilimitado implícito.\n- Si el enforcement de tokens S1 aún no está operativo, no habilitar inferencia real ilimitada por el hecho de contar con Trial.\n- Al vencer, la suscripción pasa a `EXPIRED`. Sin otra suscripción activa, se mantiene el DENY de DEC-0007 para creaciones y operaciones que consuman capacidades sujetas al plan.\n- El negocio y sus datos existentes no se eliminan automáticamente por el vencimiento; su conservación se rige por las políticas de retención y los permisos aplicables.\n- Puede existir un tenant sin plan activo para fines administrativos, pero no puede crear recursos operativos ni consumir funcionalidades sujetas a suscripción.\n- Los dos tenants de prueba actuales conservan `plan_piloto_1`. No migrarlos automáticamente.\n- Las extensiones del periodo Trial requieren autorización administrativa y auditoría.\n- No se realizan cobros ni conversiones automáticas a planes comerciales.\n\n**Evolución posterior:**\n\nCuando MainSpot implemente el onboarding de autoservicio y estén verificados los controles de cuotas, costos y abuso, se evaluará habilitar la asignación automática de Trial mediante una decisión específica de HDC.\n\nEsta decisión no modifica DEC-024 ni aprueba nombres comerciales, precios o cuotas numéricas definitivas. Tampoco sustituye la definición A/B/C/Personalizado y S0/S1 del roadmap MVP v0.4."
+}

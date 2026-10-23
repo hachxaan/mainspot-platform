@@ -1,0 +1,55 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0007
+run_id: RUN-0007
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Ingestion of ANS-0009 (QS-0009) only. No statement about the substantive quality
+  of the decision.
+human_summary: |
+  DEC-0044: the product block runs onboarding + owner panel → Telegram → real publication (`orden_comentario`), resolving the conflict transcribed in DEC-0038. QS-0009 INGESTED and ARCHIVED; no session remains pending.
+claims:
+  - class: VERIFIED
+    statement: "ANS-0009 validates against the v2 answer-session profile and binds to the exact QS-0009 bytes (question and payload hashes); the value is a declared option; no comment."
+    evidence: [.canonflow/skill-runs/RUN-0007/evidence/EV-0001-answers-validation.json]
+    refs: [DEC-0044]
+  - class: VERIFIED
+    statement: "DEC-0044 published through canonflow-hdc publish-ingestion with DERIVES_FROM links; QS-0009 carries INGESTED and ARCHIVED, sits in archived/ with unchanged bytes; writes ran with mainspot-hdc.service stopped (05:36:12Z-05:36:13Z); afterwards /api/v1/ready reports writes_enabled=true (loopback and HTTPS) and QS-0001..0009 are ARCHIVED."
+    evidence: [.canonflow/skill-runs/RUN-0007/evidence/EV-0002-publish-ingestion-and-archive.txt, .canonflow/skill-runs/RUN-0007/evidence/EV-0003-compat-views.txt, .canonflow/skill-runs/RUN-0007/evidence/EV-0004-ready-after-restart.json, .canonflow/skill-runs/RUN-0007/evidence/EV-0005-hdc-live-sessions.json]
+    refs: [DEC-0044]
+  - class: DECIDED
+    statement: "Product block order: onboarding + owner panel → Telegram → real publication."
+    refs: [DEC-0044, DEC-0038, DEC-0037]
+  - class: OPEN
+    statement: "G-REPO dirty-tree pre-flight not satisfied: the work branch still carries uncommitted output of earlier runs and sessions."
+    refs: []
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT WARN now covers QS-0001..0009 (reconcile defect,
+      .canonflow-updates/HDC-0008); HDC-0006 workaround reapplied unchanged.
+    evidence: .canonflow/skill-runs/RUN-0007/evidence/EV-0003-compat-views.txt
+limitations:
+  - "G-REPO: tree not clean at run start (see OPEN claim)."
+  - "Only the pending_human mirror of method-state was updated (update_state.py)."
+evidence:
+  - .canonflow/skill-runs/RUN-0007/evidence/EV-0001-answers-validation.json
+  - .canonflow/skill-runs/RUN-0007/evidence/EV-0002-publish-ingestion-and-archive.txt
+  - .canonflow/skill-runs/RUN-0007/evidence/EV-0003-compat-views.txt
+  - .canonflow/skill-runs/RUN-0007/evidence/EV-0004-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0007/evidence/EV-0005-hdc-live-sessions.json
+outputs:
+  - .canonflow/decision-records/DEC-0044.json (+ .md companion)
+  - .canonflow/decision-state/sessions/QS-0009.lifecycle.json
+  - .canonflow/decision-sessions/archived/QS-0009.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+gates_checked:
+  - {gate: G-REPO, status: FAIL, evidence: "uncommitted prior-run paths at run start; see OPEN claim"}
+blockers: []
+next_pointer: "none pending in the HDC; implementation continues with TOCTOU hardening (DEC-0005, DEC-0037)"
+created_at: "2026-10-22T05:37:00Z"

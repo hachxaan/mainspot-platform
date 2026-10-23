@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0045",
+  "kind": "decision",
+  "title": "Destino remoto de los respaldos: Garage S3 en el KVM 4 (s3.mainspot.canonflow.dev, bucket mainspot-backups), cifrado en MainSpot y clave nunca en el KVM 4",
+  "decision": "Respuesta a Q-S3-DESTINATION «¿La copia de los respaldos fuera del equipo va a Garage en el KVM 4, cifrada antes por MainSpot y con la clave siempre fuera del KVM 4?»: `garage_kvm4` — «Sí: Garage en el KVM 4 (s3.mainspot.canonflow.dev, bucket mainspot-backups), cifrado en MainSpot y la clave nunca en el KVM 4». Condiciones declaradas en Q-NOTES (DEC-0049).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T09:16:37Z",
+  "source": "QS-0011/ANS-0011 Q-S3-DESTINATION",
+  "source_ref": {
+    "question_session_id": "QS-0011",
+    "answer_session_id": "ANS-0011",
+    "question_ids": [
+      "Q-S3-DESTINATION"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "otro_destino — No: otro destino (indícalo en las notas)"
+  ],
+  "affected_items": [
+    "DEC-0026",
+    "DEC-0027",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "DEC-0049"
+  ],
+  "expiry": "",
+  "comment": ""
+}

@@ -1,0 +1,68 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0009
+run_id: RUN-0009
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Generation and publication of QS-0011 only. No statement about the substantive
+  quality of the future human decisions or about the work they may authorize.
+human_summary: |
+  QS-0011 (v2, es, 5 questions, 4 required) is PENDING and answerable at https://mainspot.hdc.com/#/sessions/QS-0011, next to QS-0010 (still pending).
+  Q-S3-DESTINATION (Garage on Hostinger KVM 4, s3.mainspot.canonflow.dev / mainspot-backups, client-side encryption, key never on KVM 4 [recommended] / other destination),
+  Q-S3-RETENTION-ENFORCEMENT (service lifecycle rule [recommended] / MainSpot deletes / both),
+  Q-S3-DELETE-RISK (accept with daily detection until the first real tenant [recommended] / protected copy on KVM 4 before activation / accept without deadline),
+  Q-S3-SINGLE-NODE (single node [recommended] / second node before the first real tenant); optional Q-NOTES.
+claims:
+  - class: VERIFIED
+    statement: "The prepared QS-0011 validates against the v2 question-session profile and the HDC cross-rules with no errors."
+    evidence: [.canonflow/skill-runs/RUN-0009/evidence/EV-0001-qs-validation.json]
+    refs: [QS-0011]
+  - class: VERIFIED
+    statement: "The HDC-0009 stamped wrapper published .canonflow/decision-sessions/pending/QS-0011.questions.json (sha256 47c2658950ce6aea057fa0cb8b59542e5ddfd9aa75d466e9491d8d73b2686c3f) with generated_at 2026-10-22T08:29:34Z; the content equals the prepared input except generated_at."
+    evidence: [.canonflow/skill-runs/RUN-0009/evidence/EV-0002-publish-session.txt]
+    refs: [QS-0011]
+  - class: VERIFIED
+    statement: "Facts stated in the questions match lab observations on Garage v1.2.0 and v2.4.1 (write permission includes delete, overwrite and lifecycle changes; versioning and object lock return 501) and the observed endpoint state on 2026-10-22 (self-signed certificate, HTTP redirects to HTTPS)."
+    evidence: [docs/contracts/backup-object-storage/v1/VERIFICATION.md]
+    refs: [DEC-0026, DEC-0027]
+  - class: VERIFIED
+    statement: "publish-session, the HDC-0006 compatibility-view script (--run RUN-0009) and update_state.py ran with mainspot-hdc.service stopped (08:29:33Z-08:29:35Z); after restart /api/v1/ready reports writes_enabled=true on loopback and HTTPS; the live console lists QS-0010 and QS-0011 PENDING (can_answer=true) and QS-0001..0009 ARCHIVED; counters qs 11 · ans 9 · dec 44 · apr 2; pending_human [QS-0010, QS-0011]."
+    evidence: [.canonflow/skill-runs/RUN-0009/evidence/EV-0003-compat-views.txt, .canonflow/skill-runs/RUN-0009/evidence/EV-0004-ready-after-restart.json, .canonflow/skill-runs/RUN-0009/evidence/EV-0005-hdc-live-sessions.json]
+    refs: [QS-0011]
+  - class: OPEN
+    statement: "The four decisions wait for the human-authored ANS-0011 (and ANS-0010 for destination consistency and key custody) and their ingestion; the contract keeps them PENDIENTE until then."
+    refs: [QS-0010, QS-0011]
+  - class: OPEN
+    statement: "G-REPO dirty-tree pre-flight not satisfied: the work branch still carries uncommitted output of earlier runs and remediation blocks."
+    refs: []
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT WARN persists for QS-0001..0009 (reconcile defect
+      recorded in .canonflow-updates/HDC-0008), visible until the CanonFlow pin is
+      updated. The HDC-0006 workaround was reapplied and recorded in its ficha.
+    evidence: .canonflow/skill-runs/RUN-0009/evidence/EV-0003-compat-views.txt
+limitations:
+  - "G-REPO: tree not clean at run start (see OPEN claim)."
+  - "QS-0011.html not rendered: the live console serves the session, as for QS-0005..QS-0010."
+  - "Only the pending_human mirror of method-state was updated (update_state.py); canon state files are owned by other skills."
+evidence:
+  - .canonflow/skill-runs/RUN-0009/evidence/EV-0001-qs-validation.json
+  - .canonflow/skill-runs/RUN-0009/evidence/EV-0002-publish-session.txt
+  - .canonflow/skill-runs/RUN-0009/evidence/EV-0003-compat-views.txt
+  - .canonflow/skill-runs/RUN-0009/evidence/EV-0004-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0009/evidence/EV-0005-hdc-live-sessions.json
+outputs:
+  - .canonflow/decision-sessions/pending/QS-0011.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md (reapplication record)
+gates_checked:
+  - {gate: G-REPO, status: FAIL, evidence: "uncommitted prior-run and remediation paths at run start; see OPEN claim"}
+blockers:
+  - "ANS-0011 (and ANS-0010): human answers in the HDC"
+next_pointer: "https://mainspot.hdc.com/#/sessions/QS-0011"
+created_at: "2026-10-22T08:32:00Z"

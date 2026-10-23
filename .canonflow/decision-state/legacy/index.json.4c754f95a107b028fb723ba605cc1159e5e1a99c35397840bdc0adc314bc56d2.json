@@ -1,0 +1,72 @@
+{
+  "sessions": [
+    {
+      "question_session_id": "QS-0001",
+      "state": "ARCHIVED",
+      "generated_at": "2026-09-21T21:10:00Z",
+      "records": [
+        "DEC-0001",
+        "DEC-0002",
+        "DEC-0003",
+        "DEC-0004",
+        "DEC-0005",
+        "DEC-0006",
+        "DEC-0007",
+        "DEC-0008",
+        "DEC-0009"
+      ],
+      "answered_at": "2026-10-21T18:01:48Z",
+      "session_label": "Cierre de decisiones TENTATIVA del piloto (INC-001..007)",
+      "answer_session_id": "ANS-0001"
+    },
+    {
+      "question_session_id": "QS-0002",
+      "state": "ARCHIVED",
+      "generated_at": "2026-09-21T21:11:00Z",
+      "records": [
+        "DEC-0010",
+        "DEC-0011",
+        "DEC-0012",
+        "DEC-0013"
+      ],
+      "answered_at": "2026-10-21T18:18:26Z",
+      "session_label": "Oferta comercial (Q-004) y vertical del piloto (Q-009)",
+      "answer_session_id": "ANS-0002"
+    },
+    {
+      "question_session_id": "QS-0003",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-20T10:38:07.543658+00:00",
+      "records": [
+        "APR-0001"
+      ],
+      "answered_at": "2026-10-21T18:23:36Z",
+      "session_label": "MainSpot — activación Cognitive Jev: una llamada sintética",
+      "answer_session_id": "ANS-0003"
+    },
+    {
+      "question_session_id": "QS-0004",
+      "state": "ANSWERED",
+      "generated_at": "2026-10-21T18:54:17Z",
+      "records": [],
+      "session_label": "Seguimiento de la ingestión de QS-0001..QS-0003 (RUN-0001)",
+      "answered_at": "2026-10-21T22:14:51Z",
+      "answer_session_id": "ANS-0004"
+    }
+  ],
+  "counters": {
+    "qs": 7,
+    "ans": 4,
+    "dec": 13,
+    "apr": 1,
+    "rsk": 0
+  },
+  "latest": "QS-0004",
+  "reconstructed": {
+    "at": "2026-10-21T18:54:50Z",
+    "by": "RUN-0001 (canonflow-human-decision-console ingest)",
+    "source": "artifacts+lifecycle+legacy-snapshots; state = evidence-derived effective state",
+    "preserved": true
+  },
+  "projection_version": "hdc-1.0.0"
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "question_session_id": "QS-0003",
+  "question_sha256": "sha256:2183e43cef4248d44809559152f70a82918308487fc64c2736ab91cc0a387b99",
+  "events": [
+    {
+      "state": "INGESTED",
+      "at": "2026-10-21T18:40:25Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0001",
+      "reason": "answers ingested; records published (RUN-0001)",
+      "answer_session_id": "ANS-0003",
+      "records": [
+        "APR-0001"
+      ],
+      "outcomes": [
+        {
+          "question_id": "Q-COGNITIVE-JEV-ACTIVATION",
+          "record_ids": [
+            "APR-0001"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "from": "ANS-0003",
+          "to": "QS-0003",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T18:23:36Z"
+        },
+        {
+          "from": "APR-0001",
+          "to": "ANS-0003",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T18:23:36Z"
+        }
+      ]
+    },
+    {
+      "state": "ARCHIVED",
+      "at": "2026-10-21T18:40:46Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0001",
+      "reason": "ingestion complete (RUN-0001): every answered question has a published DEC/APR outcome; session closed"
+    }
+  ]
+}

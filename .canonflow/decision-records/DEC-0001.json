@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0001",
+  "kind": "decision",
+  "title": "Q-CLASSIFIER: override — no se cierra el clasificador determinista; evaluar ML/generativo antes de cerrar",
+  "decision": "Respuesta a Q-CLASSIFIER «Clasificador de intención determinista (reglas/keywords en español, sin ML)»: opción `override` — «Override: evaluar ML/generativo antes de cerrar» (sustituye el default `confirm`). El clasificador determinista por reglas no se confirma como cierre de plataforma v0.2. Comentario literal del humano: «Debe ser con TypeSave/Jev»",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:01:48Z",
+  "source": "QS-0001/ANS-0001 Q-CLASSIFIER",
+  "source_ref": {
+    "question_session_id": "QS-0001",
+    "answer_session_id": "ANS-0001",
+    "question_ids": [
+      "Q-CLASSIFIER"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "confirm — Confirmar: determinista por reglas, iterable"
+  ],
+  "affected_items": [
+    "FR-0005",
+    "DI-0002",
+    "src/conversation/classifier.ts — clasificador determinista TENTATIVA (SRC-0006 §15; FLOW-001)"
+  ],
+  "expiry": "",
+  "comment": "Debe ser con TypeSave/Jev"
+}

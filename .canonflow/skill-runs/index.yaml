@@ -1,3 +1,14 @@
 schema: skill-run-index/v1
-runs: []
-counters: {run: 0, srp: 0}
+runs:
+  - {run_id: RUN-0001, skill_id: canonflow-human-decision-console, mode: ingest, executor: "omp agent session (anthropic/claude-opus-5-5)", state: REPORTED, report: SRP-0001, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-21T18:57:02Z"}
+  - {run_id: RUN-0002, skill_id: canonflow-human-decision-console, mode: ingest, executor: "omp agent session (anthropic/claude-opus-5-5)", state: REPORTED, report: SRP-0002, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-21T22:24:12Z"}
+  - {run_id: RUN-0003, skill_id: canonflow-human-decision-console, mode: ingest, executor: "omp agent session (anthropic/claude-opus-5-5)", state: REPORTED, report: SRP-0003, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-21T23:18:30Z"}
+  - {run_id: RUN-0004, skill_id: canonflow-human-decision-console, mode: ingest, executor: "omp agent session (anthropic/claude-opus-5-5)", state: REPORTED, report: SRP-0004, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-22T00:53:00Z"}
+  - {run_id: RUN-0005, skill_id: canonflow-human-decision-console, mode: generate, executor: "omp agent session (anthropic/claude-opus-5-5)", state: REPORTED, report: SRP-0005, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-22T02:12:00Z"}
+  - {run_id: RUN-0006, skill_id: canonflow-human-decision-console, mode: ingest, executor: "omp agent session (anthropic/claude-opus-5-5)", state: REPORTED, report: SRP-0006, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-22T05:02:00Z"}
+  - {run_id: RUN-0007, skill_id: canonflow-human-decision-console, mode: ingest, executor: "omp agent session (anthropic/claude-opus-5-5)", state: REPORTED, report: SRP-0007, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-22T05:37:00Z"}
+  - {run_id: RUN-0008, skill_id: canonflow-human-decision-console, mode: generate, executor: "omp agent session (anthropic/claude-opus-5-5)", state: REPORTED, report: SRP-0008, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-22T06:25:00Z"}
+  - {run_id: RUN-0009, skill_id: canonflow-human-decision-console, mode: generate, executor: "omp agent session (anthropic/claude-opus-5-5)", state: REPORTED, report: SRP-0009, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-22T08:32:00Z"}
+  - {run_id: RUN-0010, skill_id: canonflow-human-decision-console, mode: ingest, executor: "omp agent session (anthropic/claude-fable-5-1)", state: REPORTED, report: SRP-0010, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-22T11:43:00Z"}
+  - {run_id: RUN-0011, skill_id: canonflow-human-decision-console, mode: generate, executor: "omp agent session (anthropic/claude-fable-5-1)", state: REPORTED, report: SRP-0011, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-22T17:06:00Z"}
+counters: {run: 11, srp: 11}

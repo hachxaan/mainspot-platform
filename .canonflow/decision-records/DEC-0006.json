@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0006",
+  "kind": "decision",
+  "title": "Q-AGENTS: diferir el enforcement del límite 'agents' hasta que exista creación de agentes",
+  "decision": "Respuesta a Q-AGENTS «Límite 'agents' visible pero sin enforcement (deuda declarada)»: opción `diferir` — «Diferir: enforcement cuando exista creación de agentes».",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:01:48Z",
+  "source": "QS-0001/ANS-0001 Q-AGENTS",
+  "source_ref": {
+    "question_session_id": "QS-0001",
+    "answer_session_id": "ANS-0001",
+    "question_ids": [
+      "Q-AGENTS"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "enforcement_ahora — Implementar enforcement ahora",
+    "quitar_del_catalogo — Quitar 'agents' del catálogo visible"
+  ],
+  "affected_items": [
+    "DI-0004",
+    "FR-0010"
+  ],
+  "expiry": "",
+  "comment": ""
+}

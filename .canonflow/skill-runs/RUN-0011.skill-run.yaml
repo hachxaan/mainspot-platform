@@ -1,0 +1,40 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0011
+skill_id: canonflow-human-decision-console
+mode: generate
+executor: "omp agent session (anthropic/claude-fable-5-1) — agent, never a decision owner"
+objective: >-
+  Prepare and publish QS-0012 (v2, es): the three owner decisions that CONTRACT.md 1.1.0
+  §2.3 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828) requires before the activation
+  gate's condition 7 can be asked — the alert channel outside KVM 4 for the watcher and
+  the protected copy (P-3, S-08, §10.1), the form of the protected copy (P-2, §9.2: option B
+  volume outside Garage vs A/A' second bucket) and the confirmation or objection of the
+  DEC-0046 reading (P-1, §9.1: the bucket lifecycle rule deletes; the KVM 4 process watches
+  and never deletes nor retains). Also prepares, validates and does NOT publish the draft
+  of the final authorization session (evidence/coordination/QS-activation-draft.questions.json)
+  and records the gate status table (evidence/coordination/02-activation-gate.md).
+  Publication, compatibility views and the pending_human mirror run with
+  mainspot-hdc.service stopped (HDC-0007). No answer is written or inferred.
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 088c687e53fd8aab5dac23e7d1d0d7790c678030
+inputs:
+  - "docs/contracts/backup-object-storage/v1/CONTRACT.md at 0cbdfcf008ed84f9cddea399c5d49915ca24e828 (§2.2, §2.3, §6.1, §6.4, §9.1, §9.2, §10.1, §14, §15, §17, §18)"
+  - "docs/contracts/backup-object-storage/README.md at 7cbbf70c50a45c20d0d59960c21ee13e9679ccc5 (pin of 1.1.0)"
+  - "docs/contracts/backup-object-storage/v1/infra-reconciliation-ab046d24.md (§4, §5, §7, H-01..H-14, §11 P-1..P-3)"
+  - "docs/contracts/backup-object-storage/v1/VERIFICATION.md (§7, §10)"
+  - ".canonflow/decision-records/DEC-0045..DEC-0054 (DEC-0049 §2, §4, §6, §7 and DEC-0054 §4 literal)"
+  - ".canonflow/decision-sessions/archived/QS-0011.questions.json (form and option labels of DEC-0046/DEC-0047)"
+  - "evidence/remediation/R3-remote-producer/01..05 (producer lab tests and acceptance)"
+  - "canonflow-keystone@5e3dc307a4089f462b9742b76fd002cf910102fa decision-console/app/canonflow_hdc (profiles, validation, publish-session)"
+expected_outputs:
+  - .canonflow/decision-sessions/pending/QS-0012.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml (pending_human)
+  - evidence/coordination/02-activation-gate.md
+  - evidence/coordination/QS-activation-draft.questions.json (draft, not published)
+  - evidence/coordination/QS-activation-draft.validation.json
+  - .canonflow/skill-runs/RUN-0011.skill-report.yaml
+created_at: "2026-10-22T17:03:00Z"

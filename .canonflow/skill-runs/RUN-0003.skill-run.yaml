@@ -1,0 +1,29 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0003
+skill_id: canonflow-human-decision-console
+mode: ingest
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  Ingest the human-authored answers ANS-0006 (QS-0006, retention/deletion/backup
+  policy) as requested, and ANS-0005 (QS-0005, remediation order), already
+  submitted and ANSWERED in the HDC: validate, transcribe one record per answered
+  question with the answering human as owner, publish records + links +
+  INGESTED, archive both sessions and update decision/method state. All index /
+  latest writes run with mainspot-hdc.service stopped (HDC-0007).
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 088c687e53fd8aab5dac23e7d1d0d7790c678030
+inputs:
+  - ".canonflow/decision-sessions/answered/QS-0005.answers.json (ANS-0005, payload sha256:c027d04aaeb6cc6b74815f54196d693312cb3f47150f33bfefdf1a319dfaa14f)"
+  - ".canonflow/decision-sessions/pending/QS-0005.questions.json (sha256:ae9944a9157189d7bb1f7ce323a88e923c45b87160c3a7505e748d37cf67ed70)"
+  - ".canonflow/decision-sessions/answered/QS-0006.answers.json (ANS-0006, payload sha256:7eba1d09c3bb719dd19902590233ee71a39be7741e2265e485e18944289f8eb3)"
+  - ".canonflow/decision-sessions/pending/QS-0006.questions.json (sha256:ced30e932ae5cffca8fdff12406b8777e3a6855ced36cf465faf18144f6e248b)"
+  - "canonflow-keystone@5e3dc307a4089f462b9742b76fd002cf910102fa decision-console/app/canonflow_hdc (publish-ingestion, mark-session)"
+expected_outputs:
+  - .canonflow/decision-records/DEC-0020..DEC-0027.{json,md}
+  - .canonflow/decision-state/sessions/QS-0005.lifecycle.json
+  - .canonflow/decision-state/sessions/QS-0006.lifecycle.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/skill-runs/RUN-0003.skill-report.yaml
+created_at: "2026-10-21T23:16:07Z"

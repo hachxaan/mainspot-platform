@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0023",
+  "kind": "decision",
+  "title": "Retención de agregados de analítica: 2 años",
+  "decision": "Respuesta a Q-RET-ANALYTICS «¿Cuánto se conservan los agregados de analítica?»: `anios_2` — «2 años».",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T23:14:28Z",
+  "source": "QS-0006/ANS-0006 Q-RET-ANALYTICS",
+  "source_ref": {
+    "question_session_id": "QS-0006",
+    "answer_session_id": "ANS-0006",
+    "question_ids": [
+      "Q-RET-ANALYTICS"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "dias_90 — 90 días (actual)",
+    "anio_1 — 1 año"
+  ],
+  "affected_items": [
+    "analytics_daily_summary",
+    "dashboards_fase2",
+    "retention_global"
+  ],
+  "expiry": "",
+  "comment": ""
+}

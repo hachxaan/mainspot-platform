@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "question_session_id": "QS-0009",
+  "question_sha256": "sha256:b7a99a3f1a225fd13922066d86b97de12fdc0546f17d0794816351c45d64f0c9",
+  "events": [
+    {
+      "state": "INGESTED",
+      "at": "2026-10-22T05:36:12Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0007",
+      "reason": "answers ingested; records published (RUN-0007)",
+      "answer_session_id": "ANS-0009",
+      "records": [
+        "DEC-0044"
+      ],
+      "outcomes": [
+        {
+          "question_id": "Q-PRODUCT-ORDER-RESOLVE",
+          "record_ids": [
+            "DEC-0044"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "from": "ANS-0009",
+          "to": "QS-0009",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T05:11:57Z"
+        },
+        {
+          "from": "DEC-0044",
+          "to": "ANS-0009",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T05:11:57Z"
+        }
+      ]
+    },
+    {
+      "state": "ARCHIVED",
+      "at": "2026-10-22T05:36:12Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0007",
+      "reason": "ingestion complete (RUN-0007): every answered question has a published DEC outcome; session closed"
+    }
+  ]
+}

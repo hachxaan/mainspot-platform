@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0010",
+  "kind": "decision",
+  "title": "Q-PLANS: Q-004 sigue pospuesta solo en la aprobación comercial de la landing",
+  "decision": "Respuesta a Q-PLANS «¿Se aprueban planes, nombres, precios y límites de la landing para la oferta comercial?»: opción `mantener_pospuesto` — «Mantener pospuesta hasta validar costos e integraciones». El comentario literal del humano (campo comment) forma parte de la decisión; su primer párrafo: «Mantengo pospuesta Q-004 exclusivamente en lo relativo a la aprobación comercial de la landing: nombres definitivos, precios, paquetes publicados y límites comerciales comprometidos con clientes.»",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:18:26Z",
+  "source": "QS-0002/ANS-0002 Q-PLANS",
+  "source_ref": {
+    "question_session_id": "QS-0002",
+    "answer_session_id": "ANS-0002",
+    "question_ids": [
+      "Q-PLANS"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "aprobar_tal_cual — Aprobar planes/precios de la landing tal cual",
+    "ajustar — Aprobar con ajustes (indicar en comentario)",
+    "paquetes_piloto — Reemplazar por paquetes de piloto (3-5 negocios, DEC-010)"
+  ],
+  "affected_items": [
+    "DI-0003",
+    "FR-0010",
+    "BR-0006",
+    "Q-004 (canon upstream)",
+    "DEC-024 (canon upstream)",
+    "ROADMAP-MVP-REAL-20261020 v0.4",
+    "HDC-MSP-06"
+  ],
+  "expiry": "",
+  "comment": "Mantengo pospuesta Q-004 exclusivamente en lo relativo a la aprobación comercial de la landing: nombres definitivos, precios, paquetes publicados y límites comerciales comprometidos con clientes.\n\nAclaro que el 20 de octubre de 2026 ya establecimos una dirección de producto para el MVP ampliado de MainSpot:\n\n- **Plan A:** funcionalidades y capacidad base.\n- **Plan B:** hereda A y agrega funcionalidades y mayor cuota de tokens.\n- **Plan C:** hereda B y amplía funcionalidades y capacidad.\n- **Plan Personalizado:** selección configurable de funcionalidades y cuota mensual de tokens por negocio.\n\nEsta estructura deberá formalizarse mediante el proceso canónico correspondiente; su discusión previa no equivale a una aprobación canónica.\n\nEl MVP debe contemplar el contrato funcional S0, catálogo de funcionalidades, entitlements, planes versionados y control de consumo S1, sin requerir precios definitivos, pasarela de pagos ni facturación real.\n\nQuedan pendientes las cuotas numéricas, el ciclo mensual, rollover, excedentes, cambios de plan, presupuestos y políticas de consumo. Deben resolverse mediante HDC-MSP-06 antes de activar consumo real cuando corresponda.\n\n**No posponer la definición funcional ni el desarrollo autorizado de la infraestructura de planes por mantener abierta la decisión comercial Q-004.**\n\nReferencias: DEC-024, ROADMAP-MVP-REAL-20261020 v0.4, S0/S1/S2/S3 y HDC-MSP-06."
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0005",
+  "kind": "decision",
+  "title": "Q-LIMITS: no se acepta la ventana TOCTOU en el piloto; comprobación y consumo de cuota atómicos por tenant",
+  "decision": "Respuesta a Q-LIMITS «TOCTOU entre check e insert de límites aceptado en piloto; endurecer con UNIQUE/claims en fase productiva»: opción `override` — «Override: endurecer ahora (UNIQUE/claims)» (sustituye el default `confirm`). Comentario literal del humano: «No acepto la ventana TOCTOU para el piloto. Solicito que la comprobación y el consumo de cuota sean atómicos por tenant antes de habilitar estas  operaciones.»",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:01:48Z",
+  "source": "QS-0001/ANS-0001 Q-LIMITS",
+  "source_ref": {
+    "question_session_id": "QS-0001",
+    "answer_session_id": "ANS-0001",
+    "question_ids": [
+      "Q-LIMITS"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "confirm — Confirmar: aceptado en piloto, endurecer en productivo"
+  ],
+  "affected_items": [
+    "FR-0010",
+    "DI-0002",
+    "enforcement de límites del plan (README §15 TOCTOU)"
+  ],
+  "expiry": "",
+  "comment": "No acepto la ventana TOCTOU para el piloto. Solicito que la comprobación y el consumo de cuota sean atómicos por tenant antes de habilitar estas  operaciones."
+}

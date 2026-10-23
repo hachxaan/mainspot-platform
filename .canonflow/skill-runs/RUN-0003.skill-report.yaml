@@ -1,0 +1,82 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0003
+run_id: RUN-0003
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Ingestion of ANS-0006 (QS-0006, requested by the human) and ANS-0005 (QS-0005,
+  already submitted and ANSWERED in the HDC) only. No statement about the
+  substantive quality of the decisions, canon readiness or release; nothing was
+  implemented from them.
+human_summary: |
+  Eight records transcribed (DEC-0020..DEC-0027), owner Carlos Pinacho; QS-0005 and QS-0006 INGESTED and ARCHIVED; only QS-0007 remains pending.
+  DEC-0020 resolves the ANS-0004 conflict: the comment order stands (TOCTOU → retention global → dashboards phase 2 → agents enforcement) and supersedes DEC-0009.
+  Retention policy decided: conversations 90 days, audit 2 years, analytics 2 years, tenant exit anonymized at 30 days, daily automatic purge with audited report, daily encrypted backups kept 14 days with monthly restore test; DEC-0027 adds the human's exit/anonymization policy verbatim and forbids destructive anonymization before mechanisms are implemented and validated.
+claims:
+  - class: VERIFIED
+    statement: "ANS-0005 and ANS-0006 validate against the v2 answer-session profile and bind to the exact QS-0005/QS-0006 bytes (question_sha256, payload_sha256); no required question unanswered; every single_choice value is a declared option."
+    evidence: [.canonflow/skill-runs/RUN-0003/evidence/EV-0001-answers-validation.json]
+    refs: []
+  - class: VERIFIED
+    statement: "DEC-0020..DEC-0027 published through canonflow-hdc publish-ingestion (one record per answered question; DERIVES_FROM links; DEC-0020 SUPERSEDES DEC-0009); QS-0005 and QS-0006 carry INGESTED and ARCHIVED events, sit in archived/, and the live HDC shows them ARCHIVED with QS-0007 the only PENDING session."
+    evidence: [.canonflow/skill-runs/RUN-0003/evidence/EV-0002-publish-ingestion-and-archive.jsonl, .canonflow/skill-runs/RUN-0003/evidence/EV-0005-hdc-live-sessions.json, .canonflow/skill-runs/RUN-0003/evidence/EV-0006-supersedes-link.txt]
+    refs: [DEC-0020, DEC-0027]
+  - class: DECIDED
+    statement: "Remediation order: 1 toctou_hardening, 2 retention_global, 3 dashboards_fase2, 4 agents_enforcement; supersedes DEC-0009 and resolves the CONFLICTED claim of SRP-0002."
+    refs: [DEC-0020, DEC-0009, DEC-0017]
+  - class: DECIDED
+    statement: "Retention: conversational content 90 days; audit_event 2 years; analytics aggregates 2 years; tenant exit anonymized at 30 days; daily automatic platform-wide purge with audited report; daily encrypted backups kept 14 days with monthly restore test; exit/anonymization requirements as written in DEC-0027."
+    refs: [DEC-0021, DEC-0022, DEC-0023, DEC-0024, DEC-0025, DEC-0026, DEC-0027]
+  - class: VERIFIED
+    statement: "All index/latest writes ran with mainspot-hdc.service stopped (23:16:55Z-23:16:57Z); after restart /api/v1/ready reports writes_enabled=true (loopback and HTTPS)."
+    evidence: [.canonflow/skill-runs/RUN-0003/evidence/EV-0003-compat-views.txt, .canonflow/skill-runs/RUN-0003/evidence/EV-0004-ready-after-restart.json]
+    refs: []
+  - class: OPEN
+    statement: "Code is not yet aligned with DEC-0022/DEC-0023: RetentionService purges audit_event and analytics_daily_summary older than RETENTION_DAYS, which is 90 in .env, in the deployed /etc/mainspot/mainspot.env and as code default. A purge with dry_run=false before retention_global is implemented would delete records the policy keeps for 2 years."
+    refs: [DEC-0022, DEC-0023, DEC-0020]
+  - class: OPEN
+    statement: "retention_global design must state how audit events of an exited tenant are treated: DEC-0022 keeps audit 2 years, while DEC-0027 requires removing identifiable information 30 days after a confirmed exit and verifying anonymization including audit records. Not resolved by the agent; to be specified in the design and, if still ambiguous, asked in the HDC."
+    refs: [DEC-0022, DEC-0024, DEC-0027]
+  - class: OPEN
+    statement: "G-REPO dirty-tree pre-flight not satisfied: the work branch still carries uncommitted output of earlier runs and sessions."
+    refs: []
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      ANS-0005 was ingested in the same run although the request named only
+      ANS-0006: QS-0005 was ANSWERED in the HDC and its answer resolves the
+      SRP-0002 conflict that orders the work ANS-0006 feeds.
+    evidence: .canonflow/skill-runs/RUN-0003/evidence/EV-0001-answers-validation.json
+  - id: FND-0002
+    severity: NOTE
+    description: >-
+      HDC-0006 compatibility-view workaround reapplied unchanged; DECLARED_STATE_CONFLICT
+      WARN now covers QS-0001..QS-0006 by design.
+    evidence: .canonflow/skill-runs/RUN-0003/evidence/EV-0003-compat-views.txt
+limitations:
+  - "G-REPO: tree not clean at run start (see OPEN claim)."
+  - "Canon state files and method-state current_focus are owned by other skills and were not changed; only the pending_human mirror was updated (update_state.py)."
+evidence:
+  - .canonflow/skill-runs/RUN-0003/evidence/EV-0001-answers-validation.json
+  - .canonflow/skill-runs/RUN-0003/evidence/EV-0002-publish-ingestion-and-archive.jsonl
+  - .canonflow/skill-runs/RUN-0003/evidence/EV-0003-compat-views.txt
+  - .canonflow/skill-runs/RUN-0003/evidence/EV-0004-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0003/evidence/EV-0005-hdc-live-sessions.json
+  - .canonflow/skill-runs/RUN-0003/evidence/EV-0006-supersedes-link.txt
+outputs:
+  - .canonflow/decision-records/DEC-0020.json .. DEC-0027.json (+ .md companions)
+  - .canonflow/decision-state/sessions/QS-0005.lifecycle.json
+  - .canonflow/decision-state/sessions/QS-0006.lifecycle.json
+  - .canonflow/decision-sessions/archived/QS-0005.questions.json
+  - .canonflow/decision-sessions/archived/QS-0006.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+gates_checked:
+  - {gate: G-REPO, status: FAIL, evidence: "uncommitted prior-run paths at run start; see OPEN claim"}
+blockers: []
+next_pointer: "https://mainspot.hdc.com/#/sessions/QS-0007"
+created_at: "2026-10-21T23:18:30Z"

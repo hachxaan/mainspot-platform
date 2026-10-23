@@ -1,0 +1,28 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0004
+skill_id: canonflow-human-decision-console
+mode: ingest
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  Ingest the human-authored answers ANS-0007 (QS-0007, Jev classifier modes
+  architecture): validate, transcribe the approval of MSP-JEV-CLASSIFIER-MODES v1
+  as an approval record bound to the exact proposal bytes plus one decision record
+  per decision point D1-D5, publish records + links + INGESTED, archive the
+  session and update decision/method state. Index/latest writes run with
+  mainspot-hdc.service stopped (HDC-0007).
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 088c687e53fd8aab5dac23e7d1d0d7790c678030
+inputs:
+  - ".canonflow/decision-sessions/answered/QS-0007.answers.json (ANS-0007, payload sha256:c5a3595363f884cd06bfbb2608d2d8994af62844be5db68264145f30a06d1c39)"
+  - ".canonflow/decision-sessions/pending/QS-0007.questions.json (sha256:0f6216da534d99a7087a7baed32542c20c7e9bdfa787a775af70cdffb5f65c31)"
+  - ".canonflow/state/jev-classifier-modes-proposal.md (sha256:ef33139b9e569c2ac00be693faeaa693b627a99367f0e8fe5f06cff8b2631cad, bound artifact)"
+  - "canonflow-keystone@5e3dc307a4089f462b9742b76fd002cf910102fa decision-console/app/canonflow_hdc (publish-ingestion, mark-session)"
+expected_outputs:
+  - .canonflow/decision-records/APR-0002.{json,md}
+  - .canonflow/decision-records/DEC-0028..DEC-0032.{json,md}
+  - .canonflow/decision-state/sessions/QS-0007.lifecycle.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/skill-runs/RUN-0004.skill-report.yaml
+created_at: "2026-10-22T00:48:15Z"

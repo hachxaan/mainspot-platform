@@ -1,0 +1,718 @@
+diff --git a/decision-console/app/canonflow_hdc/compat_views.py b/decision-console/app/canonflow_hdc/compat_views.py
+new file mode 100644
+index 0000000..574bdfb
+--- /dev/null
++++ b/decision-console/app/canonflow_hdc/compat_views.py
+@@ -0,0 +1,235 @@
++"""Compatibility views ``index.json``/``latest.json`` (definition §4, §7.2 step 8, §13).
++
++Both views are derived from the canonical artifacts through :func:`reconcile`
++and are written only after the current bytes are preserved under
++``decision-state/legacy/``. One derivation serves every writer:
++
++* the submission and the lifecycle instruments update only the affected index
++  entry (§13) and recompute ``latest``;
++* ``rebuild-index`` regenerates every entry.
++
++An entry's ``state`` is the effective state when the evidence chain resolves it
++(``confirmed``/``derived``); unresolved cases keep the state the index already
++declared, so a historical declaration is never downgraded to PENDING.
++``latest`` is the QS with the greatest valid ``generated_at``, QS id as
++tie-break. Counters never decrease against the preserved index.
++"""
++from __future__ import annotations
++
++import datetime as _dt
++import json
++from pathlib import Path
++
++from . import identity, paths, profiles
++from .canonicaljson import loads_strict
++
++COUNTER_KEYS = ("qs", "ans", "dec", "apr", "rsk")
++_RECORD_COUNTERS = {"DEC": "dec", "APR": "apr", "RSK": "rsk"}
++_RESOLVED_EVIDENCE = ("confirmed", "derived")
++_INDEX_STATES = ("PENDING", "ANSWERED", "INGESTED", "ARCHIVED", "CANCELLED", "EXPIRED")
++_MIN_TIME = _dt.datetime.min.replace(tzinfo=_dt.timezone.utc)
++
++
++class CompatViewError(Exception):
++    def __init__(self, code: str, message: str):
++        super().__init__(message)
++        self.code = code
++
++
++def _now() -> str:
++    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
++
++
++def parse_generated_at(value) -> _dt.datetime | None:
++    """A valid ``generated_at`` as an aware UTC datetime; ``None`` otherwise."""
++    if not isinstance(value, str):
++        return None
++    try:
++        when = _dt.datetime.fromisoformat(value)
++    except ValueError:
++        return None
++    if when.tzinfo is None:  # legacy precision without offset: read as UTC
++        when = when.replace(tzinfo=_dt.timezone.utc)
++    return when.astimezone(_dt.timezone.utc)
++
++
++def latest_session(rec) -> str | None:
++    """QS with the greatest valid generated_at, QS id as tie-break (§7.2 step 8)."""
++    best = None
++    for qs_id, view in rec.sessions.items():
++        key = (parse_generated_at(view.generated_at) or _MIN_TIME, qs_id)
++        if best is None or key > best:
++            best = key
++    return best[1] if best else None
++
++
++def index_state(view, previous: dict | None) -> str:
++    if view.evidence_status in _RESOLVED_EVIDENCE and view.effective_state in _INDEX_STATES:
++        return view.effective_state
++    declared = (previous or {}).get("state")
++    if declared in _INDEX_STATES:
++        return declared
++    return view.declared_state or view.effective_state
++
++
++def _entry(view, previous: dict | None) -> dict:
++    """Index entry for ``view``; unknown inherited keys of ``previous`` are kept."""
++    entry = {k: v for k, v in (previous or {}).items() if not k.startswith("_")}
++    entry["question_session_id"] = view.question_session_id
++    entry["state"] = index_state(view, previous)
++    if view.generated_at is not None:
++        entry["generated_at"] = view.generated_at
++    entry["records"] = list(view.record_ids)
++    optional = {
++        "answered_at": view.answered_at,
++        "session_label": view.session_label,
++        "answer_session_id": view.answer_session_id,
++        "diagnostics": list(view.diagnostic_ids) or None,
++    }
++    for key, value in optional.items():
++        if value:
++            entry[key] = value
++        else:
++            entry.pop(key, None)
++    if isinstance(entry.get("paths"), dict):  # real paths, never stale ones
++        observed = {"questions": view.qs_path, "answers": view.answers_path}
++        entry["paths"] = dict(entry["paths"]) | {k: v for k, v in observed.items() if v}
++    return entry
++
++
++def _evidence_counters(project_root: Path, rec) -> dict:
++    counters = dict.fromkeys(COUNTER_KEYS, 0)
++    for view in rec.sessions.values():
++        parsed = identity.parse_id(view.question_session_id)
++        if parsed:
++            counters["qs"] = max(counters["qs"], parsed[1])
++        parsed = identity.parse_id(view.answer_session_id) if view.answer_session_id else None
++        if parsed:
++            counters["ans"] = max(counters["ans"], parsed[1])
++    from .artifacts import inventory
++    for f in inventory(project_root):
++        if f.kind == "decision_record" and f.artifact_id:
++            parsed = identity.parse_id(f.artifact_id)
++            if parsed and parsed[0] in _RECORD_COUNTERS:
++                key = _RECORD_COUNTERS[parsed[0]]
++                counters[key] = max(counters[key], parsed[1])
++    return counters
++
++
++def _merged_counters(project_root: Path, rec, existing) -> dict:
++    """Evidence maxima, never below the counters the index already declared."""
++    counters = _evidence_counters(project_root, rec)
++    existing = existing if isinstance(existing, dict) else {}
++    for key in COUNTER_KEYS:
++        value = existing.get(key)
++        if isinstance(value, int) and not isinstance(value, bool):
++            counters[key] = max(counters[key], value)
++    return counters
++
++
++def _latest_doc(project_root: Path, rec, latest_id: str | None, entries: dict[str, dict]) -> dict | None:
++    if latest_id is None:
++        return None
++    view = rec.sessions[latest_id]
++    doc = {"latest": latest_id, "state": entries[latest_id]["state"]}
++    if view.answer_session_id:
++        doc["answer_session"] = view.answer_session_id
++        if view.answers_path:
++            doc["answers"] = view.answers_path
++        if view.answered_at:
++            doc["answered_at"] = view.answered_at
++    doc["updated_at"] = _now()
++    return doc
++
++
++def _load(path: Path) -> dict:
++    if not path.is_file():
++        return {}
++    try:
++        doc = loads_strict(path.read_bytes())
++    except Exception:
++        return {}
++    return doc if isinstance(doc, dict) else {}
++
++
++def _preserve(project_root: Path) -> None:
++    from .legacy import PreservationError, preserve_legacy_indexes
++    try:
++        preserve_legacy_indexes(project_root)  # pre-write bytes preserved (§13)
++    except PreservationError as exc:
++        raise CompatViewError("PRESERVATION_FAILED", str(exc)) from exc
++
++
++def _write(project_root: Path, index_doc: dict, latest_doc: dict | None) -> None:
++    state_dir = paths.state_dir(project_root)
++    state_dir.mkdir(parents=True, exist_ok=True)
++    paths.atomic_write_bytes(
++        state_dir / paths.STATE_INDEX,
++        (json.dumps(index_doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
++    if latest_doc is not None:
++        paths.atomic_write_bytes(
++            state_dir / paths.STATE_LATEST,
++            (json.dumps(latest_doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
++
++
++def update_entry(project_root: Path, qs_id: str, *, projection_version: str | None = None) -> list:
++    """Update only ``qs_id``'s index entry, the counters and ``latest`` (§13).
++
++    Other entries keep their bytes; if they were already invalid the index
++    stays diagnosed as INDEX_CORRUPT until ``rebuild-index``. Returns the
++    schema errors of the written index (empty when valid).
++    """
++    from .reconcile import reconcile
++    _preserve(project_root)
++    rec = reconcile(project_root)
++    doc = _load(paths.state_dir(project_root) / paths.STATE_INDEX)
++    sessions = [s for s in (doc.get("sessions") or []) if isinstance(s, dict)]
++    by_id = {s.get("question_session_id"): s for s in sessions}
++    if qs_id in rec.sessions:
++        fresh = _entry(rec.sessions[qs_id], by_id.get(qs_id))
++        if qs_id in by_id:
++            sessions[sessions.index(by_id[qs_id])] = fresh
++        else:
++            sessions.append(fresh)
++        by_id[qs_id] = fresh
++    doc["sessions"] = sessions
++    doc["counters"] = _merged_counters(project_root, rec, doc.get("counters"))
++    latest_id = latest_session(rec)
++    if latest_id is not None:
++        doc["latest"] = latest_id
++    if projection_version:
++        doc["projection_version"] = projection_version
++    entries = {k: v for k, v in by_id.items() if k in rec.sessions}
++    if latest_id is not None and latest_id not in entries:
++        entries[latest_id] = _entry(rec.sessions[latest_id], None)
++    _, errors = profiles.validate_document(doc, "decision-state")
++    _write(project_root, doc, _latest_doc(project_root, rec, latest_id, entries))
++    return errors
++
++
++def regenerate(project_root: Path, *, by: str) -> dict:
++    """Full regeneration of both views (CLI ``rebuild-index``, §7.1, §13)."""
++    from .reconcile import reconcile
++    _preserve(project_root)
++    rec = reconcile(project_root)
++    previous = _load(paths.state_dir(project_root) / paths.STATE_INDEX)
++    by_id = {s.get("question_session_id"): s for s in (previous.get("sessions") or [])
++             if isinstance(s, dict)}
++    entries = {qs_id: _entry(view, by_id.get(qs_id)) for qs_id, view in sorted(rec.sessions.items())}
++    latest_id = latest_session(rec)
++    doc = {k: v for k, v in previous.items()
++           if k not in ("sessions", "counters", "latest", "reconstructed")}
++    doc["sessions"] = list(entries.values())
++    doc["counters"] = _merged_counters(project_root, rec, previous.get("counters"))
++    if latest_id is not None:
++        doc["latest"] = latest_id
++    doc["reconstructed"] = {
++        "at": _now(), "by": by, "preserved": True,
++        "source": "artifacts+lifecycle+legacy-snapshots; state = effective state when the "
++                  "evidence chain resolves it, declared state otherwise",
++    }
++    _, errors = profiles.validate_document(doc, "decision-state")
++    if errors:
++        raise CompatViewError("INDEX_INVALID", f"rebuilt index failed its schema: {errors[:3]}")
++    _write(project_root, doc, _latest_doc(project_root, rec, latest_id, entries))
++    return {"sessions": len(entries), "counters": doc["counters"], "latest": latest_id}
+diff --git a/decision-console/app/canonflow_hdc/lifecycle.py b/decision-console/app/canonflow_hdc/lifecycle.py
+index 18b3e42..e74a83e 100644
+--- a/decision-console/app/canonflow_hdc/lifecycle.py
++++ b/decision-console/app/canonflow_hdc/lifecycle.py
+@@ -11,6 +11,7 @@ from __future__ import annotations
+ 
+ import datetime as _dt
+ import json
++import os
+ import re
+ from pathlib import Path
+ 
+@@ -184,9 +185,64 @@ def mark_session(project_root: Path, input_doc: dict) -> dict:
+     if state == "INGESTED":  # not reachable here; kept for completeness
+         raise LifecycleError("INPUT_INVALID", "INGESTED events go through publish-ingestion")
+ 
++    # validate the folder move before writing anything (definition §4: the
++    # folder never determines state; it only must not contradict the evidence)
++    moves = _archive_moves(project_root, qs_id) if state == "ARCHIVED" else []
+     updated = _write_event(project_root, qs_id, qs_sha, full_event)
+-    return {"question_session_id": qs_id, "event": full_event,
+-            "events_total": len(updated.get("events", []))}
++    for source, dest in moves:
++        _move_unchanged(source, dest)
++    _refresh_views(project_root, qs_id)
++    result = {"question_session_id": qs_id, "event": full_event,
++              "events_total": len(updated.get("events", []))}
++    if moves:
++        result["path"] = moves[0][1].relative_to(project_root).as_posix()
++    return result
++
++
++def _archive_moves(project_root: Path, qs_id: str) -> list[tuple[Path, Path]]:
++    """pending/ copies of ``qs_id`` and their archived/ destination (same name)."""
++    pending = paths.sessions_dir(project_root, "pending")
++    archived = paths.sessions_dir(project_root, "archived")
++    moves = []
++    for path in art.find_qs_files(project_root):
++        if path.parent != pending:
++            continue
++        data = path.read_bytes()
++        try:
++            doc = loads_strict(data)
++        except Exception:
++            continue
++        if not isinstance(doc, dict) or doc.get("question_session_id") != qs_id:
++            continue
++        dest = archived / path.name
++        if dest.exists() and dest.read_bytes() != data:
++            raise LifecycleError("ARCHIVE_DESTINATION_EXISTS",
++                                 f"{dest.relative_to(project_root).as_posix()} exists with "
++                                 "different bytes; both files preserved for resolution", 409)
++        moves.append((path, dest))
++    return moves
++
++
++def _move_unchanged(source: Path, dest: Path) -> None:
++    """Atomic, byte-preserving move: hard link (never clobbers), then unlink."""
++    dest.parent.mkdir(parents=True, exist_ok=True)
++    if dest.exists():  # identical copy already archived: drop the pending duplicate
++        source.unlink()
++    else:
++        os.link(source, dest)
++        paths.fsync_dir(dest.parent)
++        source.unlink()
++    paths.fsync_dir(source.parent)
++
++
++def _refresh_views(project_root: Path, qs_id: str) -> None:
++    """Keep index.json/latest.json current after a canonical write (§7.1, §13)."""
++    from .compat_views import CompatViewError, update_entry
++    try:
++        update_entry(project_root, qs_id)
++    except CompatViewError as exc:
++        raise LifecycleError(exc.code, f"{qs_id} was written, but the compatibility views "
++                                       f"were not: {exc}", 500) from exc
+ 
+ 
+ def _load_ans(project_root: Path) -> list[tuple[Path, dict]]:
+@@ -335,6 +391,7 @@ def publish_ingestion(project_root: Path, input_doc: dict) -> dict:
+         if links:
+             event["links"] = links
+         _write_event(project_root, qs_id, qs_sha, event)
++        _refresh_views(project_root, qs_id)
+     return {"question_session_id": qs_id, "answer_session_id": ans_id,
+             "replay": False, "records": sorted(record_ids)}
+ 
+@@ -416,7 +473,7 @@ def publish_session(project_root: Path, input_doc: dict, *, id_hint: str | None
+         raise LifecycleError("SESSION_EXISTS", f"{dest.name} already exists", 409)
+     data = (json.dumps(input_doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+     paths.atomic_write_bytes(dest, data)
+-    _bump_counter(project_root, "qs", identity.parse_id(qs_id)[1])
++    _refresh_views(project_root, qs_id)
+     return {"question_session_id": qs_id, "path": dest.relative_to(project_root).as_posix()}
+ 
+ 
+@@ -453,74 +510,23 @@ def import_answer(project_root: Path, input_doc: dict) -> dict:
+                              "for resolution — never silently duplicated", 409)
+     data = (json.dumps(input_doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+     paths.atomic_write_bytes(dest, data)
+-    _bump_counter(project_root, "ans", identity.parse_id(ans_id)[1])
++    _refresh_views(project_root, qs_id)
+     return {"answer_session_id": ans_id, "path": dest.relative_to(project_root).as_posix(),
+             "replay": False}
+ 
+ 
+ def rebuild_index(project_root: Path) -> dict:
+-    """Explicit, auditable regeneration of the compatibility indexes (§13).
++    """Explicit, auditable regeneration of index.json and latest.json (§7.1, §13).
+ 
+-    Only legal after legacy preservation; keeps declared states of unresolved
+-    cases, adds diagnostics, never turns them into answerable PENDING.
++    Preserves the current bytes first (as every HDC writer does), then derives
++    both views from the evidence chain: effective state where it resolves the
++    session, the previously declared state otherwise (never PENDING by default).
+     """
+-    if not _legacy_preserved_or_absent(project_root):
+-        raise LifecycleError("PRESERVATION_REQUIRED",
+-                             "preserve the legacy index bytes before regenerating (§13)", 409)
+-    from .reconcile import reconcile
+-    rec = reconcile(project_root)
+-    state_dir = paths.state_dir(project_root)
+-    sessions = []
+-    for qs_id, view in sorted(rec.sessions.items()):
+-        sessions.append({
+-            "question_session_id": qs_id,
+-            "state": view.declared_state or view.effective_state,
+-            "generated_at": view.generated_at,
+-            "answered_at": view.answered_at,
+-            "records": view.record_ids,
+-            **({"session_label": view.session_label} if view.session_label else {}),
+-            **({"answer_session_id": view.answer_session_id} if view.answer_session_id else {}),
+-            **({"diagnostics": view.diagnostic_ids} if view.diagnostic_ids else {}),
+-        })
+-    counters = {"qs": 0, "ans": 0, "dec": 0, "apr": 0, "rsk": 0}
+-    for view in rec.sessions.values():
+-        counters["qs"] = max(counters["qs"], identity.parse_id(view.question_session_id)[1])
+-        if view.answer_session_id:
+-            counters["ans"] = max(counters["ans"], identity.parse_id(view.answer_session_id)[1])
+-    from .artifacts import inventory
+-    for f in inventory(project_root):
+-        if f.kind == "decision_record" and f.artifact_id:
+-            prefix, number = identity.parse_id(f.artifact_id)
+-            key = {"DEC": "dec", "APR": "apr", "RSK": "rsk"}[prefix]
+-            counters[key] = max(counters[key], number)
+-    doc = {
+-        "sessions": sessions,
+-        "counters": counters,
+-        "latest": rec.latest_pointer or _latest_by_generated_at(rec),
+-        "reconstructed": {"at": _now(), "by": f"hdc-rebuild-index",
+-                          "source": "artifacts+lifecycle+legacy-snapshots", "preserved": True},
+-    }
+-    _, errors = profiles.validate_document(doc, "decision-state")
+-    if errors:
+-        raise LifecycleError("INDEX_INVALID", f"rebuilt index failed its schema: {errors[:3]}", 500)
+-    paths.atomic_write_bytes(
+-        state_dir / paths.STATE_INDEX,
+-        (json.dumps(doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+-    return {"sessions": len(sessions), "counters": counters}
+-
+-
+-def _legacy_preserved_or_absent(project_root: Path) -> bool:
+-    from .legacy import preservation_complete
+-    return preservation_complete(project_root)
+-
+-
+-def _latest_by_generated_at(rec) -> str | None:
+-    best = None
+-    for qs_id, view in rec.sessions.items():
+-        key = (view.generated_at or "", qs_id)
+-        if best is None or key > best[0]:
+-            best = (key, qs_id)
+-    return best[1] if best else None
++    from .compat_views import CompatViewError, regenerate
++    try:
++        return regenerate(project_root, by="hdc-rebuild-index")
++    except CompatViewError as exc:
++        raise LifecycleError(exc.code, str(exc), 500) from exc
+ 
+ 
+ def _allocate_qs_id(project_root: Path) -> str:
+@@ -541,22 +547,3 @@ def _allocate_qs_id(project_root: Path) -> str:
+         except Exception:
+             pass
+     return allocator.next_id()
+-
+-
+-def _bump_counter(project_root: Path, key: str, value: int) -> None:
+-    from .legacy import preserve_legacy_indexes
+-    preserve_legacy_indexes(project_root)  # pre-write bytes preserved (§13)
+-    state_dir = paths.state_dir(project_root)
+-    index_path = state_dir / paths.STATE_INDEX
+-    doc: dict = {}
+-    if index_path.is_file():
+-        try:
+-            doc = loads_strict(index_path.read_bytes()) or {}
+-        except Exception:
+-            doc = {}
+-    counters = doc.get("counters") or {}
+-    counters[key] = max(counters.get(key) or 0, value)
+-    doc["counters"] = counters
+-    index_path.parent.mkdir(parents=True, exist_ok=True)
+-    paths.atomic_write_bytes(
+-        index_path, (json.dumps(doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+diff --git a/decision-console/app/canonflow_hdc/schemas/decision-state.schema.yaml b/decision-console/app/canonflow_hdc/schemas/decision-state.schema.yaml
+index 6e5649e..d743af1 100644
+--- a/decision-console/app/canonflow_hdc/schemas/decision-state.schema.yaml
++++ b/decision-console/app/canonflow_hdc/schemas/decision-state.schema.yaml
+@@ -20,7 +20,7 @@ properties:
+       properties:
+         question_session_id: {type: string, pattern: "^QS-[0-9]{4}$", description: "Internal identity; descriptive file names only locate files."}
+         session_label: {type: string, description: "Optional presentation label; display text, never an ID or path component."}
+-        state: {type: string, enum: [PENDING, ANSWERED, INGESTED, ARCHIVED, CANCELLED, EXPIRED], description: "Declared state; the HDC effective state is derived from full evidence and may differ (diagnosed, not silently reconciled)."}
++        state: {type: string, enum: [PENDING, ANSWERED, INGESTED, ARCHIVED, CANCELLED, EXPIRED], description: "Effective state derived from the evidence chain (QS, ANS, lifecycle events) when it resolves the session; unresolved cases keep the state the index previously declared (diagnosed, not silently reconciled; never downgraded to PENDING). A v2 QS file always declares PENDING, its initial state (definition §5.2)."}
+         generated_at: {type: string}
+         answered_at: {type: string}
+         records: {type: array, items: {type: string}}
+diff --git a/decision-console/app/canonflow_hdc/submission.py b/decision-console/app/canonflow_hdc/submission.py
+index 1f94403..cb64b9a 100644
+--- a/decision-console/app/canonflow_hdc/submission.py
++++ b/decision-console/app/canonflow_hdc/submission.py
+@@ -242,7 +242,7 @@ def _submit_locked(project_root: Path, qs_id: str, request: dict, manager) -> Re
+     # -- step 8: compatibility views + projection refresh -------------------
+     projection_status = "fresh"
+     try:
+-        _update_compatibility_views(project_root, qs_id, document)
++        _update_compatibility_views(project_root, qs_id)
+         if manager is not None:
+             manager.refresh()
+         else:
+@@ -355,58 +355,7 @@ def _allocate_ans_id(project_root: Path) -> str:
+     return allocator.next_id()
+ 
+ 
+-def _update_compatibility_views(project_root: Path, qs_id: str, document: dict) -> None:
+-    """Update ONLY the affected entry (§13); preserve unknown inherited keys."""
+-    from .legacy import preserve_legacy_indexes
+-    preserve_legacy_indexes(project_root)  # snapshot the pre-write bytes (§13)
+-    state_dir = paths.state_dir(project_root)
+-    index_path = state_dir / paths.STATE_INDEX
+-    doc: dict = {}
+-    if index_path.is_file():
+-        try:
+-            doc = loads_strict(index_path.read_bytes())
+-        except Exception:
+-            doc = {}
+-    sessions = doc.get("sessions") or []
+-    entry = next((s for s in sessions if s.get("question_session_id") == qs_id), None)
+-    if entry is None:
+-        entry = {"question_session_id": qs_id}
+-        sessions.append(entry)
+-    entry["state"] = "ANSWERED"
+-    entry["answered_at"] = document["answered_at"]
+-    entry["answer_session_id"] = document["answer_session_id"]
+-    doc["sessions"] = sessions
+-    counters = doc.get("counters") or {}
+-    parsed = identity.parse_id(document["answer_session_id"])
+-    counters["ans"] = max(counters.get("ans") or 0, parsed[1] if parsed else 0)
+-    doc["counters"] = counters
+-    doc["projection_version"] = f"hdc-{WRITER_VERSION}"
+-    paths.atomic_write_bytes(
+-        index_path,
+-        (json.dumps(doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+-
+-    # latest.json: still the QS with greatest valid generated_at (id tiebreak);
+-    # answering an older session never changes that meaning (§7.2 step 8).
+-    latest_path = state_dir / paths.STATE_LATEST
+-    try:
+-        latest = loads_strict(latest_path.read_bytes()) if latest_path.is_file() else {}
+-    except Exception:
+-        latest = {}
+-    current_latest = latest.get("latest")
+-    is_newer = not current_latest or current_latest == qs_id
+-    if current_latest and current_latest != qs_id:
+-        this = next((s for s in sessions if s.get("question_session_id") == qs_id), {})
+-        other = next((s for s in sessions if s.get("question_session_id") == current_latest), {})
+-        is_newer = (this.get("generated_at") or "", qs_id) > \
+-                   (other.get("generated_at") or "", current_latest)
+-    if is_newer:
+-        latest["latest"] = qs_id
+-        latest["state"] = "ANSWERED"
+-        latest["answer_session"] = document["answer_session_id"]
+-        latest["answers"] = art.expected_answer_path(project_root, qs_id).relative_to(
+-            project_root).as_posix()
+-        latest["answered_at"] = document["answered_at"]
+-        latest["updated_at"] = _now()
+-        paths.atomic_write_bytes(
+-            latest_path,
+-            (json.dumps(latest, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
++def _update_compatibility_views(project_root: Path, qs_id: str) -> None:
++    """Update ONLY the affected index entry and recompute latest (§7.2 step 8, §13)."""
++    from .compat_views import update_entry
++    update_entry(project_root, qs_id, projection_version=f"hdc-{WRITER_VERSION}")
+diff --git a/decision-console/app/tests/test_submission_lifecycle.py b/decision-console/app/tests/test_submission_lifecycle.py
+index 6ae8070..0351f2f 100644
+--- a/decision-console/app/tests/test_submission_lifecycle.py
++++ b/decision-console/app/tests/test_submission_lifecycle.py
+@@ -517,3 +517,149 @@ def test_publish_session_rejects_non_rfc3339_utc_generated_at(empty_project: Pat
+         lifecycle.publish_session(empty_project, _prepared_qs(fixtures_dir, generated_at=value))
+     assert (exc.value.code, exc.value.status) == ("GENERATED_AT_INVALID", 422)
+     assert not list(paths.sessions_dir(empty_project, "pending").iterdir())
++
++
++# ---------------------------------------------------------------------------
++# compatibility views after ingestion/archive/publication (§7.1, §7.2 step 8, §13)
++# ---------------------------------------------------------------------------
++
++def _ingest_and_archive(root: Path) -> None:
++    record = {
++        "schema_version": 2, "record_id": "DEC-0001", "kind": "decision",
++        "title": "fixture decision", "decision": "incremental", "owner": "Fixture Owner",
++        "decided_at": "2026-09-21", "source": "QS-0001/ANS-0001",
++        "source_ref": {"question_session_id": "QS-0001", "answer_session_id": "ANS-0001",
++                       "question_ids": ["Q-SINGLE"]},
++    }
++    lifecycle.publish_ingestion(root, {
++        "question_session_id": "QS-0001", "answer_session_id": "ANS-0001",
++        "actor": "agent-instrument", "records": [record],
++        "links": [{"from": "ANS-0001", "to": "QS-0001", "type": "DERIVES_FROM",
++                   "by": "Fixture Owner", "at": "2026-09-21T10:00:00Z"}],
++        "outcomes": [{"question_id": "Q-SINGLE", "record_ids": ["DEC-0001"]}]})
++    lifecycle.mark_session(root, {
++        "question_session_id": "QS-0001",
++        "event": {"state": "ARCHIVED", "actor": "agent-instrument", "reason": "completed"}})
++
++
++def _views(root: Path) -> tuple[dict, dict]:
++    from canonflow_hdc import profiles
++    state_dir = paths.state_dir(root)
++    index = json.loads((state_dir / paths.STATE_INDEX).read_text())
++    _, errors = profiles.validate_document(index, "decision-state")
++    assert errors == []
++    return index, json.loads((state_dir / paths.STATE_LATEST).read_text())
++
++
++def _states(index: dict) -> dict:
++    return {s["question_session_id"]: s["state"] for s in index["sessions"]}
++
++
++def test_rebuild_index_with_an_unanswered_session(empty_project: Path, fixtures_dir: Path):
++    """Case A: a PENDING session without ANS no longer emits answered_at: None."""
++    doc = json.loads((fixtures_dir / "qs-v2-eight-types.questions.json").read_text())
++    lifecycle.publish_session(empty_project, doc)
++    result = lifecycle.rebuild_index(empty_project)
++    index, latest = _views(empty_project)
++    assert result["latest"] == "QS-0001"
++    assert index["sessions"][0]["state"] == "PENDING"
++    assert "answered_at" not in index["sessions"][0]
++    assert (latest["latest"], latest["state"]) == ("QS-0001", "PENDING")
++
++
++def test_views_follow_ingestion_and_archive(answered_project: Path):
++    """Case B: after publish-ingestion + mark-session ARCHIVED both views are
++    schema-valid and carry the effective state; rebuild-index keeps it."""
++    root = answered_project
++    _ingest_and_archive(root)
++    index, latest = _views(root)
++    assert _states(index) == {"QS-0001": "ARCHIVED"}
++    assert index["counters"] == {"qs": 1, "ans": 1, "dec": 1, "apr": 0, "rsk": 0}
++    assert (latest["latest"], latest["state"], latest["answer_session"]) == \
++        ("QS-0001", "ARCHIVED", "ANS-0001")
++    codes = {d.code for d in reconcile(root).diagnostics.values()}
++    assert not codes & {"INDEX_CORRUPT", "QS_FOLDER_MISMATCH", "DECLARED_STATE_CONFLICT"}
++    lifecycle.rebuild_index(root)
++    index, latest = _views(root)
++    assert _states(index) == {"QS-0001": "ARCHIVED"}
++    assert latest["state"] == "ARCHIVED"
++
++
++def test_publish_session_moves_latest_and_rebuild_needs_no_manual_preservation(
++        answered_project: Path, fixtures_dir: Path):
++    """Case C: publishing a newer QS updates latest.json; rebuild-index then
++    preserves the current bytes itself instead of PRESERVATION_REQUIRED."""
++    from canonflow_hdc import legacy
++    root = answered_project
++    _ingest_and_archive(root)
++    newer = json.loads((fixtures_dir / "qs-v2-eight-types.questions.json").read_text())
++    newer.pop("question_session_id")
++    newer.pop("generated_at")
++    published = lifecycle.publish_session(root, newer)
++    assert published["question_session_id"] == "QS-0002"
++    index, latest = _views(root)
++    assert (latest["latest"], latest["state"]) == ("QS-0002", "PENDING")
++    assert index["latest"] == "QS-0002"
++    assert _states(index) == {"QS-0001": "ARCHIVED", "QS-0002": "PENDING"}
++    # an external writer leaves unpreserved bytes behind: rebuild still works
++    index_path = paths.state_dir(root) / paths.STATE_INDEX
++    external = index_path.read_bytes() + b"\n"
++    index_path.write_bytes(external)
++    assert not legacy.preservation_complete(root)
++    result = lifecycle.rebuild_index(root)
++    import hashlib
++    snapshot = paths.legacy_dir(root) / f"index.json.{hashlib.sha256(external).hexdigest()}.json"
++    assert snapshot.read_bytes() == external  # preserved before regenerating (§13)
++    index, latest = _views(root)
++    assert (result["latest"], latest["latest"]) == ("QS-0002", "QS-0002")
++    assert index["counters"]["qs"] == 2
++
++
++def test_rebuild_index_never_lowers_preserved_counters(answered_project: Path):
++    root = answered_project
++    (paths.state_dir(root) / paths.STATE_INDEX).write_text(json.dumps({
++        "sessions": [], "counters": {"qs": 7, "ans": 7, "dec": 32, "apr": 2, "rsk": 0}}))
++    lifecycle.rebuild_index(root)
++    index, _latest = _views(root)
++    assert index["counters"] == {"qs": 7, "ans": 7, "dec": 32, "apr": 2, "rsk": 0}
++    assert _states(index) == {"QS-0001": "ANSWERED"}
++
++
++def test_mark_session_archived_moves_qs_bytes_unchanged(answered_project: Path):
++    """Folder: ARCHIVED moves pending/ -> archived/ atomically, same bytes, so
++    the QS hash bound by ANS and lifecycle stays valid."""
++    root = answered_project
++    source = paths.sessions_dir(root, "pending") / "QS-0001.questions.json"
++    original = source.read_bytes()
++    _ingest_and_archive(root)
++    dest = paths.sessions_dir(root, "archived") / "QS-0001.questions.json"
++    assert not source.exists()
++    assert dest.read_bytes() == original
++    view = reconcile(root).sessions["QS-0001"]
++    assert (view.effective_state, view.evidence_status) == ("ARCHIVED", "confirmed")
++    assert view.qs_path.endswith("archived/QS-0001.questions.json")
++
++
++def test_mark_session_archived_refuses_a_different_archived_copy(answered_project: Path):
++    root = answered_project
++    record = {
++        "schema_version": 2, "record_id": "DEC-0001", "kind": "decision",
++        "title": "fixture decision", "decision": "incremental", "owner": "Fixture Owner",
++        "decided_at": "2026-09-21", "source": "QS-0001/ANS-0001",
++        "source_ref": {"question_session_id": "QS-0001", "answer_session_id": "ANS-0001",
++                       "question_ids": ["Q-SINGLE"]},
++    }
++    lifecycle.publish_ingestion(root, {
++        "question_session_id": "QS-0001", "answer_session_id": "ANS-0001",
++        "actor": "agent-instrument", "records": [record], "links": [],
++        "outcomes": [{"question_id": "Q-SINGLE", "record_ids": ["DEC-0001"]}]})
++    clash = paths.sessions_dir(root, "archived") / "QS-0001.questions.json"
++    clash.write_text('{"different": true}\n')
++    with pytest.raises(lifecycle.LifecycleError) as exc:
++        lifecycle.mark_session(root, {
++            "question_session_id": "QS-0001",
++            "event": {"state": "ARCHIVED", "actor": "agent-instrument", "reason": "completed"}})
++    assert (exc.value.code, exc.value.status) == ("ARCHIVE_DESTINATION_EXISTS", 409)
++    assert [e["state"] for e in lifecycle.load_lifecycle(root, "QS-0001")["events"]] == ["INGESTED"]
++    assert (paths.sessions_dir(root, "pending") / "QS-0001.questions.json").is_file()
++    assert clash.read_text() == '{"different": true}\n'
+diff --git a/prompts/13-answer-session-ingestion.md b/prompts/13-answer-session-ingestion.md
+index 77e402c..6d7a75f 100644
+--- a/prompts/13-answer-session-ingestion.md
++++ b/prompts/13-answer-session-ingestion.md
+@@ -19,8 +19,10 @@ TASK (method/15 ingestion rules, in order):
+      The input is a JSON FILE you prepared: QS id/hash, ANS id, records,
+      links, and one outcome per answered question (record_ids or
+      no_material_change_reason — your visible, auditable declaration).
+-  6. Archive via `mark-session` (ARCHIVED requires the INGESTED event);
+-     update index views; resume the blocked flow.
++  6. Archive via `mark-session` (ARCHIVED requires the INGESTED event); it
++     moves the QS from pending/ to archived/ with unchanged bytes and keeps
++     decision-state/index.json and latest.json current (no manual move or
++     rebuild-index needed); resume the blocked flow.
+   7. Re-ingestion retry accepts only identical already-published documents.
+ FAILURE: report the exact failing field/question and wait; never silently accept.
+ DONE: records exist, traceability links QS→ANS→DEC/APR/RSK written,
+diff --git a/schemas/decision-state.schema.yaml b/schemas/decision-state.schema.yaml
+index 6e5649e..d743af1 100644
+--- a/schemas/decision-state.schema.yaml
++++ b/schemas/decision-state.schema.yaml
+@@ -20,7 +20,7 @@ properties:
+       properties:
+         question_session_id: {type: string, pattern: "^QS-[0-9]{4}$", description: "Internal identity; descriptive file names only locate files."}
+         session_label: {type: string, description: "Optional presentation label; display text, never an ID or path component."}
+-        state: {type: string, enum: [PENDING, ANSWERED, INGESTED, ARCHIVED, CANCELLED, EXPIRED], description: "Declared state; the HDC effective state is derived from full evidence and may differ (diagnosed, not silently reconciled)."}
++        state: {type: string, enum: [PENDING, ANSWERED, INGESTED, ARCHIVED, CANCELLED, EXPIRED], description: "Effective state derived from the evidence chain (QS, ANS, lifecycle events) when it resolves the session; unresolved cases keep the state the index previously declared (diagnosed, not silently reconciled; never downgraded to PENDING). A v2 QS file always declares PENDING, its initial state (definition §5.2)."}
+         generated_at: {type: string}
+         answered_at: {type: string}
+         records: {type: array, items: {type: string}}

@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0044",
+  "kind": "decision",
+  "title": "Orden del bloque de producto: alta y panel del propietario → Telegram → publicación real (resuelve el conflicto de DEC-0038)",
+  "decision": "Respuesta a Q-PRODUCT-ORDER-RESOLVE «¿Qué orden queda vigente dentro del bloque de producto?»: `orden_comentario` — «El de mi comentario: alta y panel → Telegram → publicación real». Resuelve el conflicto transcrito en DEC-0038 entre el valor enviado y el comentario de ANS-0008. La sesión declaró que solo resuelve el orden; el resto del comentario de ANS-0008 queda transcrito literalmente en DEC-0038.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T05:11:57Z",
+  "source": "QS-0009/ANS-0009 Q-PRODUCT-ORDER-RESOLVE",
+  "source_ref": {
+    "question_session_id": "QS-0009",
+    "answer_session_id": "ANS-0009",
+    "question_ids": [
+      "Q-PRODUCT-ORDER-RESOLVE"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "orden_valor — El valor enviado: Telegram → alta y panel → publicación real"
+  ],
+  "affected_items": [
+    "DEC-0038",
+    "DEC-0037",
+    "DEC-0039",
+    "DEC-0041",
+    "DEC-0042"
+  ],
+  "expiry": "",
+  "comment": ""
+}

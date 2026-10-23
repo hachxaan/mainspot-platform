@@ -1,0 +1,32 @@
+{
+  "schema_version": 2,
+  "record_id": "APR-0001",
+  "kind": "approval",
+  "title": "MSP-COGNITIVE-JEV-ACTIVATION v1: conexión asesora y una petición sintética a TypeSafe aprobadas",
+  "decision": "Respuesta a Q-COGNITIVE-JEV-ACTIVATION «¿Autorizas esta conexión asesora y UNA petición sintética a TypeSafe con los límites del artefacto?»: `approve`, ligada al artefacto exacto MSP-COGNITIVE-JEV-ACTIVATION v1 (.canonflow/state/cognitive-jev-activation-proposal.json, sha256 04f3b42e4a88cc65d3774d0019480b2157c0041087a1fd8b0f844c677cbd8932). Alcance declarado por la pregunta: «Aprobar no autoriza implementar producto ni alterar contratos del framework.» Comentario literal del humano: «He configurado en .env las variable de entorno. Implementalas. Tambien agregalas al .env.example:\n\nJEV_ENABLED=\nJEV_PROVIDER=\nTYPESAFE_API_KEY=\nJEV_MODEL=\nJEV_SHADOW_MODE=»",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:23:36Z",
+  "source": "QS-0003/ANS-0003 Q-COGNITIVE-JEV-ACTIVATION",
+  "source_ref": {
+    "question_session_id": "QS-0003",
+    "answer_session_id": "ANS-0003",
+    "question_ids": [
+      "Q-COGNITIVE-JEV-ACTIVATION"
+    ]
+  },
+  "artifact_ref": "MSP-COGNITIVE-JEV-ACTIVATION v1",
+  "artifact_binding": {
+    "artifact_ref": "MSP-COGNITIVE-JEV-ACTIVATION v1",
+    "path": ".canonflow/state/cognitive-jev-activation-proposal.json",
+    "sha256": "04f3b42e4a88cc65d3774d0019480b2157c0041087a1fd8b0f844c677cbd8932"
+  },
+  "options_rejected": [],
+  "affected_items": [
+    "MSP-COGNITIVE-JEV-ACTIVATION v1",
+    ".canonflow/state/cognitive-jev-activation-proposal.json",
+    ".canonflow/cognitive/live-candidate.yaml",
+    ".env.example (JEV_* según comentario)"
+  ],
+  "expiry": "",
+  "comment": "He configurado en .env las variable de entorno. Implementalas. Tambien agregalas al .env.example:\n\nJEV_ENABLED=\nJEV_PROVIDER=\nTYPESAFE_API_KEY=\nJEV_MODEL=\nJEV_SHADOW_MODE="
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0048",
+  "kind": "decision",
+  "title": "Garage con un solo nodo aceptado para la etapa inicial",
+  "decision": "Respuesta a Q-S3-SINGLE-NODE «Garage en un solo nodo guarda una única copia de cada objeto. ¿Se acepta?»: `nodo_unico` — «Aceptar un solo nodo: la copia local y la remota son las dos copias independientes». Condiciones declaradas en Q-NOTES (DEC-0049).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T09:16:37Z",
+  "source": "QS-0011/ANS-0011 Q-S3-SINGLE-NODE",
+  "source_ref": {
+    "question_session_id": "QS-0011",
+    "answer_session_id": "ANS-0011",
+    "question_ids": [
+      "Q-S3-SINGLE-NODE"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "segundo_nodo_antes_reales — Un nodo ahora; un segundo nodo en otra ubicación antes del primer negocio real"
+  ],
+  "affected_items": [
+    "DEC-0045",
+    "DEC-0047",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "DEC-0049"
+  ],
+  "expiry": "",
+  "comment": ""
+}

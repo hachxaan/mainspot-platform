@@ -1,0 +1,163 @@
+{
+  "schema_version": 2,
+  "question_session_id": "QS-0010",
+  "session_label": "Instrumento HDC (HDC-0006) y custodia de respaldos",
+  "title": "Elegir dos comportamientos del instrumento HDC antes de integrarlos en CanonFlow y decidir dónde se guardan los respaldos y quién custodia su clave",
+  "generated_at": "2026-10-22T06:23:24Z",
+  "state": "PENDING",
+  "ui_language": "es",
+  "risk_tier": 2,
+  "affected_loop": "cross_cutting",
+  "intervention_reason": "(1) La corrección HDC-0006 del instrumento HDC (vistas de compatibilidad y cierre de sesiones tras la ingestión) está lista como parche para CanonFlow, salvo dos comportamientos que cambian su contrato y que solo tú puedes elegir (puntos 2 y 6 de la ficha). El parche implementa la opción recomendada de cada uno y no se integrará sin esta decisión. (2) Los respaldos diarios cifrados (DEC-0026) ya corren con su prueba mensual de restauración, y la retención global (DEC-0021..DEC-0027) está desplegada; pero los respaldos y su clave viven en el mismo equipo que la base de datos. El destino fuera del equipo y la custodia de la clave no están decididos.",
+  "decision_impact": "Q-HDC-INDEX-STATE y Q-HDC-ARCHIVE fijan cómo queda la ficha HDC-0006 que se integrará en canonflow-keystone; MainSpot no modifica el checkout de CanonFlow y su script temporal ya aplica las opciones recomendadas (se ajustará si eliges la otra). Q-BACKUP-DESTINATION y Q-BACKUP-KEY fijan dónde se copian los respaldos y quién guarda la clave; no cambian la frecuencia diaria, la conservación de 14 días ni la prueba mensual de DEC-0026. Nada de esta sesión cambia el orden de trabajo vigente (DEC-0044) ni el alcance sintético de Jev.",
+  "initial_instructions": "Cada pregunta incluye los datos necesarios; las rutas de evidencia son opcionales. Las recomendaciones no son vinculantes y nada va preseleccionado. Elige la opción que refleje tu decisión: si un comentario contradice la opción elegida, la pregunta quedará en conflicto y se te volverá a preguntar.",
+  "topics": [
+    {
+      "topic_id": "hdc",
+      "title": "Instrumento HDC: índice de decisiones y carpeta de sesiones cerradas"
+    },
+    {
+      "topic_id": "respaldos",
+      "title": "Respaldos: destino fuera del equipo y custodia de la clave"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-HDC-INDEX-STATE",
+      "type": "single_choice",
+      "topic_id": "hdc",
+      "affected_loop": "cross_cutting",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Qué significa el campo «state» del índice de decisiones de la consola?",
+      "short_description": "El esquema dice «estado declarado», pero el envío ya escribe el estado efectivo y la consola lo usa para mostrar el avance.",
+      "full_explanation": "El índice `decision-state/index.json` lista cada sesión con un campo `state`.\n\nHoy hay dos lecturas incompatibles:\n- El esquema lo describe como el estado declarado en el archivo de la sesión. En las sesiones v2 ese archivo no cambia nunca después de publicarse, así que siempre declara PENDING (§5.2: ese PENDING es inicial, no operacional).\n- El envío de respuestas escribe ANSWERED en el índice (estado efectivo) y la consola usa ese valor para mostrar el avance.\n\nConsecuencia observada en MainSpot: `rebuild-index` reescribía PENDING en sesiones ya respondidas y archivadas (QS-0001..0003). MainSpot lo corrige con un script temporal después de cada ingestión.\n\nOpción A (la del parche): `state` es el estado efectivo que resulta de la evidencia (respuestas, ingestión, archivo); en los casos que la evidencia no resuelve se conserva lo que el índice ya decía y nunca se degrada a PENDING. Se corrige la descripción del esquema.\nOpción B: `state` sigue siendo el estado declarado. El envío deja de escribir ANSWERED, el índice mostraría PENDING en todas las sesiones v2 aunque estén respondidas o archivadas, y hay que quitar ese uso de la consola y de cualquier otro consumidor.\n\nEvidencia: `.canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md` (causa raíz, punto 1, y decisiones pendientes, punto 2).",
+      "why_this_matters": "Fija el contrato del índice que usarán todas las instalaciones nuevas de CanonFlow.",
+      "recommended_option": "efectivo",
+      "options": [
+        {
+          "value": "efectivo",
+          "label": "Estado efectivo (resultado de la evidencia); se corrige la descripción del esquema",
+          "recommended_when": "si quieres que el índice y la consola muestren el avance real de cada sesión",
+          "impact": "envío, reconstrucción del índice y consola quedan coherentes; es lo que ya hacen el parche y el script de MainSpot",
+          "risk": "un consumidor externo que lea `state` como valor declarado vería otro significado (no se conoce ninguno)"
+        },
+        {
+          "value": "declarado",
+          "label": "Estado declarado en el archivo de la sesión, como dice hoy el esquema",
+          "impact": "el índice mostraría PENDING en todas las sesiones v2; el avance tendría que leerse de otra fuente",
+          "risk": "hay que rehacer esa parte del parche y retirar el uso actual de la consola"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-HDC-ARCHIVE",
+      "type": "single_choice",
+      "topic_id": "hdc",
+      "affected_loop": "cross_cutting",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 1,
+      "title": "Al archivar una sesión, ¿se mueve su archivo de pending/ a archived/?",
+      "short_description": "Hoy `mark-session ARCHIVED` no mueve el archivo, `reconcile` avisa QS_FOLDER_MISMATCH y MainSpot lo mueve a mano.",
+      "full_explanation": "Después de ingerir una sesión, `mark-session ARCHIVED` registra el archivo de la sesión en el ciclo de vida, pero deja su archivo en `decision-sessions/pending/`. Entonces `reconcile` avisa QS_FOLDER_MISMATCH. Ningún instrumento lo mueve; en MainSpot se movieron a mano las nueve sesiones QS-0001..QS-0009.\n\nOpción A (la del parche): `mark-session ARCHIVED` mueve el archivo de `pending/` a `archived/` de forma atómica (enlace duro y borrado del original; nunca sobrescribe) y sin cambiar sus bytes, así que los hashes de las respuestas y del ciclo de vida siguen siendo válidos. Coincide con la tarjeta del skill HDC («move ingested sessions to archived/») y con lo que MainSpot hace a mano.\nOpción B: no se mueve nada y `reconcile` deja de avisar QS_FOLDER_MISMATCH en sesiones v2 (§4: la ubicación no determina el estado). La carpeta `archived/` deja de usarse en v2; para saber si una sesión está cerrada hay que mirar el índice o el ciclo de vida.\n\nEvidencia: `.canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md` (causa raíz, punto 6).",
+      "why_this_matters": "Decide si la carpeta de una sesión indica que está cerrada y elimina un paso manual de cada ingestión.",
+      "recommended_option": "mover",
+      "options": [
+        {
+          "value": "mover",
+          "label": "Sí: mark-session ARCHIVED mueve el archivo a archived/ sin cambiar sus bytes",
+          "recommended_when": "si quieres que la carpeta siga indicando qué sesiones están cerradas",
+          "impact": "desaparece el paso manual y el aviso QS_FOLDER_MISMATCH; los hashes siguen válidos",
+          "risk": "una operación de archivo más dentro del instrumento (atómica y sin sobrescribir)"
+        },
+        {
+          "value": "no_mover",
+          "label": "No: nada se mueve y reconcile deja de avisar en sesiones v2",
+          "impact": "la carpeta deja de significar nada en v2; las sesiones ya movidas en MainSpot se quedan donde están",
+          "risk": "hay que rehacer esa parte del parche y actualizar la tarjeta del skill HDC"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-BACKUP-DESTINATION",
+      "type": "single_choice",
+      "topic_id": "respaldos",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Dónde se guarda una copia de los respaldos fuera de este equipo?",
+      "short_description": "Hoy los respaldos cifrados están solo en el mismo equipo que la base de datos.",
+      "full_explanation": "Estado actual (DEC-0026):\n- Respaldo diario a las 03:15 (hora local) de la base `mainspot-db`, cifrado con AES-256 y una clave aleatoria; se conservan 14 días.\n- Prueba de restauración mensual (primer domingo, 04:00) que además vuelve a anonimizar las bajas (DEC-0027). Ambos temporizadores quedaron habilitados el 2026-10-22 y su primera ejecución fue correcta.\n- Los respaldos están en `~/.local/share/mainspot/backups` del mismo equipo que ejecuta los contenedores de la aplicación y de la base de datos. Hoy pesan unos 120 KB cada uno.\n- La plataforma solo tiene los dos negocios sintéticos; no hay datos de negocios reales.\n\nSi el equipo se pierde o falla su disco, hoy se pierden a la vez la base de datos y todos sus respaldos.\n\nEsta pregunta solo elige el destino. Las credenciales o el montaje que haga falta se prepararán después; el agente no crea cuentas ni contrata servicios.\n\nEvidencia: `scripts/ops/backup/README.md` (§7 y §8) y `evidence/remediation/R2-retention/06-backup-timers.txt`.",
+      "why_this_matters": "Decide si los datos sobreviven a la pérdida del equipo y qué cuenta o dispositivo nuevo hay que custodiar.",
+      "recommended_option": "solo_equipo_hasta_reales",
+      "options": [
+        {
+          "value": "solo_equipo_hasta_reales",
+          "label": "Solo en este equipo mientras no haya negocios reales; el destino externo se decide antes del primer negocio real",
+          "recommended_when": "si mientras solo existan los negocios sintéticos prefieres no añadir cuentas ni costos",
+          "impact": "nada nuevo que custodiar ahora; queda como condición previa para recibir el primer negocio real",
+          "risk": "hasta entonces, perder el equipo pierde la base y sus respaldos (hoy solo datos sintéticos)"
+        },
+        {
+          "value": "almacenamiento_objetos",
+          "label": "Copia cifrada diaria en almacenamiento de objetos en la nube compatible con S3 (el proveedor se elige después)",
+          "impact": "las copias sobreviven a la pérdida del equipo; requiere una cuenta, una credencial que solo pueda escribir y un costo mensual pequeño",
+          "risk": "una credencial nueva que custodiar; las copias cifradas salen del equipo"
+        },
+        {
+          "value": "medio_externo",
+          "label": "Copia en un disco externo o NAS bajo tu control",
+          "impact": "sin terceros; la copia se hace cuando el medio está conectado",
+          "risk": "si el medio está en el mismo lugar que el equipo, un incidente local afecta a ambos"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-BACKUP-KEY",
+      "type": "single_choice",
+      "topic_id": "respaldos",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Quién guarda una copia de la clave de los respaldos?",
+      "short_description": "Sin la clave, ningún respaldo se puede leer; hoy solo existe en este equipo.",
+      "full_explanation": "La clave de cifrado se generó en la primera ejecución y está en `~/.config/mainspot/backup/backup.key` (permisos 0600, solo tu usuario). Es la única copia.\n\nSin esa clave ningún respaldo se puede descifrar, aunque exista una copia fuera del equipo. El procedimiento documentado para limpiar el entorno local (`rm -rf ~/.config/mainspot`) también la borra.\n\nLa clave nunca se muestra en el chat ni en informes: si eliges guardar una copia, la haces tú desde ese archivo.\n\nEvidencia: `scripts/ops/backup/README.md` y `scripts/deploy/README-deploy-lxd.md` (sección de respaldos).",
+      "why_this_matters": "Decide si los respaldos siguen siendo legibles cuando se pierde el equipo y quién podría leerlos.",
+      "recommended_option": "copia_offline_propietario",
+      "options": [
+        {
+          "value": "copia_offline_propietario",
+          "label": "Yo guardo una copia de la clave fuera del equipo (gestor de contraseñas o papel en un lugar seguro)",
+          "recommended_when": "si quieres poder restaurar aunque se pierda el equipo, sin depender de un proveedor",
+          "impact": "los respaldos copiados fuera del equipo siguen siendo legibles; el agente no conserva copias de la clave",
+          "risk": "si esa copia se filtra, quien tenga un respaldo puede leerlo; cambiar la clave obliga a generar respaldos nuevos"
+        },
+        {
+          "value": "solo_equipo",
+          "label": "La clave vive solo en este equipo",
+          "impact": "nada más que custodiar",
+          "risk": "si se pierde el equipo o se borra ~/.config/mainspot, todos los respaldos quedan ilegibles, también las copias externas"
+        },
+        {
+          "value": "gestor_secretos",
+          "label": "En un gestor de secretos del proveedor que se elija para los respaldos",
+          "impact": "custodia gestionada por el proveedor",
+          "risk": "si el mismo proveedor guarda los respaldos y la clave, una sola cuenta comprometida expone ambos"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NOTES",
+      "type": "free_text",
+      "topic_id": "respaldos",
+      "required": false,
+      "title": "Notas para el registro",
+      "short_description": "Opcional. Lo que escribas se transcribe literalmente en el registro de decisión; no sustituye a las opciones elegidas.",
+      "options": []
+    }
+  ]
+}

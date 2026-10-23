@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0007",
+  "kind": "decision",
+  "title": "Q-NOPLAN: se confirma DENY en creaciones sin plan; comentario sobre cuenta Trial",
+  "decision": "Respuesta a Q-NOPLAN «Política sin plan: DENY 403 subscription_required en toda operación que CREA recursos; lecturas permitidas»: opción `confirm` — «Confirmar DENY en creaciones». Comentario literal del humano: «Por lo menos debe tener creada una cuenta Trial»",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:01:48Z",
+  "source": "QS-0001/ANS-0001 Q-NOPLAN",
+  "source_ref": {
+    "question_session_id": "QS-0001",
+    "answer_session_id": "ANS-0001",
+    "question_ids": [
+      "Q-NOPLAN"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "override — Override: permitir creaciones con plan 'libre' automático"
+  ],
+  "affected_items": [
+    "FR-0010",
+    "BR-0006",
+    "DI-0002",
+    "política sin plan PR-02 (403 subscription_required)"
+  ],
+  "expiry": "",
+  "comment": "Por lo menos debe tener creada una cuenta Trial"
+}

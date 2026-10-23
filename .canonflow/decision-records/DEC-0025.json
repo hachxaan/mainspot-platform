@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0025",
+  "kind": "decision",
+  "title": "Ejecución de borrados por plazo: automática diaria con informe auditado",
+  "decision": "Respuesta a Q-RET-EXECUTION «¿Cómo se ejecutan los borrados por plazo?»: `automatica_diaria` — «Automática diaria para toda la plataforma, con informe auditado».",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T23:14:28Z",
+  "source": "QS-0006/ANS-0006 Q-RET-EXECUTION",
+  "source_ref": {
+    "question_session_id": "QS-0006",
+    "answer_session_id": "ANS-0006",
+    "question_ids": [
+      "Q-RET-EXECUTION"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "automatica_con_revision — Automática semanal precedida de un dry-run revisado por administración",
+    "manual — Manual por tenant (como hoy)"
+  ],
+  "affected_items": [
+    "src/analytics/retention.ts",
+    "retention_global"
+  ],
+  "expiry": "",
+  "comment": ""
+}

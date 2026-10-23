@@ -1,0 +1,47 @@
+diff --git a/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js b/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js
+--- a/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js
++++ b/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js
+@@ -189,7 +189,9 @@
+       });
+       qEl.append(comment);
+     }
+-    qEl.append(el("p", { class: "field-error", role: null, "data-error": question.question_id }));
++    const fieldError = el("p", { class: "field-error", role: null, "data-error": question.question_id });
++    qEl.append(fieldError);
++    qEl.addEventListener("input", () => { fieldError.textContent = ""; });
+     box.append(qEl);
+   }
+ }
+@@ -303,6 +305,9 @@
+     const confirm = el("input", { type: "checkbox", id: `confirm-${question.question_id}` });
+     confirm.addEventListener("change", () => {
+       state.confirmations[question.question_id] = confirm.checked;
++      if (confirm.checked && !state.answers.has(question.question_id)) {
++        state.answers.set(question.question_id, [...items]);
++      }
+       onChange();
+     });
+     wrap.append(list, el("label", { class: "option" }, confirm, el("span", { text: t("order_confirm") })));
+@@ -367,6 +372,9 @@
+   }
+   sendBtn.addEventListener("click", async () => {
+     errorLine.textContent = "";
++    for (const holder of sendCard.parentElement?.querySelectorAll("[data-error]") ?? []) {
++      holder.textContent = "";
++    }
+     sendBtn.disabled = true;
+     try {
+       const answers = [];
+@@ -391,7 +399,11 @@
+       sendCard.replaceChildren(card(t("sec7"), el("p", { class: "muted", text: t("ws_sent_body") })));
+       announce(t("ws_sent_title"));
+     } catch (error) {
+-      errorLine.textContent = t(`err_${error.status}`) || error.message || t("err_generic");
++      errorLine.textContent = [
++        t(`err_${error.status}`) || t("err_generic"),
++        error.message,
++        ...(error.fieldErrors ?? []).map((fieldError) => fieldError.message),
++      ].filter(Boolean).join(" · ");
+       if (error.status === 422 && error.fieldErrors.length) {
+         for (const fieldError of error.fieldErrors) {
+           const qid = String(fieldError.path ?? "").match(/Q-[A-Z0-9-]+/)?.[0];

@@ -1,0 +1,6 @@
+# Synthetic verifier carrier only; not MainSpot canon or a human decision.
+items:
+- id: FR-9001
+  canon_version: synthetic-p0/1.0.0
+  statement: Visible edits require human approval.
+  state: VERIFIED

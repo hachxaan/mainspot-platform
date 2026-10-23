@@ -1,0 +1,31 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0009
+skill_id: canonflow-human-decision-console
+mode: generate
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  Prepare and publish QS-0011 (v2, es), requested by the owner on 2026-10-22 together
+  with the backup object-storage contract v1 (MainSpot ↔ Garage S3 on Hostinger KVM 4):
+  the four material decisions the contract must not promote without a human answer —
+  the concrete off-host destination (Garage on KVM 4, client-side encryption, key never
+  on KVM 4), who enforces the 14-day expiry (service lifecycle vs MainSpot deletes),
+  the deletion risk of Garage's write permission (no object lock/versioning), and the
+  single-node durability risk. Publication, compatibility views and the pending_human
+  mirror run with mainspot-hdc.service stopped (HDC-0007). No answer is written or inferred.
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 088c687e53fd8aab5dac23e7d1d0d7790c678030
+inputs:
+  - "docs/contracts/backup-object-storage/v1/CONTRACT.md (§2, §8.1, §9, §17) and VERIFICATION.md (§5, §7)"
+  - ".canonflow/decision-records/DEC-0026.json, DEC-0027.json (approved backup and exit/anonymization requirements)"
+  - ".canonflow/decision-sessions/pending/QS-0010.questions.json (Q-BACKUP-DESTINATION, Q-BACKUP-KEY still unanswered)"
+  - "Garage v1.2.0 and v2.4.1 lab observations (permission matrix, 501 for versioning/object lock, lifecycle with write permission)"
+  - "canonflow-keystone@5e3dc307a4089f462b9742b76fd002cf910102fa decision-console/app/canonflow_hdc (profiles, validation, publish-session)"
+expected_outputs:
+  - .canonflow/decision-sessions/pending/QS-0011.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow/skill-runs/RUN-0009.skill-report.yaml
+created_at: "2026-10-22T08:31:00Z"

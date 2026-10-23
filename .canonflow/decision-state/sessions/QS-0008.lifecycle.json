@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "question_session_id": "QS-0008",
+  "question_sha256": "sha256:092ecaa2d6f0c91c07be4e096181a6df7f64c964966b56a80e973a76b3263fbe",
+  "events": [
+    {
+      "state": "INGESTED",
+      "at": "2026-10-22T04:47:35Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0006",
+      "reason": "answers ingested; records published (RUN-0006)",
+      "answer_session_id": "ANS-0008",
+      "records": [
+        "DEC-0033",
+        "DEC-0034",
+        "DEC-0035",
+        "DEC-0036",
+        "DEC-0037",
+        "DEC-0038",
+        "DEC-0039",
+        "DEC-0040",
+        "DEC-0041",
+        "DEC-0042",
+        "DEC-0043"
+      ],
+      "outcomes": [
+        {
+          "question_id": "Q-GATE-RISK-DEF",
+          "record_ids": [
+            "DEC-0033"
+          ]
+        },
+        {
+          "question_id": "Q-GATE-EVIDENCE",
+          "record_ids": [
+            "DEC-0034"
+          ]
+        },
+        {
+          "question_id": "Q-LABEL-H0165",
+          "record_ids": [
+            "DEC-0035"
+          ]
+        },
+        {
+          "question_id": "Q-LABEL-H0177",
+          "record_ids": [
+            "DEC-0036"
+          ]
+        },
+        {
+          "question_id": "Q-PRODUCT-PLACEMENT",
+          "record_ids": [
+            "DEC-0037"
+          ]
+        },
+        {
+          "question_id": "Q-PRODUCT-ORDER",
+          "record_ids": [
+            "DEC-0038"
+          ]
+        },
+        {
+          "question_id": "Q-ALTA-MODE",
+          "record_ids": [
+            "DEC-0039"
+          ]
+        },
+        {
+          "question_id": "Q-UX-PROCESS",
+          "record_ids": [
+            "DEC-0040"
+          ]
+        },
+        {
+          "question_id": "Q-TELEGRAM-MODEL",
+          "record_ids": [
+            "DEC-0041"
+          ]
+        },
+        {
+          "question_id": "Q-HOSTINGER-PUBLISH",
+          "record_ids": [
+            "DEC-0042"
+          ]
+        },
+        {
+          "question_id": "Q-NOTES",
+          "record_ids": [
+            "DEC-0043"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "from": "ANS-0008",
+          "to": "QS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        },
+        {
+          "from": "DEC-0033",
+          "to": "ANS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        },
+        {
+          "from": "DEC-0034",
+          "to": "ANS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        },
+        {
+          "from": "DEC-0035",
+          "to": "ANS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        },
+        {
+          "from": "DEC-0036",
+          "to": "ANS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        },
+        {
+          "from": "DEC-0037",
+          "to": "ANS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        },
+        {
+          "from": "DEC-0038",
+          "to": "ANS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        },
+        {
+          "from": "DEC-0039",
+          "to": "ANS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        },
+        {
+          "from": "DEC-0040",
+          "to": "ANS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        },
+        {
+          "from": "DEC-0041",
+          "to": "ANS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        },
+        {
+          "from": "DEC-0042",
+          "to": "ANS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        },
+        {
+          "from": "DEC-0043",
+          "to": "ANS-0008",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-22T04:41:16Z"
+        }
+      ]
+    },
+    {
+      "state": "ARCHIVED",
+      "at": "2026-10-22T04:47:35Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0006",
+      "reason": "ingestion complete (RUN-0006): every answered question has a published DEC outcome; Q-PRODUCT-ORDER conflict carried to QS-0009; session closed"
+    }
+  ]
+}

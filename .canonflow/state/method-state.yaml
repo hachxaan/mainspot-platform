@@ -12,6 +12,5 @@ pointers:
   source_register: .canonflow/sources/source-register.yaml
   upstream_canon: /home/administrador/codeart/mainspoot/mainspot-documentation/docs/canonical/00-INDEX.md
 pending_human:
-- QS-0001
-- QS-0002
-updated_at: '2026-09-21T21:02:19Z'
+- QS-0012
+updated_at: '2026-10-22T17:04:03Z'

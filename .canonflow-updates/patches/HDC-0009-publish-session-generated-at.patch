@@ -1,0 +1,122 @@
+diff --git a/decision-console/app/canonflow_hdc/lifecycle.py b/decision-console/app/canonflow_hdc/lifecycle.py
+index 8b0b800..18b3e42 100644
+--- a/decision-console/app/canonflow_hdc/lifecycle.py
++++ b/decision-console/app/canonflow_hdc/lifecycle.py
+@@ -11,6 +11,7 @@ from __future__ import annotations
+ 
+ import datetime as _dt
+ import json
++import re
+ from pathlib import Path
+ 
+ from . import artifacts as art
+@@ -33,6 +34,31 @@ def _now() -> str:
+     return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+ 
+ 
++# A QS cannot have been generated after it is published; small clock skew
++# between the preparing agent and the publisher is tolerated (§5.2, §7.2 step 8).
++GENERATED_AT_FUTURE_TOLERANCE_S = 120
++_RFC3339_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|\+00:00)$")
++
++
++def _check_generated_at(value) -> None:
++    """New sessions declare RFC 3339 UTC, never later than their publication."""
++    if not isinstance(value, str) or not _RFC3339_UTC.match(value):
++        raise LifecycleError("GENERATED_AT_INVALID",
++                             f"generated_at {value!r} is not an RFC 3339 UTC timestamp "
++                             "(e.g. 2026-10-22T04:47:35Z); omit it to let publish-session stamp it")
++    try:
++        when = _dt.datetime.fromisoformat(value)  # Python >= 3.11 accepts "Z"
++    except ValueError:
++        raise LifecycleError("GENERATED_AT_INVALID",
++                             f"generated_at {value!r} is not a valid date-time") from None
++    now = _dt.datetime.now(_dt.timezone.utc)
++    if (when - now).total_seconds() > GENERATED_AT_FUTURE_TOLERANCE_S:
++        raise LifecycleError("GENERATED_AT_FUTURE",
++                             f"generated_at {value} is later than the publication clock "
++                             f"({now.strftime('%Y-%m-%dT%H:%M:%SZ')}, tolerance "
++                             f"{GENERATED_AT_FUTURE_TOLERANCE_S}s); it would distort latest")
++
++
+ def lifecycle_path(project_root: Path, qs_id: str) -> Path:
+     return paths.state_sessions_dir(project_root) / f"{qs_id}.lifecycle.json"
+ 
+@@ -369,6 +395,10 @@ def publish_session(project_root: Path, input_doc: dict, *, id_hint: str | None
+     if input_doc.get("question_session_id") is None:
+         input_doc = dict(input_doc)
+         input_doc["question_session_id"] = _allocate_qs_id(project_root)
++    if input_doc.get("generated_at") is None:
++        input_doc = dict(input_doc)
++        input_doc["generated_at"] = _now()  # the publication clock (RFC 3339 UTC)
++    _check_generated_at(input_doc["generated_at"])
+     profile, errors = profiles.validate_document(input_doc, "question-session")
+     if profile != "v2":
+         raise LifecycleError("PROFILE_UNSUPPORTED",
+diff --git a/decision-console/app/tests/test_submission_lifecycle.py b/decision-console/app/tests/test_submission_lifecycle.py
+index 8a7acee..6ae8070 100644
+--- a/decision-console/app/tests/test_submission_lifecycle.py
++++ b/decision-console/app/tests/test_submission_lifecycle.py
+@@ -458,3 +458,62 @@ def test_external_answer_import_without_reinterpretation(empty_project: Path, fi
+     with pytest.raises(lifecycle.LifecycleError) as exc:
+         lifecycle.import_answer(root, conflict)
+     assert exc.value.code == "ANSWER_EXISTS"
++
++
++# ---------------------------------------------------------------------------
++# publish-session: generated_at is the publication clock, never the future
++# ---------------------------------------------------------------------------
++
++def _prepared_qs(fixtures_dir: Path, **changes) -> dict:
++    doc = json.loads((fixtures_dir / "qs-v2-eight-types.questions.json").read_text())
++    doc.pop("question_session_id", None)
++    for key, value in changes.items():
++        if value is None:
++            doc.pop(key, None)
++        else:
++            doc[key] = value
++    return doc
++
++
++def _utc(offset_s: int) -> str:
++    import datetime as dt
++    moment = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=offset_s)
++    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
++
++
++def test_publish_session_stamps_missing_generated_at(empty_project: Path, fixtures_dir: Path):
++    import datetime as dt
++    before = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
++    result = lifecycle.publish_session(empty_project, _prepared_qs(fixtures_dir, generated_at=None))
++    after = dt.datetime.now(dt.timezone.utc)
++    published = json.loads((empty_project / result["path"]).read_text())
++    stamped = published["generated_at"]
++    assert stamped.endswith("Z") and len(stamped) == 20  # RFC 3339 UTC, seconds
++    assert before <= dt.datetime.fromisoformat(stamped) <= after
++
++
++@pytest.mark.parametrize("offset_s", [-86400, 0, 60])
++def test_publish_session_accepts_past_and_skewed_generated_at(empty_project: Path, fixtures_dir: Path,
++                                                              offset_s: int):
++    value = _utc(offset_s)
++    result = lifecycle.publish_session(empty_project, _prepared_qs(fixtures_dir, generated_at=value))
++    assert json.loads((empty_project / result["path"]).read_text())["generated_at"] == value
++
++
++def test_publish_session_rejects_future_generated_at(empty_project: Path, fixtures_dir: Path):
++    """RUN-0006/QS-0009: a prepared timestamp minutes ahead of publication
++    distorted latest (§7.2 step 8); nothing may be written."""
++    with pytest.raises(lifecycle.LifecycleError) as exc:
++        lifecycle.publish_session(empty_project, _prepared_qs(fixtures_dir, generated_at=_utc(145)))
++    assert (exc.value.code, exc.value.status) == ("GENERATED_AT_FUTURE", 422)
++    assert not list(paths.sessions_dir(empty_project, "pending").iterdir())
++
++
++@pytest.mark.parametrize("value", ["2026-10-22 04:50:00", "2026-10-22T04:50:00+02:00",
++                                   "2026-13-40T04:50:00Z", "22/10/2026", 1761108600])
++def test_publish_session_rejects_non_rfc3339_utc_generated_at(empty_project: Path, fixtures_dir: Path,
++                                                              value):
++    with pytest.raises(lifecycle.LifecycleError) as exc:
++        lifecycle.publish_session(empty_project, _prepared_qs(fixtures_dir, generated_at=value))
++    assert (exc.value.code, exc.value.status) == ("GENERATED_AT_INVALID", 422)
++    assert not list(paths.sessions_dir(empty_project, "pending").iterdir())

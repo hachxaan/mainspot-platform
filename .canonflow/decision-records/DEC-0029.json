@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0029",
+  "kind": "decision",
+  "title": "D2 — Jev no disponible, con error o sin presupuesto: clasificador determinista como respaldo, marcado",
+  "decision": "Respuesta a Q-JEV-FALLBACK «D2 — En primary, ¿qué hacer si Jev no responde, falla o se agota el presupuesto?»: `determinista_respaldo` — «Usar el clasificador determinista como respaldo, marcado como tal». Punto de decisión de MSP-JEV-CLASSIFIER-MODES v1 (APR-0002).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T00:47:02Z",
+  "source": "QS-0007/ANS-0007 Q-JEV-FALLBACK",
+  "source_ref": {
+    "question_session_id": "QS-0007",
+    "answer_session_id": "ANS-0007",
+    "question_ids": [
+      "Q-JEV-FALLBACK"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "aclaracion — Responder que se reintente más tarde, sin acción",
+    "escalar_humano — Pasar la solicitud a la cola de aprobación humana"
+  ],
+  "affected_items": [
+    "APR-0002",
+    "DEC-0019"
+  ],
+  "expiry": "",
+  "comment": ""
+}

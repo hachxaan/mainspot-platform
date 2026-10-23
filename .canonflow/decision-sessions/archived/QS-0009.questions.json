@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "question_session_id": "QS-0009",
+  "session_label": "Aclaración de ANS-0008: orden del bloque de producto",
+  "title": "Aclarar el orden del bloque de producto (valor y comentario de ANS-0008 no coinciden)",
+  "generated_at": "2026-10-22T04:50:00Z",
+  "state": "PENDING",
+  "ui_language": "es",
+  "risk_tier": 1,
+  "affected_loop": "implementation_loop",
+  "intervention_reason": "En QS-0008, Q-PRODUCT-ORDER se envió con Telegram en primer lugar, pero el comentario confirma otro orden, con el alta y el panel en primer lugar. DEC-0038 transcribe ambos; el agente no puede elegir entre ellos.",
+  "decision_impact": "Se registrará un DEC con el orden elegido para el bloque de producto. Ese bloque empieza después de TOCTOU y de la retención global (DEC-0037), así que esta respuesta no cambia el trabajo inmediato. Esta sesión solo resuelve el orden. El resto de tu comentario en ANS-0008 (desarrollo en paralelo, experiencia objetivo y criterio de MVP completo) no depende del orden y queda transcrito literalmente en DEC-0038.",
+  "initial_instructions": "Una sola pregunta. La recomendación no es vinculante y no va preseleccionada. Elige la opción que refleje tu decisión; si añades un comentario, que no contradiga la opción.",
+  "topics": [
+    {
+      "topic_id": "producto",
+      "title": "Orden del bloque de producto"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-PRODUCT-ORDER-RESOLVE",
+      "type": "single_choice",
+      "topic_id": "producto",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 1,
+      "title": "¿Qué orden queda vigente dentro del bloque de producto?",
+      "short_description": "El valor enviado en ANS-0008 y tu comentario indican órdenes distintos.",
+      "full_explanation": "Valor enviado (orden confirmado en la consola):\n1. telegram — Alta del canal de Telegram (bot, webhook y vinculación chat↔negocio)\n2. alta_panel — Alta del negocio y panel del propietario\n3. publicacion — Publicación real de sitios\n\nOrden escrito en tu comentario («Confirmo el orden: …»):\n1. Alta del negocio y panel del propietario.\n2. Canal bidireccional de Telegram con vinculación segura.\n3. Publicación real de sitios.\n\nLa consola mostró inicialmente el orden alta y panel → Telegram → publicación. El valor enviado tiene Telegram movido al primer lugar.\n\nDependencia: la vinculación de Telegram (DEC-0041) une un chat con el propietario de un negocio que ya existe. Con el orden del valor, Telegram se construye antes que el alta asistida (DEC-0039). Hasta que exista el alta, solo se pueden vincular negocios creados por la administración con las herramientas actuales.\n\nEn ambas opciones el bloque empieza después de TOCTOU y de la retención global (DEC-0037). Además, el panel y el alta pasan antes por un diseño aprobado en el HDC (DEC-0040).",
+      "why_this_matters": "Fija por dónde empieza el bloque de producto; un DEC no puede apoyarse en una respuesta contradictoria.",
+      "recommended_option": "orden_comentario",
+      "options": [
+        {
+          "value": "orden_comentario",
+          "label": "El de mi comentario: alta y panel → Telegram → publicación real",
+          "recommended_when": "si el comentario expresa tu intención y el valor quedó así por error",
+          "impact": "Telegram se vincula a negocios dados de alta por el flujo asistido",
+          "risk": "ninguno adicional"
+        },
+        {
+          "value": "orden_valor",
+          "label": "El valor enviado: Telegram → alta y panel → publicación real",
+          "impact": "el canal de Telegram llega antes",
+          "risk": "hasta que exista el alta, la vinculación solo cubre negocios creados por la administración"
+        }
+      ]
+    }
+  ]
+}

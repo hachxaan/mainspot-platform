@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0046",
+  "kind": "decision",
+  "title": "Expiración remota a los 14 días: la aplica el servicio del KVM 4; MainSpot no borra objetos del destino S3",
+  "decision": "Respuesta a Q-S3-RETENTION-ENFORCEMENT «¿Quién borra los respaldos remotos al cumplir 14 días?»: `ciclo_vida_servicio` — «El servicio: regla de ciclo de vida de 14 días en el bucket; MainSpot no borra». Condiciones declaradas en Q-NOTES (DEC-0049).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T09:16:37Z",
+  "source": "QS-0011/ANS-0011 Q-S3-RETENTION-ENFORCEMENT",
+  "source_ref": {
+    "question_session_id": "QS-0011",
+    "answer_session_id": "ANS-0011",
+    "question_ids": [
+      "Q-S3-RETENTION-ENFORCEMENT"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "mainspot_borra — MainSpot: borra los objetos de más de 14 días, como con las copias locales",
+    "ambos — Los dos: regla del servicio y borrado por MainSpot"
+  ],
+  "affected_items": [
+    "DEC-0026",
+    "DEC-0027",
+    "DEC-0045",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "DEC-0049"
+  ],
+  "expiry": "",
+  "comment": ""
+}

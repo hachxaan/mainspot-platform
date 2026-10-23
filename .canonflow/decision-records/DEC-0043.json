@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0043",
+  "kind": "decision",
+  "title": "Arquitectura de Telegram y publicación de sitios (notas del humano en QS-0008)",
+  "decision": "Respuesta a Q-NOTES «Notas para el registro» (texto libre del humano, transcrito íntegro en el campo comment; forma parte de la decisión).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T04:41:16Z",
+  "source": "QS-0008/ANS-0008 Q-NOTES",
+  "source_ref": {
+    "question_session_id": "QS-0008",
+    "answer_session_id": "ANS-0008",
+    "question_ids": [
+      "Q-NOTES"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [],
+  "affected_items": [
+    "DEC-0041",
+    "DEC-0042",
+    "DEC-0039",
+    "DEC-0037",
+    "INC-003"
+  ],
+  "expiry": "",
+  "comment": "**QS-0008 — Arquitectura de Telegram y publicación de sitios web**\n\nSe confirma como dirección arquitectónica de MainSpot:\n\n**1. Aislamiento físico de ejecución por tenant**\n\n- Cada negocio tendrá un contenedor independiente para servir su sitio web público.\n- No se utilizará un único contenedor web compartido para alojar directamente todos los sitios.\n- Los contenedores utilizarán una imagen base endurecida y versionada, con configuración mínima, recursos limitados, aislamiento de red y sistema de archivos de publicación protegido.\n- Los contenedores públicos no almacenarán credenciales administrativas, secretos de proveedores ni acceso directo a la base de datos central.\n- Se mantendrá el aislamiento multi-tenant en el backend, el almacenamiento, las operaciones y la auditoría.\n- Evaluar LXC/LXD frente a contenedores de aplicación ligeros según consumo, densidad, mantenibilidad y seguridad. El requisito de separación por tenant no obliga a utilizar una distribución Linux completa por negocio.\n\n**2. Hostinger y DNS**\n\n- Hostinger actuará como gestor DNS cuando sea el proveedor autoritativo de la zona.\n- Los sitios serán servidos desde infraestructura controlada por MainSpot.\n- Se priorizará DNS wildcard hacia el punto de entrada público de MainSpot.\n- No depender del alta de registros DNS individuales para cada negocio cuando el wildcard resuelva el caso.\n- Gestionar HTTPS mediante certificados wildcard con renovación automatizada, sujeto a verificación técnica.\n\n**3. Proxy y enrutamiento**\n\n- Utilizar un proxy inverso público con rutas dinámicas por hostname hacia el contenedor específico de cada tenant.\n- Generar las rutas a partir del registro autorizado de tenants, contenedores y hostnames.\n- No permitir enrutamiento entre tenants ni publicación de sitios no autorizados.\n- Evitar cambios manuales y reinicios generales del proxy para cada nueva alta.\n- Preservar la posibilidad de distribuir contenedores entre distintos nodos en una evolución horizontal.\n\n**4. Aprovisionamiento de sitios**\n\n- El alta y publicación se ejecutarán mediante trabajos asíncronos, auditados e idempotentes.\n- Estados mínimos: REGISTERED, PREPARING, CONFIGURING, VERIFYING, ACTIVE, FAILED y RETRY_PENDING.\n- El propietario deberá aprobar la primera publicación y los cambios conforme al flujo canónico.\n- Conservar versiones publicadas y permitir recuperación mediante despliegues controlados.\n- No declarar activo un sitio sin verificar HTTPS, hostname y contenido esperado.\n- Notificar al propietario cuando el sitio realmente esté disponible.\n- Incorporar reconciliación periódica de trabajos incompletos, inicialmente cada cinco minutos, sin depender de esperar propagación DNS por tenant.\n\n**5. Telegram**\n\n- Un único bot de MainSpot servirá como canal conversacional para múltiples negocios.\n- Vinculación mediante códigos de un solo uso, de corta vigencia y revocables.\n- Resolver cada mensaje hacia actor, tenant y permisos verificados antes de procesar solicitudes.\n- Jev realizará clasificación semántica conforme a los modos autorizados.\n- Las decisiones de ejecución y publicación permanecerán sujetas al backend y los gates humanos correspondientes.\n- Utilizar long polling para desarrollo cuando sea apropiado y webhook HTTPS verificado para operación pública.\n- Mantener la separación entre el bot comercial de MainSpot y CanonFlow/HDC.\n\n**6. Escalabilidad y criterios de aceptación**\n\n- La unidad de aislamiento de alojamiento es el contenedor por tenant; la escala horizontal requiere además orquestación, descubrimiento de servicios, balanceo, monitoreo y gestión de recursos.\n- Medir CPU, memoria, almacenamiento, tiempo de aprovisionamiento y costo por contenedor antes de escalar masivamente.\n- No confundir contenedorización con aislamiento absoluto: aplicar controles de seguridad independientes.\n- El piloto debe demostrar que la publicación, actualización, suspensión o eliminación de un tenant no afecta a otros.\n\nEsta decisión conserva la dirección de alojamiento en MainSpot y el uso de Hostinger para DNS. Cualquier desviación respecto al canon existente sobre el tipo de contenedor, sus recursos o sus fronteras de aislamiento deberá reconciliarse mediante CanonFlow antes de su implementación.\n\n**Objetivo:** sitios independientes por negocio, publicación automatizada, Telegram compartido y capacidad de crecimiento horizontal sin comprometer seguridad, trazabilidad ni sencillez para el propietario."
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0053",
+  "kind": "decision",
+  "title": "Custodia de la clave de los respaldos: el propietario guarda una copia fuera del equipo (gestor de contraseñas o papel en lugar seguro)",
+  "decision": "Respuesta a Q-BACKUP-KEY «¿Quién guarda una copia de la clave de los respaldos?»: `copia_offline_propietario` — «Yo guardo una copia de la clave fuera del equipo (gestor de contraseñas o papel en un lugar seguro)». Condiciones declaradas en Q-NOTES (DEC-0054).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T10:52:59Z",
+  "source": "QS-0010/ANS-0012 Q-BACKUP-KEY",
+  "source_ref": {
+    "question_session_id": "QS-0010",
+    "answer_session_id": "ANS-0012",
+    "question_ids": [
+      "Q-BACKUP-KEY"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "solo_equipo — La clave vive solo en este equipo",
+    "gestor_secretos — En un gestor de secretos del proveedor que se elija para los respaldos"
+  ],
+  "affected_items": [
+    "DEC-0026",
+    "DEC-0045",
+    "DEC-0054"
+  ],
+  "expiry": "",
+  "comment": ""
+}

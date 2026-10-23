@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0031",
+  "kind": "decision",
+  "title": "D4 — primary se activa automáticamente al superar los umbrales de la evaluación sintética",
+  "decision": "Respuesta a Q-JEV-GATE «D4 — ¿Cuándo puede activarse primary en desarrollo y pruebas?»: `tras_evaluacion` — «Automáticamente al superar los umbrales de la evaluación». Punto de decisión de MSP-JEV-CLASSIFIER-MODES v1 (APR-0002).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T00:47:02Z",
+  "source": "QS-0007/ANS-0007 Q-JEV-GATE",
+  "source_ref": {
+    "question_session_id": "QS-0007",
+    "answer_session_id": "ANS-0007",
+    "question_ids": [
+      "Q-JEV-GATE"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "evaluacion_y_aprobacion — Tras la evaluación sintética y una aprobación HDC de sus resultados",
+    "inmediata_sintetica — Inmediatamente tras implementar, solo con tenants sintéticos"
+  ],
+  "affected_items": [
+    "APR-0002",
+    "DEC-0019"
+  ],
+  "expiry": "",
+  "comment": ""
+}

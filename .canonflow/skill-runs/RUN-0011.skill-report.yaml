@@ -1,0 +1,91 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0011
+run_id: RUN-0011
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Generation and publication of QS-0012, the gate status table and the unpublished draft
+  of the final authorization session only. No statement about the substantive quality of
+  the future human decisions, about the KVM 4 service or about activation: the remote
+  transfer stays disabled.
+human_summary: |
+  QS-0012 (v2, es, 4 questions, 3 required) is PENDING and answerable at https://mainspot.hdc.com/#/sessions/QS-0012; QS-0001..0011 remain ARCHIVED.
+  Q-ALERT-CHANNEL (P-3: owner's Telegram bot with private chat / SMTP mail to an owner address / other in notes; no recommendation),
+  Q-GUARD-OPTION (P-2: option B volume outside Garage [recommended] / option A/A' second bucket in Garage),
+  Q-RETENTION-READING (P-1: confirm the 1.1.0 reading — bucket lifecycle rule deletes, KVM 4 process watches and never deletes nor retains [recommended] / ask the KVM 4 process to be the deleter, rewriting §9.1, C-15, S-08); optional Q-NOTES.
+  Every question cites CONTRACT.md 1.1.0 by commit (0cbdfcf008ed84f9cddea399c5d49915ca24e828) and the reconciliation evidence (infra-reconciliation-ab046d24.md, DEC-0046/0047/0049).
+  The gate table (evidence/coordination/02-activation-gate.md) records no condition as CUMPLIDA in the strict §2.3 sense: 1, 4, 5 and P-3 are PENDIENTE with MainSpot's part done; 2, 3, 6 and 7 are BLOQUEADA (service credentials, H-01/H-03/H-05, owner answers).
+  The final authorization draft (Q-ACTIVATE-REMOTE-BACKUP: autorizar / no_autorizar) validates against the v2 profile and is NOT published.
+claims:
+  - class: VERIFIED
+    statement: "The prepared QS-0012 validates against the v2 question-session profile and the HDC cross-rules with no errors."
+    evidence: [.canonflow/skill-runs/RUN-0011/evidence/EV-0001-qs-validation.json]
+    refs: [QS-0012]
+  - class: VERIFIED
+    statement: "The HDC-0009 stamped wrapper published .canonflow/decision-sessions/pending/QS-0012.questions.json (sha256 0df8c9d87467029d87b1e6c7d94a415bd6d0601007a7adfa3c82adf7ab637a14) with generated_at 2026-10-22T17:04:02Z; the content equals the prepared input except generated_at (diff of the sorted JSON without generated_at is empty)."
+    evidence: [.canonflow/skill-runs/RUN-0011/evidence/EV-0002-publish-session.txt]
+    refs: [QS-0012]
+  - class: VERIFIED
+    statement: "publish-session, the HDC-0006 compatibility-view script (--run RUN-0011) and update_state.py ran with mainspot-hdc.service stopped (17:04:02Z-17:04:03Z); after restart /api/v1/ready reports writes_enabled=true on loopback and HTTPS (generation 73); the live console lists QS-0012 PENDING (can_answer=true, evidence_status confirmed) and QS-0001..0011 ARCHIVED on both loopback and HTTPS; counters qs 12 · ans 12 · dec 54 · apr 2; latest = QS-0012; pending_human [QS-0012]."
+    evidence: [.canonflow/skill-runs/RUN-0011/evidence/EV-0003-compat-views.txt, .canonflow/skill-runs/RUN-0011/evidence/EV-0004-ready-after-restart.json, .canonflow/skill-runs/RUN-0011/evidence/EV-0005-hdc-live-sessions.json]
+    refs: [QS-0012]
+  - class: VERIFIED
+    statement: "Facts stated in the questions come from the published contract 1.1.0 at 0cbdfcf (§2.3, §6.4, §9.1, §9.2, §10.1, §14, §15, §17), the reconciliation report (H-01..H-05, §4.1, §5, §7.1, §7.3, §11) and the literal owner notes in DEC-0049; the external certificate observation (Let's Encrypt, valid until 2027-01-20) is the one recorded in infra-reconciliation-ab046d24.md §4.1; no signed request was ever sent to the real endpoint by MainSpot."
+    evidence: [docs/contracts/backup-object-storage/v1/infra-reconciliation-ab046d24.md, .canonflow/decision-records/DEC-0049.md]
+    refs: [DEC-0046, DEC-0047, DEC-0049, DEC-0054]
+  - class: VERIFIED
+    statement: "The draft of the final authorization session (evidence/coordination/QS-activation-draft.questions.json, sha256 8414caec0c331f5fc33e492a058782822a47fea61c34d523a03fb65106869e49, placeholder id QS-0013) validates against the v2 profile with no schema or cross-rule errors and was NOT published: it is absent from .canonflow/decision-sessions/ and from the console."
+    evidence: [evidence/coordination/QS-activation-draft.validation.json, .canonflow/skill-runs/RUN-0011/evidence/EV-0005-hdc-live-sessions.json]
+    refs: []
+  - class: OPEN
+    statement: "Conditions 1-6 of §2.3 are not accredited: C-01 and the §14 report have not been executed against the real endpoint (MainSpot has no service credentials); no protected copy exists in ab046d24 (H-03); the watcher is not reconverted (H-01/H-02); the service has not cited 0cbdfcf; the producer has not been tested against the real service; no remote restoration exists. The draft is published only after 1-6 are CUMPLIDA with cited evidence and QS-0012 is answered and ingested."
+    refs: [QS-0012]
+  - class: OPEN
+    statement: "G-REPO dirty-tree pre-flight not satisfied: the work branch still carries uncommitted output of earlier runs, the producer, the contract 1.1.0 working files and remediation blocks."
+    refs: []
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT WARN persists for QS-0001..0011 (reconcile defect
+      recorded in .canonflow-updates/HDC-0008), visible until the CanonFlow pin is
+      updated. The HDC-0006 workaround was reapplied and recorded in its ficha.
+    evidence: .canonflow/skill-runs/RUN-0011/evidence/EV-0003-compat-views.txt
+  - id: FND-0002
+    severity: NOTE
+    description: >-
+      The draft's question_session_id (QS-0013) is a placeholder needed by the v2
+      schema pattern; at publication the next free id is assigned and every
+      "<…>" placeholder in Q-ACTIVATE-REMOTE-BACKUP.full_explanation must be replaced
+      by the real evidence (path and commit) of conditions 1-6 before the stamped
+      wrapper is run.
+    evidence: evidence/coordination/QS-activation-draft.validation.json
+limitations:
+  - "G-REPO: tree not clean at run start (see OPEN claim)."
+  - "QS-0012.html not rendered: the live console serves the session, as for QS-0005..QS-0011."
+  - "Only the pending_human mirror of method-state was updated (update_state.py); canon state files are owned by other skills."
+  - "The gate table reflects what MainSpot can observe from its side on 2026-10-22; the state of the KVM 4 service is taken from ab046d24 (reconciliation report) and may have moved since."
+evidence:
+  - .canonflow/skill-runs/RUN-0011/evidence/EV-0001-qs-validation.json
+  - .canonflow/skill-runs/RUN-0011/evidence/EV-0002-publish-session.txt
+  - .canonflow/skill-runs/RUN-0011/evidence/EV-0003-compat-views.txt
+  - .canonflow/skill-runs/RUN-0011/evidence/EV-0004-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0011/evidence/EV-0005-hdc-live-sessions.json
+  - evidence/coordination/QS-activation-draft.validation.json
+outputs:
+  - .canonflow/decision-sessions/pending/QS-0012.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md (reapplication record)
+  - evidence/coordination/02-activation-gate.md
+  - evidence/coordination/QS-activation-draft.questions.json (draft, not published)
+  - evidence/coordination/QS-activation-draft.validation.json
+gates_checked:
+  - {gate: G-REPO, status: FAIL, evidence: "uncommitted prior-run, producer, contract and remediation paths at run start; see OPEN claim"}
+blockers:
+  - "ANS for QS-0012: human answers in the HDC (P-3, P-2, P-1)"
+  - "Conditions 1-6 of CONTRACT.md §2.3: service credentials, H-01/H-03/H-05 fixes and evidence from the KVM 4 operator; real-service producer test and remote restorations"
+next_pointer: "https://mainspot.hdc.com/#/sessions/QS-0012"
+created_at: "2026-10-22T17:06:00Z"

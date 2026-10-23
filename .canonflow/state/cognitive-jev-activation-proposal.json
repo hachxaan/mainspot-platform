@@ -1,0 +1,65 @@
+{
+  "artifact_id": "MSP-COGNITIVE-JEV-ACTIVATION",
+  "version": "1",
+  "state": "PROPOSED_PENDING_HDC",
+  "framework_sha": "5e3dc307a4089f462b9742b76fd002cf910102fa",
+  "framework_root": "/home/administrador/codeart/canonflow-keystone",
+  "runtime_python": "/home/administrador/.local/share/mainspot/cognitive-jev/venv/bin/python",
+  "endpoint": "https://api.typesafe.ai/v1/systemone",
+  "model": "jev-1.13.0",
+  "input": ".canonflow/cognitive/synthetic-p0/input.json",
+  "data_scope": "SYNTHETIC_ONLY",
+  "data_policy": {
+    "allowed": "One fixed synthetic approval-preserving wording case, E/C/X rubric, derived verifier results and path/hash provenance.",
+    "excluded": [
+      "API keys",
+      "customer data",
+      "PII",
+      "complete private documents",
+      "authority files",
+      "transition file contents",
+      "product operations"
+    ],
+    "local_bindings": "MainSpot functional state, source register and DR-0001 are hashed and consumed locally; authority/transition are removed by cognitive_slice before provider dispatch.",
+    "provider_retention": "Standard provider handling; no ZDR agreement is assumed. No real customer content is authorized.",
+    "provider_legal_url": "https://docs.typesafe.ai/legal"
+  },
+  "pricing": {
+    "source": "https://docs.typesafe.ai/models",
+    "model": "jev-1.13.0",
+    "observed_at": "2026-10-20T10:31:40.759915+00:00",
+    "input_usd_per_million": 0.042,
+    "output_usd_per_million": 0,
+    "version": "typesafe-models-observed-2026-10-20-jev-1.13.0",
+    "version_kind": "LOCAL_OBSERVATION; provider publishes no price-version identifier on this page",
+    "api_spec_version": "0.2.0"
+  },
+  "max_calls": 1,
+  "local_admission_budget_usd": 0.001,
+  "timeout_seconds": 10,
+  "conservative_reserved_usd": 0.000731136,
+  "valid_until": "2026-10-21T10:31:40.759930+00:00",
+  "billing_nonclaim": "Local admission ledger is not a provider invoice cap. No credit purchase, auto-top-up or account setting change is authorized.",
+  "governance": {
+    "advisory_only": true,
+    "authorization": null,
+    "execution": "NONE",
+    "state_promotion": "NONE",
+    "cjl": "OFF",
+    "product_features": "NOT_AUTHORIZED"
+  },
+  "files": {
+    ".canonflow/cognitive/live-candidate.yaml": "6fe726214e672fb0897f3593effda83137b757e282674c48369ff05f855aadee",
+    ".canonflow/cognitive/synthetic-p0/canon.yaml": "8d34a6cd18761a32413c4b85c31f334d10a66bbef2367f6c8ae2057c0e3b93dc",
+    ".canonflow/cognitive/synthetic-p0/evidence.yaml": "c46843b4a4df9f5b2adb8d2e5dad23c91fa65fe93fc360c93d0b867668e29878",
+    ".canonflow/cognitive/synthetic-p0/facts.txt": "e119412dbd211d5d221a719ccd3c2fe7e3245a90e608cbf7811e7fcfcbba64e2",
+    ".canonflow/cognitive/synthetic-p0/ids.yaml": "5c1e878749243a516439ec1cfe5ce6a3861fddbb9102a12ae353a9bad922a66f",
+    ".canonflow/cognitive/synthetic-p0/input.json": "531f370a2cfea2a01ebae113dfc06a1827c7ae04d01a3c759066087feed59754",
+    ".canonflow/cognitive/synthetic-p0/links.yaml": "60d6327690c022eba204010c23999d8649da76d1462efd9ce2324f12c4aec038",
+    ".canonflow/recovery/DR-0001/drift-report.yaml": "0a75a325c62023f923ccdb0fbf6e800a3bc35312be74113c828fa238c1fbb923",
+    ".canonflow/sources/source-register.yaml": "ce59f707ffce2aaf179eb2cd8632690ad56f46949ac31d62b958956b915228d8",
+    ".canonflow/state/functional-canon-state.yaml": "d60fb07989fc0d4ccfef03c877c5e4d46e22f29f4d68bef291c66223598c0c0d",
+    "scripts/canonflow-jev-requirements.lock": "ce32250884d1e44439cd86adc7fc726cb94feed46ccf3fce5afe28dd2cf8fa4c",
+    "scripts/canonflow-jev.py": "eb50c94c81a950707705713e788b24ab36f33e49ef7ac643574d5f13c964dcb6"
+  }
+}

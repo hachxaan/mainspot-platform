@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0003",
+  "kind": "decision",
+  "title": "Q-PREVIEW: se confirma la política actual del enlace de preview",
+  "decision": "Respuesta a Q-PREVIEW «Política de enlace de preview: token aleatorio, solo hash en BD, expiración configurable, single-use, alcance por propuesta»: opción `confirm` — «Confirmar política actual». Según la pregunta, audiencia y revocación masiva quedan pendientes para fase productiva.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:01:48Z",
+  "source": "QS-0001/ANS-0001 Q-PREVIEW",
+  "source_ref": {
+    "question_session_id": "QS-0001",
+    "answer_session_id": "ANS-0001",
+    "question_ids": [
+      "Q-PREVIEW"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "override — Override: endurecer ahora (audiencia/revocación)"
+  ],
+  "affected_items": [
+    "FR-0006",
+    "BR-0003",
+    "DI-0002",
+    "CAP-008 política de enlace de preview (PREVIEW_TOKEN_TTL_MINUTES)"
+  ],
+  "expiry": "",
+  "comment": ""
+}

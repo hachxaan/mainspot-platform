@@ -1,0 +1,251 @@
+{
+  "schema_version": 2,
+  "question_session_id": "QS-0006",
+  "session_label": "Política de retención, borrado y respaldos",
+  "title": "Política canónica de conservación, borrado y respaldos de MainSpot",
+  "generated_at": "2026-10-21T22:22:50Z",
+  "state": "PENDING",
+  "ui_language": "es",
+  "risk_tier": 3,
+  "affected_loop": "functional_canon_loop",
+  "intervention_reason": "Pedida en ANS-0004 (comentario de Q-PRIORITY-ORDER): «La retención global requiere resolver previamente su política canónica de conservación, borrado y respaldos. Solicito preparar esa decisión HDC sin bloquear el trabajo independiente.» El canon upstream mantiene abiertos retención, borrado y respaldo; hoy solo existe una purga manual de auditoría y analítica a 90 días y no hay respaldos definidos.",
+  "decision_impact": "Las respuestas fijan los plazos y el modo de ejecución que implementará la tarea «retención global de plataforma». Nada se borra hasta implementar y verificar esa tarea; los plazos no constituyen una obligación legal verificada por el agente.",
+  "initial_instructions": "Las recomendaciones no son vinculantes y no van preseleccionadas. El agente no ha verificado obligaciones legales o fiscales del país de operación: si existen, prevalecen e indícalo en el comentario o en las notas.",
+  "topics": [
+    {
+      "topic_id": "plazos",
+      "title": "Plazos por tipo de dato"
+    },
+    {
+      "topic_id": "ejecucion",
+      "title": "Baja, ejecución y respaldos"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-RET-CONVERSATION",
+      "type": "single_choice",
+      "topic_id": "plazos",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 3,
+      "title": "¿Cuánto se conserva el contenido de las conversaciones con el agente?",
+      "short_description": "Texto de los mensajes (conversation_request.raw_message), propuestas y previews derivados, y la evidencia de clasificación Jev.",
+      "full_explanation": "Son mensajes de los negocios con el agente y pueden contener datos personales (teléfonos, nombres de clientes). Hoy no se borran nunca. El plazo se cuenta desde la fecha del mensaje; los registros de auditoría (pregunta siguiente) conservan qué se decidió sin el texto.\n\nDocumentos:\n- Mecanismo actual: src/analytics/retention.ts (purga ON-DEMAND, DRY-RUN por defecto, por tenant; borra audit_event y analytics_daily_summary anteriores a RETENTION_DAYS=90)\n- Tablas: migrations/0001..0012 (client, internal_user, session_context, client_data, audit_event, conversation_request, action_proposal, preview_session, approval, publication, client_website, website_content, review, social_post, scheduled_post, subscription, analytics_daily_summary, jev_shadow_evaluation)\n- Canon upstream (datos sensibles; retención, borrado y respaldo abiertos): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/05-GOVERNANCE-SECURITY.md\n- DEC-025 upstream (retención configurable, 90 días por defecto): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/07-DECISIONS-OPEN-QUESTIONS.md",
+      "why_this_matters": "Es el dato más sensible y voluminoso; un plazo corto reduce exposición, uno largo conserva contexto para soporte.",
+      "recommended_option": "dias_90",
+      "options": [
+        {
+          "value": "dias_90",
+          "label": "90 días",
+          "impact": "minimización; coincide con RETENTION_DAYS actual",
+          "risk": "menos contexto para soporte o disputas",
+          "recommended_when": "si no hay obligación de conservar conversaciones"
+        },
+        {
+          "value": "dias_180",
+          "label": "180 días",
+          "impact": "cubre un semestre de soporte",
+          "risk": "más exposición de datos personales"
+        },
+        {
+          "value": "dias_365",
+          "label": "365 días",
+          "impact": "un año de historial",
+          "risk": "mayor exposición y volumen"
+        },
+        {
+          "value": "vigencia_suscripcion",
+          "label": "Mientras el negocio tenga suscripción activa, más 30 días",
+          "impact": "historial completo del cliente activo",
+          "risk": "conservación indefinida para clientes antiguos"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-RET-AUDIT",
+      "type": "single_choice",
+      "topic_id": "plazos",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 3,
+      "title": "¿Cuánto se conservan los eventos de auditoría?",
+      "short_description": "audit_event: quién hizo qué, cuándo y con qué resultado (aprobaciones, publicaciones, permisos, suscripciones). No guarda el texto de los mensajes.",
+      "full_explanation": "La auditoría reconstruye decisiones y efectos externos (NFR-0001 promovida por DEC-0014). Hoy la purga manual usa 90 días.\n\nDocumentos:\n- Mecanismo actual: src/analytics/retention.ts (purga ON-DEMAND, DRY-RUN por defecto, por tenant; borra audit_event y analytics_daily_summary anteriores a RETENTION_DAYS=90)\n- Tablas: migrations/0001..0012 (client, internal_user, session_context, client_data, audit_event, conversation_request, action_proposal, preview_session, approval, publication, client_website, website_content, review, social_post, scheduled_post, subscription, analytics_daily_summary, jev_shadow_evaluation)\n- Canon upstream (datos sensibles; retención, borrado y respaldo abiertos): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/05-GOVERNANCE-SECURITY.md\n- DEC-025 upstream (retención configurable, 90 días por defecto): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/07-DECISIONS-OPEN-QUESTIONS.md",
+      "why_this_matters": "Plazos cortos impiden investigar incidentes o disputas; largos acumulan identificadores de usuarios.",
+      "recommended_option": "anio_1",
+      "options": [
+        {
+          "value": "dias_90",
+          "label": "90 días (actual)",
+          "impact": "mínimo volumen",
+          "risk": "no cubre revisiones anuales ni incidentes tardíos"
+        },
+        {
+          "value": "anio_1",
+          "label": "1 año",
+          "impact": "cubre un ciclo anual de revisión",
+          "risk": "conserva identificadores un año",
+          "recommended_when": "si no hay una obligación legal mayor"
+        },
+        {
+          "value": "anios_2",
+          "label": "2 años",
+          "impact": "margen para disputas",
+          "risk": "más volumen e identificadores"
+        },
+        {
+          "value": "anios_5",
+          "label": "5 años",
+          "impact": "máxima trazabilidad",
+          "risk": "exposición prolongada"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-RET-ANALYTICS",
+      "type": "single_choice",
+      "topic_id": "plazos",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Cuánto se conservan los agregados de analítica?",
+      "short_description": "analytics_daily_summary: conteos diarios por tenant, sin texto de mensajes. Define cuánto histórico pueden mostrar los dashboards (fase 2).",
+      "full_explanation": "Tu comentario en ANS-0004 pide que los dashboards de fase 2 no inventen periodos históricos garantizados: este plazo es el histórico máximo que podrán mostrar.\n\nDocumentos:\n- Mecanismo actual: src/analytics/retention.ts (purga ON-DEMAND, DRY-RUN por defecto, por tenant; borra audit_event y analytics_daily_summary anteriores a RETENTION_DAYS=90)\n- Tablas: migrations/0001..0012 (client, internal_user, session_context, client_data, audit_event, conversation_request, action_proposal, preview_session, approval, publication, client_website, website_content, review, social_post, scheduled_post, subscription, analytics_daily_summary, jev_shadow_evaluation)\n- Canon upstream (datos sensibles; retención, borrado y respaldo abiertos): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/05-GOVERNANCE-SECURITY.md\n- DEC-025 upstream (retención configurable, 90 días por defecto): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/07-DECISIONS-OPEN-QUESTIONS.md",
+      "why_this_matters": "Fija el horizonte de los dashboards sin conservar datos personales.",
+      "recommended_option": "anios_2",
+      "options": [
+        {
+          "value": "dias_90",
+          "label": "90 días (actual)",
+          "impact": "mínimo volumen",
+          "risk": "dashboards sin comparativas anuales"
+        },
+        {
+          "value": "anio_1",
+          "label": "1 año",
+          "impact": "comparativas anuales",
+          "risk": "ninguno relevante"
+        },
+        {
+          "value": "anios_2",
+          "label": "2 años",
+          "impact": "comparativa interanual completa",
+          "risk": "volumen moderado",
+          "recommended_when": "si los agregados no contienen datos personales (hoy no los contienen)"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-RET-EXIT",
+      "type": "single_choice",
+      "topic_id": "ejecucion",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 3,
+      "title": "¿Qué pasa con los datos de un negocio que deja MainSpot?",
+      "short_description": "Negocio dado de baja o sin suscripción activa durante un periodo prolongado (DEC-0018 dice que el vencimiento del Trial no borra nada automáticamente).",
+      "full_explanation": "Afecta a datos operativos del tenant: web, contenidos, reseñas, publicaciones, conversaciones y usuarios. La auditoría sigue su propio plazo.\n\nDocumentos:\n- Mecanismo actual: src/analytics/retention.ts (purga ON-DEMAND, DRY-RUN por defecto, por tenant; borra audit_event y analytics_daily_summary anteriores a RETENTION_DAYS=90)\n- Tablas: migrations/0001..0012 (client, internal_user, session_context, client_data, audit_event, conversation_request, action_proposal, preview_session, approval, publication, client_website, website_content, review, social_post, scheduled_post, subscription, analytics_daily_summary, jev_shadow_evaluation)\n- Canon upstream (datos sensibles; retención, borrado y respaldo abiertos): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/05-GOVERNANCE-SECURITY.md\n- DEC-025 upstream (retención configurable, 90 días por defecto): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/07-DECISIONS-OPEN-QUESTIONS.md",
+      "why_this_matters": "Sin regla, los datos de antiguos clientes se conservan indefinidamente.",
+      "recommended_option": "borrar_30_dias",
+      "options": [
+        {
+          "value": "borrar_30_dias",
+          "label": "Borrar los datos operativos 30 días después de la baja confirmada por administración",
+          "impact": "minimización; permite revertir una baja reciente",
+          "risk": "borrado irreversible tras 30 días",
+          "recommended_when": "si la baja la confirma una persona autorizada"
+        },
+        {
+          "value": "anonimizar",
+          "label": "Anonimizar a los 30 días (conservar agregados y estructura sin datos personales)",
+          "impact": "conserva métricas",
+          "risk": "anonimización imperfecta en texto libre"
+        },
+        {
+          "value": "hasta_solicitud",
+          "label": "Conservar hasta que el negocio solicite el borrado",
+          "impact": "sin pérdidas involuntarias",
+          "risk": "conservación indefinida"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-RET-EXECUTION",
+      "type": "single_choice",
+      "topic_id": "ejecucion",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Cómo se ejecutan los borrados por plazo?",
+      "short_description": "Hoy la purga es manual, por tenant y en modo de prueba (dry-run) salvo que se pida lo contrario.",
+      "full_explanation": "Cualquier modo registrará un evento de auditoría fail-closed (analytics.purge) con lo borrado.\n\nDocumentos:\n- Mecanismo actual: src/analytics/retention.ts (purga ON-DEMAND, DRY-RUN por defecto, por tenant; borra audit_event y analytics_daily_summary anteriores a RETENTION_DAYS=90)\n- Tablas: migrations/0001..0012 (client, internal_user, session_context, client_data, audit_event, conversation_request, action_proposal, preview_session, approval, publication, client_website, website_content, review, social_post, scheduled_post, subscription, analytics_daily_summary, jev_shadow_evaluation)\n- Canon upstream (datos sensibles; retención, borrado y respaldo abiertos): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/05-GOVERNANCE-SECURITY.md\n- DEC-025 upstream (retención configurable, 90 días por defecto): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/07-DECISIONS-OPEN-QUESTIONS.md",
+      "why_this_matters": "Un plazo que nadie ejecuta no protege los datos.",
+      "recommended_option": "automatica_diaria",
+      "options": [
+        {
+          "value": "automatica_diaria",
+          "label": "Automática diaria para toda la plataforma, con informe auditado",
+          "impact": "el plazo se cumple sin intervención",
+          "risk": "un plazo mal configurado borra datos sin revisión previa",
+          "recommended_when": "si los plazos están decididos en esta sesión"
+        },
+        {
+          "value": "automatica_con_revision",
+          "label": "Automática semanal precedida de un dry-run revisado por administración",
+          "impact": "control humano",
+          "risk": "depende de que alguien revise"
+        },
+        {
+          "value": "manual",
+          "label": "Manual por tenant (como hoy)",
+          "impact": "sin cambios",
+          "risk": "los plazos pueden no cumplirse"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-RET-BACKUPS",
+      "type": "single_choice",
+      "topic_id": "ejecucion",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 3,
+      "title": "¿Qué respaldos de la base de datos se mantienen?",
+      "short_description": "Hoy no hay respaldos definidos (ni scripts ni snapshots del contenedor mainspot-db).",
+      "full_explanation": "Un dato borrado sigue en los respaldos hasta que estos caducan: el plazo de respaldo alarga el borrado efectivo. Los respaldos deben cifrarse y probarse restaurándolos.\n\nDocumentos:\n- Mecanismo actual: src/analytics/retention.ts (purga ON-DEMAND, DRY-RUN por defecto, por tenant; borra audit_event y analytics_daily_summary anteriores a RETENTION_DAYS=90)\n- Tablas: migrations/0001..0012 (client, internal_user, session_context, client_data, audit_event, conversation_request, action_proposal, preview_session, approval, publication, client_website, website_content, review, social_post, scheduled_post, subscription, analytics_daily_summary, jev_shadow_evaluation)\n- Canon upstream (datos sensibles; retención, borrado y respaldo abiertos): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/05-GOVERNANCE-SECURITY.md\n- DEC-025 upstream (retención configurable, 90 días por defecto): https://github.com/hachxaan/mainspot-documentation/blob/571a4d25cb331330026c3eeafc7b2e769ef8afca/docs/canonical/07-DECISIONS-OPEN-QUESTIONS.md",
+      "why_this_matters": "Sin respaldos, un fallo del contenedor pierde todos los datos del piloto.",
+      "recommended_option": "diario_14",
+      "options": [
+        {
+          "value": "diario_14",
+          "label": "Diarios, cifrados, conservados 14 días, con prueba de restauración mensual",
+          "impact": "recuperación ante fallos recientes",
+          "risk": "el borrado efectivo tarda hasta 14 días más",
+          "recommended_when": "para el piloto"
+        },
+        {
+          "value": "diario_30",
+          "label": "Diarios, cifrados, conservados 30 días",
+          "impact": "más margen de recuperación",
+          "risk": "borrado efectivo hasta 30 días más tarde"
+        },
+        {
+          "value": "sin_respaldo",
+          "label": "Sin respaldos durante el piloto",
+          "impact": "sin coste ni copia adicional de datos",
+          "risk": "pérdida total ante un fallo"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NOTES",
+      "type": "free_text",
+      "topic_id": "ejecucion",
+      "required": false,
+      "title": "Notas: obligaciones legales, excepciones o plazos por tipo de dato no cubiertos",
+      "short_description": "Opcional.",
+      "options": []
+    }
+  ]
+}

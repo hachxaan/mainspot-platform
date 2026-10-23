@@ -1,0 +1,97 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0006
+run_id: RUN-0006
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Ingestion of ANS-0008 (QS-0008) and generation of the follow-up QS-0009 only. No
+  statement about the substantive quality of the decisions; the implementation of
+  DEC-0033..DEC-0036 is recorded as supplementary evidence (EV-0007..EV-0012).
+human_summary: |
+  Eleven records transcribed from ANS-0008 (DEC-0033..DEC-0043), owner Carlos Pinacho; QS-0008 INGESTED and ARCHIVED.
+  Gate D4: risk failure = final system outcome with D1–D3, partially superseding DEC-0031 (DEC-0033); only a new reserved set v3 may open primary (DEC-0034); H-0165-type questions are query.read_only (DEC-0035) and complaints without a concrete request ask for clarification (DEC-0036).
+  Product: TOCTOU → retention → end-user product → dashboards → agents (DEC-0037); admin-assisted onboarding (DEC-0039); HDC-approved design before building (DEC-0040); one MainSpot Telegram bot with one-time revocable link codes (DEC-0041); MainSpot serves published sites, Hostinger only DNS (DEC-0042); architecture notes (DEC-0043).
+  Q-PRODUCT-ORDER value (Telegram first) contradicts its comment (onboarding first): DEC-0038 transcribes both; QS-0009 asks which order stands.
+claims:
+  - class: VERIFIED
+    statement: "ANS-0008 validates against the v2 answer-session profile; question_session_id, question_sha256 and payload_sha256 bind to the exact QS-0008 bytes; no required question unanswered; every single_choice value is a declared option; Q-PRODUCT-ORDER is a complete permutation."
+    evidence: [.canonflow/skill-runs/RUN-0006/evidence/EV-0001-answers-validation.json]
+    refs: []
+  - class: VERIFIED
+    statement: "DEC-0033..DEC-0043 published through canonflow-hdc publish-ingestion with DERIVES_FROM links (one outcome per answered question); QS-0008 carries INGESTED and ARCHIVED events and sits in archived/ with unchanged bytes (sha256 092ecaa2…3fbe)."
+    evidence: [.canonflow/skill-runs/RUN-0006/evidence/EV-0002-publish-ingestion-and-archive.txt]
+    refs: [DEC-0033, DEC-0043]
+  - class: DECIDED
+    statement: "Gate D4 measures the final system outcome (DEC-0033), opens only on a new reserved v3 set (DEC-0034) with criteria corrected per DEC-0035/DEC-0036; product block placed after TOCTOU and retention (DEC-0037); onboarding admin-assisted (DEC-0039); design approved in the HDC before building (DEC-0040); single MainSpot bot with one-time links (DEC-0041); sites served by MainSpot, Hostinger DNS only (DEC-0042); architecture notes DEC-0043."
+    refs: [DEC-0033, DEC-0034, DEC-0035, DEC-0036, DEC-0037, DEC-0039, DEC-0040, DEC-0041, DEC-0042, DEC-0043]
+  - class: OPEN
+    statement: "Q-PRODUCT-ORDER: the submitted order (telegram, alta_panel, publicacion) and the literal comment (alta y panel, Telegram, publicación) disagree; DEC-0038 transcribes both without choosing; QS-0009 (sha256 b7a99a3f…f0c9) asks which stands."
+    refs: [DEC-0038, QS-0009]
+  - class: VERIFIED
+    statement: "Publication writes ran with mainspot-hdc.service stopped (04:47:35Z-04:47:36Z): publish-ingestion, mark-session, archive move, publish-session QS-0009, HDC-0006 compatibility views and update_state.py; after restart /api/v1/ready reports writes_enabled=true on loopback and HTTPS and the console lists QS-0009 PENDING (can_answer) and QS-0001..0008 ARCHIVED."
+    evidence: [.canonflow/skill-runs/RUN-0006/evidence/EV-0003-publish-session-QS-0009.txt, .canonflow/skill-runs/RUN-0006/evidence/EV-0004-compat-views.txt, .canonflow/skill-runs/RUN-0006/evidence/EV-0005-ready-after-restart.json, .canonflow/skill-runs/RUN-0006/evidence/EV-0006-hdc-live-sessions.json]
+    refs: [QS-0009]
+  - class: VERIFIED
+    statement: "Supplementary (implementation of DEC-0033..DEC-0036): policy intent-classifier-v3, final-outcome risk definition, gate bound to the v3 set bytes and the decision code bytes, migration 0013; v3 set written by a separate agent without repository access, no exact or near (Jaccard ≥ 0.7) overlap with v1/v2; offline suites green (typecheck; unit 113; integration 70; smoke 5; e2e 2); deployed to mainspot-app; live gate run on v3: intent 236/240, final-outcome risky misses 0/90 (Jev alone 1), passed → primary open for synthetic tenants; primary smoke decided by Jev; key absent from logs and rows."
+    evidence: [.canonflow/skill-runs/RUN-0006/evidence/EV-0007-v3-set-independence.txt, .canonflow/skill-runs/RUN-0006/evidence/EV-0008-gate-d4-implementation-verification.txt, .canonflow/skill-runs/RUN-0006/evidence/EV-0009-lxc-deploy.log, .canonflow/skill-runs/RUN-0006/evidence/EV-0010-jev-dev-set-evaluation-v3-criteria-lxc.json, .canonflow/skill-runs/RUN-0006/evidence/EV-0011-jev-v3-gate-set-evaluation-lxc.json, .canonflow/skill-runs/RUN-0006/evidence/EV-0012-primary-smoke-lxc.txt]
+    refs: [DEC-0033, DEC-0034, DEC-0035, DEC-0036, DEC-0031]
+  - class: OPEN
+    statement: "G-REPO dirty-tree pre-flight not satisfied: the work branch still carries uncommitted output of earlier runs and sessions."
+    refs: []
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      QS-0009 declares generated_at 2026-10-22T04:50:00Z, 2 min 25 s after its
+      actual publication (04:47:35Z): the prepared timestamp was not refreshed
+      before publishing. Content and answerability are unaffected; the session is
+      immutable and was left as published.
+    evidence: .canonflow/skill-runs/RUN-0006/evidence/EV-0003-publish-session-QS-0009.txt
+  - id: FND-0002
+    severity: NOTE
+    description: >-
+      DEC-0033 partially supersedes DEC-0031 (risk-failure definition only). It is
+      stated in the record text and affected_items; no SUPERSEDES link was added,
+      because DEC-0031 (automatic activation after the evaluation) stays in force.
+    evidence: .canonflow/decision-records/DEC-0033.json
+  - id: FND-0003
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT WARN now covers QS-0001..0008 (reconcile defect,
+      .canonflow-updates/HDC-0008), visible until the CanonFlow pin is updated;
+      HDC-0006 workaround reapplied and recorded in its ficha.
+    evidence: .canonflow/skill-runs/RUN-0006/evidence/EV-0004-compat-views.txt
+limitations:
+  - "G-REPO: tree not clean at run start (see OPEN claim)."
+  - "QS-0009.html not rendered: the live console serves the session."
+  - "Only the pending_human mirror of method-state was updated (update_state.py); canon state files are owned by other skills."
+evidence:
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0001-answers-validation.json
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0002-publish-ingestion-and-archive.txt
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0003-publish-session-QS-0009.txt
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0004-compat-views.txt
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0005-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0006-hdc-live-sessions.json
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0007-v3-set-independence.txt
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0008-gate-d4-implementation-verification.txt
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0009-lxc-deploy.log
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0010-jev-dev-set-evaluation-v3-criteria-lxc.json
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0011-jev-v3-gate-set-evaluation-lxc.json
+  - .canonflow/skill-runs/RUN-0006/evidence/EV-0012-primary-smoke-lxc.txt
+outputs:
+  - .canonflow/decision-records/DEC-0033.json .. DEC-0043.json (+ .md companions)
+  - .canonflow/decision-state/sessions/QS-0008.lifecycle.json
+  - .canonflow/decision-sessions/archived/QS-0008.questions.json
+  - .canonflow/decision-sessions/pending/QS-0009.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md (reapplication record)
+gates_checked:
+  - {gate: G-REPO, status: FAIL, evidence: "uncommitted prior-run paths at run start; see OPEN claim"}
+blockers:
+  - "ANS-0009: human answer to QS-0009 (order inside the product block)"
+next_pointer: "https://mainspot.hdc.com/#/sessions/QS-0009; next implementation item per DEC-0037: TOCTOU hardening (DEC-0005)"
+created_at: "2026-10-22T05:02:00Z"

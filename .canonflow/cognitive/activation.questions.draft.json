@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "session_label": "MainSpot — activación Cognitive Jev: una llamada sintética",
+  "title": "Autorizar o rechazar Cognitive Jev asesor para el desarrollo de MainSpot",
+  "generated_at": "2026-10-20T10:38:07.543658+00:00",
+  "state": "PENDING",
+  "affected_loop": "cross_cutting",
+  "risk_tier": 2,
+  "ui_language": "es",
+  "intervention_reason": "La conexión offline está verificada. No existe aún autorización para transmitir datos ni consumir crédito TypeSafe. El código del framework no cambia.",
+  "decision_impact": "Sólo una evaluación sintética en functional_review. No aprueba canon, ADR, tareas, herramientas, producto, Telegram, Relay ni operaciones MainSpot.",
+  "initial_instructions": "Revisa el artefacto exacto y sus hashes. No hay opción preseleccionada ni aprobación por silencio. La credencial se introduce únicamente mediante el comando local set-key, nunca en esta consola ni en el chat.",
+  "questions": [
+    {
+      "question_id": "Q-COGNITIVE-JEV-ACTIVATION",
+      "type": "approval",
+      "title": "¿Autorizas esta conexión asesora y UNA petición sintética a TypeSafe con los límites del artefacto?",
+      "short_description": "jev-1.13.0; 1 llamada; 10 s; admisión local USD 0.001; datos sintéticos sellados; sin reintentos ni auto-recarga.",
+      "full_explanation": "Endpoint https://api.typesafe.ai/v1/systemone. Tarifa pública observada: USD 0.042/Mtokens de entrada, salida gratuita; la página no publica versión de tarifa, por lo que el identificador es una observación local y no una versión del proveedor. Reserva conservadora local USD 0.000731136. No es un límite garantizado de factura. No se asume ZDR. No se envían claves, PII, documentos privados completos ni archivos de autoridad/transición. El consumidor exige registro HDC ingerido, hashes vigentes y caducidad antes de leer la clave. Jev sólo evalúa E/C/X y devuelve al HDC/orquestador: authorization=null, execution=NONE. Aprobar no autoriza implementar producto ni alterar contratos del framework.",
+      "why_this_matters": "Cambia acceso a red y consumo de crédito; la configuración candidata no crea autoridad.",
+      "required": true,
+      "requires_comment": true,
+      "artifact_ref": "MSP-COGNITIVE-JEV-ACTIVATION v1",
+      "artifact_binding": {
+        "artifact_ref": "MSP-COGNITIVE-JEV-ACTIVATION v1",
+        "path": ".canonflow/state/cognitive-jev-activation-proposal.json",
+        "sha256": "04f3b42e4a88cc65d3774d0019480b2157c0041087a1fd8b0f844c677cbd8932"
+      }
+    }
+  ]
+}

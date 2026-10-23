@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "question_session_id": "QS-0004",
+  "question_sha256": "sha256:914b61b636f1485ddde84ac51dfa443e8ef8a488842aba994da7bb833bdb2a47",
+  "events": [
+    {
+      "state": "INGESTED",
+      "at": "2026-10-21T22:18:40Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0002",
+      "reason": "answers ingested; records published (RUN-0002)",
+      "answer_session_id": "ANS-0004",
+      "records": [
+        "DEC-0014",
+        "DEC-0015",
+        "DEC-0016",
+        "DEC-0017",
+        "DEC-0018",
+        "DEC-0019"
+      ],
+      "outcomes": [
+        {
+          "question_id": "Q-NFR-0001",
+          "record_ids": [
+            "DEC-0014"
+          ]
+        },
+        {
+          "question_id": "Q-NFR-0002",
+          "record_ids": [
+            "DEC-0015"
+          ]
+        },
+        {
+          "question_id": "Q-NFR-0003",
+          "record_ids": [
+            "DEC-0016"
+          ]
+        },
+        {
+          "question_id": "Q-PRIORITY-ORDER",
+          "record_ids": [
+            "DEC-0017"
+          ]
+        },
+        {
+          "question_id": "Q-TRIAL",
+          "record_ids": [
+            "DEC-0018"
+          ]
+        },
+        {
+          "question_id": "Q-JEV-DATA",
+          "record_ids": [
+            "DEC-0019"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "from": "ANS-0004",
+          "to": "QS-0004",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T22:14:51Z"
+        },
+        {
+          "from": "DEC-0014",
+          "to": "ANS-0004",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T22:14:51Z"
+        },
+        {
+          "from": "DEC-0015",
+          "to": "ANS-0004",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T22:14:51Z"
+        },
+        {
+          "from": "DEC-0016",
+          "to": "ANS-0004",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T22:14:51Z"
+        },
+        {
+          "from": "DEC-0017",
+          "to": "ANS-0004",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T22:14:51Z"
+        },
+        {
+          "from": "DEC-0018",
+          "to": "ANS-0004",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T22:14:51Z"
+        },
+        {
+          "from": "DEC-0019",
+          "to": "ANS-0004",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-21T22:14:51Z"
+        }
+      ]
+    },
+    {
+      "state": "ARCHIVED",
+      "at": "2026-10-21T22:18:41Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0002",
+      "reason": "ingestion complete (RUN-0002): every answered question has a published DEC outcome; session closed"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0022",
+  "kind": "decision",
+  "title": "Retención de eventos de auditoría: 2 años",
+  "decision": "Respuesta a Q-RET-AUDIT «¿Cuánto se conservan los eventos de auditoría?»: `anios_2` — «2 años».",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T23:14:28Z",
+  "source": "QS-0006/ANS-0006 Q-RET-AUDIT",
+  "source_ref": {
+    "question_session_id": "QS-0006",
+    "answer_session_id": "ANS-0006",
+    "question_ids": [
+      "Q-RET-AUDIT"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "dias_90 — 90 días (actual)",
+    "anio_1 — 1 año",
+    "anios_5 — 5 años"
+  ],
+  "affected_items": [
+    "audit_event",
+    "NFR-0001",
+    "retention_global"
+  ],
+  "expiry": "",
+  "comment": ""
+}

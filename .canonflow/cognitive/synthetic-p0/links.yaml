@@ -1,0 +1,6 @@
+links:
+- from: EVD-9001
+  to: FR-9001
+  type: EVIDENCES
+  by: synthetic-activation-fixture
+  at: "2026-10-20"

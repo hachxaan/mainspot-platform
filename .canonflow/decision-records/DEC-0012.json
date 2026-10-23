@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0012",
+  "kind": "decision",
+  "title": "Q-SCOPE: niveles 2-3 permanecen excluidos; solo nivel 1 (micro) en v0.1",
+  "decision": "Respuesta a Q-SCOPE «¿Confirmas que los niveles 2-3 (pyme/grande con capa operativa) permanecen excluidos del alcance v0.1 (DEC-012)?»: `yes` — «Sí: solo nivel 1 (micro) en v0.1».",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T18:18:26Z",
+  "source": "QS-0002/ANS-0002 Q-SCOPE",
+  "source_ref": {
+    "question_session_id": "QS-0002",
+    "answer_session_id": "ANS-0002",
+    "question_ids": [
+      "Q-SCOPE"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "no — No: ampliar alcance (indicar en comentario)"
+  ],
+  "affected_items": [
+    "DEC-012 (canon upstream): niveles 2-3 fuera del alcance v0.1"
+  ],
+  "expiry": "",
+  "comment": ""
+}

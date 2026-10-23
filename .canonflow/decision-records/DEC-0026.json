@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0026",
+  "kind": "decision",
+  "title": "Respaldos: diarios, cifrados, 14 días, prueba de restauración mensual",
+  "decision": "Respuesta a Q-RET-BACKUPS «¿Qué respaldos de la base de datos se mantienen?»: `diario_14` — «Diarios, cifrados, conservados 14 días, con prueba de restauración mensual».",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T23:14:28Z",
+  "source": "QS-0006/ANS-0006 Q-RET-BACKUPS",
+  "source_ref": {
+    "question_session_id": "QS-0006",
+    "answer_session_id": "ANS-0006",
+    "question_ids": [
+      "Q-RET-BACKUPS"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "diario_30 — Diarios, cifrados, conservados 30 días",
+    "sin_respaldo — Sin respaldos durante el piloto"
+  ],
+  "affected_items": [
+    "mainspot-db",
+    "retention_global"
+  ],
+  "expiry": "",
+  "comment": ""
+}

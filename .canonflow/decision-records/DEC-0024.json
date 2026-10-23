@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0024",
+  "kind": "decision",
+  "title": "Baja de un negocio: anonimizar a los 30 días",
+  "decision": "Respuesta a Q-RET-EXIT «¿Qué pasa con los datos de un negocio que deja MainSpot?»: `anonimizar` — «Anonimizar a los 30 días (conservar agregados y estructura sin datos personales)».",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T23:14:28Z",
+  "source": "QS-0006/ANS-0006 Q-RET-EXIT",
+  "source_ref": {
+    "question_session_id": "QS-0006",
+    "answer_session_id": "ANS-0006",
+    "question_ids": [
+      "Q-RET-EXIT"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "borrar_30_dias — Borrar los datos operativos 30 días después de la baja confirmada por administración",
+    "hasta_solicitud — Conservar hasta que el negocio solicite el borrado"
+  ],
+  "affected_items": [
+    "retention_global",
+    "DEC-0018",
+    "DEC-0027"
+  ],
+  "expiry": "",
+  "comment": ""
+}

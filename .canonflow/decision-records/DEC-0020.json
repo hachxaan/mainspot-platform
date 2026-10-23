@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0020",
+  "kind": "decision",
+  "title": "Orden de remediación vigente: TOCTOU → retención global → dashboards fase 2 → enforcement de agentes (sustituye a DEC-0009)",
+  "decision": "Respuesta a Q-PRIORITY-RESOLVE «¿Qué orden de remediación queda vigente?»: `orden_comentario` — «El de mi comentario: TOCTOU → retención global → dashboards → agentes (sustituye a DEC-0009)». Orden resultante, tal como lo escribió el humano en el comentario de ANS-0004 (DEC-0017): 1 toctou_hardening, 2 retention_global, 3 dashboards_fase2, 4 agents_enforcement. Sustituye a DEC-0009 (enlace SUPERSEDES).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T22:43:01Z",
+  "source": "QS-0005/ANS-0005 Q-PRIORITY-RESOLVE",
+  "source_ref": {
+    "question_session_id": "QS-0005",
+    "answer_session_id": "ANS-0005",
+    "question_ids": [
+      "Q-PRIORITY-RESOLVE"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "orden_valor — El valor enviado: agentes → TOCTOU → retención global → dashboards (DEC-0009 sigue vigente)"
+  ],
+  "affected_items": [
+    "DEC-0009",
+    "DEC-0017",
+    "DEC-0005",
+    "DEC-0006",
+    "DEC-0011"
+  ],
+  "expiry": "",
+  "comment": ""
+}

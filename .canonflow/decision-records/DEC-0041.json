@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0041",
+  "kind": "decision",
+  "title": "Telegram: un bot de MainSpot para todos los negocios; vinculación con enlace de un solo uso, caducable y revocable",
+  "decision": "Respuesta a Q-TELEGRAM-MODEL «Canal de Telegram: ¿qué bot se usa y cómo se vincula un chat con un negocio?»: `bot_unico` — «Un bot de MainSpot para todos los negocios; vinculación con enlace de un solo uso generado en el panel (caduca y se puede revocar)». Condiciones declaradas por la sesión para todas las opciones: un chat no vinculado solo recibe instrucciones para vincularse; los mensajes de un chat vinculado entran en el flujo vigente con la identidad y los permisos del usuario vinculado.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T04:41:16Z",
+  "source": "QS-0008/ANS-0008 Q-TELEGRAM-MODEL",
+  "source_ref": {
+    "question_session_id": "QS-0008",
+    "answer_session_id": "ANS-0008",
+    "question_ids": [
+      "Q-TELEGRAM-MODEL"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "bot_por_negocio — Un bot por negocio: el propietario lo crea en BotFather y pega el token en el alta; MainSpot lo guarda cifrado y registra un webhook por bot (además hay que vincular quién escribe)",
+    "bot_unico_telefono — Un bot de MainSpot; vinculación compartiendo el teléfono: el bot pide el contacto y lo compara con el teléfono registrado del propietario"
+  ],
+  "affected_items": [
+    "DEC-0037",
+    "DEC-0039",
+    "src/channels/telegram.ts",
+    "src/channels/registry.ts"
+  ],
+  "expiry": "",
+  "comment": ""
+}

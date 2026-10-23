@@ -1,0 +1,138 @@
+# Checkpoint de entrega por bloques (desarrollo gobernado de MainSpot).
+# Cada bloque registra estado, decisiones que implementa, evidencia y siguiente gate.
+# Orden vigente: DEC-0037 (TOCTOU → retención global → producto → dashboards fase 2 → agentes)
+# y, dentro del producto, DEC-0044 (alta y panel → Telegram → publicación real).
+schema: mainspot-roadmap-checkpoint/v1
+updated_at: "2026-10-22T17:30:00Z"
+blocks:
+  - id: R0-runtime-jev
+    title: Credencial TypeSafe rotada en el runtime y modelo Jev fijado
+    state: DONE
+    implements: [APR-0002, DEC-0031, DEC-0034, DEC-0019]
+    summary: >-
+      mainspot-app usa la clave rotada (huellas comparadas sin imprimir); JEV_MODEL=jev-1.14.0, la versión que
+      respondió la evaluación jer_54d0649e; el gate la reconoce sin reevaluar y cualquier otra versión resuelta
+      vuelve a las reglas (D2, model_not_evaluated). primary sigue limitado a 2 tenants sintéticos.
+    evidence: [evidence/remediation/R0-runtime-jev/01-credential-and-model.txt]
+    open_items:
+      - "La copia de TYPESAFE_API_KEY en .env del repo y ~/.config/mainspot/cognitive-jev/typesafe-api-key no coinciden con la clave rotada: el propietario debe sustituirlas o borrarlas."
+    next_gate: none
+  - id: R1-toctou-nfr0001
+    title: Cuotas atómicas por tenant (TOCTOU) y atomicidad efecto + auditoría
+    state: DONE
+    implements: [DEC-0005, DEC-0020, DEC-0037, DEC-0014]
+    summary: >-
+      QuotaLedger (src/subscriptions/quota.ts, migración 0014): comprobación y consumo bajo candado por
+      (tenant, capacidad), consumo en un paso o reserva en dos pasos con TTL, Idempotency-Key, reconciliación de
+      reservas vencidas cada 60 s, aislamiento por tenant. NFR-0001 aplicado a cuota, social, reputación y
+      facturación (barrido con 10 pruebas de fallo inyectado). Desplegado en mainspot-app.
+    evidence:
+      - evidence/remediation/R1-toctou-nfr0001/01-tests.txt
+      - evidence/remediation/R1-toctou-nfr0001/02-mutation-check.txt
+      - evidence/remediation/R1-toctou-nfr0001/03-lxc-deploy.log
+      - evidence/remediation/R1-toctou-nfr0001/04-lxc-smoke.txt
+    next_gate: none (continúa R2-retention)
+  - id: R2-retention-global
+    title: Retención global, baja/anonimización y respaldos
+    state: DONE
+    implements: [DEC-0021, DEC-0022, DEC-0023, DEC-0024, DEC-0025, DEC-0026, DEC-0027, DEC-0014]
+    summary: >-
+      RetentionService (src/retention/service.ts, migración 0015): purga automática diaria desde las 03:00 UTC
+      (contenido conversacional 90 días redactado conservando la estructura, propuestas abiertas caducadas,
+      cuerpos Jev a NULL; auditoría y agregados 2 años), una transacción y un evento retention.purged por tenant,
+      informe en retention_run. Baja solo por confirmación humana (CLI tenant:exit) con exportación previa 0600 y
+      sha256, sin acceso desde la confirmación; anonimización a los 30 días con verificación de ausencia de
+      rastros en todas las columnas de texto/JSON dentro de la transacción (si queda uno, se revierte).
+      Re-aplicación de bajas tras restaurar (registro sha256, caduca a los 30 días). Purga manual y RETENTION_DAYS
+      eliminados; permiso analytics.purge → analytics.retention (vista previa). Desplegado; ejecución programada
+      completada en producción (2 tenants, nada que purgar). Respaldos diarios y prueba mensual habilitados en el
+      host; simulacro de no reintroducción sobre copia restaurada sin rastros.
+    evidence:
+      - evidence/remediation/R2-retention/01-tests.txt
+      - evidence/remediation/R2-retention/02-mutation-check.txt
+      - evidence/remediation/R2-retention/03-lxc-deploy.log
+      - evidence/remediation/R2-retention/04-lxc-smoke.txt
+      - evidence/remediation/R2-retention/05-restore-drill.txt
+      - evidence/remediation/R2-retention/06-backup-timers.txt
+    open_items:
+      - "Destino de respaldos fuera del equipo y custodia de la clave: preguntados en QS-0010 (Q-BACKUP-DESTINATION, Q-BACKUP-KEY). Hoy respaldos y única copia de la clave están en el mismo equipo que la base."
+      - "No se confirmó ninguna baja en producción: la anonimización real solo se ejercitó en la base de pruebas y en una copia restaurada (DEC-0027)."
+    next_gate: "ANS-0010 (QS-0010) y ANS-0011 (QS-0011) para el destino de los respaldos, la custodia de la clave, la expiración remota y los riesgos de Garage; no bloquea el bloque de producto"
+  - id: C1-s3-backup-contract
+    title: Contrato de integración MainSpot ↔ Garage S3 (KVM 4) para respaldos remotos
+    state: PUBLISHED_V1_1
+    implements: [DEC-0026, DEC-0027, DEC-0045, DEC-0046, DEC-0047, DEC-0048, DEC-0049, DEC-0052, DEC-0053]
+    summary: >-
+      QS-0010 (ANS-0012) y QS-0011 (ANS-0011) ingeridas en RUN-0010 → DEC-0045..DEC-0054. Contrato 1.1.0
+      publicado en hachxaan/mainspot-platform, rama contract/backup-object-storage-v1: commit del contrato
+      0cbdfcf008ed84f9cddea399c5d49915ca24e828, pin del README 7cbbf70c50a45c20d0d59960c21ee13e9679ccc5
+      (fast-forward desde 21537dee, sin force-push, verificado con clon anónimo). Incluye estado APROBADO por DEC,
+      lectura literal de DEC-0046 (la regla del bucket borra; el vigilante del KVM 4 no borra), copia protegida §9.2
+      (S-16, C-21, C-22), reconciliación con hachxaan/mainspot-s3-backups@ab046d24 (versión redactada publicada;
+      íntegra solo en evidence/). Revisión independiente: 1 BLOCKER + 3 MAJOR + 14 MINOR corregidos antes de publicar.
+    evidence:
+      - docs/contracts/backup-object-storage/v1/VERIFICATION.md
+      - docs/contracts/backup-object-storage/v1/CHANGELOG.md
+      - evidence/contracts/backup-object-storage-v1/06-infra-reconciliation-ab046d24-full.md
+      - evidence/contracts/backup-object-storage-v1/07-lab-v1.1-review-fixes-garage-v2.4.1.txt
+      - evidence/contracts/backup-object-storage-v1/08-publish-v1.1.0.txt
+      - .canonflow/skill-runs/RUN-0010.skill-report.yaml
+    open_items:
+      - "KVM 4 (hachxaan/mainspot-s3-backups): H-01/H-02 vigilante sin borrado ni retención >16 d, H-03 copia protegida, H-04 canal de aviso, H-05 nombres/formato de credenciales, H-06 bucket de laboratorio; citar el contrato por 0cbdfcf."
+      - "QS-0012 (RUN-0011) pendiente: Q-ALERT-CHANNEL (P-3), Q-GUARD-OPTION (P-2), Q-RETENTION-READING (P-1)."
+    next_gate: "Respuesta a QS-0012; cambios H-01..H-06 en el KVM 4; conformidad real con \"conformant\": true citando el commit del servicio (condiciones 1–3 de §2.3)"
+  - id: R3-remote-producer
+    title: Productor de respaldo remoto (desactivado)
+    state: IMPLEMENTED_DISABLED
+    implements: [DEC-0026, DEC-0045, DEC-0046, DEC-0047, DEC-0049]
+    summary: >-
+      scripts/ops/backup/db-backup-remote.py según §8, §10.1, §12, §13 y §16.3 del contrato; sin configuración
+      termina status=DISABLED sin red; unidades systemd escritas y no instaladas. 23 pruebas del autor y 29 de la
+      validación adversarial independiente (fable-xhigh) contra Garage v2.4.1 de laboratorio; D-01 (detección diaria
+      por MAC/regla 5) y D-02 (conteo de intentos) corregidos y reverificados; lista blanca de operaciones sin
+      Delete/Copy/Lifecycle; sin secretos en registros. Restauración desde origen y desde copia guard demostrada en
+      laboratorio, no contra el servicio real.
+    evidence:
+      - evidence/remediation/R3-remote-producer/03-adversarial-validation.md
+      - evidence/remediation/R3-remote-producer/05-fixes-tests.txt
+      - evidence/remediation/R3-remote-producer/06-adversarial-retest.txt
+    open_items:
+      - "O-1..O-3 (baja/informativa) del productor para la auditoría fable-max previa a la condición 7."
+      - "Prueba contra el servicio real y restauración remota (condiciones 5–6) requieren credenciales del servicio entregadas por el propietario."
+    next_gate: "Condiciones 1–6 de §2.3 acreditadas (evidence/coordination/02-activation-gate.md) → auditoría fable-max → publicar la sesión de autorización (borrador evidence/coordination/QS-activation-draft.questions.json) → DEC de autorización"
+  - id: T1-publication-runtime-eval
+    title: Definición técnica de la publicación por tenant (OCI frente a LXC/LXD, proxy, DNS y TLS)
+    state: DONE
+    implements: [DEC-0042, DEC-0043]
+    summary: >-
+      Evaluación medida en este equipo (memoria, disco, arranque, densidad, límites, controles de seguridad,
+      rollout de base, proxies con rutas dinámicas, wildcard DNS-01). PROPUESTA no decidida: contenedor OCI
+      endurecido por tenant, Traefik con file provider escrito por un aprovisionador, certificado wildcard por
+      DNS-01 en un job aislado. No autoriza construir: la publicación va tercera en DEC-0044.
+    evidence: [docs/architecture/publication-runtime-evaluation.md]
+    next_gate: "Preguntas abiertas del §7 del documento, al llegar el turno de la publicación real (DEC-0044)"
+  - id: H1-hdc-instruments
+    title: FND-0001 (generated_at futuro) y solución temporal HDC-0006
+    state: PATCH_READY
+    implements: []
+    summary: >-
+      HDC-0009 (parche + wrapper de publicación que sella generated_at) y parche upstream de HDC-0006 (puntos
+      1, 3, 4, 5 y 7; 2 y 6 con la opción recomendada) apilados y verificados (115 pruebas de decision-console);
+      script de vistas de compatibilidad generalizado (--run).
+    evidence:
+      - .canonflow-updates/HDC-0009-publish-session-generated-at.md
+      - .canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md
+    next_gate: "ANS-0010 (QS-0010: Q-HDC-INDEX-STATE, Q-HDC-ARCHIVE) decide los puntos 2 y 6 de HDC-0006; después, integración upstream y cambio de pin (requiere nueva aprobación de la propuesta de activación de Jev)"
+  - id: U1-ux-brief
+    title: Brief para Claude Design (alta, panel, Telegram, vistas previas, aprobaciones, publicación)
+    state: DONE
+    implements: [DEC-0039, DEC-0040, DEC-0041, DEC-0042, DEC-0043, DEC-0044]
+    evidence: [docs/ux/claude-design-brief.md]
+    next_gate: "El propietario genera el prototipo en Claude Design; revisión y aprobación en el HDC ligada a los bytes (DEC-0040) antes de implementar"
+  - id: P1-product-block
+    title: Producto para el usuario final (alta y panel → Telegram → publicación real)
+    state: WAITING_HUMAN_GATE
+    implements: [DEC-0037, DEC-0039, DEC-0040, DEC-0041, DEC-0042, DEC-0043, DEC-0044]
+    open_items:
+      - "Publicación: definición técnica hecha (T1-publication-runtime-eval); sus preguntas se llevan al HDC cuando llegue su turno."
+    next_gate: "Prototipo de Claude Design aprobado en el HDC ligado a sus bytes (DEC-0040); R0–R2 cerrados. Sin ese gate no hay trabajo de producto construible: DEC-0040 exige el diseño aprobado antes de construir el alta, el panel y la vinculación de Telegram, y DEC-0044 ordena el resto detrás."

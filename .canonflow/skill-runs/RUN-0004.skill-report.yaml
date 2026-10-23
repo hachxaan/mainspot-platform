@@ -1,0 +1,63 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0004
+run_id: RUN-0004
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Ingestion of ANS-0007 (QS-0007) only. No statement about the substantive
+  quality of the decisions or about the implementation they authorize.
+human_summary: |
+  APR-0002 approves MSP-JEV-CLASSIFIER-MODES v1 (bound to the exact proposal bytes, sha256 ef33139b…31cad) and its implementation plan.
+  Decision points: D1 discrepancy on prohibited/sensitive → escalate to human approval (DEC-0028); D2 Jev unavailable/error/budget → deterministic fallback, marked (DEC-0029); D3 low confidence or `other` → ask for clarification (DEC-0030); D4 primary activates automatically once the synthetic evaluation passes its thresholds (DEC-0031); D5 TypeSafe budget USD 1/day in dev/test (DEC-0032).
+  QS-0007 INGESTED and ARCHIVED; no session remains pending. Real customer messages stay excluded (DEC-0019; JEV_DATA_SCOPE=synthetic).
+claims:
+  - class: VERIFIED
+    statement: "ANS-0007 validates against the v2 answer-session profile and binds to the exact QS-0007 bytes; every single_choice value is a declared option; the approval's artifact binding matches the current proposal bytes (sha256 ef33139b9e569c2ac00be693faeaa693b627a99367f0e8fe5f06cff8b2631cad); optional Q-NOTES unanswered."
+    evidence: [.canonflow/skill-runs/RUN-0004/evidence/EV-0001-answers-validation.json]
+    refs: [APR-0002]
+  - class: VERIFIED
+    statement: "APR-0002 and DEC-0028..DEC-0032 published through canonflow-hdc publish-ingestion with DERIVES_FROM links; QS-0007 carries INGESTED and ARCHIVED events, sits in archived/, and the live HDC shows QS-0001..QS-0007 ARCHIVED."
+    evidence: [.canonflow/skill-runs/RUN-0004/evidence/EV-0002-publish-ingestion-and-archive.jsonl, .canonflow/skill-runs/RUN-0004/evidence/EV-0005-hdc-live-sessions.json]
+    refs: [APR-0002, DEC-0028, DEC-0032]
+  - class: DECIDED
+    statement: "MSP-JEV-CLASSIFIER-MODES v1 is approved for implementation with D1 escalar_humano, D2 determinista_respaldo, D3 aclaracion, D4 tras_evaluacion, D5 usd_1."
+    refs: [APR-0002, DEC-0028, DEC-0029, DEC-0030, DEC-0031, DEC-0032]
+  - class: VERIFIED
+    statement: "Index/latest writes ran with mainspot-hdc.service stopped (00:51:36Z-00:51:38Z); after restart /api/v1/ready reports writes_enabled=true (loopback and HTTPS)."
+    evidence: [.canonflow/skill-runs/RUN-0004/evidence/EV-0003-compat-views.txt, .canonflow/skill-runs/RUN-0004/evidence/EV-0004-ready-after-restart.json]
+    refs: []
+  - class: OPEN
+    statement: "G-REPO dirty-tree pre-flight not satisfied: the work branch still carries uncommitted output of earlier runs and sessions."
+    refs: []
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT WARN now also covers QS-0007; it is the reconcile
+      defect recorded in .canonflow-updates/HDC-0008 (not a design property, as
+      earlier reports stated), visible until the CanonFlow pin is updated.
+    evidence: .canonflow/skill-runs/RUN-0004/evidence/EV-0003-compat-views.txt
+limitations:
+  - "G-REPO: tree not clean at run start (see OPEN claim)."
+  - "Only the pending_human mirror of method-state was updated (update_state.py); canon state files are owned by other skills."
+evidence:
+  - .canonflow/skill-runs/RUN-0004/evidence/EV-0001-answers-validation.json
+  - .canonflow/skill-runs/RUN-0004/evidence/EV-0002-publish-ingestion-and-archive.jsonl
+  - .canonflow/skill-runs/RUN-0004/evidence/EV-0003-compat-views.txt
+  - .canonflow/skill-runs/RUN-0004/evidence/EV-0004-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0004/evidence/EV-0005-hdc-live-sessions.json
+outputs:
+  - .canonflow/decision-records/APR-0002.json (+ .md companion)
+  - .canonflow/decision-records/DEC-0028.json .. DEC-0032.json (+ .md companions)
+  - .canonflow/decision-state/sessions/QS-0007.lifecycle.json
+  - .canonflow/decision-sessions/archived/QS-0007.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+gates_checked:
+  - {gate: G-REPO, status: FAIL, evidence: "uncommitted prior-run paths at run start; see OPEN claim"}
+blockers: []
+next_pointer: "none pending in the HDC; implementation of APR-0002 follows"
+created_at: "2026-10-22T00:53:00Z"

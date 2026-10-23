@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0050",
+  "kind": "decision",
+  "title": "Índice de decisiones del HDC: «state» es el estado efectivo derivado de la evidencia; se corrige la descripción del esquema (HDC-0006 punto 2, opción A)",
+  "decision": "Respuesta a Q-HDC-INDEX-STATE «¿Qué significa el campo «state» del índice de decisiones de la consola?»: `efectivo` — «Estado efectivo (resultado de la evidencia); se corrige la descripción del esquema». Condiciones declaradas en Q-NOTES (DEC-0054).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T10:52:59Z",
+  "source": "QS-0010/ANS-0012 Q-HDC-INDEX-STATE",
+  "source_ref": {
+    "question_session_id": "QS-0010",
+    "answer_session_id": "ANS-0012",
+    "question_ids": [
+      "Q-HDC-INDEX-STATE"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "declarado — Estado declarado en el archivo de la sesión, como dice hoy el esquema"
+  ],
+  "affected_items": [
+    ".canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md",
+    ".canonflow-updates/patches/HDC-0006-compat-views-lifecycle.patch",
+    ".canonflow-updates/artifacts/HDC-0006-regenerate-compat-views.py",
+    "DEC-0054"
+  ],
+  "expiry": "",
+  "comment": ""
+}

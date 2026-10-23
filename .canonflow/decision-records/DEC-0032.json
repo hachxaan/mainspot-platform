@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0032",
+  "kind": "decision",
+  "title": "D5 — Presupuesto diario de TypeSafe en desarrollo y pruebas: USD 1",
+  "decision": "Respuesta a Q-JEV-BUDGET «D5 — Presupuesto diario de TypeSafe en desarrollo y pruebas»: `usd_1` — «USD 1 al día». Punto de decisión de MSP-JEV-CLASSIFIER-MODES v1 (APR-0002).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T00:47:02Z",
+  "source": "QS-0007/ANS-0007 Q-JEV-BUDGET",
+  "source_ref": {
+    "question_session_id": "QS-0007",
+    "answer_session_id": "ANS-0007",
+    "question_ids": [
+      "Q-JEV-BUDGET"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "usd_0_25 — USD 0,25 al día",
+    "usd_5 — USD 5 al día"
+  ],
+  "affected_items": [
+    "APR-0002",
+    "DEC-0019"
+  ],
+  "expiry": "",
+  "comment": ""
+}

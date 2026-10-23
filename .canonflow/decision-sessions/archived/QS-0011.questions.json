@@ -1,0 +1,167 @@
+{
+  "schema_version": 2,
+  "question_session_id": "QS-0011",
+  "session_label": "Contrato de respaldos remotos con Garage S3 (KVM 4)",
+  "title": "Confirmar el destino de los respaldos en Garage (KVM 4), quién aplica la expiración y los dos riesgos que Garage no permite eliminar",
+  "generated_at": "2026-10-22T08:29:34Z",
+  "state": "PENDING",
+  "ui_language": "es",
+  "risk_tier": 2,
+  "affected_loop": "implementation_loop",
+  "intervention_reason": "Pedida por el propietario el 2026-10-22: cerrar y publicar el contrato de integración entre MainSpot y el servicio S3 (Garage) que se está montando en Hostinger KVM 4. El contrato v1 (docs/contracts/backup-object-storage/v1/CONTRACT.md, rama contract/backup-object-storage-v1 de hachxaan/mainspot-platform) separa lo aprobado (DEC-0026, DEC-0027) de lo propuesto. Cuatro puntos son decisiones materiales que solo tú puedes tomar y el contrato no los promueve sin tu respuesta: el destino concreto, quién aplica la expiración de 14 días y dos riesgos que Garage no permite eliminar.",
+  "decision_impact": "Las respuestas fijan el §2.2 del contrato; se publicará una versión nueva con los DEC resultantes. No activan la copia remota: la activación exige además el informe de conformidad del servicio real, el productor implementado y probado, y tu aprobación explícita en el HDC. QS-0010 sigue abierta: su Q-BACKUP-DESTINATION debe ser coherente con Q-S3-DESTINATION (si allí eliges «almacenamiento de objetos», aquí eliges el proveedor) y su Q-BACKUP-KEY decide quién custodia la clave de descifrado. El mecanismo de respaldo local no cambia con ninguna respuesta.",
+  "initial_instructions": "Cada pregunta incluye los datos necesarios; el contrato publicado tiene el detalle técnico. Las recomendaciones no son vinculantes y nada va preseleccionado. Elige la opción que refleje tu decisión: si un comentario contradice la opción elegida, la pregunta quedará en conflicto y se te volverá a preguntar.",
+  "topics": [
+    {
+      "topic_id": "destino",
+      "title": "Destino de la copia fuera del equipo"
+    },
+    {
+      "topic_id": "retencion",
+      "title": "Expiración de los respaldos remotos"
+    },
+    {
+      "topic_id": "riesgos",
+      "title": "Riesgos que Garage no permite eliminar"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-S3-DESTINATION",
+      "type": "single_choice",
+      "topic_id": "destino",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿La copia de los respaldos fuera del equipo va a Garage en el KVM 4, cifrada antes por MainSpot y con la clave siempre fuera del KVM 4?",
+      "short_description": "Registra en el HDC el destino que indicaste al encargar el contrato.",
+      "full_explanation": "Lo que indicaste el 2026-10-22:\n- servicio S3 propio (Garage) en Hostinger KVM 4, repositorio hachxaan/mainspot-s3-backups;\n- endpoint https://s3.mainspot.canonflow.dev, bucket mainspot-backups, HTTPS y firma SigV4;\n- MainSpot cifra cada respaldo antes de enviarlo (el mismo archivo cifrado que ya genera cada día) y la clave de descifrado nunca está en Garage ni en el KVM 4;\n- 14 días de conservación y prueba mensual de restauración (ya aprobados en DEC-0026);\n- destino independiente del equipo que ejecuta PostgreSQL.\n\nEstado del servicio el 2026-10-22: el nombre resuelve y el puerto 80 redirige a HTTPS, pero el certificado es autofirmado; hasta corregirlo, el servicio no es conforme.\n\nRelación con QS-0010: Q-BACKUP-DESTINATION ofrecía «almacenamiento de objetos compatible con S3 (el proveedor se elige después)». Esta pregunta elige ese proveedor. Si en QS-0010 eliges otra opción, las dos respuestas quedarán en conflicto y se te preguntará.\n\nEvidencia: contrato §1–§3 y §6; VERIFICATION.md §7.",
+      "why_this_matters": "Sin este registro el contrato solo puede marcar el destino como propuesto, y el servicio del KVM 4 no se puede dar por aceptado.",
+      "recommended_option": "garage_kvm4",
+      "options": [
+        {
+          "value": "garage_kvm4",
+          "label": "Sí: Garage en el KVM 4 (s3.mainspot.canonflow.dev, bucket mainspot-backups), cifrado en MainSpot y la clave nunca en el KVM 4",
+          "recommended_when": "si es el servicio que estás montando para estos respaldos",
+          "impact": "el contrato queda con ese destino; el servicio se termina y se prueba con la conformidad de §14",
+          "risk": "los de las preguntas Q-S3-DELETE-RISK y Q-S3-SINGLE-NODE"
+        },
+        {
+          "value": "otro_destino",
+          "label": "No: otro destino (indícalo en las notas)",
+          "impact": "el contrato se rehace para el destino que indiques",
+          "risk": "el trabajo hecho en el KVM 4 no se usaría para estos respaldos"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-S3-RETENTION-ENFORCEMENT",
+      "type": "single_choice",
+      "topic_id": "retencion",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Quién borra los respaldos remotos al cumplir 14 días?",
+      "short_description": "DEC-0026 fija 14 días y DEC-0027 exige que los respaldos expiren; falta decidir dónde se aplica.",
+      "full_explanation": "Las copias locales las borra el propio script de respaldo a los 14 días. Para las remotas hay dos mecanismos posibles:\n- Una regla de ciclo de vida en el bucket: Garage borra cada día lo que supera 14 días. Con la ventana de subida de 24 h del contrato, ningún respaldo remoto pasa de 16 días.\n- Que MainSpot liste y borre los objetos antiguos, como hace con las copias locales.\n\nPor qué importa: MainSpot guarda 30 días la huella de los negocios anonimizados para no reintroducirlos al restaurar (DEC-0027). Esa protección solo vale si ningún respaldo vive más de 30 días. Si la expiración depende de MainSpot y su equipo se pierde o falla, los objetos remotos dejan de expirar.\n\nLimitación de Garage (verificada en v1.2.0 y v2.4.1): la credencial que sube también puede cambiar o quitar la regla de ciclo de vida. Por eso el contrato comprueba la regla cada día desde los dos lados.\n\nEvidencia: contrato §9 y §10.1.",
+      "why_this_matters": "Decide si la expiración que exige DEC-0027 se cumple aunque el equipo de MainSpot no esté disponible.",
+      "recommended_option": "ciclo_vida_servicio",
+      "options": [
+        {
+          "value": "ciclo_vida_servicio",
+          "label": "El servicio: regla de ciclo de vida de 14 días en el bucket; MainSpot no borra",
+          "recommended_when": "si quieres que la expiración se cumpla aunque el equipo de MainSpot esté caído o se haya perdido",
+          "impact": "la expiración no depende de MainSpot; el productor solo sube y comprueba",
+          "risk": "una credencial de escritura robada podría quitar la regla; se detecta en la comprobación diaria"
+        },
+        {
+          "value": "mainspot_borra",
+          "label": "MainSpot: borra los objetos de más de 14 días, como con las copias locales",
+          "impact": "un solo mecanismo de retención, en MainSpot",
+          "risk": "si el equipo de MainSpot se pierde o falla, los respaldos remotos dejan de expirar y pueden superar los 30 días del registro de bajas"
+        },
+        {
+          "value": "ambos",
+          "label": "Los dos: regla del servicio y borrado por MainSpot",
+          "impact": "redundancia; el contrato añade el borrado al productor",
+          "risk": "dos mecanismos que mantener y vigilar"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-S3-DELETE-RISK",
+      "type": "single_choice",
+      "topic_id": "riesgos",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "Garage no permite una credencial que suba sin poder borrar. ¿Cómo se trata ese riesgo?",
+      "short_description": "Con la credencial de escritura del equipo de MainSpot se pueden borrar o sobrescribir los respaldos remotos.",
+      "full_explanation": "Lo verificado en Garage v1.2.0 y v2.4.1:\n- el permiso que permite subir también permite borrar, sobrescribir y cambiar el ciclo de vida;\n- no existen versiones de objetos ni bloqueo contra borrado: esas operaciones devuelven «no implementado».\n\nRiesgo: si alguien compromete el equipo de MainSpot, con su credencial puede borrar también las copias remotas. Probablemente borraría a la vez las locales.\n\nLo que el contrato ya hace:\n- comprobación diaria del inventario y de la regla de ciclo de vida desde los dos lados;\n- un MAC en el manifiesto, para que nadie sin la clave pueda sustituir un respaldo por otro sin que se note.\n\nMitigación posible, no incluida en el contrato: una «copia protegida». El KVM 4 copiaría cada respaldo a un segundo bucket que la credencial de MainSpot no alcanza, también con 14 días. Protege si se compromete MainSpot, pero no si se pierde el KVM 4. Exige más espacio y trabajo en el KVM 4.\n\nHoy solo hay negocios sintéticos.\n\nEvidencia: contrato §8.1 y §17 (R1); VERIFICATION.md §5.",
+      "why_this_matters": "Fija cuánta protección contra borrado malicioso hace falta antes de activar la copia remota y antes de tener datos reales.",
+      "recommended_option": "aceptar_hasta_reales",
+      "options": [
+        {
+          "value": "aceptar_hasta_reales",
+          "label": "Aceptarlo con la detección diaria mientras solo haya negocios sintéticos; decidir la copia protegida antes del primer negocio real",
+          "recommended_when": "si mientras no haya datos reales prefieres no añadir trabajo en el KVM 4",
+          "impact": "se puede activar sin trabajo extra en el KVM 4; queda como condición previa para datos reales",
+          "risk": "hasta entonces, comprometer el equipo de MainSpot permite borrar las copias remotas"
+        },
+        {
+          "value": "copia_protegida_antes",
+          "label": "Exigir la copia protegida en el KVM 4 antes de activar la copia remota",
+          "impact": "un compromiso de MainSpot no alcanza la copia protegida; el contrato pasa a la versión 1.1",
+          "risk": "más espacio y trabajo en el KVM 4; no protege contra la pérdida del KVM 4"
+        },
+        {
+          "value": "aceptar_sin_plazo",
+          "label": "Aceptarlo sin plazo, solo con la detección diaria",
+          "impact": "nada más que construir",
+          "risk": "el riesgo sigue también con negocios reales"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-S3-SINGLE-NODE",
+      "type": "single_choice",
+      "topic_id": "riesgos",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "Garage en un solo nodo guarda una única copia de cada objeto. ¿Se acepta?",
+      "short_description": "Con un nodo, perder el disco del KVM 4 pierde la copia remota; la copia local sigue existiendo.",
+      "full_explanation": "Con un solo nodo, Garage guarda cada dato una sola vez (replication_factor = 1). Su documentación lo considera adecuado solo para pruebas.\n\nQué cubre cada copia:\n- La limpieza periódica (scrub) detecta corrupción, pero no la repara sin otro nodo.\n- Mientras exista el equipo de MainSpot, cada respaldo está en dos sitios independientes: la copia local de 14 días y la remota.\n- Si se pierde el KVM 4 se pierde la remota y queda la local. Si se pierde el equipo de MainSpot se usa la remota.\n- Solo se pierde todo si caen los dos a la vez.\n\nCon dos nodos en ubicaciones distintas, Garage puede guardar dos copias, pero mientras un nodo esté caído las escrituras pueden fallar. Más nodos es más coste.\n\nEvidencia: contrato §15 (S-11) y §17 (R2); documentación de durabilidad de Garage.",
+      "why_this_matters": "Decide si la durabilidad de un solo VPS basta para la copia fuera del equipo.",
+      "recommended_option": "nodo_unico",
+      "options": [
+        {
+          "value": "nodo_unico",
+          "label": "Aceptar un solo nodo: la copia local y la remota son las dos copias independientes",
+          "recommended_when": "si dos copias en dos equipos distintos bastan para el piloto",
+          "impact": "sin coste adicional",
+          "risk": "si se pierden a la vez el equipo de MainSpot y el KVM 4, se pierden todos los respaldos"
+        },
+        {
+          "value": "segundo_nodo_antes_reales",
+          "label": "Un nodo ahora; un segundo nodo en otra ubicación antes del primer negocio real",
+          "impact": "tres copias con datos reales",
+          "risk": "otro VPS que pagar y operar; escrituras que pueden fallar con un nodo caído"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NOTES",
+      "type": "free_text",
+      "topic_id": "destino",
+      "required": false,
+      "title": "Notas para el registro",
+      "short_description": "Opcional. Se transcribe literalmente en el registro de decisión. Nunca escribas credenciales ni claves.",
+      "options": []
+    }
+  ]
+}

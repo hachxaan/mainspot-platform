@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0052",
+  "kind": "decision",
+  "title": "Copia de los respaldos fuera del equipo: copia cifrada diaria en almacenamiento de objetos compatible con S3 (proveedor fijado por DEC-0045: Garage en el KVM 4)",
+  "decision": "Respuesta a Q-BACKUP-DESTINATION «¿Dónde se guarda una copia de los respaldos fuera de este equipo?»: `almacenamiento_objetos` — «Copia cifrada diaria en almacenamiento de objetos en la nube compatible con S3 (el proveedor se elige después)». Condiciones declaradas en Q-NOTES (DEC-0054). QS-0011 declaró que su Q-S3-DESTINATION elige el proveedor de esta opción: DEC-0045 (garage_kvm4).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T10:52:59Z",
+  "source": "QS-0010/ANS-0012 Q-BACKUP-DESTINATION",
+  "source_ref": {
+    "question_session_id": "QS-0010",
+    "answer_session_id": "ANS-0012",
+    "question_ids": [
+      "Q-BACKUP-DESTINATION"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "solo_equipo_hasta_reales — Solo en este equipo mientras no haya negocios reales; el destino externo se decide antes del primer negocio real",
+    "medio_externo — Copia en un disco externo o NAS bajo tu control"
+  ],
+  "affected_items": [
+    "DEC-0026",
+    "DEC-0027",
+    "DEC-0045",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "DEC-0054"
+  ],
+  "expiry": "",
+  "comment": ""
+}

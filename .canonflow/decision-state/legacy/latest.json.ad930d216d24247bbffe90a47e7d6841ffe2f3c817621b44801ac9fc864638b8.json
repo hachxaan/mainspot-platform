@@ -1,0 +1,8 @@
+{
+  "latest": "QS-0001",
+  "state": "ANSWERED",
+  "updated_at": "2026-10-21T18:01:48Z",
+  "answer_session": "ANS-0001",
+  "answers": ".canonflow/decision-sessions/answered/QS-0001.answers.json",
+  "answered_at": "2026-10-21T18:01:48Z"
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0040",
+  "kind": "decision",
+  "title": "Panel y alta: primero un diseño aprobado en el HDC (flujos y maquetas navegables) y después la construcción",
+  "decision": "Respuesta a Q-UX-PROCESS «Diseño del panel y del alta: ¿se aprueba un diseño antes de construir?»: `diseno_primero` — «Primero un diseño aprobado en el HDC: flujos y maquetas navegables (HTML estático) del alta, el panel del propietario y la vinculación de Telegram; se construye solo después de aprobarlo».",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T04:41:16Z",
+  "source": "QS-0008/ANS-0008 Q-UX-PROCESS",
+  "source_ref": {
+    "question_session_id": "QS-0008",
+    "answer_session_id": "ANS-0008",
+    "question_ids": [
+      "Q-UX-PROCESS"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "construir_directo — Construir directamente siguiendo el canon de usabilidad y revisar sobre la app desplegada"
+  ],
+  "affected_items": [
+    "DEC-0037",
+    "DEC-0039",
+    "DEC-0041",
+    "src/api/ui.ts"
+  ],
+  "expiry": "",
+  "comment": ""
+}

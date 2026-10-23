@@ -1,0 +1,99 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0002
+run_id: RUN-0002
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Ingestion of ANS-0004 (QS-0004) and generation of the follow-up sessions QS-0005,
+  QS-0006 and QS-0007 only. No statement about the substantive quality of the
+  human decisions, canon readiness or release.
+human_summary: |
+  Six records transcribed from ANS-0004 (DEC-0014..DEC-0019), owner Carlos Pinacho; QS-0004 INGESTED and ARCHIVED.
+  NFR-0001..0003 promoted (with DEC-0008 all five NFR are obligations for v0.2); Trial defined as an admin-assigned `trial` plan (DEC-0018); real-message risk NOT accepted (DEC-0019) and `.env` set to JEV_ENABLED=false as the question declared.
+  Q-PRIORITY-ORDER sent the unchanged order while its comment confirms another and asks to supersede DEC-0009: DEC-0017 transcribes both; QS-0005 asks which one stands.
+  Requested follow-ups prepared: QS-0006 (retention, deletion, backups policy) and QS-0007 (approval of MSP-JEV-CLASSIFIER-MODES v1 plus D1–D5).
+claims:
+  - class: VERIFIED
+    statement: "ANS-0004 validates against the v2 answer-session profile; question_session_id, question_sha256 and payload_sha256 bind to the exact QS-0004 bytes; no required question unanswered; Q-TRIAL requires_comment satisfied."
+    evidence: [.canonflow/skill-runs/RUN-0002/evidence/EV-0001-answers-validation.json]
+    refs: []
+  - class: VERIFIED
+    statement: "DEC-0014..DEC-0019 published through canonflow-hdc publish-ingestion (one record per answered question, DERIVES_FROM links ANS-0004->QS-0004 and REC->ANS-0004); QS-0004 carries INGESTED and ARCHIVED events, sits in archived/ and reconciles ARCHIVED with confirmed evidence."
+    evidence: [.canonflow/skill-runs/RUN-0002/evidence/EV-0002-publish-ingestion.json, .canonflow/skill-runs/RUN-0002/evidence/EV-0007-reconcile.json]
+    refs: [DEC-0014, DEC-0019]
+  - class: DECIDED
+    statement: "NFR-0001, NFR-0002 and NFR-0003 are promoted to canon obligations in the v0.2 staging patch (NFR-0004/0005 already by DEC-0008)."
+    refs: [DEC-0014, DEC-0015, DEC-0016, DEC-0008]
+  - class: DECIDED
+    statement: "The «cuenta Trial» is a `trial` catalog plan assigned by administration (subscription.admin), with the conditions stated verbatim in the record comment."
+    refs: [DEC-0018]
+  - class: DECIDED
+    statement: "Sending the text of real customer messages to TypeSafe for shadow evaluation is not accepted."
+    refs: [DEC-0019]
+  - class: VERIFIED
+    statement: "As the Q-JEV-DATA question declared for a non-acceptance, the local `.env` now has JEV_ENABLED=false (single line changed; the API container mainspot-app is stopped)."
+    evidence: [.canonflow/skill-runs/RUN-0002/evidence/EV-0008-env-jev-enabled.txt]
+    refs: [DEC-0019]
+  - class: CONFLICTED
+    statement: "Q-PRIORITY-ORDER value is [agents_enforcement, toctou_hardening, retention_global, dashboards_fase2] (DEC-0009 order, rows not moved) while its comment confirms [toctou_hardening, retention_global, dashboards_fase2, agents_enforcement] and authorizes superseding DEC-0009. DEC-0017 transcribes both; no SUPERSEDES link was written; QS-0005 asks which order stands."
+    evidence: [.canonflow/skill-runs/RUN-0002/evidence/EV-0001-answers-validation.json]
+    refs: [DEC-0009, DEC-0017]
+  - class: OPEN
+    statement: "Retention, deletion and backup policy requested in ANS-0004 is prepared as QS-0006 (six questions plus notes); retention_global implementation waits for it."
+    refs: [DEC-0017]
+  - class: OPEN
+    statement: "The architecture requested in DEC-0019 is prepared as MSP-JEV-CLASSIFIER-MODES v1 (.canonflow/state/jev-classifier-modes-proposal.md, sha256 ef33139b9e569c2ac00be693faeaa693b627a99367f0e8fe5f06cff8b2631cad) and bound to QS-0007 Q-JEV-ARCH with decision points D1–D5; no mode change is implemented before its ingested approval."
+    refs: [DEC-0019, DEC-0001]
+  - class: VERIFIED
+    statement: "QS-0005..QS-0007 published with mainspot-hdc.service stopped; the HDC-0006 compatibility-view regeneration ran in the same window; after restart /api/v1/ready reports writes_enabled=true and the three sessions are PENDING and answerable."
+    evidence: [.canonflow/skill-runs/RUN-0002/evidence/EV-0003-publish-sessions.jsonl, .canonflow/skill-runs/RUN-0002/evidence/EV-0004-compat-views.txt, .canonflow/skill-runs/RUN-0002/evidence/EV-0005-ready-after-restart.json, .canonflow/skill-runs/RUN-0002/evidence/EV-0006-hdc-live-sessions.json]
+    refs: []
+  - class: OPEN
+    statement: "G-REPO dirty-tree pre-flight not satisfied: the work branch still carries uncommitted output of earlier runs and sessions; RUN-0002 proceeded on the human's request."
+    refs: []
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      The HDC-0006 workaround (compatibility views) was reapplied unchanged; its
+      fixed `reconstructed.by` text still says RUN-0001. Recorded in
+      .canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md.
+    evidence: .canonflow/skill-runs/RUN-0002/evidence/EV-0004-compat-views.txt
+  - id: FND-0002
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT (WARN) now also applies to QS-0004, by design of the
+      immutable v2 QS declaring PENDING.
+    evidence: .canonflow/skill-runs/RUN-0002/evidence/EV-0007-reconcile.json
+limitations:
+  - "G-REPO: tree not clean at run start (see OPEN claim)."
+  - "functional/technical canon state files and method-state current_focus are owned by other skills and were not changed; only the pending_human mirror was updated (update_state.py)."
+  - "The `.env` change and the proposal document are outside the HDC card writes; they implement the consequence declared by Q-JEV-DATA and the request in DEC-0019 and are reported here for traceability."
+evidence:
+  - .canonflow/skill-runs/RUN-0002/evidence/EV-0001-answers-validation.json
+  - .canonflow/skill-runs/RUN-0002/evidence/EV-0002-publish-ingestion.json
+  - .canonflow/skill-runs/RUN-0002/evidence/EV-0003-publish-sessions.jsonl
+  - .canonflow/skill-runs/RUN-0002/evidence/EV-0004-compat-views.txt
+  - .canonflow/skill-runs/RUN-0002/evidence/EV-0005-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0002/evidence/EV-0006-hdc-live-sessions.json
+  - .canonflow/skill-runs/RUN-0002/evidence/EV-0007-reconcile.json
+  - .canonflow/skill-runs/RUN-0002/evidence/EV-0008-env-jev-enabled.txt
+outputs:
+  - .canonflow/decision-records/DEC-0014.json .. DEC-0019.json (+ .md companions)
+  - .canonflow/decision-state/sessions/QS-0004.lifecycle.json
+  - .canonflow/decision-sessions/archived/QS-0004.questions.json
+  - .canonflow/decision-sessions/pending/QS-0005.questions.json
+  - .canonflow/decision-sessions/pending/QS-0006.questions.json
+  - .canonflow/decision-sessions/pending/QS-0007.questions.json
+  - .canonflow/state/jev-classifier-modes-proposal.md
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .env (JEV_ENABLED=false; local, gitignored)
+gates_checked:
+  - {gate: G-REPO, status: FAIL, evidence: "uncommitted prior-run paths at run start; see OPEN claim"}
+blockers: []
+next_pointer: "https://mainspot.hdc.com/#/sessions/QS-0005 (then QS-0006, QS-0007)"
+created_at: "2026-10-21T22:24:12Z"

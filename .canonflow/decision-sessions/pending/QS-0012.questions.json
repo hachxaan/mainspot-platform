@@ -1,0 +1,130 @@
+{
+  "schema_version": 2,
+  "question_session_id": "QS-0012",
+  "session_label": "Contrato 1.1.0 de respaldos remotos (KVM 4): canal de aviso, copia protegida y retención",
+  "title": "Antes de la autorización final: canal de aviso fuera del KVM 4, forma de la copia protegida y lectura de la retención (contrato 1.1.0, commit 0cbdfcf)",
+  "generated_at": "2026-10-22T17:04:02Z",
+  "state": "PENDING",
+  "ui_language": "es",
+  "risk_tier": 2,
+  "affected_loop": "implementation_loop",
+  "intervention_reason": "El contrato mainspot-backup-object-storage 1.1.0 está publicado (hachxaan/mainspot-platform, rama contract/backup-object-storage-v1, commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828; pin en README commit 7cbbf70c50a45c20d0d59960c21ee13e9679ccc5) con tus decisiones DEC-0045…DEC-0054. Su §2.3 reproduce literalmente la puerta de activación de DEC-0049 §7 y añade que, antes de pedirte la condición 7 (autorización explícita), debes responder qué canal de aviso fuera del KVM 4 autorizas (P-3). Al reconciliar el contrato con hachxaan/mainspot-s3-backups @ ab046d2447bb2a60a0f0e2166a64151ef811aca8 (informe v1/infra-reconciliation-ab046d24.md, §11) quedaron además dos lecturas técnicas de decisiones tuyas que el contrato marca como LECTURA (§2.2) para que puedas confirmarlas u objetarlas: la forma de la copia protegida (P-2) y quién borra los respaldos remotos (P-1). Ningún agente puede decidirlas.",
+  "decision_impact": "Las respuestas se ingieren como registros DEC y fijan: el canal de aviso que el servicio del KVM 4 debe implementar (S-08, §10.1), la opción de copia protegida que el KVM 4 construye (§9.2, condición 3 de la puerta) y si el contrato 1.1.0 se mantiene o se publica una versión nueva (§9.1, C-15 y S-08 si cambias la lectura de la retención). No activan la transferencia remota: la activación exige acreditar las condiciones 1–6 de §2.3 con evidencia citada por commit y después tu autorización explícita en una sesión aparte (condición 7). El productor de MainSpot sigue desactivado y sin temporizador; el respaldo local no cambia.",
+  "initial_instructions": "Cada pregunta cita la sección del contrato 1.1.0 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828) y la evidencia en que se apoya. Las recomendaciones no son vinculantes y nada va preseleccionado. Si un comentario contradice la opción elegida, la pregunta quedará en conflicto y se te volverá a preguntar. Nunca escribas credenciales, claves, identificadores de chat ni direcciones privadas en las respuestas: los datos del canal se entregan al operador del KVM 4 por un canal privado, fuera del HDC.",
+  "topics": [
+    {
+      "topic_id": "aviso",
+      "title": "Canal de aviso fuera del KVM 4 (P-3)"
+    },
+    {
+      "topic_id": "copia_protegida",
+      "title": "Forma de la copia protegida (P-2)"
+    },
+    {
+      "topic_id": "retencion",
+      "title": "Lectura de la retención remota (P-1)"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-ALERT-CHANNEL",
+      "type": "single_choice",
+      "topic_id": "aviso",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Por qué canal, fuera del KVM 4, quieres recibir los avisos del vigilante y de la copia protegida?",
+      "short_description": "Hoy los avisos del servicio solo quedan en el journal del contenedor (H-04). El contrato exige un canal que tú autorices antes de la condición 7.",
+      "full_explanation": "Lo que dice el contrato 1.1.0 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828):\n- §10.1: los avisos del servicio «DEBEN llegar al propietario por un canal fuera del KVM 4 (correo, mensajería u otro que el propietario autorice en el HDC, P-3 de §2.3): un aviso que solo queda en el journal del servicio no cuenta como aviso. Los avisos no contienen secretos; PUEDEN contener claves de objeto».\n- §15 S-08: aviso al propietario si el ciclo de vida difiere, si algún respaldo supera 16 días desde su created_at o si hay un .dump.enc sin manifiesto con más de 24 h. §9.2.3 y S-16: también si un original cambia, si un manifiesto es inválido o si falla una copia o una expiración de la copia protegida.\n- §2.3, último párrafo: hasta que respondas, «los avisos del servicio solo llegan a su journal y S-08 no se cumple».\n\nEvidencia: v1/infra-reconciliation-ab046d24.md, hallazgo H-04 («Los avisos … solo llegan al journal del contenedor»; el propio servicio lo declara en su docs/05: «No hay canal de notificación externo») y §11 P-3.\n\nQué sale por el canal, con cualquier opción: el tipo de evento (deriva del ciclo de vida restaurada, objeto con más de 16 días, objeto sin manifiesto, original cambiado, fallo de copia, fallo de expiración, disco o cuota), el instante, las claves de objeto afectadas (por ejemplo v1/mainspot-pilot/postgres/mainspot/2026/10/…) y códigos de error o de estado. Nunca secretos: ni credenciales, ni firmas, ni cuerpos de objetos (los respaldos van cifrados y el servicio no puede leerlos). Las claves de objeto revelan el deployment_id, la base de datos y la fecha de cada respaldo, nada más.\n\nQuién custodia la credencial del canal, según la opción:\n- Bot de Telegram: tú creas el bot (BotFather) y abres un chat privado con él; el token del bot y el identificador de tu chat los recibe el operador del KVM 4 por un canal privado y viven solo en el KVM 4 (archivo 0600 del usuario de sistema del vigilante), como las claves operator y guard (§6.4). Tú puedes revocar el token en cualquier momento. Telegram ve el texto de los avisos (claves de objeto y códigos).\n- Correo SMTP: el operador del KVM 4 configura una cuenta de envío dedicada (no tu cuenta personal) cuya contraseña vive solo en el KVM 4 (0600); la dirección de destino es la tuya. El proveedor de correo ve el texto de los avisos.\n- Otro: indica en Q-NOTES el canal (por ejemplo, Signal, Matrix, un webhook propio, SMS) y quién custodia su credencial; el contrato se ajusta en §10.1 si hace falta.\n\nEn todos los casos el operador del KVM 4 implementa el envío, prueba con un aviso sintético que llega y publica esa prueba sin secretos; MainSpot no participa en el envío.",
+      "why_this_matters": "Sin canal, la detección diaria y horaria que el contrato exige (S-08, S-16) no llega a nadie: la deriva de retención o la pérdida de la copia protegida solo se verían al mirar el journal del KVM 4.",
+      "options": [
+        {
+          "value": "telegram_bot_propietario",
+          "label": "Bot de Telegram tuyo con chat privado: token del bot e identificador del chat solo en el KVM 4 (0600); tú puedes revocar el token",
+          "impact": "aviso inmediato en el móvil; el operador del KVM 4 implementa el envío y prueba un aviso sintético",
+          "risk": "Telegram ve claves de objeto y códigos (no secretos); si el token se filtra, un tercero podría enviarte avisos falsos hasta revocarlo"
+        },
+        {
+          "value": "correo_smtp_propietario",
+          "label": "Correo SMTP a una dirección tuya desde una cuenta de envío dedicada cuya contraseña vive solo en el KVM 4 (0600)",
+          "impact": "aviso por correo; el operador del KVM 4 configura la cuenta de envío y prueba un aviso sintético",
+          "risk": "el proveedor de correo ve claves de objeto y códigos (no secretos); los avisos pueden caer en spam o retrasarse; una cuenta de envío comprometida permite enviarte correos falsos hasta cambiar la contraseña"
+        },
+        {
+          "value": "otro_en_notas",
+          "label": "Otro canal (indícalo en las notas, con quién custodia su credencial)",
+          "impact": "el contrato ajusta §10.1 si hace falta; el operador del KVM 4 lo implementa y lo prueba",
+          "risk": "más tiempo hasta la condición 7 si el canal exige integración o un servicio nuevo"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-GUARD-OPTION",
+      "type": "single_choice",
+      "topic_id": "copia_protegida",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Qué forma de copia protegida debe construir el KVM 4: un volumen propio fuera de Garage (opción B) o un segundo bucket en Garage (opción A/A')?",
+      "short_description": "DEC-0047 exige la copia protegida antes de activar. En ab046d24 no existe (H-03). El contrato admite dos formas; tú eliges.",
+      "full_explanation": "Lo que decidiste: DEC-0047 (QS-0011 Q-S3-DELETE-RISK = copia_protegida_antes) y los nueve requisitos de DEC-0049 §4, que el contrato 1.1.0 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828) reproduce literalmente en §9.2.1. Entre ellos: «Preferir almacenamiento separado del espacio operativo de Garage, con permisos de sistema y mecanismos de protección adecuados al filesystem disponible» y «La implementación concreta podrá utilizar copias locales protegidas, snapshots o mecanismos equivalentes, sujetos a verificación».\n\nEstado en el servicio: no existe ninguna copia protegida en hachxaan/mainspot-s3-backups @ ab046d24 (ni volumen, ni segundo bucket, ni proceso, ni clave adicional): v1/infra-reconciliation-ab046d24.md §7.1 y hallazgo H-03 (severidad ALTA).\n\nLas dos formas que admite el contrato (§9.2.2) y lo que es igual en ambas (§9.2.2 «Invariantes comunes», §9.2.3–§9.2.6, S-16): se copian cada hora el objeto cifrado y su manifiesto de cada respaldo completo; la credencial writer de MainSpot no tiene ninguna ruta a la copia (comprobación C-21); la correspondencia copia↔original es verificable (comprobación C-22 o evidencia publicada); la copia expira a los 14 días desde el created_at del respaldo y nunca después de 16; proceso e identidad exclusivos del KVM 4; la clave de descifrado nunca entra en el KVM 4; prueba sintética obligatoria (§9.2.6) antes de activar.\n\n- Opción B — volumen propio fuera de Garage. Un volumen del KVM 4 en un contenedor aparte o en una ruta de un usuario de sistema propio (0700), distinto del de Garage y del de operator. El proceso lee mainspot-backups con una clave de solo lectura (guard) y escribe archivos planos; la expiración es un borrado auditado del archivo. Cumple tu preferencia literal de «almacenamiento separado del espacio operativo de Garage»; sobrevive a un fallo lógico de Garage, a una fuga del admin_token y a cualquier operación S3. Verificación: desde fuera no hay ruta S3 a la copia, así que C-21 y C-22 quedan en MANUAL y se acreditan con la evidencia que el KVM 4 publica (§9.2.5): audit.jsonl del proceso, listado de la copia verificado con sha256sum -c contra los manifiestos, y simulacro de restauración con los originales borrados (§9.2.6, §11.4). Tú, que tienes acceso al host, puedes repetirlo dentro del contenedor.\n- Opción A/A' — segundo bucket mainspot-backups-guard en Garage. Bucket propio al que solo accede la clave guard (lectura y escritura); copia con CopyObject y comparación de tamaño y x-amz-checksum-sha256 (verificado en Garage v2.4.1: VERIFICATION.md §10). A' añade lectura del bucket guard a la credencial restore, de modo que la conformidad lo comprueba desde fuera: C-21 (con la writer, toda operación sobre el bucket guard responde 403) y C-22 (comparación del inventario y de los checksums) en PASS; y §11.4 restaura con la misma herramienta S3. Límite: sigue dentro de Garage (comparte admin_token, metadatos y el nodo único) y la clave guard es una segunda credencial capaz de borrar la copia, mitigada porque vive solo en el contenedor con usuario propio y 0600.\n\nNo admitidos (§9.2.2): un prefijo del mismo bucket; copias a las que llegue cualquier clave entregada a MainSpot; snapshots de los volúmenes de Garage conservados 14 días (contendrían objetos de hasta 28 días y violarían la cota de 16); copias sin expiración.\n\nEvidencia: CONTRACT.md §9.2 y §15 S-16 (commit 0cbdfcf); v1/infra-reconciliation-ab046d24.md §7.3 (tabla A/B/C y D descartada) y §11 P-2; VERIFICATION.md §10.1–§10.5 (C-21 y C-22 probadas en laboratorio con la opción A'; la opción B solo se verificó en que el script la reconoce: §10.4).",
+      "why_this_matters": "Decide cómo se construye la condición 3 de la puerta de activación y cómo la podrás comprobar: por evidencia publicada del KVM 4 (B) o desde fuera con la credencial de restauración (A').",
+      "recommended_option": "opcion_b_volumen",
+      "options": [
+        {
+          "value": "opcion_b_volumen",
+          "label": "Opción B: volumen propio fuera de Garage, con usuario de sistema propio; verificable por la evidencia publicada del KVM 4 (audit.jsonl, sha256sum -c, simulacro de restauración)",
+          "recommended_when": "si mantienes la preferencia expresada en DEC-0049 §4 por almacenamiento separado del espacio operativo de Garage",
+          "impact": "el KVM 4 construye un contenedor o ruta aparte y un proceso copiador con clave de solo lectura; C-21 y C-22 quedan en MANUAL y se acreditan con la evidencia de §9.2.5",
+          "risk": "no se puede comprobar desde fuera con una credencial S3: dependes de la evidencia publicada por el operador (o de entrar tú al host); mismo disco físico que Garage (no protege de la pérdida del VPS, ya aceptado en DEC-0048)"
+        },
+        {
+          "value": "opcion_a_bucket_guard",
+          "label": "Opción A/A': segundo bucket mainspot-backups-guard en Garage, con lectura para la credencial de restauración (A'); verificable desde fuera con C-21 y C-22",
+          "impact": "el KVM 4 crea el bucket guard y la clave guard; la conformidad comprueba C-21 y C-22 desde fuera y la restauración desde la copia usa la misma herramienta S3",
+          "risk": "la copia sigue dentro de Garage (comparte admin_token, metadatos y nodo único) y la clave guard puede borrarla si sale del contenedor; se aparta de tu preferencia por almacenamiento separado"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-RETENTION-READING",
+      "type": "single_choice",
+      "topic_id": "retencion",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Confirmas la lectura de DEC-0046 que fija el contrato 1.1.0: la regla de ciclo de vida del bucket borra y el proceso del KVM 4 solo vigila, sin borrar ni retener?",
+      "short_description": "En DEC-0046 elegiste «El servicio: regla de ciclo de vida de 14 días en el bucket; MainSpot no borra». En ab046d24 borra un proceso horario, no la regla.",
+      "full_explanation": "Lo que decidiste: DEC-0046 (QS-0011 Q-S3-RETENTION-ENFORCEMENT = ciclo_vida_servicio, etiqueta literal «El servicio: regla de ciclo de vida de 14 días en el bucket; MainSpot no borra») y tus notas en DEC-0049 §2: el servicio aplica la expiración, MainSpot no borra, 14 días, y «Los agentes deberán reconciliar estos mecanismos, verificar la configuración de lifecycle del bucket y documentar cuál aplica efectivamente la eliminación, sin duplicaciones peligrosas ni cambios silenciosos de política».\n\nLo que hace el servicio en ab046d24 (v1/infra-reconciliation-ab046d24.md §3.5, §5 y hallazgos H-01, H-02, H-07): el proceso horario mainspot-s3-retention borra objetos con DeleteObject por LastModified; no instala ninguna regla Expiration en el bucket y sobrescribe cada hora cualquier ciclo de vida distinto de su única regla abort-incomplete-multipart-1d (por eso la comprobación C-15 falla de forma determinista); y su salvaguarda «halted» retiene sin límite de tiempo cuando no hay objetos de menos de 14 días, lo que puede superar los 16 días del contrato y los 30 días de DEC-0027. No hay doble borrado hoy: hay exclusión mutua entre los dos mecanismos.\n\nLa lectura que fija el contrato 1.1.0 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828, §9.1, marcada LECTURA en §2.2): la regla de ciclo de vida del bucket mainspot-backups (dos reglas exactas: v1/ a 14 días y _conformance/ a 1 día) es el único mecanismo que borra; el proceso del KVM 4 pasa a vigilante: restaura esa configuración exacta si difiere (al menos cada hora), audita por objeto lo que desaparece, avisa (S-08), mide la edad desde created_at, y NO borra ni retiene (sin salvaguarda «halted» indefinida; ningún objeto más de 16 días). El contrato lo expresa en §9.1 reglas 1–6, C-15 y S-08, y §17 R8 registra que ab046d24 no es conforme hasta reconvertirse.\n\nLa alternativa: que el proceso del KVM 4 sea el ejecutor del borrado y el contrato lo describa así (edad por LastModified, cadencia horaria, «halted» acotado a 16 días como máximo, sin regla Expiration en el bucket). Consecuencias: versión nueva del contrato reescribiendo §9.1, C-15 y S-08 (y §10.1 del productor, que hoy exige la configuración exacta de la regla); la expiración pasa a depender de un proceso con credencial de escritura en vez de la regla nativa; la etiqueta literal de DEC-0046 («regla de ciclo de vida … en el bucket») dejaría de describir el mecanismo real, por lo que el cambio se registra como decisión tuya, no de los agentes.\n\nEvidencia: CONTRACT.md §9.1, §10.1, §14 C-15, §15 S-08 y §17 R8 (commit 0cbdfcf); v1/infra-reconciliation-ab046d24.md §5.1–§5.4 y §11 P-1; DEC-0046 y DEC-0049 §2.",
+      "why_this_matters": "Fija qué mecanismo borra de verdad los respaldos remotos y, con ello, qué debe reconvertir el KVM 4 antes de que el informe de conformidad pueda ser conforme (condición 2 de la puerta).",
+      "recommended_option": "regla_bucket_borra_proceso_vigila",
+      "options": [
+        {
+          "value": "regla_bucket_borra_proceso_vigila",
+          "label": "Confirmo la lectura del contrato 1.1.0: la regla de ciclo de vida del bucket borra; el proceso del KVM 4 vigila, restaura la configuración exacta, audita y avisa, y no borra ni retiene",
+          "recommended_when": "si quieres que la expiración la ejecute el mecanismo nativo de Garage, como dice la etiqueta que elegiste en DEC-0046, y que ningún proceso con credencial de escritura borre objetos",
+          "impact": "el contrato 1.1.0 no cambia; el KVM 4 reconvierte mainspot-s3-retention (H-01, H-02, H-07) e instala la regla exacta de §9.1 antes del informe de conformidad",
+          "risk": "una credencial de escritura robada podría alterar la regla; el vigilante la restaura en menos de una hora y la copia protegida cubre la pérdida (DEC-0047)"
+        },
+        {
+          "value": "proceso_kvm4_ejecuta",
+          "label": "Pido que el proceso del KVM 4 sea el ejecutor del borrado (edad por LastModified, cadencia horaria, «halted» acotado a 16 días) y que el contrato lo describa así",
+          "impact": "versión nueva del contrato: se reescriben §9.1, C-15 y S-08 (y §10.1 del productor); se registra como decisión tuya que sustituye la lectura de 1.1.0",
+          "risk": "la expiración depende de un proceso con credencial de escritura en vez de la regla nativa; si el proceso se detiene, nada expira; retrasa la condición 4 (contrato citado por ambos agentes)"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NOTES",
+      "type": "free_text",
+      "topic_id": "aviso",
+      "required": false,
+      "title": "Notas para el registro",
+      "short_description": "Opcional. Se transcribe literalmente en el registro de decisión. Si elegiste «otro canal», descríbelo aquí. Nunca escribas credenciales, claves, tokens, identificadores de chat ni direcciones privadas.",
+      "options": []
+    }
+  ]
+}

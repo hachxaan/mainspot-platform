@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0034",
+  "kind": "decision",
+  "title": "Gate D4: solo la evaluación de un conjunto reservado v3 nuevo puede abrir primary; v2 queda como evidencia",
+  "decision": "Respuesta a Q-GATE-EVIDENCE «Gate D4 — ¿Con qué evaluación se decide si primary se abre?»: `v3_nuevo` — «Nueva ronda con un conjunto reservado v3». Alcance declarado por la sesión: un agente separado, sin acceso a v1, a v2 ni a sus fallos, escribe un conjunto reservado v3 de 240 mensajes sintéticos en español (30 por intent) siguiendo las etiquetas decididas en QS-0008; se evalúa una vez con TypeSafe dentro del presupuesto D5; solo esa evaluación puede abrir primary; v2 queda como evidencia con el gate cerrado. primary sigue limitado a JEV_DATA_SCOPE=synthetic (DEC-0019) con D1–D3 y D5.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T04:41:16Z",
+  "source": "QS-0008/ANS-0008 Q-GATE-EVIDENCE",
+  "source_ref": {
+    "question_session_id": "QS-0008",
+    "answer_session_id": "ANS-0008",
+    "question_ids": [
+      "Q-GATE-EVIDENCE"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "repuntuar_v2 — Volver a puntuar v2 con la definición y las etiquetas decididas aquí, sin llamadas nuevas"
+  ],
+  "affected_items": [
+    "DEC-0031",
+    "DEC-0033",
+    "DEC-0019",
+    "DEC-0032",
+    "src/conversation/jev-intent-eval-set.v2.json"
+  ],
+  "expiry": "",
+  "comment": ""
+}

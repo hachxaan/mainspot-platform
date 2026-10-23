@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0015",
+  "kind": "decision",
+  "title": "Q-NFR-0002: NFR-0002 se promueve a obligación del canon v0.2",
+  "decision": "Respuesta a Q-NFR-0002 «¿Se promueve NFR-0002 «Anti-oráculo en lecturas cross-tenant» a obligación del canon v0.2?»: `yes` — «Sí: promover a obligación del canon v0.2».",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T22:14:51Z",
+  "source": "QS-0004/ANS-0004 Q-NFR-0002",
+  "source_ref": {
+    "question_session_id": "QS-0004",
+    "answer_session_id": "ANS-0004",
+    "question_ids": [
+      "Q-NFR-0002"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "no — No: queda PROPOSED, sin obligación"
+  ],
+  "affected_items": [
+    "NFR-0002",
+    "DEC-0008"
+  ],
+  "expiry": "",
+  "comment": ""
+}

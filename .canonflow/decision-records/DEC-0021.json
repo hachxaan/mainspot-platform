@@ -1,0 +1,32 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0021",
+  "kind": "decision",
+  "title": "Retención del contenido conversacional: 90 días",
+  "decision": "Respuesta a Q-RET-CONVERSATION «¿Cuánto se conserva el contenido de las conversaciones con el agente?»: `dias_90` — «90 días».",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-21T23:14:28Z",
+  "source": "QS-0006/ANS-0006 Q-RET-CONVERSATION",
+  "source_ref": {
+    "question_session_id": "QS-0006",
+    "answer_session_id": "ANS-0006",
+    "question_ids": [
+      "Q-RET-CONVERSATION"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "dias_180 — 180 días",
+    "dias_365 — 365 días",
+    "vigencia_suscripcion — Mientras el negocio tenga suscripción activa, más 30 días"
+  ],
+  "affected_items": [
+    "conversation_request",
+    "action_proposal",
+    "preview_session",
+    "jev_shadow_evaluation",
+    "retention_global"
+  ],
+  "expiry": "",
+  "comment": ""
+}

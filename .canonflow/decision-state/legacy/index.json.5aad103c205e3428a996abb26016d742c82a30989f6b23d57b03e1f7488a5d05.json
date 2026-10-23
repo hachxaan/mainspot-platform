@@ -1,0 +1,31 @@
+{
+  "sessions": [
+    {
+      "question_session_id": "QS-0001",
+      "state": "ANSWERED",
+      "answered_at": "2026-10-21T18:01:48Z",
+      "answer_session_id": "ANS-0001"
+    },
+    {
+      "question_session_id": "QS-0002",
+      "state": "ANSWERED",
+      "answered_at": "2026-10-21T18:18:26Z",
+      "answer_session_id": "ANS-0002"
+    },
+    {
+      "question_session_id": "QS-0003",
+      "state": "ANSWERED",
+      "answered_at": "2026-10-21T18:23:36Z",
+      "answer_session_id": "ANS-0003"
+    }
+  ],
+  "counters": {
+    "qs": 3,
+    "ans": 3,
+    "dec": 0,
+    "apr": 0,
+    "rsk": 0
+  },
+  "latest": "",
+  "projection_version": "hdc-1.0.0"
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0039",
+  "kind": "decision",
+  "title": "Alta del negocio en el piloto: asistida por un administrador de MainSpot con invitación de un solo uso",
+  "decision": "Respuesta a Q-ALTA-MODE «Alta del negocio: ¿cómo se hace en el piloto?»: `asistida_admin` — «Asistida por MainSpot: un administrador crea el negocio y su propietario, asigna Trial y envía una invitación de un solo uso; el propietario fija su contraseña, completa sus datos y vincula Telegram». En todas las opciones, el login deja de pedir el identificador interno del tenant.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T04:41:16Z",
+  "source": "QS-0008/ANS-0008 Q-ALTA-MODE",
+  "source_ref": {
+    "question_session_id": "QS-0008",
+    "answer_session_id": "ANS-0008",
+    "question_ids": [
+      "Q-ALTA-MODE"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "autoservicio — Autoservicio con activación: el propietario se registra en un asistente público (datos, servicios, horarios, contacto, verificación de correo) y el negocio queda pendiente hasta que un administrador lo revise y asigne Trial",
+    "por_telegram — Conversacional por Telegram: el administrador crea el negocio mínimo y el propietario completa los datos conversando con el bot"
+  ],
+  "affected_items": [
+    "DEC-0018",
+    "DEC-0012",
+    "DEC-0037",
+    "src/api/ui.ts",
+    "src/identity/repository.ts"
+  ],
+  "expiry": "",
+  "comment": ""
+}

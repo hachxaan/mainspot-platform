@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0037",
+  "kind": "decision",
+  "title": "Orden de trabajo: TOCTOU → retención global → producto para el usuario final → dashboards fase 2 → agentes",
+  "decision": "Respuesta a Q-PRODUCT-PLACEMENT «¿Dónde entra el bloque de producto para el usuario final respecto al orden de DEC-0020?»: `tras_retencion` — «TOCTOU → retención → producto → dashboards → agentes». El bloque de producto (alta del negocio y panel del propietario, alta del canal de Telegram y publicación real de sitios) se inserta en el orden de DEC-0020 sin reordenar sus cuatro elementos.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T04:41:16Z",
+  "source": "QS-0008/ANS-0008 Q-PRODUCT-PLACEMENT",
+  "source_ref": {
+    "question_session_id": "QS-0008",
+    "answer_session_id": "ANS-0008",
+    "question_ids": [
+      "Q-PRODUCT-PLACEMENT"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "antes_de_todo — Producto primero: producto → TOCTOU → retención → dashboards → agentes",
+    "tras_toctou — TOCTOU → producto → retención → dashboards → agentes",
+    "al_final — TOCTOU → retención → dashboards → agentes → producto (DEC-0020 intacto; producto al final)"
+  ],
+  "affected_items": [
+    "DEC-0020",
+    "DEC-0005",
+    "DEC-0021",
+    "DEC-0027"
+  ],
+  "expiry": "",
+  "comment": ""
+}

@@ -1,0 +1,266 @@
+diff --git a/decision-console/app/canonflow_hdc/frontend/css/app.css b/decision-console/app/canonflow_hdc/frontend/css/app.css
+index 4c64947..fca4a75 100644
+--- a/decision-console/app/canonflow_hdc/frontend/css/app.css
++++ b/decision-console/app/canonflow_hdc/frontend/css/app.css
+@@ -175,7 +175,7 @@ hr { border: 0; border-top: 1px solid var(--line-soft); margin: 16px 0; }
+   display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr); gap: 28px;
+ }
+ .main { min-width: 0; outline: none; }
+-.conn-banner { margin-bottom: 16px; }
++.conn-banner { margin-bottom: 16px; display: grid; gap: 8px; }
+ .view { min-width: 0; }
+ .view > * + * { margin-top: var(--gap); }
+ 
+diff --git a/decision-console/app/canonflow_hdc/frontend/js/api.js b/decision-console/app/canonflow_hdc/frontend/js/api.js
+index cb22efa..29ca5d7 100644
+--- a/decision-console/app/canonflow_hdc/frontend/js/api.js
++++ b/decision-console/app/canonflow_hdc/frontend/js/api.js
+@@ -1,7 +1,7 @@
+ // API client: same-origin fetch with CSRF token; uniform error envelope.
+ let csrfToken = null;
+ 
+-async function request(method, path, body, extraHeaders = {}) {
++async function request(method, path, body, extraHeaders = {}, { retried = false } = {}) {
+   const options = { method, headers: { ...extraHeaders } };
+   if (body !== undefined) {
+     options.headers["Content-Type"] = "application/json";
+@@ -18,8 +18,16 @@ async function request(method, path, body, extraHeaders = {}) {
+   }
+   const payload = await response.json().catch(() => ({}));
+   if (response.ok) return payload;
++  const code = payload?.error?.code || `HTTP_${response.status}`;
++  // The token is per service process: after a restart the old one is rejected
++  // before anything is written. Fetch the current token and retry once.
++  if (code === "CSRF_TOKEN_INVALID" && method !== "GET" && !retried) {
++    csrfToken = null;
++    await ensureCsrf();
++    return request(method, path, body, extraHeaders, { retried: true });
++  }
+   const error = new Error(payload?.error?.message || response.statusText);
+-  error.code = payload?.error?.code || `HTTP_${response.status}`;
++  error.code = code;
+   error.status = response.status;
+   error.fieldErrors = payload?.error?.field_errors || [];
+   error.diagnosticIds = payload?.error?.diagnostic_ids || [];
+diff --git a/decision-console/app/canonflow_hdc/frontend/js/i18n.js b/decision-console/app/canonflow_hdc/frontend/js/i18n.js
+index a398fa7..e070b93 100644
+--- a/decision-console/app/canonflow_hdc/frontend/js/i18n.js
++++ b/decision-console/app/canonflow_hdc/frontend/js/i18n.js
+@@ -16,6 +16,7 @@ const STRINGS = {
+     conn_down: "Disconnected",
+     banner_down: "The console lost contact with the local service. Your draft is kept in this tab; data on screen may be outdated.",
+     banner_stale: "The projection is being refreshed. Data on screen may lag behind the files for a few seconds.",
++    banner_readonly: "The console is in read-only mode: drafts and answers cannot be saved right now. What you type stays in this tab; send when this notice disappears.",
+     gen_label: "Gen {n}",
+     gen_title: "Projection generation {n}",
+     project_label: "Project",
+@@ -377,6 +378,9 @@ const STRINGS = {
+     err_413: "The payload exceeds the local limits.",
+     err_423: "Another writer holds the lock; try again in a moment.",
+     err_503: "The service is not ready or is in read-only mode.",
++    err_WRITES_DISABLED: "The console is in read-only mode: nothing was saved. Your answers remain in this tab; send again once writing is enabled.",
++    ws_writes_disabled: "Sending is paused: the console is in read-only mode.",
++    ws_draft_local_only: "Draft kept only in this tab (read-only console)",
+   },
+   es: {
+     app_name: "Consola de Decisiones Humanas",
+@@ -391,6 +395,7 @@ const STRINGS = {
+     conn_down: "Sin conexión",
+     banner_down: "La consola perdió contacto con el servicio local. Tu borrador se conserva en esta pestaña; los datos en pantalla pueden estar desactualizados.",
+     banner_stale: "La proyección se está actualizando. Los datos en pantalla pueden ir unos segundos por detrás de los archivos.",
++    banner_readonly: "La consola está en modo de solo lectura: ahora no se pueden guardar borradores ni respuestas. Lo que escribas se conserva en esta pestaña; envía cuando desaparezca este aviso.",
+     gen_label: "Gen {n}",
+     gen_title: "Generación de la proyección {n}",
+     project_label: "Proyecto",
+@@ -741,6 +746,9 @@ const STRINGS = {
+     err_413: "La carga excede los límites locales.",
+     err_423: "Otro escritor mantiene el lock; reintenta en un momento.",
+     err_503: "El servicio no está listo o está en modo de solo lectura.",
++    err_WRITES_DISABLED: "La consola está en modo de solo lectura: no se guardó nada. Tus respuestas siguen en esta pestaña; vuelve a enviar cuando se habilite la escritura.",
++    ws_writes_disabled: "Envío en pausa: la consola está en modo de solo lectura.",
++    ws_draft_local_only: "Borrador solo en esta pestaña (consola en solo lectura)",
+   },
+ };
+ 
+diff --git a/decision-console/app/canonflow_hdc/frontend/js/main.js b/decision-console/app/canonflow_hdc/frontend/js/main.js
+index 72acfbf..c6da239 100644
+--- a/decision-console/app/canonflow_hdc/frontend/js/main.js
++++ b/decision-console/app/canonflow_hdc/frontend/js/main.js
+@@ -85,6 +85,7 @@ async function pollGeneration() {
+     const payload = await get("/api/v1/ready");
+     lastSync = new Date().toISOString();
+     setConn(payload.stale ? "stale" : "ok");
++    setWrites(payload.writes_enabled);
+     updateGeneration(payload.generation);
+     if (lastGeneration !== null && payload.generation !== lastGeneration) {
+       refreshCounts();
+@@ -120,18 +121,38 @@ function setConn(state) {
+   pill.querySelector(".status-text").textContent =
+     state === "ok" ? t("conn_ok") : state === "stale" ? t("conn_stale") : state === "down" ? t("conn_down") : t("conn_init");
+   pill.title = pill.querySelector(".status-text").textContent;
++  renderBanner();
++}
++
++/**
++ * Read-only service (writes_enabled=false): drafts and answers cannot be saved.
++ * Exposed to views via html[data-writes] and the `hdc:writes` event so the
++ * workspace can explain it before the human sends.
++ */
++function setWrites(enabled) {
++  const value = enabled === false ? "false" : enabled === true ? "true" : "unknown";
++  if (document.documentElement.dataset.writes === value) return;
++  document.documentElement.dataset.writes = value;
++  document.dispatchEvent(new CustomEvent("hdc:writes", { detail: value }));
++  renderBanner();
++}
++
++function renderBanner() {
+   const banner = document.getElementById("conn-banner");
+-  if (state === "down" || state === "stale") {
+-    banner.replaceChildren(el("div", { class: `banner banner--${state}`, role: state === "down" ? "alert" : "status" },
+-      icon(state === "down" ? "alert-circle" : "refresh"),
+-      el("span", { text: t(state === "down" ? "banner_down" : "banner_stale") }),
+-      state === "down" ? el("button", { class: "btn btn--sm", type: "button", onclick: () => pollGeneration() },
++  const blocks = [];
++  if (connState === "down" || connState === "stale") {
++    blocks.push(el("div", { class: `banner banner--${connState}`, role: connState === "down" ? "alert" : "status" },
++      icon(connState === "down" ? "alert-circle" : "refresh"),
++      el("span", { text: t(connState === "down" ? "banner_down" : "banner_stale") }),
++      connState === "down" ? el("button", { class: "btn btn--sm", type: "button", onclick: () => pollGeneration() },
+         icon("refresh"), t("retry")) : null));
+-    banner.hidden = false;
+-  } else {
+-    banner.hidden = true;
+-    banner.replaceChildren();
+   }
++  if (connState !== "down" && document.documentElement.dataset.writes === "false") {
++    blocks.push(el("div", { class: "banner banner--down", role: "alert" },
++      icon("lock"), el("span", { text: t("banner_readonly") })));
++  }
++  banner.replaceChildren(...blocks);
++  banner.hidden = blocks.length === 0;
+ }
+ 
+ function updateGeneration(generation) {
+diff --git a/decision-console/app/canonflow_hdc/frontend/js/ui.js b/decision-console/app/canonflow_hdc/frontend/js/ui.js
+index 1f3b623..400bbce 100644
+--- a/decision-console/app/canonflow_hdc/frontend/js/ui.js
++++ b/decision-console/app/canonflow_hdc/frontend/js/ui.js
+@@ -1,6 +1,6 @@
+ // Shared DOM helpers and components for all views (design system in css/app.css).
+ // Governed content is always rendered as text: no helper accepts raw HTML.
+-import { t, language } from "./i18n.js";
++import { t, has, language } from "./i18n.js";
+ 
+ const SVG_NS = "http://www.w3.org/2000/svg";
+ 
+@@ -198,6 +198,8 @@ export function errorState(message, { onRetry = null, title = null } = {}) {
+ 
+ export function errorMessage(error) {
+   if (!error) return t("err_generic");
++  // A code-specific explanation (e.g. err_WRITES_DISABLED) is complete on its own.
++  if (error.code && has(`err_${error.code}`)) return t(`err_${error.code}`);
+   const known = error.status ? t(`err_${error.status}`) : null;
+   const base = known && known !== `err_${error.status}` ? known : t("err_generic");
+   return error.message && error.message !== base ? `${base} (${error.message})` : base;
+diff --git a/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js b/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js
+index 4c97ddb..18257e9 100644
+--- a/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js
++++ b/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js
+@@ -1031,11 +1031,19 @@ function buildSendSection(ctx) {
+   ctx.ui.errorSlot = errorSlot;
+ 
+   const refreshSend = () => {
+-    const ready = Boolean(state.authorConfirmed && state.author.trim()) && !state.sourceChanged;
++    // html[data-writes] mirrors /api/v1/ready (main.js); unknown counts as writable.
++    const writable = document.documentElement.dataset.writes !== "false";
++    const ready = Boolean(state.authorConfirmed && state.author.trim()) && !state.sourceChanged && writable;
+     sendBtn.disabled = !ready || ctx.sending;
++    sendHint.textContent = t(writable ? "ws_send_disabled_hint" : "ws_writes_disabled");
+     sendHint.hidden = ready;
+   };
+   ctx.ui.refreshSend = refreshSend;
++  const onWrites = () => {
++    if (!ctx.view.isConnected) { document.removeEventListener("hdc:writes", onWrites); return; }
++    if (!ctx.locked) refreshSend();
++  };
++  document.addEventListener("hdc:writes", onWrites);
+   confirmBox.addEventListener("change", () => { state.authorConfirmed = confirmBox.checked; refresh(ctx); });
+   authorInput.addEventListener("input", () => {
+     state.author = authorInput.value;
+@@ -1359,7 +1367,7 @@ function wireDraftAutosave(view, qsId, qs, state) {
+           setSaveState(dirty ? "saving" : "saved", t(dirty ? "ws_draft_saving" : "ws_draft_saved"));
+         }
+       } catch (error) {
+-        setSaveState("error", t(error.status === 412 ? "err_412" : "ws_draft_error"));
++        setSaveState("error", t(error.status === 412 ? "err_412" : error.code === "WRITES_DISABLED" ? "ws_draft_local_only" : "ws_draft_error"));
+         // Transient failures (network, 423 lock, 503) retry; a 412 conflict never
+         // overwrites the other tab's draft.
+         retry = error.status !== 412 && !(error.status >= 400 && error.status < 500 && error.status !== 423);
+diff --git a/decision-console/app/canonflow_hdc/web.py b/decision-console/app/canonflow_hdc/web.py
+index dfe4674..147ecd4 100644
+--- a/decision-console/app/canonflow_hdc/web.py
++++ b/decision-console/app/canonflow_hdc/web.py
+@@ -48,18 +48,23 @@ class ProjectionManager:
+         """Inventory → legacy preservation → reconcile → rebuild (§13 order)."""
+         with self._lock:
+             files = inventory(self.project_root)
++            preserved = True
+             try:
+                 from .legacy import preserve_legacy_indexes
+                 preserve_legacy_indexes(self.project_root)
+             except PreservationError:
+-                self.writes_enabled = False  # read-only console, writes blocked
++                preserved = False  # read-only console, writes blocked
+             rec = reconcile(self.project_root, files)
+             meta = self.projection.rebuild(files, rec)
+             self.generation = int(meta.get("generation", "0")) or None
+             self.stale = False
+             self.last_inventory = meta.get("last_full_inventory")
+-            if self.writes_enabled and not preservation_complete(self.project_root):
+-                self.writes_enabled = False
++            # §13: writes stay blocked while any index byte-stream is unpreserved.
++            # Re-evaluated on every refresh: an index rewritten by another writer
++            # after this poll's capture (CLI publish-session/rebuild-index) is
++            # preserved by the next poll instead of leaving the console read-only
++            # until a restart.
++            self.writes_enabled = preserved and preservation_complete(self.project_root)
+             return self.generation
+ 
+     def start_polling(self) -> None:
+diff --git a/decision-console/app/tests/test_reconciliation_projection.py b/decision-console/app/tests/test_reconciliation_projection.py
+index 5a90906..0633062 100644
+--- a/decision-console/app/tests/test_reconciliation_projection.py
++++ b/decision-console/app/tests/test_reconciliation_projection.py
+@@ -242,6 +242,31 @@ def test_preserved_snapshot_keeps_original_bytes(legacy_project: Path):
+     assert snapshots[0].read_bytes() == original
+ 
+ 
++def test_writes_reenabled_once_external_index_write_is_preserved(manager_legacy: ProjectionManager, monkeypatch):
++    """§13: an index rewritten by another writer between the poll's preservation
++    and its completeness check (e.g. ``canonflow-hdc rebuild-index`` while the
++    console runs) blocks writes only until a later refresh preserves the bytes;
++    the console must not stay read-only until a restart."""
++    manager_legacy.refresh()
++    assert manager_legacy.writes_enabled is True
++    index = paths.state_dir(manager_legacy.project_root) / "index.json"
++    real_preserve = legacy.preserve_legacy_indexes
++
++    def preserve_then_external_write(root):
++        result = real_preserve(root)
++        index.write_bytes(index.read_bytes() + b"\n")  # lands after the capture
++        return result
++
++    monkeypatch.setattr(legacy, "preserve_legacy_indexes", preserve_then_external_write)
++    manager_legacy.refresh()
++    assert manager_legacy.writes_enabled is False  # unpreserved bytes: writes blocked
++
++    monkeypatch.setattr(legacy, "preserve_legacy_indexes", real_preserve)
++    manager_legacy.refresh()
++    assert legacy.preservation_complete(manager_legacy.project_root)
++    assert manager_legacy.writes_enabled is True
++
++
+ # ---------------------------------------------------------------------------
+ # Projection: rebuild parity, generation, read queries
+ # ---------------------------------------------------------------------------

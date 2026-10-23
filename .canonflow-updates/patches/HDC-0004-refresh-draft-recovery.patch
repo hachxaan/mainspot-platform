@@ -1,0 +1,452 @@
+diff --git a/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js b/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js
+--- a/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js
++++ b/decision-console/app/canonflow_hdc/frontend/js/views/workspace.js
+@@ -1,6 +1,8 @@
+ // Workspace: the eight canonical sections (definition §11). Answers are never
+ // preselected — recommendations render as guidance only. Section 7 replaces
+-// "export": it publishes the canonical ANS through the local API.
++// "export": it publishes the canonical ANS through the local API. Only human
++// drafts bound to the current QS hash are restored; restoring never confirms
++// authorship or submits an ANS.
+ import { get, put, post, ensureCsrf } from "../api.js";
+ import { t, language, setLanguage } from "../i18n.js";
+ import { el, stateChip, riskChip, card, cardB, metaGrid, emptyState, errorState, announce, formatDate, loopLabel } from "../ui.js";
+@@ -12,6 +14,81 @@
+ let workspaceHash = null;
+ export function lastWorkspaceHash() {
+   return workspaceHash;
++}
++
++function draftStorageKey(qsId) {
++  return `hdc-pending-draft:${qsId}`;
++}
++
++function readPendingDraft(qsId) {
++  try {
++    return JSON.parse(sessionStorage.getItem(draftStorageKey(qsId)));
++  } catch (_error) {
++    return null;
++  }
++}
++
++function draftPayload(qs, state) {
++  return {
++    question_session_id: qs.question_session_id,
++    question_sha256: qs.qs_sha256,
++    request_id: state.requestId ??= crypto.randomUUID(),
++    answered_by: state.author,
++    ui_language: language(),
++    answers: (qs.questions ?? []).flatMap((question) => {
++      const qid = question.question_id;
++      if (!state.answers.has(qid) && !state.comments.has(qid)) return [];
++      const entry = { question_id: qid };
++      if (state.answers.has(qid)) entry.value = state.answers.get(qid);
++      if (state.comments.has(qid)) entry.comment = state.comments.get(qid);
++      return [entry];
++    }),
++    confirmations: { ...state.confirmations },
++  };
++}
++
++function sameDraft(left, right) {
++  const canonical = (value) => {
++    if (Array.isArray(value)) return value.map(canonical);
++    if (value && typeof value === "object") {
++      return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
++    }
++    return value;
++  };
++  const fields = ["question_session_id", "question_sha256", "request_id", "answered_by", "ui_language", "answers", "confirmations"];
++  const signature = (draft) => JSON.stringify(canonical(Object.fromEntries(fields.map((key) => [key, draft[key]]))));
++  return signature(left) === signature(right);
++}
++
++function restoreDraft(qs, state, draft) {
++  const questions = new Map((qs.questions ?? []).map((question) => [question.question_id, question]));
++  for (const answer of Array.isArray(draft.answers) ? draft.answers : []) {
++    if (!answer || !questions.has(answer.question_id)) continue;
++    const question = questions.get(answer.question_id);
++    if (Object.hasOwn(answer, "value")) {
++      if (question.type !== "ordered_priority" ||
++          (Array.isArray(answer.value) && answer.value.length === question.options.length &&
++           new Set(answer.value).size === answer.value.length &&
++           answer.value.every((value) => question.options.some((option) => option.value === value)))) {
++        state.answers.set(answer.question_id, answer.value);
++      }
++    }
++    if (typeof answer.comment === "string") state.comments.set(answer.question_id, answer.comment);
++  }
++  for (const question of questions.values()) {
++    if (question.type !== "ordered_priority") continue;
++    if (typeof draft.confirmations?.[question.question_id] === "boolean") {
++      state.confirmations[question.question_id] = draft.confirmations[question.question_id];
++      if (state.confirmations[question.question_id] && !state.answers.has(question.question_id)) {
++        const previous = (Array.isArray(draft.answers) ? draft.answers : [])
++          .find((answer) => answer?.question_id === question.question_id);
++        if (previous && Object.hasOwn(previous, "value")) state.confirmations[question.question_id] = false;
++        else state.answers.set(question.question_id, question.options.map((option) => option.value));
++      }
++    }
++  }
++  if (typeof draft.answered_by === "string") state.author = draft.answered_by;
++  if (typeof draft.request_id === "string") state.requestId = draft.request_id;
+ }
+ 
+ export async function render(root, qsId, { readOnly = false } = {}) {
+@@ -42,29 +119,42 @@
+   }
+   workspaceHash = session.qs_sha256 ?? null;
+ 
+-  const state = {
+-    answers: new Map(),
+-    comments: new Map(),
+-    confirmations: {},
+-    etag: session.draft?.etag ?? null,
+-    author: session.draft?.answered_by ?? "",
+-    authorConfirmed: false,
+-    sentReceipt: null,
+-    sourceChanged: false,
+-    errors: new Map(),
+-  };
+-  // a stale draft is restored as text for review but never auto-applied (§11)
+-  const draftStale = session.draft?.stale === true;
+-
+-  const view = el("div", {});
+-  root.append(view);
+-
+-  // ---- section 1: context -------------------------------------------------
+   const qs = { ...session, ...Object.fromEntries(
+     Object.entries(qsDoc ?? {}).filter(([key]) =>
+       ["intervention_reason", "decision_impact", "questions", "initial_instructions",
+        "ui_language", "risk_tier", "affected_loop"].includes(key)),
+   ) };
++  const pending = readPendingDraft(qsId);
++  const matches = (draft) => draft?.question_session_id === qsId &&
++    typeof qs.qs_sha256 === "string" && draft.question_sha256 === qs.qs_sha256;
++  // A reload can interrupt the reply after the server already committed the draft.
++  const pendingAcknowledged = matches(pending?.payload) && matches(session.draft) &&
++    sameDraft(pending.payload, session.draft);
++  const pendingCurrent = matches(pending?.payload) && !pendingAcknowledged;
++  if (pendingAcknowledged) {
++    try { sessionStorage.removeItem(draftStorageKey(qsId)); } catch (_error) { /* Server copy is intact. */ }
++  }
++  const currentDraft = pendingCurrent ? pending.payload : matches(session.draft) ? session.draft : null;
++  const staleDraft = pending?.payload && !matches(pending.payload) ? pending.payload :
++    session.draft && !matches(session.draft) ? session.draft : null;
++  const state = {
++    answers: new Map(),
++    comments: new Map(),
++    confirmations: {},
++    etag: pendingCurrent ? pending.etag ?? null : session.draft?.etag ?? null,
++    author: "",
++    authorConfirmed: false,
++    sentReceipt: null,
++    sourceChanged: false,
++    pendingDraft: pendingCurrent,
++  };
++  const restored = currentDraft && !readOnly && qs.effective_state === "PENDING";
++  if (restored) restoreDraft(qs, state, currentDraft);
++
++  const view = el("div", {});
++  root.append(view);
++
++  // ---- section 1: context -------------------------------------------------
+   view.append(cardB("1", t("sec1"),
+     el("p", { class: "muted", text: qs.intervention_reason ?? "" }),
+     qs.initial_instructions ? el("p", { class: "small", text: qs.initial_instructions }) : null,
+@@ -75,7 +165,14 @@
+       ["loop", loopLabel(qs.affected_loop)],
+       ["evidence", qs.evidence_status],
+     ]),
+-    draftStale ? el("p", { class: "field-error", text: t("ws_source_changed") }) : null,
++    restored ? el("p", { id: "draft-restored", role: "status", text: language() === "es" ?
++      "Borrador recuperado. Revisa tus respuestas y confirma tu identidad antes de enviar." :
++      "Draft restored. Review your answers and confirm your identity before sending." }) : null,
++    staleDraft ? el("details", { id: "draft-stale" },
++      el("summary", { text: language() === "es" ?
++        "Borrador de otra versión: conservado para revisión, no aplicado." :
++        "Draft from another version: preserved for review, not applied." }),
++      el("pre", { text: JSON.stringify(staleDraft, null, 2) })) : null,
+   ));
+ 
+   // ---- section 2: decision required --------------------------------------
+@@ -105,6 +202,29 @@
+   if (qs.effective_state === "ANSWERED" || qs.effective_state === "INGESTED" ||
+       qs.effective_state === "ARCHIVED" || qs.effective_state === "CANCELLED" ||
+       qs.effective_state === "EXPIRED" || qs.effective_state === "INDETERMINATE") {
++    if (qs.answers_path && ["ANSWERED", "INGESTED", "ARCHIVED"].includes(qs.effective_state)) {
++      try {
++        const artifact = await get(`/api/v1/artifacts/${qs.answers_path.split("/").map(encodeURIComponent).join("/")}`);
++        const answers = JSON.parse(artifact.content);
++        if (answers.question_session_id !== qsId || answers.submission?.question_sha256 !== qs.qs_sha256 ||
++            !Array.isArray(answers.answers)) throw new Error("ANSWER_BINDING_MISMATCH");
++        restoreDraft(qs, state, answers);
++        buildQuestions(questionsBox, qs, state, summaryCard, sendCard);
++        for (const control of questionsBox.querySelectorAll("input, textarea, button")) control.disabled = true;
++        // Order confirmation is submit-time consent, not a persisted ANS field.
++        for (const confirm of questionsBox.querySelectorAll('[id^="confirm-"]')) confirm.closest("label").hidden = true;
++        questionsBox.prepend(el("p", { id: "saved-answers-restored", role: "status", text: language() === "es" ?
++          "Respuestas guardadas recuperadas en modo sólo lectura. La sesión no se ha reabierto." :
++          "Saved answers restored read-only. The session has not been reopened." }));
++        updateSummary(summaryCard, questionsBox, qs, state);
++        updateProgress(questionsCard, qs, state);
++        sendCard.append(el("p", { class: "muted", text: t("readonly_mode") }));
++      } catch (_error) {
++        questionsBox.append(errorState(language() === "es" ?
++          "No se pudieron mostrar las respuestas con la versión exacta de estas preguntas. El archivo guardado no se ha modificado." :
++          "Could not display saved answers bound to this exact question version. The saved file has not been changed."));
++      }
++    }
+     renderSentOrClosed(view, qs);
+     return;
+   }
+@@ -118,9 +238,9 @@
+   updateSummary(summaryCard, questionsBox, qs, state);
+   updateProgress(questionsCard, qs, state);
+ 
+-  // ---- draft lifecycle -----------------------------------------------------
++  // Cache changes synchronously before the debounced server save.
++  state.drafts = wireDraftAutosave(view, qsId, qs, state);
+   await ensureCsrf();
+-  wireDraftAutosave(view, qsId, qs, state);
+ }
+ 
+ function buildRecommendations(qs) {
+@@ -183,6 +303,7 @@
+         class: "comment", "aria-label": `${t("comment_label")} — ${question.title}`,
+         placeholder: t("comment_label"),
+       });
++      comment.value = state.comments.get(question.question_id) ?? "";
+       comment.addEventListener("input", () => {
+         state.comments.set(question.question_id, comment.value);
+         scheduleSummary(summaryCard, box, qs, state, sendCard);
+@@ -206,6 +327,7 @@
+   if (question.type === "single_choice" || question.type === "confirm_or_override") {
+     for (const option of question.options ?? []) {
+       const input = el("input", { type: "radio", name: `q-${question.question_id}`, value: option.value });
++      input.checked = state.answers.get(question.question_id) === option.value;
+       input.addEventListener("change", () => { state.answers.set(question.question_id, option.value); onChange(); });
+       const marks = [];
+       if (option.value === question.recommended_option) marks.push(el("span", { class: "rec-mark", text: t("recommended_label") }));
+@@ -217,6 +339,8 @@
+   } else if (question.type === "multi_choice") {
+     for (const option of question.options ?? []) {
+       const input = el("input", { type: "checkbox", value: option.value });
++      input.checked = Array.isArray(state.answers.get(question.question_id)) &&
++        state.answers.get(question.question_id).includes(option.value);
+       input.addEventListener("change", () => {
+         const current = new Set(state.answers.get(question.question_id) ?? []);
+         input.checked ? current.add(option.value) : current.delete(option.value);
+@@ -228,12 +352,14 @@
+   } else if (question.type === "yes_no") {
+     for (const value of ["yes", "no"]) {
+       const input = el("input", { type: "radio", name: `q-${question.question_id}`, value });
++      input.checked = state.answers.get(question.question_id) === value;
+       input.addEventListener("change", () => { state.answers.set(question.question_id, value); onChange(); });
+       wrap.append(el("label", { class: "option" }, input, el("span", { text: t(value) })));
+     }
+   } else if (question.type === "approval") {
+     for (const [value, label] of [["approve", t("approve")], ["reject", t("reject")], ["defer", t("defer")]]) {
+       const input = el("input", { type: "radio", name: `q-${question.question_id}`, value });
++      input.checked = state.answers.get(question.question_id) === value;
+       input.addEventListener("change", () => { state.answers.set(question.question_id, value); onChange(); });
+       wrap.append(el("label", { class: "option" }, input, el("span", { text: label })));
+     }
+@@ -248,6 +374,10 @@
+     const accepted = el("input", { type: "checkbox" });
+     const expiry = el("input", { type: "date", "aria-label": t("expiry_label") });
+     const justification = el("textarea", { class: "comment", "aria-label": t("justification_label") });
++    const saved = state.answers.get(question.question_id) ?? {};
++    accepted.checked = saved.accepted === true;
++    expiry.value = typeof saved.expiry === "string" ? saved.expiry : "";
++    justification.value = typeof saved.justification === "string" ? saved.justification : "";
+     accepted.addEventListener("change", () => {
+       state.answers.set(question.question_id, {
+         accepted: accepted.checked,
+@@ -264,6 +394,7 @@
+       justification);
+   } else if (question.type === "free_text") {
+     const input = el("textarea", { class: "comment", "aria-label": question.title });
++    input.value = state.answers.get(question.question_id) ?? "";
+     input.addEventListener("input", () => { state.answers.set(question.question_id, input.value); onChange(); });
+     wrap.append(input);
+   } else if (question.type === "ordered_priority") {
+@@ -303,6 +434,7 @@
+     };
+     renderOrder();
+     const confirm = el("input", { type: "checkbox", id: `confirm-${question.question_id}` });
++    confirm.checked = state.confirmations[question.question_id] === true;
+     confirm.addEventListener("change", () => {
+       state.confirmations[question.question_id] = confirm.checked;
+       if (confirm.checked && !state.answers.has(question.question_id)) {
+@@ -350,10 +482,9 @@
+   holder.append(...(rows.length ? rows : [emptyState("—")]));
+ }
+ 
+-let summaryTimer = null;
+ function scheduleSummary(summaryCard, box, qs, state, sendCard) {
+   updateSummary(summaryCard, box, qs, state);
+-  clearTimeout(summaryTimer);
++  box.dispatchEvent(new Event("draftchange", { bubbles: true }));
+ }
+ 
+ function buildSendSection(sendCard, qs, state, summaryCard, nextCard) {
+@@ -363,7 +494,11 @@
+   const saveState = el("span", { class: "save-state", "data-state": "idle", text: "" });
+   const errorLine = el("p", { class: "field-error", role: "alert" });
+   confirmBox.addEventListener("change", () => { state.authorConfirmed = confirmBox.checked; refresh(); });
+-  authorInput.addEventListener("input", () => { state.author = authorInput.value; refresh(); });
++  authorInput.addEventListener("input", () => {
++    state.author = authorInput.value;
++    sendCard.dispatchEvent(new Event("draftchange", { bubbles: true }));
++    refresh();
++  });
+ 
+   const sendBtn = el("button", { class: "btn btn-primary", type: "button", text: t("btn_send") });
+ 
+@@ -377,6 +512,8 @@
+     }
+     sendBtn.disabled = true;
+     try {
++      await state.drafts?.pause();
++      await ensureCsrf();
+       const answers = [];
+       for (const question of qs.questions ?? []) {
+         const value = state.answers.get(question.question_id);
+@@ -395,10 +532,13 @@
+         confirmations: state.confirmations,
+       };
+       const receipt = await post(`/api/v1/sessions/${encodeURIComponent(qs.question_session_id)}/answers`, payload);
++      state.sentReceipt = receipt;
++      state.drafts?.clear();
+       renderSent(nextCard, qs, receipt);
+       sendCard.replaceChildren(card(t("sec7"), el("p", { class: "muted", text: t("ws_sent_body") })));
+       announce(t("ws_sent_title"));
+     } catch (error) {
++      state.drafts?.resume();
+       errorLine.textContent = [
+         t(`err_${error.status}`) || t("err_generic"),
+         error.message,
+@@ -452,53 +592,81 @@
+ }
+ 
+ function wireDraftAutosave(view, qsId, qs, state) {
+-  if (!qs.qs_sha256) return;
+   const saveState = view.querySelector(".save-state");
++  const key = draftStorageKey(qsId);
+   let timer = null;
+-  let dirty = false;
+-  const save = async () => {
+-    if (!dirty) return;
++  let dirty = state.pendingDraft;
++  let revision = 0;
++  let inFlight = null;
++  let paused = false;
++
++  const remember = () => {
++    try {
++      sessionStorage.setItem(key, JSON.stringify({ etag: state.etag, payload: draftPayload(qs, state) }));
++    } catch (_error) {
++      saveState.dataset.state = "error";
++      saveState.textContent = t("ws_draft_error");
++    }
++  };
++  const save = () => {
++    clearTimeout(timer);
++    if (!dirty || paused || inFlight || !view.isConnected || state.sentReceipt || !qs.qs_sha256) return inFlight;
++    const savedRevision = revision;
++    const payload = draftPayload(qs, state);
++    const headers = state.etag ? { "If-Match": state.etag } : { "If-None-Match": "*" };
+     saveState.dataset.state = "saving";
+     saveState.textContent = t("ws_draft_saving");
+-    const payload = {
+-      question_session_id: qsId,
+-      question_sha256: qs.qs_sha256,
+-      request_id: state.requestId ??= crypto.randomUUID(),
+-      answered_by: state.author,
+-      ui_language: language(),
+-      answers: [...state.answers.entries()].map(([question_id, value]) => {
+-        const entry = { question_id, value };
+-        const comment = state.comments.get(question_id);
+-        if (comment) entry.comment = comment;
+-        return entry;
+-      }),
+-      confirmations: state.confirmations,
+-    };
+-    const headers = state.etag ? { "If-Match": state.etag } : { "If-None-Match": "*" };
+-    try {
+-      const response = await put(`/api/v1/sessions/${encodeURIComponent(qsId)}/draft`, payload, headers);
+-      state.etag = response.etag;
+-      saveState.dataset.state = "saved";
+-      saveState.textContent = t("ws_draft_saved");
+-      dirty = false;
+-    } catch (error) {
+-      if (error.status === 412) {
++    inFlight = (async () => {
++      let saved = false;
++      try {
++        await ensureCsrf();
++        const response = await put(`/api/v1/sessions/${encodeURIComponent(qsId)}/draft`, payload, headers);
++        state.etag = response.etag;
++        dirty = revision !== savedRevision;
++        saved = true;
++        if (view.isConnected) {
++          if (dirty) remember();
++          else sessionStorage.removeItem(key);
++          saveState.dataset.state = dirty ? "saving" : "saved";
++          saveState.textContent = t(dirty ? "ws_draft_saving" : "ws_draft_saved");
++        }
++      } catch (error) {
+         saveState.dataset.state = "error";
+-        saveState.textContent = t("err_412");
+-      } else {
+-        saveState.dataset.state = "error";
+-        saveState.textContent = t("ws_draft_error");
+-      }
+-    }
++        saveState.textContent = t(error.status === 412 ? "err_412" : "ws_draft_error");
++      } finally {
++        inFlight = null;
++        if (saved && dirty && !paused && view.isConnected) timer = setTimeout(save, SAVE_DEBOUNCE_MS);
++      }
++    })();
++    return inFlight;
+   };
+-  view.addEventListener("input", () => {
++  view.addEventListener("draftchange", () => {
++    if (state.sentReceipt) return;
+     dirty = true;
++    revision += 1;
++    remember();
+     clearTimeout(timer);
+-    timer = setTimeout(save, SAVE_DEBOUNCE_MS);
++    if (!paused) timer = setTimeout(save, SAVE_DEBOUNCE_MS);
+   });
+-  view.addEventListener("change", () => {
+-    dirty = true;
+-    clearTimeout(timer);
+-    timer = setTimeout(save, SAVE_DEBOUNCE_MS);
+-  });
+-}
++  if (dirty) timer = setTimeout(save, SAVE_DEBOUNCE_MS);
++  else if (state.answers.size || state.comments.size) {
++    saveState.dataset.state = "saved";
++    saveState.textContent = t("ws_draft_saved");
++  }
++  return {
++    async pause() {
++      paused = true;
++      clearTimeout(timer);
++      await inFlight;
++    },
++    resume() {
++      paused = false;
++      if (dirty) timer = setTimeout(save, SAVE_DEBOUNCE_MS);
++    },
++    clear() {
++      paused = true;
++      clearTimeout(timer);
++      try { sessionStorage.removeItem(key); } catch (_error) { /* Server ANS is already committed. */ }
++    },
++  };
++}

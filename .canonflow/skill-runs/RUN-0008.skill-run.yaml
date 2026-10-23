@@ -1,0 +1,32 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0008
+skill_id: canonflow-human-decision-console
+mode: generate
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  Prepare and publish QS-0010 (v2, es) with the material decisions left open at
+  the end of the retention block (R2): the two contract choices of HDC-0006 that
+  the patch must not integrate without the owner (point 2: meaning of `state` in
+  decision-state/index.json; point 6: whether mark-session ARCHIVED moves the
+  session file), the off-host destination of the encrypted backups and the
+  custody of the backup key (DEC-0026 leaves both open). Publication, the
+  compatibility views and the pending_human mirror run with mainspot-hdc.service
+  stopped (HDC-0007). No answer is written or inferred.
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 088c687e53fd8aab5dac23e7d1d0d7790c678030
+inputs:
+  - ".canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md (root cause points 1 and 6; pending decisions, points 2 and 6)"
+  - ".canonflow-updates/patches/HDC-0006-compat-views-lifecycle.patch (implements the recommended option of points 2 and 6)"
+  - "scripts/ops/backup/README.md, scripts/ops/backup/db-backup.sh, scripts/deploy/README-deploy-lxd.md (backup location, cipher, key path)"
+  - "evidence/remediation/R2-retention/05-restore-drill.txt, 06-backup-timers.txt (timers enabled, restore with exit re-application OK)"
+  - ".canonflow/decision-records/DEC-0026.json, DEC-0027.json, DEC-0044.json (context)"
+  - "canonflow-keystone@5e3dc307a4089f462b9742b76fd002cf910102fa decision-console/app/canonflow_hdc (profiles, validation, publish-session)"
+expected_outputs:
+  - .canonflow/decision-sessions/pending/QS-0010.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow/skill-runs/RUN-0008.skill-report.yaml
+created_at: "2026-10-22T06:24:00Z"

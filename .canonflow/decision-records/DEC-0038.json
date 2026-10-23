@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0038",
+  "kind": "decision",
+  "title": "Q-PRODUCT-ORDER: orden enviado y comentario con un orden distinto (pendiente de aclarar en QS-0009)",
+  "decision": "Respuesta a Q-PRODUCT-ORDER «Orden dentro del bloque de producto»: valor enviado (orden confirmado) 1 `telegram` («Alta del canal de Telegram (bot, webhook y vinculación chat↔negocio)»), 2 `alta_panel` («Alta del negocio y panel del propietario»), 3 `publicacion` («Publicación real de sitios»). El comentario literal del humano (campo comment) declara otro orden (1 alta del negocio y panel del propietario, 2 Telegram, 3 publicación real); este registro transcribe ambos sin elegir entre ellos.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-22T04:41:16Z",
+  "source": "QS-0008/ANS-0008 Q-PRODUCT-ORDER",
+  "source_ref": {
+    "question_session_id": "QS-0008",
+    "answer_session_id": "ANS-0008",
+    "question_ids": [
+      "Q-PRODUCT-ORDER"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [],
+  "affected_items": [
+    "DEC-0037",
+    "QS-0009"
+  ],
+  "expiry": "",
+  "comment": "Confirmo el orden:\n\n1. Alta del negocio y panel del propietario.\n2. Canal bidireccional de Telegram con vinculación segura.\n3. Publicación real de sitios.\n\nEste orden responde a las dependencias de identidad y al canon que establece Telegram como canal inicial del piloto.\n\nLas prioridades no deben interpretarse como una prohibición de desarrollo paralelo. La integración de publicación real puede prepararse y probarse independientemente mientras se implementa Telegram.\n\nLa experiencia objetivo es que el propietario pueda solicitar cambios por Telegram o desde el panel, revisar una vista previa, aprobarla y obtener la publicación real con confirmación verificable.\n\nEl MVP no se considerará completo con publicación simulada, Telegram exclusivamente saliente o negocios creados mediante seeds.\n\nPriorizar la entrega de un flujo funcional extremo a extremo, evitando implementar componentes aislados que todavía no ofrezcan valor al negocio."
+}

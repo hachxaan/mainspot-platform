@@ -1,0 +1,87 @@
+{
+  "schema": "cognitive-input/v1",
+  "obligation": {
+    "id": "FR-9001",
+    "version": "synthetic-p0/1.0.0",
+    "text": "Visible edits require human approval."
+  },
+  "loop": "functional_canon_loop",
+  "before": {
+    "human_approval_required": true,
+    "draft_summary": "technical"
+  },
+  "after": {
+    "human_approval_required": true,
+    "draft_summary": "plain language"
+  },
+  "scope": {
+    "task_ref": "MSP-P0-COGNITIVE-ACTIVATION-SYNTHETIC",
+    "description": "Synthetic advisory review of approval-preserving wording; no product change or authority.",
+    "paths": [
+      ".canonflow/cognitive/synthetic-p0/facts.txt"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "EVD-9001",
+      "path": ".canonflow/cognitive/synthetic-p0/facts.txt",
+      "sha256": "e119412dbd211d5d221a719ccd3c2fe7e3245a90e608cbf7811e7fcfcbba64e2",
+      "provenance": "Explicit synthetic activation fixture. No customer or confidential document content.",
+      "axes": [
+        "E",
+        "C",
+        "X"
+      ]
+    }
+  ],
+  "conditions": [
+    {
+      "id": "approval_retained",
+      "axis": "X",
+      "state": "ESTABLISHED",
+      "value": true,
+      "explicit": true,
+      "evidence_ids": [
+        "EVD-9001"
+      ]
+    }
+  ],
+  "required_conditions": {
+    "E": [],
+    "C": [],
+    "X": [
+      "approval_retained"
+    ]
+  },
+  "verification": {
+    "canon_index": ".canonflow/cognitive/synthetic-p0/canon.yaml",
+    "links": ".canonflow/cognitive/synthetic-p0/links.yaml",
+    "evidence_package": ".canonflow/cognitive/synthetic-p0/evidence.yaml",
+    "id_sources": [
+      ".canonflow/cognitive/synthetic-p0/ids.yaml"
+    ]
+  },
+  "authority": {
+    "rar_path": null,
+    "ssr_path": null
+  },
+  "residual_semantics": true,
+  "transition": {
+    "stage": "functional_review",
+    "bindings": {
+      "functional_state": {
+        "path": ".canonflow/state/functional-canon-state.yaml",
+        "sha256": "d60fb07989fc0d4ccfef03c877c5e4d46e22f29f4d68bef291c66223598c0c0d"
+      },
+      "source_register": {
+        "path": ".canonflow/sources/source-register.yaml",
+        "sha256": "ce59f707ffce2aaf179eb2cd8632690ad56f46949ac31d62b958956b915228d8"
+      },
+      "reconciliation": {
+        "path": ".canonflow/recovery/DR-0001/drift-report.yaml",
+        "sha256": "0a75a325c62023f923ccdb0fbf6e800a3bc35312be74113c828fa238c1fbb923"
+      }
+    },
+    "gates": []
+  }
+}
