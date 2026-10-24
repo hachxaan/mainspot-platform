@@ -83,10 +83,12 @@ blocks:
       - docs/contracts/backup-object-storage/external-conformance-plan.md
       - evidence/coordination/03-kvm-reconciliation-158ec59.md
       - evidence/contracts/backup-object-storage-v1/09-external-conformance-2026-10-23.md
+      - docs/contracts/backup-object-storage/external-conformance-report-2026-10-24.md
+      - docs/contracts/backup-object-storage/external-conformance-20261024T062159Z.json
     open_items:
       - "KVM 4 @ 03e71236 (servicio 824a4529, garage-alert 487428df): H-01/H-02, H-03 y H-04/S-08 cumplidos según la evidencia del operador (recepción en Telegram confirmada por el propietario)."
-      - "Conformidad externa preparada y no ejecutada (external-conformance-plan.md): host físico fuera del KVM 4, runner ae28a41a verificado, venv boto3/botocore 1.43.117, credenciales en tmpfs con limpieza por trap. Falta la autorización del ejecutor y el handoff."
-    next_gate: "Propietario autoriza este host como ejecutor externo → handoff GnuPG (docs/14 del servicio) → informe externo C-01..C-22 (C-21/C-22 MANUAL con evidence/29 y 32) → prueba del productor synthetic-drill y restauración remota"
+      - "Conformidad externa ejecutada el 2026-10-24 (run 20261024T062159Z-1750b25a, checkout 2d5c807e, servicio 824a4529): conformant=true, 20 PASS, C-21/C-22 MANUAL con evidence/29 y 32; credenciales y clave efímera destruidas. Falta la declaración del operador de S-15 (S-04/S-06/S-11/S-13/S-16) y el teardown de mainspot-drop."
+    next_gate: "Declaración S-15 del operador y teardown del buzón → prueba del productor synthetic-drill contra el servicio real y restauración remota (condiciones 5 y 6a, handoff nuevo y mandato aparte)"
   - id: R3-remote-producer
     title: Productor de respaldo remoto (desactivado)
     state: IMPLEMENTED_DISABLED

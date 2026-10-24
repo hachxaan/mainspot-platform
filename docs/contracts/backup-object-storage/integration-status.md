@@ -27,8 +27,9 @@ Sustituye como estado vigente a `v1/infra-reconciliation-ab046d24.md`, que queda
 
 ## Conformidad externa (§14)
 
-**No ejecutada.** El host local de MainSpot no dispone de las credenciales **writer**/**restore**
-ni de autorización del propietario para actuar como ejecutor externo. No hay `"conformant": true`.
+**Ejecutada el 2026-10-24** desde el equipo físico del propietario, fuera del KVM 4:
+`"conformant": true`, 20 PASS y C-21/C-22 MANUAL. Informe: `external-conformance-report-2026-10-24.md`.
+Lo que sigue es el estado previo, del 2026-10-23.
 
 Observado el 2026-10-23 desde fuera del KVM 4, sin credenciales (no sustituye a C-xx): bucket
 anónimo HTTP 403; verificación TLS correcta; certificado Let's Encrypt `YE2`,
@@ -53,8 +54,8 @@ protegida del servicio.
 
 | # | Condición | Estado |
 |---|---|---|
-| 1 | Certificado verificado externamente | PENDIENTE (observado; falta C-01 en el informe externo) |
-| 2 | Informe externo `"conformant": true` | BLOQUEADA (credenciales y autorización del ejecutor) |
+| 1 | Certificado verificado externamente | CUMPLIDA (C-01 PASS, informe externo 2026-10-24) |
+| 2 | Informe externo `"conformant": true` | CUMPLIDA en el runner (20 PASS, C-21/C-22 MANUAL con evidence/29 y 32); falta la declaración del operador de S-15 |
 | 3 | Copia protegida implementada, aislada y probada | Hecha en el KVM 4 (evidencia del operador); C-21/C-22 MANUAL |
 | 4 | Contrato reconciliado por commits | CUMPLIDA |
 | 5 | Productor probado con datos sintéticos | PENDIENTE (laboratorio hecho; falta el servicio real) |

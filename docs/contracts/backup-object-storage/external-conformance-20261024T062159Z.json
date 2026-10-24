@@ -1,0 +1,151 @@
+{
+  "contract": "mainspot-backup-object-storage",
+  "contract_version": "1.1.0",
+  "endpoint": "https://s3.mainspot.canonflow.dev",
+  "region": "garage",
+  "bucket": "mainspot-backups",
+  "guard_bucket": "mainspot-backups-guard",
+  "run": "20261024T062159Z-1750b25a",
+  "lab_mode": false,
+  "started_at": "2026-10-24T06:21:59+00:00",
+  "finished_at": "2026-10-24T06:22:46+00:00",
+  "conformant": true,
+  "manual": [
+    "C-21",
+    "C-22"
+  ],
+  "results": [
+    {
+      "id": "C-01",
+      "required": true,
+      "status": "PASS",
+      "detail": "TLSv1.3; publicly trusted certificate valid for s3.mainspot.canonflow.dev, 88 days left"
+    },
+    {
+      "id": "C-18",
+      "required": true,
+      "status": "PASS",
+      "detail": "plain HTTP redirects to HTTPS (301) without serving S3"
+    },
+    {
+      "id": "C-20",
+      "required": true,
+      "status": "PASS",
+      "detail": "ports [3900, 3901, 3902, 3903] not reachable (run from outside the service VPS)"
+    },
+    {
+      "id": "C-02",
+      "required": true,
+      "status": "PASS",
+      "detail": "clock skew 1s"
+    },
+    {
+      "id": "C-03",
+      "required": true,
+      "status": "PASS",
+      "detail": "writer key: HeadBucket OK (SigV4, path-style)"
+    },
+    {
+      "id": "C-04",
+      "required": true,
+      "status": "PASS",
+      "detail": "restore key: HeadBucket OK"
+    },
+    {
+      "id": "C-05",
+      "required": true,
+      "status": "PASS",
+      "detail": "PutObject with Content-MD5 accepted (ETag \"49b149d38d156e452c86b3910f86c971\")"
+    },
+    {
+      "id": "C-06",
+      "required": true,
+      "status": "PASS",
+      "detail": "wrong Content-MD5 rejected (400:InvalidDigest); nothing stored"
+    },
+    {
+      "id": "C-19",
+      "required": true,
+      "status": "PASS",
+      "detail": "x-amz-checksum-sha256 verified on upload (wrong value: 400:InvalidDigest) and returned by HeadObject"
+    },
+    {
+      "id": "C-07",
+      "required": true,
+      "status": "PASS",
+      "detail": "HeadObject: size and x-amz-meta-sha256 preserved"
+    },
+    {
+      "id": "C-08",
+      "required": true,
+      "status": "PASS",
+      "detail": "GetObject bytes identical (SHA-256)"
+    },
+    {
+      "id": "C-09",
+      "required": true,
+      "status": "PASS",
+      "detail": "ListObjectsV2 prefix + MaxKeys + ContinuationToken: 3 keys in lexicographic order, 2 pages"
+    },
+    {
+      "id": "C-10",
+      "required": true,
+      "status": "PASS",
+      "detail": "multipart (8 MiB + 1 MiB, Content-MD5 per part) complete; bytes identical"
+    },
+    {
+      "id": "C-11",
+      "required": true,
+      "status": "PASS",
+      "detail": "AbortMultipartUpload removes the pending upload"
+    },
+    {
+      "id": "C-15",
+      "required": true,
+      "status": "PASS",
+      "detail": "lifecycle exactly as section 9.1: v1/ 14 days, _conformance/ 1 day, incomplete uploads aborted after 1 day"
+    },
+    {
+      "id": "C-12",
+      "required": true,
+      "status": "PASS",
+      "detail": "denied as required (403:AccessDenied)"
+    },
+    {
+      "id": "C-13",
+      "required": true,
+      "status": "PASS",
+      "detail": "denied as required (403:AccessDenied)"
+    },
+    {
+      "id": "C-14",
+      "required": true,
+      "status": "PASS",
+      "detail": "denied as required (403:AccessDenied)"
+    },
+    {
+      "id": "C-21",
+      "required": true,
+      "status": "MANUAL",
+      "detail": "no guard bucket 'mainspot-backups-guard' in S3 (HeadBucket 404:404): either the protected copy is not an S3 bucket (section 9.2, option B) or the name is wrong; the absence of any path from the writer key must be shown by the published evidence of section 9.2.5"
+    },
+    {
+      "id": "C-22",
+      "required": true,
+      "status": "MANUAL",
+      "detail": "no guard bucket 'mainspot-backups-guard' in S3 (404:404): copy/original correspondence must be shown by the published evidence of the service (section 9.2, option B)"
+    },
+    {
+      "id": "C-17",
+      "required": true,
+      "status": "PASS",
+      "detail": "anonymous GET denied (403)"
+    },
+    {
+      "id": "C-16",
+      "required": true,
+      "status": "PASS",
+      "detail": "cleanup: 6 conformance objects deleted"
+    }
+  ]
+}
