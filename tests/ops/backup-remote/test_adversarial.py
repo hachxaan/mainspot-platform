@@ -321,7 +321,8 @@ def new_env(root: Path, lab: AdvLab, proxy: AdvProxy, creds=None) -> AdvEnv:
 
 
 def lines_in(text: str, backup_id: str) -> list[str]:
-    return [ln for ln in text.splitlines() if re.search(rf"(?:^| )backup_id={re.escape(backup_id)}(?: |$)", ln)]
+    return [ln for ln in text.splitlines()
+            if "status=ALERT" not in ln and re.search(rf"(?:^| )backup_id={re.escape(backup_id)}(?: |$)", ln)]
 
 
 def check_line(text: str) -> str:
@@ -1276,6 +1277,6 @@ def test_no_secrets_in_any_output_or_log(tmp_path):
         assert needle not in joined, needle
     for ln in joined.splitlines():
         if " db-backup-remote " in ln:
-            assert re.search(r"\S+ db-backup-remote (status=(OK|FAIL|SKIPPED|DISABLED)|check=daily)", ln), ln
+            assert re.search(r"\S+ db-backup-remote (status=(OK|FAIL|SKIPPED|DISABLED|ALERT)|check=daily)", ln), ln
     print_table("Salidas y registros revisados:", [("ejecuciones capturadas", len(base.ALL_OUTPUT)), ("backup-remote.log", len(logs)),
                                                    ("secretos buscados", len(base.SECRETS))])

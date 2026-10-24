@@ -95,13 +95,13 @@ blocks:
       - "Conformidad externa ejecutada el 2026-10-24 (run 20261024T062159Z-1750b25a, checkout 2d5c807e, servicio 824a4529): conformant=true, 20 PASS, C-21/C-22 MANUAL con evidence/29 y 32; credenciales y clave efímera destruidas. Declaración S-15 en f478e7df (con el cierre del handoff): S-04/S-06/S-11/S-16 PASS, S-13 NO VERIFICADO."
       - "S-13 (s13-capacity-assessment-2026-10-24.md): NO DETERMINABLE. Máximo local observado 120 960 B (base piloto de 10 MB, no representativa); cota con cuota de 50 GiB: objeto ≤ 1,5625 GiB; no hay límite de tamaño documentado ni exigible."
       - "QS-0013 ingerida en RUN-0014 (ANS-0014): DEC-0059 máximo 1 GiB por respaldo remoto (objeto + manifiesto), DEC-0060 cuota de 50 GiB, DEC-0061 rechazo seguro E-SIZE-LIMIT con el respaldo local intacto, DEC-0062 contrato 1.2.0 (MENOR), DEC-0063 condiciones."
-      - "Contrato 1.2.0 publicado (c4f87c4, pin 2bb5290); falta la reconciliación del KVM 4 (citar c4f87c4) y su nueva declaración S-15 con mediciones de S-13. S-13 sigue NO VERIFICADO."
-      - "Canal externo de entrega de los avisos del productor MainSpot (§13 «Aviso», incluido E-SIZE-LIMIT): escalado en QS-0014 (RUN-0015, PENDING). Hoy registro status=ALERT, remote-alerts.jsonl y adaptador MAINSPOT_REMOTE_ALERT_COMMAND sin configurar."
-    next_gate: "KVM 4 cita 1.2.0 y publica la declaración S-15 con S-13 medido (32 GiB libres en el bucket, 16 GiB en la copia, 48 GiB de disco) → decisión del canal de avisos del productor → simulacro E2E synthetic-drill (mandato aparte) → sesión de autorización de activación"
+      - "Contrato 1.2.0 publicado (c4f87c4, pin 2bb5290) y reconciliado por el KVM 4 en 9c880469dca65420f57cad2c6193c2982433a608 (evidence/43 S-15 1.2.0 con capacidad S-13 medida para R = 1 GiB; evidence/44). S-13 sigue NO ACREDITADA: falta el simulacro E2E."
+      - "Canal de avisos del productor: QS-0014 ingerida en RUN-0016 → DEC-0064 (bot de Telegram exclusivo, token y chat solo en el equipo MainSpot) y DEC-0065 (condiciones). Adaptador implementado y probado; falta el aprovisionamiento del propietario y su confirmación de recepción real."
+    next_gate: "Aprovisionamiento del bot del productor y recepción real confirmada por el propietario → simulacro E2E synthetic-drill (S-13, condiciones 5 y 6a; mandato aparte) → sesión de autorización de activación en el HDC"
   - id: R3-remote-producer
     title: Productor de respaldo remoto (desactivado)
     state: IMPLEMENTED_DISABLED
-    implements: [DEC-0026, DEC-0045, DEC-0046, DEC-0047, DEC-0049, DEC-0055, DEC-0056, DEC-0057, DEC-0058, DEC-0059, DEC-0061, DEC-0063]
+    implements: [DEC-0026, DEC-0045, DEC-0046, DEC-0047, DEC-0049, DEC-0055, DEC-0056, DEC-0057, DEC-0058, DEC-0059, DEC-0061, DEC-0063, DEC-0064, DEC-0065]
     summary: >-
       scripts/ops/backup/db-backup-remote.py según §8, §10.1, §12, §13 y §16.3 del contrato; sin configuración
       termina status=DISABLED sin red; unidades systemd escritas y no instaladas. 23 pruebas del autor y 29 de la
@@ -118,11 +118,13 @@ blocks:
       - evidence/remediation/R3-remote-producer/06-adversarial-retest.txt
       - evidence/remediation/R3-remote-producer/07-regression-2026-10-23.txt
       - evidence/remediation/R3-remote-producer/08-size-limit-tests.txt
+      - evidence/remediation/R3-remote-producer/09-telegram-alert-tests.txt
       - docs/contracts/backup-object-storage/v1/VERIFICATION.md (§11)
+      - scripts/ops/backup/README.md (Avisos por Telegram)
     open_items:
       - "O-1..O-3 (baja/informativa) del productor para la auditoría previa a la condición 7."
       - "Prueba contra el servicio real y restauración remota (condiciones 5–6) requieren credenciales del servicio entregadas por el propietario."
-      - "Canal externo de entrega de avisos del productor: QS-0014 PENDING (adaptador MAINSPOT_REMOTE_ALERT_COMMAND listo, sin configurar)."
+      - "Avisos por Telegram (DEC-0064/DEC-0065): adaptador scripts/ops/backup/remote-alert-telegram.py con integridad sha256 y permisos de la ruta comprobados, sin shell, HTTPS con timeout y 2 intentos, cola remote-alerts-pending/ con reintentos acotados (24 intentos / 72 h) y supresión de duplicados; 29 pruebas propias + regresión. Pendiente: el propietario crea el bot, aprovisiona token y chat en este equipo (0600) y confirma la recepción del TEST-SYNTHETIC."
     next_gate: "Condiciones 1–6 de §2.3 acreditadas (evidence/coordination/02-activation-gate.md) → auditoría previa a la condición 7 → publicar la sesión de autorización (borrador evidence/coordination/QS-activation-draft.questions.json) → DEC de autorización"
   - id: T1-publication-runtime-eval
     title: Definición técnica de la publicación por tenant (OCI frente a LXC/LXD, proxy, DNS y TLS)

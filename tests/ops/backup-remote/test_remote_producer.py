@@ -365,7 +365,9 @@ def now_id(delta: dt.timedelta = dt.timedelta(0)) -> str:
 
 
 def lines_for(proc: subprocess.CompletedProcess, backup_id: str) -> list[str]:
-    return [ln for ln in proc.stdout.splitlines() if re.search(rf"(?:^| )backup_id={re.escape(backup_id)}(?: |$)", ln)]
+    """Líneas de resultado del respaldo (sin las líneas `status=ALERT` de los avisos, §16.3)."""
+    return [ln for ln in proc.stdout.splitlines()
+            if "status=ALERT" not in ln and re.search(rf"(?:^| )backup_id={re.escape(backup_id)}(?: |$)", ln)]
 
 
 def field(line: str, key: str) -> str:
@@ -835,7 +837,8 @@ def alert_hook(env: Env) -> Path:
     hook = env.root / "alert-hook.sh"
     hook.write_text(f"#!/bin/sh\ncat >> {out}\n")
     hook.chmod(0o700)
-    env.write_config(MAINSPOT_REMOTE_ALERT_COMMAND=str(hook))
+    env.write_config(MAINSPOT_REMOTE_ALERT_COMMAND=str(hook),
+                     MAINSPOT_REMOTE_ALERT_COMMAND_SHA256=hashlib.sha256(hook.read_bytes()).hexdigest())
     return out
 
 
@@ -928,15 +931,16 @@ def test_t06_alert_is_sanitized_and_delivered(tmp_path, lab, proxy):
     local = env.make_backup(bid)
     total = remote_total(env, local, bid)
     proc = env.run(extra_env={LIMIT_ENV: str(total - 1)})
-    (event,) = [json.loads(x) for x in hook_out.read_text().splitlines()]
+    (event,) = [e for e in map(json.loads, hook_out.read_text().splitlines()) if e["code"] == "E-SIZE-LIMIT"]
     assert event == {**event, "code": "E-SIZE-LIMIT", "severity": "error", "producer": "db-backup-remote",
                      "backup_id": bid, "total_bytes": total, "limit_bytes": total - 1,
                      "action": "not-uploaded-local-backup-kept"}
-    assert set(event) == {"ts", "producer", "code", "severity", "backup_id", "size_bytes", "manifest_bytes",
-                          "total_bytes", "limit_bytes", "action"}
+    assert set(event) == {"ts", "producer", "event_id", "code", "severity", "backup_id", "size_bytes",
+                          "manifest_bytes", "total_bytes", "limit_bytes", "action"}
     outbox = (env.backup_dir / "remote-alerts.jsonl")
-    assert oct(outbox.stat().st_mode & 0o777) == "0o600" and json.loads(outbox.read_text()) == event
-    (alert_line,) = [ln for ln in proc.stdout.splitlines() if "status=ALERT" in ln]
+    assert oct(outbox.stat().st_mode & 0o777) == "0o600"
+    assert [e for e in map(json.loads, outbox.read_text().splitlines()) if e["code"] == "E-SIZE-LIMIT"] == [event]
+    (alert_line,) = [ln for ln in proc.stdout.splitlines() if "status=ALERT" in ln and "error=E-SIZE-LIMIT" in ln]
     assert field(alert_line, "delivery") == "ok" and field(alert_line, "outbox") == "ok"
     blob = hook_out.read_text() + outbox.read_text() + proc.stdout + proc.stderr + env.log_text()
     for secret in (*SECRETS, env.creds[0], env.creds[1]):
@@ -971,7 +975,8 @@ def test_t08_rejected_backup_is_not_retried_nor_realerted(tmp_path, lab, proxy):
     assert field(line, "status") == "SKIPPED" and field(line, "error") == "E-SIZE-LIMIT"
     assert field(line, "action") == "size-rejected" and field(line, "attempts") == "0"
     assert requests_for(proxy, bid) == [] and writes(proxy) == []
-    assert "status=ALERT" not in proc.stdout and len(hook_out.read_text().splitlines()) == 1
+    assert "error=E-SIZE-LIMIT" not in "\n".join(ln for ln in proc.stdout.splitlines() if "status=ALERT" in ln)
+    assert len([x for x in hook_out.read_text().splitlines() if '"E-SIZE-LIMIT"' in x]) == 1
     # fuera de la ventana de 24 h el respaldo termina en E-UPLOAD-WINDOW (nunca se sube)
     old = now_id(dt.timedelta(hours=-25))
     env.make_backup(old, plaintext=os.urandom(64 * 1024))
@@ -1031,7 +1036,7 @@ def test_t12_alert_is_emitted_in_the_same_run_even_without_network(tmp_path, lab
     i_alert = next(i for i, ln in enumerate(out) if "status=ALERT" in ln)
     i_net = next(i for i, ln in enumerate(out) if "error=E-NETWORK" in ln)
     assert i_alert < i_net  # el aviso sale antes de cualquier operación S3
-    (event,) = [json.loads(x) for x in hook_out.read_text().splitlines()]
+    (event,) = [e for e in map(json.loads, hook_out.read_text().splitlines()) if e["code"] == "E-SIZE-LIMIT"]
     ts = dt.datetime.strptime(event["ts"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
     assert started <= ts <= ended and event["code"] == "E-SIZE-LIMIT"
 

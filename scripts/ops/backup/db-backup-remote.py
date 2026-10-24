@@ -24,8 +24,16 @@ Archivo de configuración (permisos 0600; `CLAVE=valor` por línea; `#` comenta)
     AWS_SECRET_ACCESS_KEY=…
     MAINSPOT_BACKUP_DIR=…          (opcional; el entorno tiene prioridad)
     MAINSPOT_BACKUP_KEY=…          (opcional; el entorno tiene prioridad)
-    MAINSPOT_REMOTE_ALERT_COMMAND=… (opcional; ruta absoluta a un ejecutable que recibe
-                                    cada aviso como JSON por stdin: adaptador de entrega)
+    MAINSPOT_REMOTE_ALERT_COMMAND=… (opcional; ruta absoluta al adaptador de avisos, p. ej.
+                                    scripts/ops/backup/remote-alert-telegram.py, DEC-0064)
+    MAINSPOT_REMOTE_ALERT_COMMAND_SHA256=… (obligatorio si hay adaptador: sha256 del ejecutable)
+
+Avisos (DEC-0061/DEC-0063/DEC-0064/DEC-0065): E-SIZE-LIMIT, SIZE-OVER-80PCT y los códigos de §13
+con «Aviso: sí». Cada uno: línea `status=ALERT … delivery=ok|failed-…|not-configured`, evento en
+`remote-alerts.jsonl` y un intento acotado con el adaptador (sin shell, entorno mínimo, 30 s; antes de
+ejecutarlo se comprueban sha256, propietario y permisos del archivo y de sus directorios). Los fallos
+reintentables quedan en `remote-alerts-pending/` y se reintentan al inicio de las ejecuciones siguientes
+(24 intentos o 72 h; después `remote-alerts-failed/`, `delivery=abandoned`).
 
 Límite (§8.2 paso 0, DEC-0059/DEC-0061/DEC-0063): objeto cifrado + manifiesto ≤ 1 GiB
 (inclusivo), comprobado antes de cualquier operación S3. Si se supera: `E-SIZE-LIMIT`,
@@ -68,6 +76,7 @@ import re
 import stat
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 PRODUCER = "db-backup-remote"
@@ -117,6 +126,24 @@ SIZE_WARN_RATIO = 0.8  # §10.1: aviso de revalidación (DEC-0063) por encima de
 ALERT_COMMAND_TIMEOUT_S = 30
 REJECTED_DIR = ".remote-size-rejected"
 ALERTS_FILE = "remote-alerts.jsonl"
+# Entrega de avisos (DEC-0064/DEC-0065): un intento acotado en la misma ejecución; si falla, el evento queda
+# en remote-alerts-pending/ y se reintenta al inicio de las ejecuciones siguientes, con tope de intentos y edad.
+ALERT_PENDING_DIR = "remote-alerts-pending"
+ALERT_FAILED_DIR = "remote-alerts-failed"
+ALERT_STATE_FILE = "remote-alerts-state.json"
+ALERT_PENDING_MAX_ATTEMPTS = 24
+ALERT_PENDING_MAX_AGE = dt.timedelta(hours=72)
+ALERT_REPEAT_AFTER = dt.timedelta(hours=24)
+ALERT_STATE_KEEP = dt.timedelta(days=16)
+# Códigos de salida del adaptador (scripts/ops/backup/remote-alert-telegram.py) → delivery=
+ALERT_HOOK_RC = {0: "ok", 10: "failed-not-configured", 11: "failed-config", 12: "failed-invalid",
+                 13: "failed-unavailable"}
+ALERT_NOT_RETRIED = {"ok", "not-configured", "failed-invalid"}
+# §13 «Aviso: sí» que el productor emite como aviso (E-NETWORK/E-SERVER/E-THROTTLE/E-DEADLINE avisan vía E-FRESHNESS)
+CONTRACT_ALERT_CODES = {"E-TLS", "E-AUTH-SKEW", "E-AUTH-SIGNATURE", "E-AUTH-DENIED", "E-BUCKET", "E-NOT-IMPLEMENTED",
+                        "E-REQUEST", "E-UPLOAD-WINDOW", "E-INTEGRITY-UPLOAD", "E-INTEGRITY-VERIFY",
+                        "E-LOCAL-INTEGRITY", "E-REMOTE-CONFLICT", "E-FRESHNESS", "E-RETENTION-VIOLATION",
+                        "E-RESTORE-MAC"}
 
 RETRYABLE_CODES = {"SlowDown", "InternalError", "ServiceUnavailable", "RequestTimeout"}
 SHA256_LINE_RE = re.compile(r"^([0-9a-f]{64})  (\S+)\n?\Z")
@@ -199,50 +226,208 @@ def size_limit(env: dict[str, str]) -> int:
     return int(raw)
 
 
+def insecure_path(p: Path) -> str | None:
+    """Motivo por el que `p` no es un ejecutable confiable, o None. Sin enlaces simbólicos ni `..`; el archivo
+    y todos sus directorios superiores pertenecen al usuario o a root y no son escribibles por grupo ni
+    otros (se admite un directorio de root con sticky bit, como /tmp)."""
+    if not p.is_absolute() or ".." in p.parts:
+        return "not-absolute-or-dotdot"
+    uid = os.getuid()
+    try:
+        st = p.lstat()
+    except OSError:
+        return "missing"
+    if not stat.S_ISREG(st.st_mode):
+        return "not-regular-file"
+    if st.st_uid not in (0, uid) or st.st_mode & 0o022 or not st.st_mode & stat.S_IXUSR:
+        return "file-owner-or-mode"
+    for d in p.parents:
+        try:
+            ds = d.lstat()
+        except OSError:
+            return "dir-missing"
+        if stat.S_ISLNK(ds.st_mode):
+            return "dir-symlink"
+        if ds.st_uid not in (0, uid):
+            return "dir-owner"
+        if ds.st_mode & 0o022 and not (ds.st_mode & stat.S_ISVTX and ds.st_uid == 0):
+            return "dir-writable"
+    return None
+
+
+def file_sha256(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+class AlertCommand:
+    """`MAINSPOT_REMOTE_ALERT_COMMAND` + `MAINSPOT_REMOTE_ALERT_COMMAND_SHA256` (integridad, DEC-0065)."""
+
+    def __init__(self, path: Path, sha256: str):
+        self.path, self.sha256 = path, sha256
+
+    def problem(self) -> str | None:
+        reason = insecure_path(self.path)
+        if reason:
+            return reason
+        try:
+            return None if file_sha256(self.path) == self.sha256 else "sha256-mismatch"
+        except OSError:
+            return "unreadable"
+
+
+def alert_command(values: dict[str, str]) -> AlertCommand | None:
+    cmd = values.get("MAINSPOT_REMOTE_ALERT_COMMAND", "")
+    if not cmd:
+        return None
+    sha = values.get("MAINSPOT_REMOTE_ALERT_COMMAND_SHA256", "").lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise ProducerError("E-CONFIG", "MAINSPOT_REMOTE_ALERT_COMMAND_SHA256 es obligatorio (64 hex)")
+    command = AlertCommand(Path(cmd), sha)
+    reason = command.problem()
+    if reason:
+        raise ProducerError("E-CONFIG", f"MAINSPOT_REMOTE_ALERT_COMMAND no confiable: {reason}")
+    return command
+
+
+def write_private_json(path: Path, data) -> None:
+    tmp = path.with_name(f".{path.name}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(data, sort_keys=True) + "\n")
+    os.replace(tmp, path)
+
+
 class Alerts:
-    """Aviso inmediato del productor (§13 «Aviso», §16.3): una línea `status=ALERT` en el registro, un
-    evento JSON en `<backup_dir>/remote-alerts.jsonl` (0600) y, si está configurado, el adaptador de
-    entrega `MAINSPOT_REMOTE_ALERT_COMMAND` (recibe el mismo JSON por stdin, entorno mínimo, 30 s).
-    El evento solo lleva códigos, identificadores y tamaños: nunca secretos ni contenido."""
+    """Avisos del productor (§13 «Aviso», §16.3; DEC-0061/DEC-0063/DEC-0064/DEC-0065).
 
-    def __init__(self, log: Log, backup_dir: Path, command: str | None):
+    Cada aviso: evento JSON (solo códigos, identificadores y tamaños) añadido a `remote-alerts.jsonl` (0600),
+    un intento de entrega acotado en la misma ejecución con el adaptador (sin shell, sin argumentos, entorno
+    mínimo, integridad y permisos comprobados antes de ejecutarlo) y una línea `status=ALERT ... delivery=`.
+    Una entrega fallida reintentable queda en `remote-alerts-pending/` y se reintenta al inicio de las
+    ejecuciones siguientes (como mucho ALERT_PENDING_MAX_ATTEMPTS intentos o ALERT_PENDING_MAX_AGE; después
+    pasa a `remote-alerts-failed/` con `delivery=abandoned`). Avisos repetidos se suprimen por clave."""
+
+    def __init__(self, log: Log, backup_dir: Path, command: AlertCommand | None):
         self.log, self.backup_dir, self.command = log, backup_dir, command
+        self.pending_dir = backup_dir / ALERT_PENDING_DIR
+        self.failed_dir = backup_dir / ALERT_FAILED_DIR
+        self.state_path = backup_dir / ALERT_STATE_FILE
+        self.unavailable = False  # tras un fallo de disponibilidad no se reintentan más pendientes en esta ejecución
+        try:
+            self.state = json.loads(self.state_path.read_text(encoding="utf-8"))
+            assert isinstance(self.state, dict)
+        except (OSError, ValueError, AssertionError):
+            self.state = {}
 
-    def send(self, code: str, severity: str, **fields) -> None:
-        event = {"ts": iso(utcnow()), "producer": PRODUCER, "code": code, "severity": severity, **fields}
-        line = json.dumps(event, sort_keys=True, ensure_ascii=True)
+    def _deliver(self, event: dict) -> str:
+        if not self.command:
+            return "not-configured"
+        if self.command.problem():  # se vuelve a comprobar justo antes de ejecutar
+            return "failed-integrity"
+        try:
+            proc = subprocess.run([str(self.command.path)], input=json.dumps(event, sort_keys=True) + "\n",
+                                  text=True, capture_output=True, timeout=ALERT_COMMAND_TIMEOUT_S, shell=False,
+                                  env={"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(Path.home())})
+        except subprocess.TimeoutExpired:
+            return "failed-timeout"
+        except OSError:
+            return "failed-exec"
+        return ALERT_HOOK_RC.get(proc.returncode, f"failed-rc{proc.returncode}")
+
+    def _note_unavailable(self, delivery: str) -> None:
+        if delivery in ("failed-unavailable", "failed-timeout"):
+            self.unavailable = True
+
+    def _queue(self, event: dict, delivery: str) -> None:
+        try:
+            self.pending_dir.mkdir(mode=0o700, exist_ok=True)
+            write_private_json(self.pending_dir / f"{event['event_id']}.json",
+                               {"event": event, "attempts": 1, "first_failed_at": event["ts"], "last_delivery": delivery})
+        except OSError:
+            pass
+
+    def _save_state(self) -> None:
+        now = utcnow()
+        self.state = {k: v for k, v in self.state.items()
+                      if isinstance(v, str) and now - dt.datetime.strptime(v, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc) < ALERT_STATE_KEEP}
+        try:
+            write_private_json(self.state_path, self.state)
+        except OSError:
+            pass
+
+    def send(self, code: str, severity: str, key: str | None = None, repeat_after: dt.timedelta | None = None,
+             **fields) -> None:
+        """`key`: aviso repetido suprimido (para siempre mientras dure el estado si `repeat_after` es None)."""
+        now = utcnow()
+        if key:
+            last = self.state.get(key)
+            if last and (repeat_after is None or now - dt.datetime.strptime(last, "%Y-%m-%dT%H:%M:%SZ")
+                         .replace(tzinfo=dt.timezone.utc) < repeat_after):
+                return
+            self.state[key] = iso(now)
+            self._save_state()
+        event = {"ts": iso(now), "producer": PRODUCER, "event_id": uuid.uuid4().hex, "code": code,
+                 "severity": severity, **{k: v for k, v in fields.items() if v is not None}}
         outbox = "ok"
         try:
             fd = os.open(self.backup_dir / ALERTS_FILE, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
             with os.fdopen(fd, "a", encoding="utf-8") as fh:
-                fh.write(line + "\n")
+                fh.write(json.dumps(event, sort_keys=True, ensure_ascii=True) + "\n")
         except OSError:
             outbox = "failed"
-        delivery = "not-configured"
-        if self.command:
+        delivery = self._deliver(event)
+        self._note_unavailable(delivery)
+        if delivery not in ALERT_NOT_RETRIED:
+            self._queue(event, delivery)
+        self.log.emit("ALERT", error=code, severity=severity, event_id=event["event_id"], **fields,
+                      outbox=outbox, delivery=delivery, pending="yes" if delivery not in ALERT_NOT_RETRIED else None)
+
+    def retry_pending(self) -> None:
+        """Reintento controlado de avisos no entregados (antes de cualquier operación S3 de la ejecución)."""
+        if not self.command or not self.pending_dir.is_dir():
+            return
+        now = utcnow()
+        for path in sorted(self.pending_dir.glob("*.json")):
+            if self.unavailable:
+                break
             try:
-                proc = subprocess.run([self.command], input=line + "\n", text=True, capture_output=True,
-                                      timeout=ALERT_COMMAND_TIMEOUT_S, env={"PATH": "/usr/local/bin:/usr/bin:/bin"})
-                delivery = "ok" if proc.returncode == 0 else f"failed-rc{proc.returncode}"
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                delivery = f"failed-{type(exc).__name__}"
-        self.log.emit("ALERT", error=code, severity=severity, **fields, outbox=outbox, delivery=delivery)
+                rec = json.loads(path.read_text(encoding="utf-8"))
+                event = rec["event"]
+                first = dt.datetime.strptime(rec["first_failed_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+                attempts = int(rec["attempts"])
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+            base = {"error": event.get("code"), "severity": event.get("severity"), "event_id": event.get("event_id"),
+                    "backup_id": event.get("backup_id")}
+            if attempts >= ALERT_PENDING_MAX_ATTEMPTS or now - first > ALERT_PENDING_MAX_AGE:
+                self._move_failed(path)
+                self.log.emit("ALERT", **base, attempts=attempts, delivery="abandoned")
+                continue
+            delivery = self._deliver(event)
+            self._note_unavailable(delivery)
+            if delivery == "failed-invalid":
+                self._move_failed(path)
+            elif delivery == "ok":
+                path.unlink(missing_ok=True)
+            else:
+                rec.update(attempts=attempts + 1, last_delivery=delivery)
+                try:
+                    write_private_json(path, rec)
+                except OSError:
+                    pass
+            self.log.emit("ALERT", **base, attempts=attempts + 1, delivery=delivery, retry="yes",
+                          pending="yes" if delivery not in ALERT_NOT_RETRIED else None)
 
-
-def alert_command(values: dict[str, str]) -> str | None:
-    """`MAINSPOT_REMOTE_ALERT_COMMAND`: ruta absoluta a un ejecutable regular no escribible por grupo/otros."""
-    cmd = values.get("MAINSPOT_REMOTE_ALERT_COMMAND", "")
-    if not cmd:
-        return None
-    p = Path(cmd)
-    try:
-        st = p.stat()
-    except OSError:
-        st = None
-    if (not p.is_absolute() or st is None or not stat.S_ISREG(st.st_mode) or not os.access(p, os.X_OK)
-            or st.st_mode & 0o022):
-        raise ProducerError("E-CONFIG", "MAINSPOT_REMOTE_ALERT_COMMAND debe ser una ruta absoluta a un ejecutable no escribible por grupo u otros")
-    return cmd
+    def _move_failed(self, path: Path) -> None:
+        try:
+            self.failed_dir.mkdir(mode=0o700, exist_ok=True)
+            os.replace(path, self.failed_dir / path.name)
+        except OSError:
+            pass
 
 
 # --- configuración -----------------------------------------------------------------
@@ -759,10 +944,12 @@ class Producer:
                     except ProducerError:
                         pass
                     done("SKIPPED", "E-UPLOAD-WINDOW", "outside-24h-window")
+                    self.contract_alert("E-UPLOAD-WINDOW", "backup", bk.backup_id, once=True)
                     return
                 bk.verify_local()
                 if not self.remote_complete(bk, okey, mkey):
                     done("SKIPPED", "E-UPLOAD-WINDOW", "outside-24h-window")
+                    self.contract_alert("E-UPLOAD-WINDOW", "backup", bk.backup_id, once=True)
                 return  # completo: sin línea (el reintento horario no repite respaldos ya copiados)
             if bk.backup_id in self.rejected:  # ya registrado (y avisado) por size_gate, sin ninguna operación S3
                 return
@@ -800,7 +987,16 @@ class Producer:
             done("FAIL", exc.code)
             if exc.code in ("E-DEADLINE", "E-AUTH-SKEW", "E-AUTH-DENIED", "E-AUTH-SIGNATURE", "E-BUCKET", "E-TLS",
                             "E-NOT-IMPLEMENTED"):
-                raise
+                raise  # main() registra y avisa el fallo de la ejecución
+            self.contract_alert(exc.code, "backup", bk.backup_id)
+
+    def contract_alert(self, code: str, scope: str, backup_id: str | None = None, once: bool = False) -> None:
+        """Aviso de §13 («Aviso: sí»): el mismo par código/sujeto no se repite antes de 24 h (o nunca, si `once`)."""
+        if not self.alerts or self.dry_run or code not in CONTRACT_ALERT_CODES:
+            return
+        self.alerts.send(code, "warning" if code == "E-UPLOAD-WINDOW" else "error",
+                         key=f"{code}:{backup_id or scope}", repeat_after=None if once else ALERT_REPEAT_AFTER,
+                         backup_id=backup_id, scope=scope)
 
     def verify_remote(self, bid: str) -> str | None:
         """§5.3 sin archivo local: manifiesto leído de su clave derivada, reglas 1, 2, 3 (key_id + MAC) y 5,
@@ -898,6 +1094,8 @@ class Producer:
                       lifecycle="ok" if lifecycle_ok else ("missing" if rules is None else "differs"),
                       attempts=self.remote.max_attempts, duration_s=round(time.monotonic() - started),
                       error=",".join(errors) or None, warnings=",".join(warnings) or None)
+        for code in errors:
+            self.contract_alert(code, "daily-check")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -966,6 +1164,7 @@ def main(argv: list[str] | None = None) -> int:
         local = [] if args.check_only else discover_local(cfg.backup_dir, mt)
         if not args.check_only:
             producer.prune_rejections({bk.backup_id for bk in local})
+        producer.alerts.retry_pending()  # avisos pendientes de ejecuciones anteriores (sin S3)
         for bk in local:  # §8.2 paso 0: antes de cualquier operación S3 (también si la red no responde)
             producer.size_gate(bk, now)
         try:
@@ -980,6 +1179,7 @@ def main(argv: list[str] | None = None) -> int:
             log.emit("FAIL", error=exc.code, attempts=exc.attempts,
                      skew_s=f"{remote.skew_s:.0f}" if exc.code == "E-AUTH-SKEW" and remote.skew_s is not None else None,
                      duration_s=round(time.monotonic() - remote.started))
+            producer.contract_alert(exc.code, "run")
             return 1
         return 1 if producer.failed else 0
     finally:

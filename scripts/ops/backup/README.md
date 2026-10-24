@@ -189,8 +189,8 @@ argumentos ni por el registro. El archivo se rechaza si sus permisos superan 060
    demás respaldos se procesan y §10.1 sigue avisando (`E-FRESHNESS`). Un respaldo subido
    por encima del 80 % del máximo genera un aviso `SIZE-OVER-80PCT` (revalidar S-13).
    `MAINSPOT_REMOTE_LAB_MAX_BACKUP_BYTES` (entorno) solo baja el límite para laboratorio;
-   inválido o > 1 GiB ⇒ `E-CONFIG` sin contactar con S3. El canal externo que entregue
-   estos avisos al propietario no está decidido: el adaptador es el punto de conexión.
+   inválido o > 1 GiB ⇒ `E-CONFIG` sin contactar con S3. El canal externo es el bot de
+   Telegram exclusivo de DEC-0064, con el adaptador de la sección «Avisos por Telegram».
 1. `HeadBucket` y medición del reloj con la cabecera `Date` de la primera respuesta:
    > 300 s ⇒ `E-AUTH-SKEW` y se detiene (§6.5).
 2. Por cada `mainspot-db-*.dump.enc` local con `.sha256`, del más nuevo al más antiguo
@@ -241,6 +241,50 @@ tras `InvalidDigest`: un PUT rechazado y uno aceptado ⇒ `attempts=2`),
 más la línea `check=daily` y, si la ejecución se detiene (reloj, credencial, bucket,
 plazo), una línea `status=FAIL error=…` de ejecución. `error=E-CONFIG` es un código
 local (configuración, permisos, clave o candado), no de §13.
+
+### Avisos por Telegram (DEC-0064 / DEC-0065)
+
+Adaptador `scripts/ops/backup/remote-alert-telegram.py` (solo biblioteca estándar). Bot **exclusivo** de los
+avisos del productor, distinto del bot del KVM 4, del de CanonFlow/HDC y del comercial de MainSpot. Token e
+identificador del chat solo en este equipo; nunca en Git, registros, documentación, issues ni respuestas de
+agentes.
+
+- **Entrega:** texto plano (sin `parse_mode`) por HTTPS, timeout de 8 s, 2 intentos como mucho (429 con
+  espera ≤ 5 s se respeta), dentro de los 30 s que el productor concede al adaptador. Códigos de salida:
+  `0` entregado, `10` sin configurar, `11` configuración insegura o credenciales rechazadas, `12` evento
+  inválido, `13` Telegram no disponible.
+- **El productor** (`delivery=ok|failed-unavailable|failed-timeout|failed-config|failed-not-configured|failed-invalid|failed-integrity|not-configured`):
+  - antes de cada ejecución del adaptador comprueba su sha256 (`MAINSPOT_REMOTE_ALERT_COMMAND_SHA256`), que no
+    sea un enlace simbólico ni contenga `..`, y que el archivo y todos sus directorios superiores sean del
+    usuario o de root y no escribibles por grupo ni otros; lo ejecuta sin shell ni argumentos, con
+    `PATH`/`HOME` como único entorno;
+  - los fallos reintentables quedan en `remote-alerts-pending/` (0600) y se reintentan al inicio de las
+    ejecuciones siguientes (si uno falla por indisponibilidad, el resto espera); tras 24 intentos o 72 h pasan
+    a `remote-alerts-failed/` con `delivery=abandoned`;
+  - un mismo aviso de §13 no se repite antes de 24 h (`remote-alerts-state.json`); `E-UPLOAD-WINDOW` se avisa
+    una vez por respaldo y `E-SIZE-LIMIT` una vez por archivo (marca de rechazo).
+- **Instalación** (el checkout es escribible por el grupo, así que el adaptador no se ejecuta desde él):
+
+  ```bash
+  install -d -m 0700 ~/.local/libexec ~/.local/libexec/mainspot
+  install -m 0700 scripts/ops/backup/remote-alert-telegram.py ~/.local/libexec/mainspot/remote-alert-telegram.py
+  sha256sum ~/.local/libexec/mainspot/remote-alert-telegram.py   # valor para MAINSPOT_REMOTE_ALERT_COMMAND_SHA256
+  ```
+
+- **Aprovisionamiento por el propietario** (en este equipo, sin pegar valores en chats ni issues):
+
+  ```bash
+  install -d -m 0700 ~/.config/mainspot ~/.config/mainspot/backup
+  ( umask 077; read -rsp 'Token del bot: ' T; echo; read -rp 'Chat id: ' C
+    printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_CHAT_ID=%s\n' "$T" "$C" > ~/.config/mainspot/backup/telegram-alert.env )
+  chmod 0600 ~/.config/mainspot/backup/telegram-alert.env
+  ```
+
+- **Prueba sintética de recepción** (no activa el productor ni toca S3):
+  `~/.local/libexec/mainspot/remote-alert-telegram.py --synthetic-test` imprime el `id` del evento
+  `TEST-SYNTHETIC`. La recepción real solo se da por buena cuando el propietario confirma ese `id` en su chat.
+- La conexión con el productor (`MAINSPOT_REMOTE_ALERT_COMMAND` y `MAINSPOT_REMOTE_ALERT_COMMAND_SHA256` en
+  `remote.env`) se hace en la activación, que exige su propia autorización en el HDC.
 
 ### Pruebas de laboratorio (`tests/ops/backup-remote/test_remote_producer.py`)
 

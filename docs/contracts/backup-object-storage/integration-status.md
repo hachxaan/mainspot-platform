@@ -55,12 +55,12 @@ protegida del servicio.
 | # | Condición | Estado |
 |---|---|---|
 | 1 | Certificado verificado externamente | CUMPLIDA (C-01 PASS, informe externo 2026-10-24) |
-| 2 | Informe externo `"conformant": true` | CUMPLIDA en el runner (20 PASS, C-21/C-22 MANUAL con evidence/29 y 32); falta la declaración del operador de S-15 |
+| 2 | Informe externo `"conformant": true` | Informe válido (20 PASS, C-21/C-22 MANUAL con evidence/29 y 32; vale para 1.2.0); S-15 1.2.0 publicada por el KVM 4 (`9c880469`, capacidad S-13 medida para 1 GiB); **S-13 pendiente del simulacro E2E** |
 | 3 | Copia protegida implementada, aislada y probada | Hecha en el KVM 4 (evidencia del operador); C-21/C-22 MANUAL |
-| 4 | Contrato reconciliado por commits | CUMPLIDA |
-| 5 | Productor probado con datos sintéticos | PENDIENTE (laboratorio hecho; falta el servicio real) |
+| 4 | Contrato reconciliado por commits | CUMPLIDA: contrato 1.2.0 (`c4f87c4`) citado por el KVM 4 en `9c880469` |
+| 5 | Productor probado con datos sintéticos | PENDIENTE (laboratorio hecho, con el límite de 1 GiB y los avisos; falta el servicio real) |
 | 6 | Restauración desde el remoto y desde la copia | PENDIENTE (copia: hecha en el KVM 4; remoto: requiere credenciales) |
-| P-3 | Aviso externo | CUMPLIDO en el servicio (`03e71236`); plan de conformidad: `external-conformance-plan.md` |
+| P-3 | Aviso externo | Servicio: CUMPLIDO (`03e71236`). Productor MainSpot: DEC-0064/DEC-0065 (bot de Telegram exclusivo), adaptador implementado y probado; **pendiente** el aprovisionamiento y la confirmación de recepción real por el propietario |
 | 7 | Autorización del propietario en HDC | BLOQUEADA por las anteriores |
 
 Ninguna de estas comprobaciones activa el productor ni autoriza transferir respaldos productivos
