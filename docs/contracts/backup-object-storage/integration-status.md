@@ -60,7 +60,7 @@ protegida del servicio.
 | 4 | Contrato reconciliado por commits | CUMPLIDA: contrato 1.2.0 (`c4f87c4`) citado por el KVM 4 en `9c880469` |
 | 5 | Productor probado con datos sintéticos | PENDIENTE (laboratorio hecho, con el límite de 1 GiB y los avisos; falta el servicio real) |
 | 6 | Restauración desde el remoto y desde la copia | PENDIENTE (copia: hecha en el KVM 4; remoto: requiere credenciales) |
-| P-3 | Aviso externo | Servicio: CUMPLIDO (`03e71236`). Productor MainSpot: DEC-0064/DEC-0065 (bot de Telegram exclusivo), adaptador implementado y probado; **pendiente** el aprovisionamiento y la confirmación de recepción real por el propietario |
+| P-3 | Aviso externo | Servicio: CUMPLIDO (`03e71236`). Productor MainSpot (DEC-0064/DEC-0065): recepción real sintética **ACREDITADA** (TEST-SYNTHETIC `f7b848ef95468473b7228ddd4fe37244`, 2026-10-24T21:52:06Z, confirmada por el propietario; `producer-alert-channel-evidence.md`). Falta el aviso generado por el productor (simulacro E2E, `e2e-drill-handoff.md`) |
 | 7 | Autorización del propietario en HDC | BLOQUEADA por las anteriores |
 
 Ninguna de estas comprobaciones activa el productor ni autoriza transferir respaldos productivos
