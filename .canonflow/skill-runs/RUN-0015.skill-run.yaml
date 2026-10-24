@@ -1,0 +1,27 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0015
+skill_id: canonflow-human-decision-console
+mode: generate
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  Escalate the material decision found while implementing contract 1.2.0: the external
+  channel that delivers the MainSpot producer alerts (E-SIZE-LIMIT, 80 % warning and the
+  §13 "Aviso: sí" codes) to the owner. The KVM 4 Telegram bot (DEC-0055) cannot be used
+  (credentials only on KVM 4; DEC-0058 §1). Publish QS-0014 (v2, es); agent proposal as
+  recommended_option only; no answer is written or inferred. Service stopped during the
+  publication window (HDC-0007).
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 7c5735c430cee57aa27a703a5f0890615d097cba
+inputs:
+  - "docs/contracts/backup-object-storage/v1/CONTRACT.md 1.2.0 at c4f87c4aa2e875e7ad01861f5f2a809e025d638c (§8.2 step 0, §10.1, §13, §16.3)"
+  - ".canonflow/decision-records/DEC-0055, DEC-0058, DEC-0061, DEC-0063"
+  - "scripts/ops/backup/db-backup-remote.py at 7c5735c4 (MAINSPOT_REMOTE_ALERT_COMMAND adapter)"
+expected_outputs:
+  - .canonflow/decision-sessions/pending/QS-0014.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow/skill-runs/RUN-0015.skill-report.yaml
+created_at: "2026-10-24T20:16:00Z"

@@ -194,19 +194,26 @@
       "answered_at": "2026-10-24T07:50:53Z",
       "session_label": "Respaldos remotos (Garage S3, KVM 4): capacidad S-13 en la etapa inicial",
       "answer_session_id": "ANS-0014"
+    },
+    {
+      "question_session_id": "QS-0014",
+      "state": "PENDING",
+      "generated_at": "2026-10-24T20:17:11Z",
+      "records": [],
+      "session_label": "Respaldos remotos: canal externo de los avisos del productor MainSpot"
     }
   ],
   "counters": {
-    "qs": 13,
+    "qs": 14,
     "ans": 14,
     "dec": 63,
     "apr": 2,
     "rsk": 0
   },
-  "latest": "QS-0013",
+  "latest": "QS-0014",
   "reconstructed": {
-    "at": "2026-10-24T07:52:44Z",
-    "by": "RUN-0014 (canonflow-human-decision-console)",
+    "at": "2026-10-24T20:17:12Z",
+    "by": "RUN-0015 (canonflow-human-decision-console)",
     "source": "artifacts+lifecycle+legacy-snapshots; state = evidence-derived effective state",
     "preserved": true
   }

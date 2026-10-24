@@ -96,7 +96,7 @@ blocks:
       - "S-13 (s13-capacity-assessment-2026-10-24.md): NO DETERMINABLE. Máximo local observado 120 960 B (base piloto de 10 MB, no representativa); cota con cuota de 50 GiB: objeto ≤ 1,5625 GiB; no hay límite de tamaño documentado ni exigible."
       - "QS-0013 ingerida en RUN-0014 (ANS-0014): DEC-0059 máximo 1 GiB por respaldo remoto (objeto + manifiesto), DEC-0060 cuota de 50 GiB, DEC-0061 rechazo seguro E-SIZE-LIMIT con el respaldo local intacto, DEC-0062 contrato 1.2.0 (MENOR), DEC-0063 condiciones."
       - "Contrato 1.2.0 publicado (c4f87c4, pin 2bb5290); falta la reconciliación del KVM 4 (citar c4f87c4) y su nueva declaración S-15 con mediciones de S-13. S-13 sigue NO VERIFICADO."
-      - "Canal externo de entrega de los avisos del productor MainSpot (§13 «Aviso», incluido E-SIZE-LIMIT) no decidido: hoy registro status=ALERT, remote-alerts.jsonl y adaptador MAINSPOT_REMOTE_ALERT_COMMAND sin configurar."
+      - "Canal externo de entrega de los avisos del productor MainSpot (§13 «Aviso», incluido E-SIZE-LIMIT): escalado en QS-0014 (RUN-0015, PENDING). Hoy registro status=ALERT, remote-alerts.jsonl y adaptador MAINSPOT_REMOTE_ALERT_COMMAND sin configurar."
     next_gate: "KVM 4 cita 1.2.0 y publica la declaración S-15 con S-13 medido (32 GiB libres en el bucket, 16 GiB en la copia, 48 GiB de disco) → decisión del canal de avisos del productor → simulacro E2E synthetic-drill (mandato aparte) → sesión de autorización de activación"
   - id: R3-remote-producer
     title: Productor de respaldo remoto (desactivado)
@@ -122,7 +122,7 @@ blocks:
     open_items:
       - "O-1..O-3 (baja/informativa) del productor para la auditoría previa a la condición 7."
       - "Prueba contra el servicio real y restauración remota (condiciones 5–6) requieren credenciales del servicio entregadas por el propietario."
-      - "Canal externo de entrega de avisos del productor no decidido (adaptador MAINSPOT_REMOTE_ALERT_COMMAND listo, sin configurar)."
+      - "Canal externo de entrega de avisos del productor: QS-0014 PENDING (adaptador MAINSPOT_REMOTE_ALERT_COMMAND listo, sin configurar)."
     next_gate: "Condiciones 1–6 de §2.3 acreditadas (evidence/coordination/02-activation-gate.md) → auditoría previa a la condición 7 → publicar la sesión de autorización (borrador evidence/coordination/QS-activation-draft.questions.json) → DEC de autorización"
   - id: T1-publication-runtime-eval
     title: Definición técnica de la publicación por tenant (OCI frente a LXC/LXD, proxy, DNS y TLS)

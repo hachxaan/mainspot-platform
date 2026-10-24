@@ -1,0 +1,50 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0015
+run_id: RUN-0015
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Generation and publication of QS-0014 only. No adapter implemented or configured, no
+  activation, no infrastructure change.
+human_summary: |
+  QS-0014 (v2, es, 2 questions, 1 required) is PENDING at https://mainspot.hdc.com/#/sessions/QS-0014.
+  Q-PRODUCER-ALERT-CHANNEL: dedicated Telegram bot for producer alerts, token and chat only on the MainSpot host [recommended] /
+  SMTP mail from a dedicated sender account / other channel in notes; Q-NOTES.
+  Reason: DEC-0061/DEC-0063 require an immediate alert and contract §13 says the owner receives producer alerts, but no channel
+  delivers them outside the MainSpot host today; the KVM 4 bot (DEC-0055) cannot be reused (DEC-0058 §1).
+claims:
+  - class: VERIFIED
+    statement: "QS-0014 validates against the v2 profile and HDC cross-rules with no errors."
+    evidence: [.canonflow/skill-runs/RUN-0015/evidence/EV-0001-qs-validation.json]
+    refs: [QS-0014]
+  - class: VERIFIED
+    statement: "Published with the HDC-0009 stamped wrapper (sha256 6a5c0dca9c9259ddfe0a423efb2d1cb480bbead2f375907ce086a91ada70abbe), compatibility views --run RUN-0015 (qs 14 · ans 14 · dec 63 · apr 2, latest QS-0014 PENDING), pending_human [QS-0014]; service stopped 20:17:11Z-20:17:13Z; after restart writes_enabled=true on loopback and HTTPS (generation 86); live API QS-0014 PENDING, can_answer=true."
+    evidence: [.canonflow/skill-runs/RUN-0015/evidence/EV-0002-publish-session.txt, .canonflow/skill-runs/RUN-0015/evidence/EV-0003-compat-views.txt, .canonflow/skill-runs/RUN-0015/evidence/EV-0004-ready-after-restart.json, .canonflow/skill-runs/RUN-0015/evidence/EV-0005-hdc-live-sessions.json]
+    refs: [QS-0014]
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT WARN persists for QS-0001..0013 (HDC-0008) until the pin is
+      updated; HDC-0006 workaround reapplied and recorded.
+    evidence: .canonflow/skill-runs/RUN-0015/evidence/EV-0003-compat-views.txt
+limitations:
+  - "recommended_option is an agent proposal and never substitutes an answer."
+evidence:
+  - .canonflow/skill-runs/RUN-0015/evidence/EV-0001-qs-validation.json
+  - .canonflow/skill-runs/RUN-0015/evidence/EV-0002-publish-session.txt
+  - .canonflow/skill-runs/RUN-0015/evidence/EV-0003-compat-views.txt
+  - .canonflow/skill-runs/RUN-0015/evidence/EV-0004-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0015/evidence/EV-0005-hdc-live-sessions.json
+outputs:
+  - .canonflow/decision-sessions/pending/QS-0014.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md (reapplication record)
+gates_checked:
+  - {gate: G-REPO, status: PASS, evidence: "tree clean at 7c5735c4 before the run"}
+blockers:
+  - "ANS for QS-0014: human answer in the HDC"
+next_pointer: "https://mainspot.hdc.com/#/sessions/QS-0014"

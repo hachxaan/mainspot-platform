@@ -94,7 +94,7 @@ Se aplicó en `RUN-0001`, el 2026-10-21 a las 18:54 UTC:
   MainSpot»): `--run` obligatorio, sin la línea de QS-0004 y con errores
   explícitos. La derivación no cambia.
 
-Estado vigente, actualizado el 2026-10-24 tras RUN-0014:
+Estado vigente, actualizado el 2026-10-24 tras RUN-0015:
 
 - **Reaplicación en `RUN-0002`** (ingestión de ANS-0004), a las 22:23Z:
   1. QS-0004 se movió con `mv` a `archived/`.
@@ -227,6 +227,15 @@ Estado vigente, actualizado el 2026-10-24 tras RUN-0014:
     contadores `qs 13 · ans 14 · dec 63 · apr 2`. Tras arrancar,
     `writes_enabled: true` (loopback y HTTPS, `generation` 84).
   - **Evidencia:** `.canonflow/skill-runs/RUN-0014/evidence/EV-0001..EV-0005`.
+- **Reaplicación en `RUN-0015`** (publicación de QS-0014), entre 20:17:11Z y
+  20:17:13Z, con el servicio detenido durante toda la ventana:
+  1. `publish-session` de QS-0014 con el envoltorio de HDC-0009.
+  2. Script general con `--run RUN-0015` y `update_state.py pending … add QS-0014`.
+  3. Arranque del servicio.
+  - **Resultado:** QS-0001..0013 `ARCHIVED`, QS-0014 `PENDING` (`latest`),
+    contadores `qs 14 · ans 14 · dec 63 · apr 2`. Tras arrancar,
+    `writes_enabled: true` (loopback y HTTPS, `generation` 86).
+  - **Evidencia:** `.canonflow/skill-runs/RUN-0015/evidence/EV-0001..EV-0005`.
 - `index.json` registra en `reconstructed.by` la ejecución que lo regeneró (`--run`).
 - La API HTTPS muestra los mismos estados.
 - Persisten trece `DECLARED_STATE_CONFLICT` WARN (QS-0001..0013).

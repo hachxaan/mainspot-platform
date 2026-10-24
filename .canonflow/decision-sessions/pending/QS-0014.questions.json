@@ -1,0 +1,65 @@
+{
+  "schema_version": 2,
+  "question_session_id": "QS-0014",
+  "session_label": "Respaldos remotos: canal externo de los avisos del productor MainSpot",
+  "title": "¿Por qué canal, fuera del registro local, deben llegarte los avisos del productor MainSpot (E-SIZE-LIMIT y demás avisos de §13)?",
+  "generated_at": "2026-10-24T20:17:11Z",
+  "state": "PENDING",
+  "ui_language": "es",
+  "risk_tier": 2,
+  "affected_loop": "implementation_loop",
+  "intervention_reason": "DEC-0061 y DEC-0063 exigen un aviso inmediato y sin secretos cuando un respaldo supera 1 GiB, y el contrato dice desde 1.0 que los avisos del productor (§13) los recibe el propietario. El productor ya emite el aviso en la misma ejecución (línea status=ALERT, archivo remote-alerts.jsonl y un adaptador de entrega configurable), pero ningún canal entrega hoy esos avisos fuera del equipo de MainSpot. El bot de Telegram del KVM 4 (DEC-0055) no puede usarse: sus credenciales solo viven en el KVM 4 y un rechazo por tamaño nunca llega a S3.",
+  "decision_impact": "La respuesta se ingiere como DEC y fija qué adaptador se configura en el equipo de MainSpot para entregar los avisos del productor. No activa el productor ni instala temporizadores: el adaptador se implementa y se prueba con un aviso sintético antes de la sesión de autorización de activación, que sigue siendo independiente (DEC-0049 §7, DEC-0058 §4, DEC-0063).",
+  "initial_instructions": "La opción recomendada es una propuesta del agente, no una decisión. Nunca escribas tokens, contraseñas, identificadores de chat ni direcciones en las notas.",
+  "topics": [
+    {
+      "topic_id": "avisos_productor",
+      "title": "Avisos del productor MainSpot"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-PRODUCER-ALERT-CHANNEL",
+      "type": "single_choice",
+      "topic_id": "avisos_productor",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Por qué canal quieres recibir los avisos del productor de respaldos remotos de MainSpot?",
+      "short_description": "Hoy los avisos quedan en el registro y en un archivo local del equipo de MainSpot; nadie los recibe fuera de él.",
+      "full_explanation": "Qué hay hoy (contrato 1.2.0, commit c4f87c4aa2e875e7ad01861f5f2a809e025d638c):\n- El productor emite cada aviso en la misma ejecución: línea status=ALERT en su registro, el mismo evento JSON en remote-alerts.jsonl (0600) y, si se configura, un adaptador local que recibe ese JSON (MAINSPOT_REMOTE_ALERT_COMMAND). El evento solo lleva código, backup_id y tamaños.\n- Avisos afectados: E-SIZE-LIMIT (inmediato), el aviso del 80 % del máximo y los códigos de §13 con «Aviso: sí» (TLS, credenciales, conflictos remotos, frescura, retención…).\n- El bot de Telegram del KVM 4 (DEC-0055) no sirve: su token vive solo en el KVM 4 y DEC-0058 §1 prohíbe reutilizar el bot comercial de MainSpot y el de CanonFlow/HDC para esos avisos.\n\nOpciones: un bot de Telegram propio de este productor (distinto de los anteriores), con token y chat solo en el equipo de MainSpot (0600); o correo SMTP desde una cuenta de envío dedicada; o indicar otro canal en las notas.\n\nEvidencia: CONTRACT.md 1.2.0 §8.2 paso 0, §10.1, §13 («Los avisos los recibe el propietario»), §16.3 (commit c4f87c4aa2e875e7ad01861f5f2a809e025d638c); DEC-0061 y DEC-0063 (aviso inmediato sin secretos); DEC-0055 y DEC-0058 §1 (bot de Telegram del KVM 4: credenciales solo en el KVM 4, no reutilizar el bot comercial de MainSpot ni el de CanonFlow/HDC); productor scripts/ops/backup/db-backup-remote.py en mainspot-platform@7c5735c430cee57aa27a703a5f0890615d097cba (adaptador MAINSPOT_REMOTE_ALERT_COMMAND, VERIFICATION.md §11 T-06/T-12).",
+      "why_this_matters": "Sin un canal externo, un rechazo por tamaño o una pérdida de frescura solo quedan en un archivo local del mismo equipo, y DEC-0063 pide un aviso inmediato que llegue al propietario.",
+      "recommended_option": "telegram_bot_productor",
+      "options": [
+        {
+          "value": "telegram_bot_productor",
+          "label": "Bot de Telegram dedicado a los avisos del productor, con chat privado; token e identificador del chat solo en el equipo de MainSpot (0600), revocable por ti",
+          "impact": "aviso inmediato en el móvil, mismo formato y condiciones que DEC-0058 §1; se prueba con un aviso sintético que confirmes",
+          "risk": "Telegram ve códigos, backup_id y tamaños (no secretos); si el token se filtra, un tercero podría enviarte avisos falsos hasta revocarlo"
+        },
+        {
+          "value": "correo_smtp",
+          "label": "Correo SMTP a una dirección tuya desde una cuenta de envío dedicada, con la contraseña solo en el equipo de MainSpot (0600)",
+          "impact": "queda registro en el buzón",
+          "risk": "los avisos pueden retrasarse o caer en spam; una credencial de envío más que custodiar"
+        },
+        {
+          "value": "otro_en_notas",
+          "label": "Otro canal (descríbelo en las notas, con quién custodia su credencial)",
+          "impact": "el agente prepara la propuesta técnica para ese canal",
+          "risk": "puede requerir otra sesión si el canal necesita decisiones adicionales"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NOTES",
+      "type": "free_text",
+      "topic_id": "avisos_productor",
+      "required": false,
+      "title": "Notas para el registro",
+      "short_description": "Opcional. Se transcribe literalmente en el registro de decisión. Nunca escribas credenciales, tokens, identificadores de chat ni direcciones.",
+      "options": []
+    }
+  ]
+}
