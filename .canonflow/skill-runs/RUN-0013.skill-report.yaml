@@ -1,0 +1,82 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0013
+run_id: RUN-0013
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Generation and publication of QS-0013 and the non-normative analysis/test plan only. No
+  statement about the future human decision, no code, quota, contract or infrastructure
+  change; the remote transfer stays disabled and S-13 stays NOT VERIFIED.
+human_summary: |
+  QS-0013 (v2, es, 5 questions, 4 required) is PENDING and answerable at https://mainspot.hdc.com/#/sessions/QS-0013; QS-0001..0012 remain ARCHIVED.
+  Q-S13-DESIGN-MAX (1 GiB object+manifest [recommended] / 1.5 GiB / no design maximum),
+  Q-S13-QUOTA (keep 50 GiB [recommended] / ask KVM 4 for 100 GiB),
+  Q-S13-OVERSIZE-POLICY (safe rejection + alert, local backup kept [recommended] / warn and upload up to the quota bound / no control),
+  Q-S13-CONTRACT-PATH (MINOR 1.2.0 with §8.2 step 0, E-SIZE-LIMIT and S-13 by enforced design maximum [recommended] / implementation policy only), Q-NOTES.
+  Agent analysis: the preferred proposal requires contract 1.2.0 (§8.2 has no size rejection, §13 has no error for it, S-13 measures only observed size); accepting the maximum alone does not accredit S-13.
+  Test plan T-01..T-10 and the next synthetic E2E scope are in docs/contracts/backup-object-storage/s13-decision-and-test-plan.md (not executed).
+claims:
+  - class: VERIFIED
+    statement: "The prepared QS-0013 validates against the v2 question-session profile and the HDC cross-rules with no errors (recommended_option values resolve to declared options)."
+    evidence: [.canonflow/skill-runs/RUN-0013/evidence/EV-0001-qs-validation.json]
+    refs: [QS-0013]
+  - class: VERIFIED
+    statement: "The HDC-0009 stamped wrapper published .canonflow/decision-sessions/pending/QS-0013.questions.json (sha256 0f859a2094096d8b21d6dc39765f0c6ec758dde3bc38eb27f9523b45308a25d7) with generated_at 2026-10-24T07:21:06Z."
+    evidence: [.canonflow/skill-runs/RUN-0013/evidence/EV-0002-publish-session.txt]
+    refs: [QS-0013]
+  - class: VERIFIED
+    statement: "publish-session, the HDC-0006 compatibility-view script (--run RUN-0013) and update_state.py ran with mainspot-hdc.service stopped (07:21:05Z-07:21:07Z); counters qs 13 · ans 13 · dec 58 · apr 2, latest QS-0013 PENDING; after restart /api/v1/ready reports writes_enabled=true on loopback and HTTPS (generation 80) and the live API lists QS-0013 effective PENDING, can_answer=true."
+    evidence: [.canonflow/skill-runs/RUN-0013/evidence/EV-0003-compat-views.txt, .canonflow/skill-runs/RUN-0013/evidence/EV-0004-ready-after-restart.json, .canonflow/skill-runs/RUN-0013/evidence/EV-0005-hdc-live-sessions.json]
+    refs: [QS-0013]
+  - class: VERIFIED
+    statement: "Facts in the questions come from CONTRACT.md 1.1.0 at 0cbdfcf (§2.3, §8.2, §8.3, §13, §15, §18), the S-13 capacity assessment at 65f60d10 and the KVM 4 operator S-15 declaration at f478e7df."
+    evidence: [docs/contracts/backup-object-storage/s13-capacity-assessment-2026-10-24.md]
+    refs: []
+  - class: OPEN
+    statement: "S-13 remains NOT VERIFIED; condition 2 of §2.3 remains incomplete until the decision is ingested, implemented, tested and re-declared by the KVM 4 operator."
+    refs: [QS-0013]
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT WARN persists for QS-0001..0012 (reconcile defect,
+      .canonflow-updates/HDC-0008) until the CanonFlow pin is updated. The HDC-0006
+      workaround was reapplied and recorded in its ficha.
+    evidence: .canonflow/skill-runs/RUN-0013/evidence/EV-0003-compat-views.txt
+  - id: FND-0002
+    severity: NOTE
+    description: >-
+      The canonflow-keystone checkout runs HEAD 70ff6015, divergent from the recorded pin
+      5e3dc307; the decision-console/app tree (9865e5ef) and scripts/update_state.py are
+      byte-identical to the pin, so the HDC code executed is the pinned one.
+    evidence: .canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md
+  - id: FND-0003
+    severity: NOTE
+    description: >-
+      The unpublished activation draft (evidence/coordination/QS-activation-draft.questions.json)
+      used QS-0013 as a placeholder id; at its publication the next free id (QS-0014 or later)
+      is assigned, as already recorded in SRP-0011 FND-0002.
+    evidence: evidence/coordination/QS-activation-draft.validation.json
+limitations:
+  - "QS-0013.html not rendered: the live console serves the session, as for QS-0005..QS-0012."
+  - "Only the pending_human mirror of method-state was updated (update_state.py)."
+  - "recommended_option values are agent proposals and never substitute an answer."
+evidence:
+  - .canonflow/skill-runs/RUN-0013/evidence/EV-0001-qs-validation.json
+  - .canonflow/skill-runs/RUN-0013/evidence/EV-0002-publish-session.txt
+  - .canonflow/skill-runs/RUN-0013/evidence/EV-0003-compat-views.txt
+  - .canonflow/skill-runs/RUN-0013/evidence/EV-0004-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0013/evidence/EV-0005-hdc-live-sessions.json
+outputs:
+  - .canonflow/decision-sessions/pending/QS-0013.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md (reapplication record)
+  - docs/contracts/backup-object-storage/s13-decision-and-test-plan.md
+gates_checked:
+  - {gate: G-REPO, status: PASS, evidence: "tree clean at 65f60d10 before the run"}
+blockers:
+  - "ANS for QS-0013: human answers in the HDC"
+next_pointer: "https://mainspot.hdc.com/#/sessions/QS-0013"

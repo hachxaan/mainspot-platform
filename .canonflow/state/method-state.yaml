@@ -11,5 +11,6 @@ pointers:
   traceability: .canonflow/traceability/links.yaml
   source_register: .canonflow/sources/source-register.yaml
   upstream_canon: /home/administrador/codeart/mainspoot/mainspot-documentation/docs/canonical/00-INDEX.md
-pending_human: []
-updated_at: '2026-10-23T09:59:53Z'
+pending_human:
+- QS-0013
+updated_at: '2026-10-24T07:21:07Z'

@@ -179,19 +179,26 @@
       "answered_at": "2026-10-23T09:52:30Z",
       "session_label": "Contrato 1.1.0 de respaldos remotos (KVM 4): canal de aviso, copia protegida y retención",
       "answer_session_id": "ANS-0013"
+    },
+    {
+      "question_session_id": "QS-0013",
+      "state": "PENDING",
+      "generated_at": "2026-10-24T07:21:06Z",
+      "records": [],
+      "session_label": "Respaldos remotos (Garage S3, KVM 4): capacidad S-13 en la etapa inicial"
     }
   ],
   "counters": {
-    "qs": 12,
+    "qs": 13,
     "ans": 13,
     "dec": 58,
     "apr": 2,
     "rsk": 0
   },
-  "latest": "QS-0012",
+  "latest": "QS-0013",
   "reconstructed": {
-    "at": "2026-10-23T09:59:52Z",
-    "by": "RUN-0012 (canonflow-human-decision-console)",
+    "at": "2026-10-24T07:21:06Z",
+    "by": "RUN-0013 (canonflow-human-decision-console)",
     "source": "artifacts+lifecycle+legacy-snapshots; state = evidence-derived effective state",
     "preserved": true
   }

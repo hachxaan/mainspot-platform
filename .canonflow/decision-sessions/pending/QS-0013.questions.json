@@ -1,0 +1,163 @@
+{
+  "schema_version": 2,
+  "question_session_id": "QS-0013",
+  "session_label": "Respaldos remotos (Garage S3, KVM 4): capacidad S-13 en la etapa inicial",
+  "title": "Límite de capacidad de los respaldos remotos: tamaño máximo de diseño, cuota, control en el productor y vía contractual para acreditar S-13",
+  "generated_at": "2026-10-24T07:21:06Z",
+  "state": "PENDING",
+  "ui_language": "es",
+  "risk_tier": 2,
+  "affected_loop": "implementation_loop",
+  "intervention_reason": "La conformidad externa de Garage S3 pasó (conformant=true; C-21/C-22 MANUAL acreditadas) y el operador del KVM 4 publicó la declaración S-15, pero S-13 (capacidad) sigue NO VERIFICADO: el contrato 1.1.0 la mide con «el tamaño máximo observado en mainspot-backups» y el bucket está vacío porque el productor no está activado. Activar exige la condición 2 de §2.3, que incluye S-15 y por tanto S-13: sin una decisión sobre el tamaño de diseño la puerta queda en un círculo. Ningún agente puede fijar ese límite por ti.",
+  "decision_impact": "Las respuestas se ingieren como registros DEC y fijan: el tamaño máximo de diseño de un respaldo remoto, si se mantiene la cuota de 50 GiB, qué hace el productor si un respaldo lo supera y si esto se incorpora al contrato (versión 1.2.0) o queda como política de implementación. Ninguna respuesta declara S-13 cumplida, activa el productor ni cambia cuotas o infraestructura: cada efecto se implementa y verifica después, con evidencia propia, y la activación sigue exigiendo su sesión de autorización (DEC-0049 §7, DEC-0058 §4).",
+  "initial_instructions": "Cada pregunta cita el contrato 1.1.0 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828) y la evaluación de capacidad del 2026-10-24. Las opciones marcadas como recomendadas son propuestas del agente, no decisiones. Datos de partida: mayor respaldo local observado 120 960 B (base de piloto de 10 MB, no representativa); con la cuota de 50 GiB y 32 respaldos (2 × 16) el tope por respaldo es 1,5625 GiB (objeto + manifiesto); copia protegida 50 GiB / 16 respaldos → 3,125 GiB; disco compartido del KVM 4 ≈ 158,9 GiB hasta el nivel crítico → 48 respaldos ≤ 3,31 GiB cada uno. Hoy no existe un límite de tamaño documentado ni exigible.",
+  "topics": [
+    {
+      "topic_id": "limite",
+      "title": "Tamaño máximo de diseño y cuota"
+    },
+    {
+      "topic_id": "productor",
+      "title": "Comportamiento del productor por encima del límite"
+    },
+    {
+      "topic_id": "contrato",
+      "title": "Vía contractual y acreditación de S-13"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-S13-DESIGN-MAX",
+      "type": "single_choice",
+      "topic_id": "limite",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Qué tamaño máximo de diseño fijas para un respaldo remoto completo (objeto cifrado + manifiesto) durante la etapa inicial?",
+      "short_description": "S-13 necesita un tamaño de referencia; hoy el único observado es local (≈ 118 KiB) y no representa producción.",
+      "full_explanation": "Lo que dice el contrato 1.1.0 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828):\n- §15 S-13: «Capacidad libre para al menos 2 × 16 respaldos del tamaño máximo observado en mainspot-backups, más otros 16 en la copia protegida» → 48 × Smax.\n- §8.3: la verificación por GET completo es obligatoria en v1 «(los respaldos son pequeños); si un respaldo supera 1 GiB, una versión MINOR PUEDE sustituirlo por la prueba mensual»: es un disparador de revisión, no un límite.\n- No hay ningún tamaño máximo; el productor no rechaza por tamaño; Nginx limita cada petición a 5 GiB pero los objetos grandes van por partes de 64 MiB.\n\nCálculo con B = objeto cifrado + manifiesto (manifiesto ≈ 1,1 kB; el guard admite hasta 64 KiB):\n- Con 1 GiB: bucket 32 × 1 GiB = 32 GiB de 50 (64 %); copia protegida 16 GiB de 50; disco 48 GiB de ≈ 158,9 GiB de margen.\n- Con 1,5 GiB: bucket 48 GiB de 50 (96 %, por encima del aviso crítico de garage-health al 95 %); copia 24 GiB; disco 72 GiB.\n- Tope matemático con la cuota actual: 1,5625 GiB (1 677 721 600 B por respaldo).\n\nAceptar un máximo de diseño NO acredita S-13 por sí solo: después hay que aplicarlo (pregunta del productor), reflejarlo en el contrato si así lo decides y que el operador vuelva a declarar S-13 con esa cifra.\n\nEvidencia: CONTRACT.md 1.1.0 §15 S-13, §15 S-15, §2.3 condición 2, §8.2, §8.3, §13, §18 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828); docs/contracts/backup-object-storage/s13-capacity-assessment-2026-10-24.md (mainspot-platform@65f60d10457f8bd3fce0970b786824073452a179); declaración S-15 del operador hachxaan/mainspot-s3-backups@f478e7df82d4cf4f8693440f415861022763854b evidence/41 (S-13 NO VERIFICADO); informe de conformidad externa 2026-10-24 (conformant=true, 20 PASS, C-21/C-22 MANUAL).",
+      "why_this_matters": "Sin un tamaño de referencia S-13 no puede verificarse antes de activar, y sin S-13 no se completa la condición 2 de la puerta. Un tamaño demasiado alto deja la cuota sin margen; uno demasiado bajo puede bloquear respaldos legítimos cuando crezca la base.",
+      "recommended_option": "1gib_total",
+      "options": [
+        {
+          "value": "1gib_total",
+          "label": "1 GiB por respaldo remoto completo (objeto cifrado + manifiesto)",
+          "impact": "coherente con §8.3; deja un 36 % de margen en la cuota de 50 GiB; basta para una base cuyo volcado comprimido y cifrado es hoy unas 8 900 veces menor",
+          "risk": "si la base crece más de lo previsto, los respaldos de más de 1 GiB dejan de llegar al remoto (según la política del productor) hasta revisar límite y cuota"
+        },
+        {
+          "value": "1_5gib_total",
+          "label": "1,5 GiB por respaldo (casi el tope de la cuota actual, 1,5625 GiB)",
+          "impact": "más holgura por respaldo sin cambiar la cuota",
+          "risk": "con 32 respaldos ocuparía el 96 % de la cuota: aviso crítico permanente y sin margen para objetos temporales de conformidad ni multiparte incompleta; supera el disparador de 1 GiB de §8.3"
+        },
+        {
+          "value": "sin_maximo",
+          "label": "No fijar máximo de diseño: S-13 solo con el tamaño observado tras activar",
+          "impact": "ningún cambio ahora",
+          "risk": "circular: activar exige la condición 2, que exige S-13; la puerta no puede completarse salvo una excepción explícita en la sesión de autorización"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-S13-QUOTA",
+      "type": "single_choice",
+      "topic_id": "limite",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Mantienes la cuota actual de 50 GiB del bucket mainspot-backups en la etapa inicial?",
+      "short_description": "La cuota de 50 GiB es el único tope que Garage aplica de verdad; cambiarla es un cambio material en el KVM 4.",
+      "full_explanation": "Estado actual (KVM 4, scripts/container/garage-init.py y docs/05): mainspot-backups maxSize 50 GiB, sin límite de objetos; copia protegida GUARD_MAX_BYTES 50 GiB y GUARD_MIN_FREE_BYTES 10 GiB; disco compartido con todo el host (pool LXD dir sin cuota por volumen), 178,2 GiB libres el 2026-10-24.\n\n- Mantener 50 GiB: con un máximo de 1 GiB por respaldo, la ocupación máxima prevista es 32 GiB (64 %).\n- Ampliar a 100 GiB: el tope por respaldo sube a 3,125 GiB, pero 48 respaldos de ese tamaño exigirían 150 GiB de disco, cerca del margen de ≈ 158,9 GiB, y la copia protegida (50 GiB) tendría que ampliarse también. Requiere cambiar garage-init.py y GUARD_MAX_BYTES en el KVM 4, volver a ejecutar la instalación y repetir S-13/S-16.\n\nEvidencia: CONTRACT.md 1.1.0 §15 S-13, §15 S-15, §2.3 condición 2, §8.2, §8.3, §13, §18 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828); docs/contracts/backup-object-storage/s13-capacity-assessment-2026-10-24.md (mainspot-platform@65f60d10457f8bd3fce0970b786824073452a179); declaración S-15 del operador hachxaan/mainspot-s3-backups@f478e7df82d4cf4f8693440f415861022763854b evidence/41 (S-13 NO VERIFICADO); informe de conformidad externa 2026-10-24 (conformant=true, 20 PASS, C-21/C-22 MANUAL).",
+      "why_this_matters": "La cuota fija cuánto cabe antes de que las subidas fallen; ampliarla sin revisar el disco compartido y la copia protegida traslada el riesgo al host.",
+      "recommended_option": "mantener_50gib",
+      "options": [
+        {
+          "value": "mantener_50gib",
+          "label": "Mantener 50 GiB",
+          "impact": "sin cambios de infraestructura; compatible con un máximo de 1 GiB con margen",
+          "risk": "si el tamaño real se acerca a 1,5 GiB habrá que revisar la cuota (cambio material)"
+        },
+        {
+          "value": "ampliar_100gib",
+          "label": "Pedir al KVM 4 ampliar a 100 GiB (y la copia protegida en proporción)",
+          "impact": "más holgura por respaldo",
+          "risk": "presión sobre el disco compartido del host (150 GiB previstos de ≈ 158,9 de margen); cambio material que exige otra verificación de S-13 y S-16"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-S13-OVERSIZE-POLICY",
+      "type": "single_choice",
+      "topic_id": "productor",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "Si un respaldo supera el máximo de diseño, ¿qué debe hacer el productor MainSpot?",
+      "short_description": "Hoy el productor sube cualquier tamaño; el límite solo sería exigible si el productor lo comprueba antes de subir.",
+      "full_explanation": "Contexto: §8.2 obliga al productor a subir cada respaldo local de menos de 24 h sin copia remota y no prevé ningún rechazo por tamaño; §13 no tiene código de error para ello. El productor nunca borra respaldos locales (la retención local de 14 días la hace db-backup.sh) ni objetos remotos.\n\n- Rechazo seguro con aviso: antes de cualquier escritura remota, si objeto + manifiesto > máximo, no sube nada, registra el resultado con un código nuevo (p. ej. E-SIZE-LIMIT) y avisa al propietario; el respaldo local queda intacto y se sigue intentando el siguiente. Al cabo de 26 h sin respaldo remoto salta además E-FRESHNESS.\n- Aviso y subida hasta el tope de la cuota: si supera el máximo pero cabe en el tope duro (1,5625 GiB con 50 GiB), sube y avisa; por encima del tope, rechazo seguro.\n- Sin control: solo las alertas de ocupación del bucket (80/95 %) del KVM 4; un respaldo grande puede agotar la cuota y hacer fallar también los siguientes.\n\nEvidencia: CONTRACT.md 1.1.0 §15 S-13, §15 S-15, §2.3 condición 2, §8.2, §8.3, §13, §18 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828); docs/contracts/backup-object-storage/s13-capacity-assessment-2026-10-24.md (mainspot-platform@65f60d10457f8bd3fce0970b786824073452a179); declaración S-15 del operador hachxaan/mainspot-s3-backups@f478e7df82d4cf4f8693440f415861022763854b evidence/41 (S-13 NO VERIFICADO); informe de conformidad externa 2026-10-24 (conformant=true, 20 PASS, C-21/C-22 MANUAL).",
+      "why_this_matters": "Decide si el límite es un control técnico o solo una cifra en un documento, y qué se pierde (copia remota de ese día, nunca el respaldo local) cuando se supera.",
+      "recommended_option": "rechazo_seguro_alerta",
+      "options": [
+        {
+          "value": "rechazo_seguro_alerta",
+          "label": "Rechazo seguro con aviso: no subir, avisar, conservar el respaldo local",
+          "impact": "el límite se vuelve exigible y la cuota nunca se agota por un respaldo grande; S-13 puede acreditarse con el máximo aplicado",
+          "risk": "mientras la base supere el límite no hay copia remota nueva (avisos E-SIZE-LIMIT y E-FRESHNESS) hasta revisar límite o cuota"
+        },
+        {
+          "value": "aviso_y_subida_hasta_tope",
+          "label": "Avisar y subir si cabe en el tope duro de la cuota; rechazar solo por encima",
+          "impact": "prioriza tener copia remota",
+          "risk": "por encima del máximo de diseño, S-13 deja de cumplirse aunque la subida funcione; la cuota puede quedar sin margen"
+        },
+        {
+          "value": "sin_control",
+          "label": "Sin control en el productor; solo alertas de ocupación del bucket",
+          "impact": "ningún cambio de código",
+          "risk": "el máximo no es exigible y S-13 no puede acreditarse antes de activar"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-S13-CONTRACT-PATH",
+      "type": "single_choice",
+      "topic_id": "contrato",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 2,
+      "title": "¿Cómo se incorpora la decisión y cómo se acredita S-13 antes de activar?",
+      "short_description": "Rechazar respaldos por tamaño y medir S-13 con un máximo de diseño cambian lo que dice el contrato 1.1.0.",
+      "full_explanation": "Análisis del agente frente al contrato 1.1.0 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828):\n- Un rechazo por tamaño contradice §8.2 (subir cada respaldo en ventana) y añade un error que §13 no tiene; S-13 mide el máximo observado, no uno de diseño. §18: los añadidos compatibles (nuevas comprobaciones) son versión MENOR.\n- Versión 1.2.0 (MENOR, compatible: el manifiesto, las rutas y el cifrado no cambian): fila nueva en §2.2 con el máximo y el DEC; paso previo en §8.2 con la comprobación de tamaño; E-SIZE-LIMIT en §13; S-13 redactada como «capacidad libre para 48 × el mayor de (máximo de diseño aplicado por el productor, máximo observado)»; disparadores de revalidación. Se publica por commit y la reconcilian ambos agentes (condición 4).\n- Política de implementación sin tocar el contrato: es más rápido, pero el productor se desvía de §8.2 y S-13 sigue sin poder verificarse literalmente antes de activar.\n\nCómo quedaría acreditada S-13 antes de activar (con 1.2.0): (1) DEC de esta sesión; (2) contrato 1.2.0 publicado y citado por ambos agentes; (3) control del productor implementado con sus pruebas en PASS; (4) el operador del KVM 4 vuelve a declarar S-13 con el máximo de diseño: libre en el bucket ≥ 32 × máximo, copia ≥ 16 × máximo, disco ≥ 48 × máximo; (5) simulacro E2E sintético que muestre aceptación por debajo y rechazo por encima. Después de activar, se vuelve a verificar con el tamaño observado y se revalida si cambian el límite, la cuota, la retención o el observado supera el 80 % del máximo.\n\nEvidencia: CONTRACT.md 1.1.0 §15 S-13, §15 S-15, §2.3 condición 2, §8.2, §8.3, §13, §18 (commit 0cbdfcf008ed84f9cddea399c5d49915ca24e828); docs/contracts/backup-object-storage/s13-capacity-assessment-2026-10-24.md (mainspot-platform@65f60d10457f8bd3fce0970b786824073452a179); declaración S-15 del operador hachxaan/mainspot-s3-backups@f478e7df82d4cf4f8693440f415861022763854b evidence/41 (S-13 NO VERIFICADO); informe de conformidad externa 2026-10-24 (conformant=true, 20 PASS, C-21/C-22 MANUAL).",
+      "why_this_matters": "Determina si la puerta de activación puede completarse sin excepciones y si ambos agentes trabajan con el mismo texto normativo.",
+      "recommended_option": "minor_1_2_0",
+      "options": [
+        {
+          "value": "minor_1_2_0",
+          "label": "Publicar el contrato 1.2.0 (MENOR) con el máximo, el control del productor, E-SIZE-LIMIT y S-13 por máximo de diseño aplicado",
+          "impact": "S-13 se puede acreditar antes de activar sin excepción; ambos agentes reconcilian por commit",
+          "risk": "un ciclo más de publicación y reconciliación del contrato antes de la prueba del productor"
+        },
+        {
+          "value": "politica_implementacion",
+          "label": "Registrar solo como política de implementación de MainSpot; el contrato sigue en 1.1.0",
+          "impact": "menos trabajo documental",
+          "risk": "el productor se desvía de §8.2 sin respaldo contractual; S-13 seguirá NO VERIFICADO hasta tener objetos reales, y la activación necesitaría una excepción explícita"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NOTES",
+      "type": "free_text",
+      "topic_id": "limite",
+      "required": false,
+      "title": "Notas para el registro",
+      "short_description": "Opcional. Se transcribe literalmente en el registro de decisión (p. ej. otro tamaño máximo, condiciones de revalidación o avisos). Nunca escribas credenciales, claves, tokens ni direcciones privadas.",
+      "options": []
+    }
+  ]
+}

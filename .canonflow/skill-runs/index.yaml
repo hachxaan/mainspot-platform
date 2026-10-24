@@ -12,4 +12,5 @@ runs:
   - {run_id: RUN-0010, skill_id: canonflow-human-decision-console, mode: ingest, executor: "omp agent session (anthropic/claude-fable-5-1)", state: REPORTED, report: SRP-0010, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-22T11:43:00Z"}
   - {run_id: RUN-0011, skill_id: canonflow-human-decision-console, mode: generate, executor: "omp agent session (anthropic/claude-fable-5-1)", state: REPORTED, report: SRP-0011, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-22T17:06:00Z"}
   - {run_id: RUN-0012, skill_id: canonflow-human-decision-console, mode: ingest, executor: "omp agent session (anthropic/claude-fable-5-1)", state: REPORTED, report: SRP-0012, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-23T10:01:00Z"}
-counters: {run: 12, srp: 12}
+  - {run_id: RUN-0013, skill_id: canonflow-human-decision-console, mode: generate, executor: "omp agent session (anthropic/claude-opus-5-5)", state: REPORTED, report: SRP-0013, verdict: PASS_WITH_LIMITATIONS, audited_by: "", updated_at: "2026-10-24T07:30:00Z"}
+counters: {run: 13, srp: 13}

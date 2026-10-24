@@ -90,7 +90,8 @@ blocks:
       - "KVM 4 @ 03e71236 (servicio 824a4529, garage-alert 487428df): H-01/H-02, H-03 y H-04/S-08 cumplidos según la evidencia del operador (recepción en Telegram confirmada por el propietario)."
       - "Conformidad externa ejecutada el 2026-10-24 (run 20261024T062159Z-1750b25a, checkout 2d5c807e, servicio 824a4529): conformant=true, 20 PASS, C-21/C-22 MANUAL con evidence/29 y 32; credenciales y clave efímera destruidas. Declaración S-15 en f478e7df (con el cierre del handoff): S-04/S-06/S-11/S-16 PASS, S-13 NO VERIFICADO."
       - "S-13 (s13-capacity-assessment-2026-10-24.md): NO DETERMINABLE. Máximo local observado 120 960 B (base piloto de 10 MB, no representativa); cota con cuota de 50 GiB: objeto ≤ 1,5625 GiB; no hay límite de tamaño documentado ni exigible."
-    next_gate: "Propietario declara el tamaño máximo de diseño de un respaldo cifrado (recomendado ≤ 1 GiB, §8.3) → S-13 verificable → condición 2 completa → prueba del productor synthetic-drill y restauración remota (condiciones 5 y 6a, mandato aparte)"
+      - "QS-0013 (RUN-0013) PENDING: máximo de diseño, cuota, política del productor por encima del límite y vía contractual (análisis: la propuesta exige el contrato 1.2.0). Plan T-01..T-10 y alcance E2E en s13-decision-and-test-plan.md, sin ejecutar."
+    next_gate: "Respuesta a QS-0013 → ingestión DEC → (contrato 1.2.0 si se elige) → control del productor y pruebas T-01..T-10 → nueva declaración S-13 del operador → simulacro E2E synthetic-drill y restauración remota (mandato aparte)"
   - id: R3-remote-producer
     title: Productor de respaldo remoto (desactivado)
     state: IMPLEMENTED_DISABLED
