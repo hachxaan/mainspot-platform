@@ -1,16 +1,21 @@
-# Plan del simulacro E2E contra Garage S3 real (revisado; preparado, NO ejecutado)
+# Plan del simulacro E2E contra Garage S3 real (revisión K1–K7; autorizado, pendiente de la ventana)
 
 No normativo. Plan único reconciliado con el contrato **1.2.0** (`c4f87c4aa2e875e7ad01861f5f2a809e025d638c`):
 §2.3 condiciones 5 y 6, §8.2, §8.6, §9.1, §9.2.5, §9.2.6, §10.2, §11.2–§11.4, §15 S-13.
 
-**Estado:** solo planificación. Para ejecutarlo hacen falta:
+**Estado:**
 
-- un mandato explícito del propietario;
-- la confirmación del operador del KVM 4 (fase D);
-- una entrega temporal y cifrada de las credenciales **writer** y **restore**.
+- **Mandato del propietario:** issue #2 del servicio, comentario `6390217275`. Cubre las fases A–E con datos
+  sintéticos.
+- **GO operativo condicionado del KVM 4:** comentario `6390900276`, con el procedimiento corregido
+  `hachxaan/mainspot-s3-backups@592d88cd4de4bcad494edae80a214aac45d7ea95` `docs/15-e2e-operador-kvm4.md`.
+  Sus correcciones **K1–K7 están aceptadas e incorporadas aquí**. Para los pasos del lado KVM 4 (A3, A4, D0,
+  D1, D4a, D5, D7, E2, E4), donde exista diferencia manda `docs/15`.
+- **Ventana propuesta:** 2026-10-25, 14:00–17:00 UTC.
 
-Ningún paso activa el productor, instala temporizadores, usa `~/.config/mainspot/backup/remote.env` ni toca
-respaldos o datos reales.
+No se toca el bucket hasta que consten en el issue A2, A3, D1 con sus hashes y el vigilante de fase D
+activo. Ningún paso activa el productor, instala temporizadores, usa
+`~/.config/mainspot/backup/remote.env` ni toca respaldos o datos reales.
 
 ## Referencias
 
@@ -18,7 +23,7 @@ respaldos o datos reales.
 |---|---|
 | Contrato | 1.2.0 `c4f87c4a…` (pin README `2bb52905…`) |
 | Productor y adaptador | `mainspot-platform@92c3faaeab794670d7d529bd3ad9153d2ed625cd`; adaptador instalado `~/.local/libexec/mainspot/remote-alert-telegram.py` sha256 `d42fe40b…f442b1` (recepción sintética real acreditada: `producer-alert-channel-evidence.md`) |
-| Servicio | `hachxaan/mainspot-s3-backups@9c880469dca65420f57cad2c6193c2982433a608`: S-15 1.2.0 (evidence/43), copiador y vigilante (docs/13 §5, `mainspot-guard --once|--verify|--expire-only`, `mainspot-s3-retention --once|--ensure-lifecycle|--ack-drift`), buzón `scripts/host/handoff-drop.sh`, handoff `docs/14-handoff-conformidad.md` |
+| Servicio | `hachxaan/mainspot-s3-backups@592d88cd4de4bcad494edae80a214aac45d7ea95` (código desplegado sin cambios desde `9c880469`): S-15 1.2.0 (evidence/43), preflight GO/NO-GO (evidence/45), procedimiento del operador `docs/15`, supervisión `scripts/tests/e2e-phase-d-watch.sh`, buzón parametrizado `scripts/host/handoff-drop.sh setup <clave.pub> <SHA256:huella> <YYYYMMDDHHMMSSZ>`, handoff `docs/14-handoff-conformidad.md` |
 | Decisiones | DEC-0049 §7, DEC-0056, DEC-0057, DEC-0058 §4, DEC-0059…DEC-0065 |
 
 ## Papeles
@@ -64,10 +69,10 @@ las anteriores acreditadas.
 
 | Paso | Operación | Evidencia | Parar si |
 |---|---|---|---|
-| A1 | Mandato del propietario registrado; ventana acordada con el operador (≈ 3 h); el propietario avisado de los avisos esperados del KVM 4 (deriva del ciclo de vida, desapariciones, copias huérfanas) | Comentario en el issue del servicio | Falta el mandato o la confirmación del operador |
-| A2 | Preflight MainSpot: equipo físico y salida distinta del KVM 4; checkout limpio del commit citado; sha256 del productor = repo y del adaptador = `d42fe40b…`; `status=DISABLED` sin configuración; 0 unidades `mainspot-db-backup-remote*`; Docker y `postgres:16` disponibles | Salida del helper de preflight | Cualquier discrepancia |
-| A3 | Preflight KVM 4: `garage-health --once` en `ok`; ciclo de vida exacto §9.1; `v1/` y `_conformance/` vacíos; copia sin `synthetic-drill`; guard y vigilante activos; claves writer `RW` y reader `R` | Extracto del operador | `crit`, deriva previa u objetos inesperados |
-| A4 | Handoff de credenciales (docs/14): clave GPG efímera de 2 días; buzón SFTP temporal; paquete con solo `writer.env` y `reader.env`; sha256 del paquete; descifrado en tmpfs | sha256 del paquete y confirmación de recepción en el issue | Huella o sha256 no coinciden |
+| A1 | Mandato del propietario (`6390217275`) y GO operativo condicionado del KVM 4 (`6390900276`); K1–K7 aceptadas en el issue; ventana acordada (el periodo D3b–D7 no cruza 00:00 UTC, K5); el propietario disponible con `sudo` al inicio y al final y avisado de los avisos esperados (K4) | Comentarios en el issue | Falta cualquiera de ellos |
+| A2 | Preflight MainSpot, repetido al iniciar la ventana: equipo físico y salida distinta del KVM 4; checkout limpio del commit citado; sha256 del productor = repo y del adaptador = `d42fe40b…`; `status=DISABLED` sin configuración; 0 unidades `mainspot-db-backup-remote*`; Docker y `postgres:16` disponibles | Salida del helper de preflight publicada | Cualquier discrepancia: NO-GO sin extraer secretos |
+| A3 | Preflight KVM 4 (`docs/15` §A3), repetido al iniciar la ventana: `garage-health --once` 9/9 `ok`; ciclo de vida exacto §9.1 leído con restore; `v1/`, `_conformance/` y multipartes en 0; copia sin archivos; guard y vigilante sin anomalías; claves writer RW, reader R, guard R, operator RW y ninguna más | Extracto del operador (evidence/45 o posterior) | Cualquier diferencia: NO-GO sin extraer secretos |
+| A4 | Handoff (`docs/15` §A4 y docs/14): SOL MAIN publica clave SSH pública, huella, huella GPG (principal y subclave E) y caducidad; el propietario confirma la huella GPG en su equipo y ejecuta `sudo bash scripts/host/handoff-drop.sh setup <clave.pub> <SHA256:huella> <caducidad>` (18 PASS); el operador cifra solo `writer.env` y `reader.env`; SOL MAIN descarga por SFTP y comprueba el sha256 del paquete; descifrado en tmpfs. El mismo buzón sirve para D5 | sha256 del paquete y confirmación de recepción en el issue | Huella o sha256 no coinciden |
 | A5 | Base sintética de origen: contenedor `postgres:16` desechable, `npm run migrate` y `npm run seed`; inventario de tablas y filas guardado como referencia | Conteo por tabla (sin datos) | La semilla toca algo que no sea la base desechable |
 
 ## Fase B — Productor contra Garage real
@@ -88,65 +93,79 @@ las anteriores acreditadas.
 | C3 | Descifrado en streaming hacia `pg_restore` en una segunda base `postgres:16` desechable; migraciones y conteo de filas por tabla frente a A5 | Tablas y filas iguales |
 | C4 | §11.3: baja sintética de un negocio en el origen posterior al respaldo (`tenant-exit`), exportar el registro y aplicar `retention-run.ts --reapply-exits --registry=…` sobre la base restaurada | El negocio dado de baja queda anonimizado en la restaurada |
 
-## Fase D — §9.2.6 coordinado con el KVM 4 (originales ausentes y ciclo de vida)
+## Fase D — §9.2.6 coordinado con el KVM 4 (originales ausentes y ciclo de vida; K1–K5)
 
-### Precondiciones (todas)
+### Precondiciones (todas, registradas en el issue antes de D3)
 
 1. B2 completo con A1 y A2 (dos pares válidos generados por el productor según §8.2: §9.2.6 paso 1).
 2. Bajo `v1/` solo existen los cuatro objetos sintéticos de A1 y A2. `_conformance/` está vacío, no hay
-   subidas multiparte pendientes y no hay ningún respaldo real.
-3. El operador está presente durante toda la fase, con acceso a `garage-health`, al `audit.jsonl` del guard
-   y del vigilante, y a `mainspot-s3-retention`.
-4. El propietario ha sido avisado de los avisos de Telegram del KVM 4 que se esperan.
+   subidas multiparte pendientes, ningún respaldo real ni actividad ajena.
+3. **D0 activo:** el operador ha arrancado `scripts/tests/e2e-phase-d-watch.sh` en segundo plano en el host
+   (cada 30 s: ciclo de vida con restore, salud, vigilante, guard, `v1/`; interviene sola a los 45 min).
+   El operador sigue presente durante toda la fase.
+4. **D1 verificado y publicado:** sha256 y claves de los cuatro archivos de la copia.
+5. **Hora del vigilante publicada (K2):** el operador publica la hora prevista de la próxima ejecución del
+   vigilante (`last_run_epoch` + 3600 en `status.json`). D3b solo puede empezar en los **15 minutos
+   anteriores** a esa hora, y entre D3b y D7 no se cruza 00:00 UTC (K5).
+6. El propietario está avisado de los avisos esperados del KVM 4 (K4).
 
 ### Operaciones
 
 | Paso §9.2.6 | Paso | Quién | Operación exacta | Evidencia |
 |---|---|---|---|---|
-| 2 | D1 | Operador | Esperar la copia (≤ 1 h) o `runuser -u mainspot-guard -- mainspot-guard --once` | Dos líneas `copy` en `audit.jsonl` con `copy_sha256_object == object.sha256` del manifiesto; `sha256sum -c` OK |
-| — | D2 | Ejecutor | Con **restore**: `ListObjectsV2 v1/` = exactamente las 4 claves de A1 y A2 | Listado |
-| 3 | D3a | Ejecutor | Con **writer**: `DeleteObject` de esas 4 claves exactas (nunca por prefijo amplio) | 4 respuestas 204; `ListObjectsV2 v1/synthetic-drill/` vacío |
-| 3 | D3b | Ejecutor | Con **writer**: `DeleteBucketLifecycle(Bucket=mainspot-backups)` | 204 |
-| 3 | D3c | Ejecutor | Con **writer**: `PutBucketLifecycleConfiguration` con `{"Rules":[{"ID":"synthetic-drill-1d","Status":"Enabled","Filter":{"Prefix":"v1/synthetic-drill/"},"Expiration":{"Days":1}}]}` | 200; `GetBucketLifecycleConfiguration` con **restore** muestra solo esa regla (instante anotado) |
-| 4 | D4a | Operador | `mainspot-guard --verify`: copia de A1 y A2 intacta (mismo sha256 y tamaño), `copies_orphaned = 2`, sin `expire` | Extracto `audit.jsonl`/`status.json` |
+| — | D0 | Operador | `EVID=evidence/46-e2e-phase-d-watch.txt bash scripts/tests/e2e-phase-d-watch.sh` en segundo plano, antes de D1 | Arranque registrado en el issue |
+| 2 | D1 | Operador | **K1:** `systemctl stop mainspot-guard` → `mainspot-guard --once` → `systemctl start mainspot-guard` (el demonio retiene el candado; nunca un comando manual con el demonio activo) | Dos líneas `copy` en `audit.jsonl` con `copy_sha256_object` = `object.sha256` del manifiesto y `copy_sha256_manifest`; `sha256sum` de los 4 archivos; `status.json` `copies=2`; sha256 publicados |
+| — | D2 | Ejecutor | Con **restore**: `ListObjectsV2 v1/` = exactamente las 4 claves de A1 y A2 | Listado publicado; GO de D3 solo con D0, D1, D2 y la hora del vigilante publicados |
+| 3 | D3a | Ejecutor | Con **writer**: `DeleteObject` de esas 4 claves exactas, una a una (nunca por prefijo) | 4 respuestas 204; `ListObjectsV2 v1/synthetic-drill/` vacío |
+| 3 | D3b | Ejecutor | Con **writer**, dentro de los 15 min anteriores a la ejecución prevista del vigilante: `DeleteBucketLifecycle(Bucket=mainspot-backups)` | 204; **instante T0** (empieza la deriva) publicado |
+| 3 | D3c | Ejecutor | Con **writer**: `PutBucketLifecycleConfiguration` con `{"Rules":[{"ID":"synthetic-drill-1d","Status":"Enabled","Filter":{"Prefix":"v1/synthetic-drill/"},"Expiration":{"Days":1}}]}` | 200; `GetBucketLifecycleConfiguration` con **restore** muestra solo esa regla |
+| 4 | D4a | Operador | **K1:** stop → `mainspot-guard --verify` → start | `status.json`: `copies=2`, `copies_orphaned=2`, `verify_failed=0`, `anomalies=0`; ningún `expire` nuevo |
 | 4 | D4b | Ejecutor | Con **writer**: `HeadBucket mainspot-backups-guard` → 404 y `ListBuckets` = solo `mainspot-backups` (opción B: sin ruta) | Respuestas |
-| 5 | D5 | Operador | §11.4 opción B: copiar del guard a un temporal 0700 los dos archivos de A2 (o A1); sha256 cotejados con `audit.jsonl`; dejarlos en `/download` del buzón y publicar solo los sha256 y la clave relativa | sha256 en el issue |
+| 5 | D5 | Operador | `docs/15` §D5: copiar a un temporal los dos archivos de la copia de **A2**; sha256 cotejados con D1; dejarlos en `/download` del buzón (0444); borrar el temporal; publicar solo sha256 y claves relativas | sha256 en el issue |
 | 5 | D6 | Ejecutor | Descargar por SFTP y verificar los sha256; `verify … --manifest-key <clave relativa>` → `valid: true`; descifrado **en el equipo de MainSpot** hacia `pg_restore` en una base desechable; controles de C3 | Informe 6b |
-| 6 | D7 | Operador y ejecutor | El vigilante (≤ 1 h) o, si no, `mainspot-s3-retention --once --ensure-lifecycle` restaura la configuración exacta de §9.1; con **restore**, `GetBucketLifecycleConfiguration` = las 2 reglas de §9.1 (mismos `ID`, `Status`, `Filter.Prefix`, `Expiration.Days`, `DaysAfterInitiation`) | Comparación exacta; deriva auditada por el vigilante (instante encontrado y restaurado) |
+| 6 | D7 | Vigilante, operador y ejecutor | Esperado: el vigilante restaura §9.1 en su ejecución (≤ 15 min tras T0). Si a T0 + 45 min no ha ocurrido, `e2e-phase-d-watch.sh` interviene sola con **K3** (`mainspot-s3-retention --ensure-lifecycle`, clave operator: restaura, verifica y audita). Nunca `--once` manual durante el simulacro. Límite duro: T0 + 60 min. El ejecutor confirma con **restore** la igualdad exacta con §9.1 (2 reglas: mismos `ID`, `Status`, `Filter.Prefix`, `Expiration.Days`, `DaysAfterInitiation`) | Línea `RESTAURADO §9.1` del vigilante de fase D; `lifecycle_drift … restored=true` en el `audit.jsonl` del vigilante; comparación del ejecutor publicada |
 
 ### Impacto
 
-- Entre D3b y D7 el bucket real no tiene la regla de 14 días de `v1/` ni la de `_conformance/`.
-- Como no hay respaldos reales, conformidades ni subidas en curso, el impacto se limita a los objetos
-  sintéticos, ya borrados. Ventana máxima prevista: 75 min.
-- El KVM 4 enviará avisos reales de deriva y de desaparición: son esperados y se anotan.
+- Entre T0 (D3b) y D7 el bucket real no tiene las reglas de §9.1.
+- No hay respaldos reales, conformidades ni subidas en curso, así que el impacto se limita a los objetos
+  sintéticos, ya borrados.
+- Duración esperada ≤ 15 min; intervención automática a 45 min; límite duro 60 min (§9.2.6: ≤ 1 h). La
+  cifra anterior de 75 min queda anulada.
 
 ### Supervisión
 
-El operador vigila `garage-health`, los dos `audit.jsonl` y los avisos durante toda la fase. El ejecutor
-consulta el ciclo de vida con **restore** cada 15 min desde D3c hasta D7.
+- `e2e-phase-d-watch.sh` corre cada 30 s en el host, independiente de las sesiones de los agentes.
+- El operador está presente durante toda la fase.
+- El ejecutor consulta además el ciclo de vida con **restore** cada 5 min desde T0 hasta D7.
+- **Avisos esperados (K4):**
+  - `retention` en `warn` por la deriva abierta, con aviso de Telegram del KVM 4 tras 2 ciclos y
+    recordatorios hasta E2;
+  - copias huérfanas en el guard.
+
+  Se anotan y no paran el simulacro. Ningún aviso esperado es `crit`.
 
 ### Vuelta atrás
 
-Si el vigilante no ha restaurado la configuración exacta 75 min después de D3c:
+Si el vigilante no ha restaurado §9.1 a T0 + 45 min, la intervención K3 es automática. Si a T0 + 60 min la
+configuración sigue sin coincidir exactamente (comprobado con restore):
 
-1. El operador ejecuta `mainspot-s3-retention --once --ensure-lifecycle`.
-2. Si sigue sin coincidir, restaura con la clave **operator** la configuración exacta de §9.1.
-3. El ejecutor la verifica con **restore**.
-4. Si aun así falla: incidente, se para el simulacro y se avisa al propietario.
+1. Incidente: se para el simulacro y se avisa al propietario.
+2. El operador repite `mainspot-s3-retention --ensure-lifecycle` y lo comprueba con restore.
 
-En cualquier caso el estado final verificado es el ciclo de vida exacto de §9.1.
+Estado final exigido: ciclo de vida exacto de §9.1, verificado por ambos lados.
 
-### Criterios de parada (antes del paso que se iba a dar)
+### Criterios de parada (antes del paso que se iba a dar; K4)
 
 | Condición | Acción |
 |---|---|
-| Hay en `v1/` cualquier clave que no sea de A1/A2, o el bucket tiene objetos inesperados | No ejecutar D3 |
-| Falta la copia de A1 o de A2 (o un sha256 no coincide) 75 min después de B2 | No borrar originales; investigar |
+| Hay en `v1/` cualquier clave que no sea de A1/A2, objetos inesperados o actividad ajena | No ejecutar D3 |
+| Falta la copia de A1 o de A2, o un sha256 no coincide, tras D1 | No borrar originales; investigar |
+| No se ha publicado la hora del vigilante o no se puede ejecutar D3b dentro de su ventana de 15 min sin cruzar 00:00 UTC | No ejecutar D3b; esperar al siguiente ciclo dentro de la ventana o parar |
+| `garage-health` con `crit` en cualquier comprobación; `warn` en cualquiera distinta de `retention`; `disk_*` o `bucket_quota` fuera de `ok`; `anomalies` o `verify_failed` del guard > 0 | Parar; asegurar el ciclo de vida (K3) |
 | La writer obtiene en D4b algo distinto de 404/denegación sobre la copia | Incidente de seguridad; parar |
-| `garage-health` en `crit`, el guard con anomalías no esperadas, o disco/cuota en aviso | Parar; restaurar ciclo de vida (vuelta atrás) |
 | `verify` ≠ `valid: true` o la restauración falla | Parar; conservar evidencia; no limpiar la copia de ese par hasta analizarlo |
-| El ciclo de vida no vuelve a §9.1 tras la vuelta atrás | Incidente; parar; avisar al propietario |
+| El ciclo de vida no coincide con §9.1 a T0 + 60 min | Incidente; parar; avisar al propietario |
 
 ## Fase E — Limpieza, auditoría y cierre
 
@@ -156,9 +175,9 @@ paso 7 «limpiar los objetos sintéticos».
 | Paso | Quién | Operación | Evidencia |
 |---|---|---|---|
 | E1 | Ejecutor | Con **writer**: `DeleteObject` de cualquier clave sintética restante bajo `v1/synthetic-drill/`, listadas una a una (tras D3 deberían quedar 0); B nunca se subió; con **restore**, `ListObjectsV2 v1/` vacío | Listado vacío |
-| E2 | Operador | Borrar las copias sintéticas `v1/synthetic-drill/` del volumen del guard (mismo procedimiento que G-11 de `guard-drill.sh`) y registrar la deriva con `mainspot-s3-retention --ack-drift 'E2E synthetic drill'`; `garage-health --once` en `ok`, `objects` igual que en A3, copia sin `synthetic-drill`; ciclo de vida exacto §9.1 | Extracto sin secretos; commit del servicio |
+| E2 | Operador | **K6** (`docs/15` §E2), limitado a `synthetic-drill`: contar las copias fuera de `v1/synthetic-drill/` (deben valer lo mismo que en A3); con K1, `mainspot-guard --expire-only --deployment synthetic-drill --now <created_at(A2) + 14 d>` y `--once`; volver a contar fuera de `synthetic-drill` (sin cambios); `copy/v1/synthetic-drill` inexistente; `mainspot-s3-retention --ack-drift 'E2E synthetic drill'`; `garage-health --once` 9/9 `ok`, `objects` igual que en A3; ciclo de vida exacto §9.1 | Extracto sin secretos; commit del servicio |
 | E3 | Ejecutor | Bases y contenedores `postgres` desechables eliminados; directorio de respaldos temporal, configuración, marcas, `remote-alerts*` y la clave sintética destruidos (`shred` en tmpfs); credenciales y clave GPG efímera destruidas con la limpieza garantizada por `trap`; verificar 0 restos; productor `DISABLED` sin `remote.env`; 0 unidades remotas | Salida de verificación |
-| E4 | Operador | Teardown del buzón y cierre de docs/14 §5 (revisión del uso de las claves en la ventana; rotación si hubo cualquier desviación) | Evidencia del operador |
+| E4 | Propietario y operador | `sudo bash scripts/host/handoff-drop.sh teardown` (propietario); docs/14 §5 (operador): log de Nginx de la ventana, inventario vacío, destrucción del material, rotación solo si hubo desviación | Evidencia del operador |
 | E5 | Ambos | Informes publicados sin secretos, con el commit de MainSpot, el commit del servicio y contrato 1.2.0 `c4f87c4a`: S-13 (máximo observado y rechazo), condición 5, 6a, 6b, §9.2.6 pasos 1–7 y aviso E2E | Commits verificados en ambos repositorios |
 
 Solo con E1–E5 completos se dan por acreditadas S-13 (DEC-0063), las condiciones 5 y 6 y el aviso E2E
@@ -168,7 +187,7 @@ del productor. La condición 7 se pide después, en una sesión HDC propia.
 
 - La writer usada en D3 es la credencial real: un error de clave o de prefijo podría borrar otra cosa. Se
   mitiga con el bucket vacío fuera de A1/A2 (precondición 2), claves exactas y el listado previo de D2.
-- Durante ≤ 75 min el bucket real tiene un ciclo de vida distinto de §9.1. No hay respaldos reales; el
-  vigilante y la vuelta atrás lo restauran.
+- Entre T0 y D7 (esperado ≤ 15 min, máximo 60) el bucket real tiene un ciclo de vida distinto de §9.1. No
+  hay respaldos reales; el vigilante y la intervención automática K3 lo restauran.
 - Los archivos de la copia viajan cifrados por el buzón SFTP: son sintéticos y la clave sintética nunca
   sale del equipo de MainSpot.
