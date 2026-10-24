@@ -78,3 +78,6 @@ links:
   - {from: "DEC-0061", to: "ANS-0014", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-10-24T07:50:53Z"}
   - {from: "DEC-0062", to: "ANS-0014", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-10-24T07:50:53Z"}
   - {from: "DEC-0063", to: "ANS-0014", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-10-24T07:50:53Z"}
+  - {from: "ANS-0015", to: "QS-0014", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-10-24T20:35:46Z"}
+  - {from: "DEC-0064", to: "ANS-0015", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-10-24T20:35:46Z"}
+  - {from: "DEC-0065", to: "ANS-0015", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-10-24T20:35:46Z"}

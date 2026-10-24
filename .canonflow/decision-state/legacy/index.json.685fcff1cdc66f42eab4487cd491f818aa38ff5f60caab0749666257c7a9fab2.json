@@ -1,0 +1,223 @@
+{
+  "sessions": [
+    {
+      "question_session_id": "QS-0001",
+      "state": "ARCHIVED",
+      "generated_at": "2026-09-21T21:10:00Z",
+      "records": [
+        "DEC-0001",
+        "DEC-0002",
+        "DEC-0003",
+        "DEC-0004",
+        "DEC-0005",
+        "DEC-0006",
+        "DEC-0007",
+        "DEC-0008",
+        "DEC-0009"
+      ],
+      "answered_at": "2026-10-21T18:01:48Z",
+      "session_label": "Cierre de decisiones TENTATIVA del piloto (INC-001..007)",
+      "answer_session_id": "ANS-0001"
+    },
+    {
+      "question_session_id": "QS-0002",
+      "state": "ARCHIVED",
+      "generated_at": "2026-09-21T21:11:00Z",
+      "records": [
+        "DEC-0010",
+        "DEC-0011",
+        "DEC-0012",
+        "DEC-0013"
+      ],
+      "answered_at": "2026-10-21T18:18:26Z",
+      "session_label": "Oferta comercial (Q-004) y vertical del piloto (Q-009)",
+      "answer_session_id": "ANS-0002"
+    },
+    {
+      "question_session_id": "QS-0003",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-20T10:38:07.543658+00:00",
+      "records": [
+        "APR-0001"
+      ],
+      "answered_at": "2026-10-21T18:23:36Z",
+      "session_label": "MainSpot — activación Cognitive Jev: una llamada sintética",
+      "answer_session_id": "ANS-0003"
+    },
+    {
+      "question_session_id": "QS-0004",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-21T18:54:17Z",
+      "records": [
+        "DEC-0014",
+        "DEC-0015",
+        "DEC-0016",
+        "DEC-0017",
+        "DEC-0018",
+        "DEC-0019"
+      ],
+      "answered_at": "2026-10-21T22:14:51Z",
+      "session_label": "Seguimiento de la ingestión de QS-0001..QS-0003 (RUN-0001)",
+      "answer_session_id": "ANS-0004"
+    },
+    {
+      "question_session_id": "QS-0005",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-21T22:22:50Z",
+      "records": [
+        "DEC-0020"
+      ],
+      "answered_at": "2026-10-21T22:43:01Z",
+      "session_label": "Aclaración de ANS-0004: orden de remediación",
+      "answer_session_id": "ANS-0005"
+    },
+    {
+      "question_session_id": "QS-0006",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-21T22:22:50Z",
+      "records": [
+        "DEC-0021",
+        "DEC-0022",
+        "DEC-0023",
+        "DEC-0024",
+        "DEC-0025",
+        "DEC-0026",
+        "DEC-0027"
+      ],
+      "answered_at": "2026-10-21T23:14:28Z",
+      "session_label": "Política de retención, borrado y respaldos",
+      "answer_session_id": "ANS-0006"
+    },
+    {
+      "question_session_id": "QS-0007",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-21T22:22:50Z",
+      "records": [
+        "APR-0002",
+        "DEC-0028",
+        "DEC-0029",
+        "DEC-0030",
+        "DEC-0031",
+        "DEC-0032"
+      ],
+      "answered_at": "2026-10-22T00:47:02Z",
+      "session_label": "Arquitectura Jev: modos disabled / shadow / primary",
+      "answer_session_id": "ANS-0007"
+    },
+    {
+      "question_session_id": "QS-0008",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-22T02:01:38Z",
+      "records": [
+        "DEC-0033",
+        "DEC-0034",
+        "DEC-0035",
+        "DEC-0036",
+        "DEC-0037",
+        "DEC-0038",
+        "DEC-0039",
+        "DEC-0040",
+        "DEC-0041",
+        "DEC-0042",
+        "DEC-0043"
+      ],
+      "answered_at": "2026-10-22T04:41:16Z",
+      "session_label": "Gate D4 de Jev y producto para el usuario final",
+      "answer_session_id": "ANS-0008"
+    },
+    {
+      "question_session_id": "QS-0009",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-22T04:50:00Z",
+      "records": [
+        "DEC-0044"
+      ],
+      "answered_at": "2026-10-22T05:11:57Z",
+      "session_label": "Aclaración de ANS-0008: orden del bloque de producto",
+      "answer_session_id": "ANS-0009"
+    },
+    {
+      "question_session_id": "QS-0010",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-22T06:23:24Z",
+      "records": [
+        "DEC-0050",
+        "DEC-0051",
+        "DEC-0052",
+        "DEC-0053",
+        "DEC-0054"
+      ],
+      "answered_at": "2026-10-22T10:52:59Z",
+      "session_label": "Instrumento HDC (HDC-0006) y custodia de respaldos",
+      "answer_session_id": "ANS-0012"
+    },
+    {
+      "question_session_id": "QS-0011",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-22T08:29:34Z",
+      "records": [
+        "DEC-0045",
+        "DEC-0046",
+        "DEC-0047",
+        "DEC-0048",
+        "DEC-0049"
+      ],
+      "answered_at": "2026-10-22T09:16:37Z",
+      "session_label": "Contrato de respaldos remotos con Garage S3 (KVM 4)",
+      "answer_session_id": "ANS-0011"
+    },
+    {
+      "question_session_id": "QS-0012",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-22T17:04:02Z",
+      "records": [
+        "DEC-0055",
+        "DEC-0056",
+        "DEC-0057",
+        "DEC-0058"
+      ],
+      "answered_at": "2026-10-23T09:52:30Z",
+      "session_label": "Contrato 1.1.0 de respaldos remotos (KVM 4): canal de aviso, copia protegida y retención",
+      "answer_session_id": "ANS-0013"
+    },
+    {
+      "question_session_id": "QS-0013",
+      "state": "ARCHIVED",
+      "generated_at": "2026-10-24T07:21:06Z",
+      "records": [
+        "DEC-0059",
+        "DEC-0060",
+        "DEC-0061",
+        "DEC-0062",
+        "DEC-0063"
+      ],
+      "answered_at": "2026-10-24T07:50:53Z",
+      "session_label": "Respaldos remotos (Garage S3, KVM 4): capacidad S-13 en la etapa inicial",
+      "answer_session_id": "ANS-0014"
+    },
+    {
+      "question_session_id": "QS-0014",
+      "state": "ANSWERED",
+      "generated_at": "2026-10-24T20:17:11Z",
+      "records": [],
+      "session_label": "Respaldos remotos: canal externo de los avisos del productor MainSpot",
+      "answered_at": "2026-10-24T20:35:46Z",
+      "answer_session_id": "ANS-0015"
+    }
+  ],
+  "counters": {
+    "qs": 14,
+    "ans": 15,
+    "dec": 63,
+    "apr": 2,
+    "rsk": 0
+  },
+  "latest": "QS-0014",
+  "reconstructed": {
+    "at": "2026-10-24T20:17:12Z",
+    "by": "RUN-0015 (canonflow-human-decision-console)",
+    "source": "artifacts+lifecycle+legacy-snapshots; state = evidence-derived effective state",
+    "preserved": true
+  },
+  "projection_version": "hdc-1.0.0"
+}

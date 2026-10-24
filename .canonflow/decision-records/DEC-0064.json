@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0064",
+  "kind": "decision",
+  "title": "Avisos del productor MainSpot: bot de Telegram exclusivo con chat privado; token e identificador del chat solo en el equipo de MainSpot",
+  "decision": "Respuesta a Q-PRODUCER-ALERT-CHANNEL «¿Por qué canal quieres recibir los avisos del productor de respaldos remotos de MainSpot?»: `telegram_bot_productor` — «Bot de Telegram dedicado a los avisos del productor, con chat privado; token e identificador del chat solo en el equipo de MainSpot (0600), revocable por ti». Condiciones declaradas en Q-NOTES (DEC-0065).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-24T20:35:46Z",
+  "source": "QS-0014/ANS-0015 Q-PRODUCER-ALERT-CHANNEL",
+  "source_ref": {
+    "question_session_id": "QS-0014",
+    "answer_session_id": "ANS-0015",
+    "question_ids": [
+      "Q-PRODUCER-ALERT-CHANNEL"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "correo_smtp — Correo SMTP a una dirección tuya desde una cuenta de envío dedicada, con la contraseña solo en el equipo de MainSpot (0600)",
+    "otro_en_notas — Otro canal (descríbelo en las notas, con quién custodia su credencial)"
+  ],
+  "affected_items": [
+    "DEC-0061",
+    "DEC-0063",
+    "DEC-0055",
+    "DEC-0058",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "scripts/ops/backup/db-backup-remote.py",
+    "DEC-0065"
+  ],
+  "expiry": "",
+  "comment": ""
+}

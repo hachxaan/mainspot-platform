@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0065",
+  "kind": "decision",
+  "title": "Condiciones del canal de avisos del productor MainSpot (notas del humano en QS-0014)",
+  "decision": "Respuesta a Q-NOTES «Notas para el registro» (texto libre del humano, transcrito íntegro en el campo comment; forma parte de la decisión).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-24T20:35:46Z",
+  "source": "QS-0014/ANS-0015 Q-NOTES",
+  "source_ref": {
+    "question_session_id": "QS-0014",
+    "answer_session_id": "ANS-0015",
+    "question_ids": [
+      "Q-NOTES"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [],
+  "affected_items": [
+    "DEC-0064",
+    "DEC-0061",
+    "DEC-0063",
+    "scripts/ops/backup/db-backup-remote.py"
+  ],
+  "expiry": "",
+  "comment": "Se autoriza un bot de Telegram exclusivo para los avisos operativos del productor de respaldos remotos de MainSpot, independiente de todos los bots existentes.\n\nEl token y el identificador del chat deberán permanecer únicamente en el equipo MainSpot, mediante archivos privados con permisos restrictivos. Nunca deberán almacenarse en Git, logs, documentación, issues o respuestas de agentes.\n\nEl adaptador deberá verificar la integridad y los permisos del ejecutable y de sus directorios, utilizar comunicación HTTPS, aplicar tiempos de espera y evitar la ejecución insegura de comandos mediante shell.\n\nLos avisos deberán entregarse en la misma ejecución en la que se detecta el evento, con un intento acotado. Si Telegram no está disponible, el evento deberá conservarse para reintentos controlados y seguimiento, sin bloquear indefinidamente los respaldos ni registrar una entrega fallida como exitosa.\n\nAntes de cualquier activación productiva se deberá ejecutar una prueba sintética y confirmar personalmente la recepción real del mensaje en Telegram.\n\nSe autoriza implementar y probar este canal, pero no activar respaldos productivos, temporizadores ni modificar otros servicios."
+}

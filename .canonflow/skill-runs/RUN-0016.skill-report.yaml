@@ -1,0 +1,54 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0016
+run_id: RUN-0016
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Ingestion of ANS-0015 and archival of QS-0014 only. The adapter implementation is a
+  separate change; no activation.
+human_summary: |
+  QS-0014 (ANS-0015, Carlos Pinacho, 2026-10-24T20:35:46Z) ingested as DEC-0064 and DEC-0065 and ARCHIVED; no pending sessions.
+  DEC-0064: `telegram_bot_productor` — dedicated Telegram bot with private chat for the producer alerts; token and chat id only on the MainSpot host (0600), revocable by the owner.
+  DEC-0065 (literal notes): bot independent of every existing bot; token/chat id never in Git, logs, docs, issues or agent replies; adapter verifies
+  integrity and permissions of the executable and its directories, HTTPS, timeouts, no shell; delivery in the same run with a bounded attempt; if Telegram
+  is unavailable the event is kept for controlled retries and follow-up, never blocking backups indefinitely nor recording a failed delivery as success;
+  synthetic test with personal confirmation of real receipt before any production activation; no activation, timers or other services changed.
+claims:
+  - class: VERIFIED
+    statement: "ANS-0015 validates (answer-session v2), binds to QS-0014 by question_sha256, answers every question once; DEC-0064/DEC-0065 validate as decision-record v2, links against traceability; DEC-0065.comment equals the Q-NOTES value."
+    evidence: [.canonflow/skill-runs/RUN-0016/evidence/EV-0001-answers-validation.json]
+    refs: [ANS-0015, QS-0014, DEC-0064, DEC-0065]
+  - class: VERIFIED
+    statement: "publish-ingestion and mark-session ARCHIVED returned 0 (service stopped 20:46:03Z-20:46:05Z); QS-0014 archived with unchanged sha256; counters qs 14 · ans 15 · dec 65 · apr 2, latest QS-0014 ARCHIVED; pending_human empty; writes_enabled=true on loopback and HTTPS (generation 91); live API QS-0014 ARCHIVED with ANS-0015."
+    evidence: [.canonflow/skill-runs/RUN-0016/evidence/EV-0002-publish-ingestion-and-archive.txt, .canonflow/skill-runs/RUN-0016/evidence/EV-0003-compat-views.txt, .canonflow/skill-runs/RUN-0016/evidence/EV-0004-ready-after-restart.json, .canonflow/skill-runs/RUN-0016/evidence/EV-0005-hdc-live-sessions.json]
+    refs: [QS-0014]
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT WARN persists for QS-0001..0014 (HDC-0008) until the pin is
+      updated; HDC-0006 workaround reapplied and recorded (incident kept separate from the
+      adapter implementation).
+    evidence: .canonflow/skill-runs/RUN-0016/evidence/EV-0003-compat-views.txt
+limitations:
+  - "The original answer file stays local (answered/ is ignored)."
+evidence:
+  - .canonflow/skill-runs/RUN-0016/evidence/EV-0001-answers-validation.json
+  - .canonflow/skill-runs/RUN-0016/evidence/EV-0002-publish-ingestion-and-archive.txt
+  - .canonflow/skill-runs/RUN-0016/evidence/EV-0003-compat-views.txt
+  - .canonflow/skill-runs/RUN-0016/evidence/EV-0004-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0016/evidence/EV-0005-hdc-live-sessions.json
+outputs:
+  - .canonflow/decision-records/DEC-0064, DEC-0065 (.json + .md)
+  - .canonflow/decision-sessions/archived/QS-0014.questions.json
+  - .canonflow/decision-state/sessions/QS-0014.lifecycle.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md (reapplication record)
+gates_checked:
+  - {gate: G-REPO, status: PASS, evidence: "tree at eeb1d55d carried only the HDC submission's compatibility-view writes for ANS-0015"}
+blockers: []
+next_pointer: "Telegram adapter for producer alerts (DEC-0064, DEC-0065)"

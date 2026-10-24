@@ -1,0 +1,26 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0016
+skill_id: canonflow-human-decision-console
+mode: ingest
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  Ingest ANS-0015 (QS-0014, answered by Carlos Pinacho at 2026-10-24T20:35:46Z) as DEC-0064
+  (Q-PRODUCER-ALERT-CHANNEL) and DEC-0065 (Q-NOTES, literal), links ANS-0015 → QS-0014 and
+  DEC → ANS-0015, then archive QS-0014. Service stopped during the window (HDC-0006/HDC-0007).
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: eeb1d55d53f581d3a81b684f925719c536a30769
+inputs:
+  - ".canonflow/decision-sessions/answered/QS-0014.answers.json (ANS-0015; local only, ignored)"
+  - ".canonflow/decision-sessions/pending/QS-0014.questions.json (sha256 6a5c0dca9c9259ddfe0a423efb2d1cb480bbead2f375907ce086a91ada70abbe)"
+expected_outputs:
+  - .canonflow/decision-records/DEC-0064, DEC-0065 (.json + .md)
+  - .canonflow/decision-sessions/archived/QS-0014.questions.json
+  - .canonflow/decision-state/sessions/QS-0014.lifecycle.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow/skill-runs/RUN-0016.skill-report.yaml
+created_at: "2026-10-24T20:45:00Z"

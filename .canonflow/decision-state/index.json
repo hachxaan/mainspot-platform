@@ -197,23 +197,28 @@
     },
     {
       "question_session_id": "QS-0014",
-      "state": "PENDING",
+      "state": "ARCHIVED",
       "generated_at": "2026-10-24T20:17:11Z",
-      "records": [],
-      "session_label": "Respaldos remotos: canal externo de los avisos del productor MainSpot"
+      "records": [
+        "DEC-0064",
+        "DEC-0065"
+      ],
+      "answered_at": "2026-10-24T20:35:46Z",
+      "session_label": "Respaldos remotos: canal externo de los avisos del productor MainSpot",
+      "answer_session_id": "ANS-0015"
     }
   ],
   "counters": {
     "qs": 14,
-    "ans": 14,
-    "dec": 63,
+    "ans": 15,
+    "dec": 65,
     "apr": 2,
     "rsk": 0
   },
   "latest": "QS-0014",
   "reconstructed": {
-    "at": "2026-10-24T20:17:12Z",
-    "by": "RUN-0015 (canonflow-human-decision-console)",
+    "at": "2026-10-24T20:46:04Z",
+    "by": "RUN-0016 (canonflow-human-decision-console)",
     "source": "artifacts+lifecycle+legacy-snapshots; state = evidence-derived effective state",
     "preserved": true
   }

@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "question_session_id": "QS-0014",
+  "question_sha256": "sha256:6a5c0dca9c9259ddfe0a423efb2d1cb480bbead2f375907ce086a91ada70abbe",
+  "events": [
+    {
+      "state": "INGESTED",
+      "at": "2026-10-24T20:46:03Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0016",
+      "reason": "answers ingested; records published (RUN-0016)",
+      "answer_session_id": "ANS-0015",
+      "records": [
+        "DEC-0064",
+        "DEC-0065"
+      ],
+      "outcomes": [
+        {
+          "question_id": "Q-PRODUCER-ALERT-CHANNEL",
+          "record_ids": [
+            "DEC-0064"
+          ]
+        },
+        {
+          "question_id": "Q-NOTES",
+          "record_ids": [
+            "DEC-0065"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "from": "ANS-0015",
+          "to": "QS-0014",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-24T20:35:46Z"
+        },
+        {
+          "from": "DEC-0064",
+          "to": "ANS-0015",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-24T20:35:46Z"
+        },
+        {
+          "from": "DEC-0065",
+          "to": "ANS-0015",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-10-24T20:35:46Z"
+        }
+      ]
+    },
+    {
+      "state": "ARCHIVED",
+      "at": "2026-10-24T20:46:04Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0016",
+      "reason": "ingestion complete (RUN-0016): every answered question has a published DEC outcome; session closed"
+    }
+  ]
+}
