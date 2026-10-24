@@ -6,7 +6,7 @@ respaldos (Garage en Hostinger KVM 4, `https://s3.mainspot.canonflow.dev`, bucke
 
 | Versión | Ruta | Commit | Estado |
 |---|---|---|---|
-| 1.2.0 | [`v1/CONTRACT.md`](v1/CONTRACT.md) | `<se fija en el commit siguiente>` (rama `contract/backup-object-storage-v1`) | Publicado; aprobado con condiciones (DEC-0045…DEC-0063); límite de 1 GiB por respaldo remoto con E-SIZE-LIMIT y S-13 por máximo aplicado; transferencia remota **no activada** (§2.3) |
+| 1.2.0 | [`v1/CONTRACT.md`](v1/CONTRACT.md) | `c4f87c4aa2e875e7ad01861f5f2a809e025d638c` (rama `contract/backup-object-storage-v1`) | Publicado; aprobado con condiciones (DEC-0045…DEC-0063); límite de 1 GiB por respaldo remoto con E-SIZE-LIMIT y S-13 por máximo aplicado; transferencia remota **no activada** (§2.3) |
 | 1.1.0 | [`v1/CONTRACT.md`](v1/CONTRACT.md) en ese commit | `0cbdfcf008ed84f9cddea399c5d49915ca24e828` (rama `contract/backup-object-storage-v1`) | Publicado; aprobado con condiciones (DEC-0045…DEC-0054); sustituido por 1.2.0 |
 | 1.0.0 | [`v1/CONTRACT.md`](v1/CONTRACT.md) en ese commit | `21537dee08bd439df823f350c87d17d754da17a6` (rama `contract/backup-object-storage-v1`) | Publicado; aprobación parcial; sustituido por 1.1.0 |
 
