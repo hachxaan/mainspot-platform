@@ -338,3 +338,40 @@ tiene ciclo de vida; en la ejecución 5 la writer recibió 403 antes de que impo
 contenido), el camino «el servicio no devuelve `x-amz-checksum-sha256`» y C-20 con el
 puerto 3900 añadido (omitida en laboratorio; contra el endpoint real, §7 ya observó
 3900 filtrado).
+
+## 11. v1.2 — límite de tamaño del productor (2026-10-24, Garage v2.4.1)
+
+Productor de referencia `scripts/ops/backup/db-backup-remote.py` (rama de trabajo de
+MainSpot), pruebas `tests/ops/backup-remote/` contra Garage `dxflrs/garage:v2.4.1` en
+Docker (127.0.0.1, proxy que registra cada petición, datos y claves sintéticos). El
+límite real es 1 GiB; las pruebas lo bajan con `MAINSPOT_REMOTE_LAB_MAX_BACKUP_BYTES`
+y fijan los bordes con el tamaño exacto del manifiesto que construye el productor.
+
+```text
+PYTHONPYCACHEPREFIX=/tmp/omp-pyc python3 -m pytest -p no:cacheprovider -v -rs tests/ops/backup-remote
+69 passed in 485.32s   (52 previas + 17 nuevas; 0 omitidas; 0 contenedores de laboratorio restantes)
+```
+
+| Id | Caso | Resultado |
+|---|---|---|
+| T-01 | objeto + manifiesto = límite − 1 B | PASS: sube y verifica; aviso `SIZE-OVER-80PCT` (§10.1) |
+| T-02 | = límite | PASS: sube; `Content-Length` del objeto + manifiesto en S3 = total medido antes |
+| T-03 | = límite + 1 B | PASS: `FAIL E-SIZE-LIMIT action=size-rejected attempts=0`; 0 peticiones a la clave y 0 PUT/POST/DELETE |
+| T-04 | por encima del límite y del umbral multiparte | PASS: ningún `CreateMultipartUpload`; 0 subidas pendientes |
+| T-05 | respaldo local tras dos rechazos | PASS: `.dump.enc` y `.sha256` iguales (sha256, mtime y tamaño) |
+| T-06 | aviso | PASS: evento con solo `ts, producer, code, severity, backup_id, size_bytes, manifest_bytes, total_bytes, limit_bytes, action`; `remote-alerts.jsonl` 0600; adaptador `delivery=ok`; ningún secreto en evento, registro ni salida |
+| T-07 | respaldo válido posterior | PASS: el válido se sube en la misma ejecución que el rechazado |
+| T-08 | segunda ejecución | PASS: `SKIPPED E-SIZE-LIMIT`, 0 peticiones, sin aviso repetido; fuera de 24 h ⇒ `E-UPLOAD-WINDOW` y nada subido |
+| T-09 | frescura | PASS: `check=daily status=FAIL error=E-FRESHNESS` en ejecución normal y en `--check-only` |
+| T-10 | límite inválido (`abc`, `0`, `-5`, `1073741825`, `1e6`, vacío) y adaptador con ruta relativa | PASS: `E-CONFIG`, salida 1, 0 peticiones, respaldo local intacto |
+| T-11 | un rechazo no es éxito | PASS: nunca `status=OK`; `complete=0`; sin manifiesto remoto |
+| T-12 | aviso en la misma ejecución | PASS: con S3 inalcanzable, la línea `status=ALERT` sale antes de `E-NETWORK` y el evento tiene la hora de esa ejecución |
+
+Sin cambios y re-comprobado: `manifest_tool.py selftest`; `manifest.schema.json`,
+`examples/manifest.example.json` y `conformance/check_s3_backup_contract.py` idénticos a
+`1.1.0`. Sin configuración el productor sigue terminando `status=DISABLED` (también con
+un límite de laboratorio inválido en el entorno: solo se evalúa si está activado).
+
+No verificado aquí: un archivo real de 1 GiB (los bordes se prueban con el límite
+reducido y el mismo código), la entrega del aviso a un canal externo (no decidido; el
+adaptador se probó con un script local) y el servicio real.
