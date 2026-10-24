@@ -85,10 +85,12 @@ blocks:
       - evidence/contracts/backup-object-storage-v1/09-external-conformance-2026-10-23.md
       - docs/contracts/backup-object-storage/external-conformance-report-2026-10-24.md
       - docs/contracts/backup-object-storage/external-conformance-20261024T062159Z.json
+      - docs/contracts/backup-object-storage/s13-capacity-assessment-2026-10-24.md
     open_items:
       - "KVM 4 @ 03e71236 (servicio 824a4529, garage-alert 487428df): H-01/H-02, H-03 y H-04/S-08 cumplidos según la evidencia del operador (recepción en Telegram confirmada por el propietario)."
-      - "Conformidad externa ejecutada el 2026-10-24 (run 20261024T062159Z-1750b25a, checkout 2d5c807e, servicio 824a4529): conformant=true, 20 PASS, C-21/C-22 MANUAL con evidence/29 y 32; credenciales y clave efímera destruidas. Falta la declaración del operador de S-15 (S-04/S-06/S-11/S-13/S-16) y el teardown de mainspot-drop."
-    next_gate: "Declaración S-15 del operador y teardown del buzón → prueba del productor synthetic-drill contra el servicio real y restauración remota (condiciones 5 y 6a, handoff nuevo y mandato aparte)"
+      - "Conformidad externa ejecutada el 2026-10-24 (run 20261024T062159Z-1750b25a, checkout 2d5c807e, servicio 824a4529): conformant=true, 20 PASS, C-21/C-22 MANUAL con evidence/29 y 32; credenciales y clave efímera destruidas. Declaración S-15 en f478e7df (con el cierre del handoff): S-04/S-06/S-11/S-16 PASS, S-13 NO VERIFICADO."
+      - "S-13 (s13-capacity-assessment-2026-10-24.md): NO DETERMINABLE. Máximo local observado 120 960 B (base piloto de 10 MB, no representativa); cota con cuota de 50 GiB: objeto ≤ 1,5625 GiB; no hay límite de tamaño documentado ni exigible."
+    next_gate: "Propietario declara el tamaño máximo de diseño de un respaldo cifrado (recomendado ≤ 1 GiB, §8.3) → S-13 verificable → condición 2 completa → prueba del productor synthetic-drill y restauración remota (condiciones 5 y 6a, mandato aparte)"
   - id: R3-remote-producer
     title: Productor de respaldo remoto (desactivado)
     state: IMPLEMENTED_DISABLED
