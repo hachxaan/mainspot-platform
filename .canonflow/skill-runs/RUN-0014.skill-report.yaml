@@ -1,0 +1,64 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0014
+run_id: RUN-0014
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Ingestion of ANS-0014 and archival of QS-0013 only. No code, contract, quota or
+  infrastructure change; S-13 stays NOT VERIFIED; the remote transfer stays disabled.
+human_summary: |
+  QS-0013 (ANS-0014, Carlos Pinacho, 2026-10-24T07:50:53Z) ingested as DEC-0059..DEC-0063 and ARCHIVED; no pending sessions.
+  DEC-0059 design maximum 1 GiB per complete remote backup (encrypted object + manifest); DEC-0060 keep the 50 GiB quota;
+  DEC-0061 safe rejection with alert (E-SIZE-LIMIT), local backup intact; DEC-0062 prepare contract 1.2.0 (MINOR);
+  DEC-0063 owner conditions (literal): limit enforced before any S3 write incl. multipart initiation, no unproductive retries,
+  immediate alert without secrets, later valid backups still processed, freshness alerts kept, a rejection never counts as success;
+  S-13 only after 1.2.0 published and reconciled, verified implementation, limit and regression tests, a new S-15 operator declaration
+  with capacity measurements and the E2E drill; revalidate on quota/retention/capacity change or observed > 80 % of the limit;
+  no activation, timers, quota changes or production recovery claims.
+claims:
+  - class: VERIFIED
+    statement: "ANS-0014 validates (answer-session v2), binds to QS-0013 by question_sha256, answers every question once; the five records validate as decision-record v2 and the links against the traceability schema; DEC-0063.comment equals the Q-NOTES value byte for byte."
+    evidence: [.canonflow/skill-runs/RUN-0014/evidence/EV-0001-answers-validation.json]
+    refs: [ANS-0014, QS-0013, DEC-0059, DEC-0060, DEC-0061, DEC-0062, DEC-0063]
+  - class: VERIFIED
+    statement: "publish-ingestion (DEC-0059..DEC-0063, replay=false) and mark-session ARCHIVED returned 0; QS-0013 moved to archived/ with unchanged sha256 0f859a2094096d8b21d6dc39765f0c6ec758dde3bc38eb27f9523b45308a25d7; window 07:52:43Z-07:52:45Z with the service stopped."
+    evidence: [.canonflow/skill-runs/RUN-0014/evidence/EV-0002-publish-ingestion-and-archive.txt, .canonflow/skill-runs/RUN-0014/evidence/publish-ingestion.input.json, .canonflow/skill-runs/RUN-0014/evidence/mark-session.input.json]
+    refs: [QS-0013]
+  - class: VERIFIED
+    statement: "Compatibility views regenerated (--run RUN-0014): counters qs 13 · ans 14 · dec 63 · apr 2, latest QS-0013 ARCHIVED; pending_human empty; after restart writes_enabled=true on loopback and HTTPS (generation 84); live API shows QS-0013 ARCHIVED with ANS-0014."
+    evidence: [.canonflow/skill-runs/RUN-0014/evidence/EV-0003-compat-views.txt, .canonflow/skill-runs/RUN-0014/evidence/EV-0004-ready-after-restart.json, .canonflow/skill-runs/RUN-0014/evidence/EV-0005-hdc-live-sessions.json]
+    refs: [QS-0013]
+  - class: OPEN
+    statement: "S-13 remains NOT VERIFIED and condition 2 of §2.3 incomplete until contract 1.2.0, the producer control with T-01..T-12, a new S-15 declaration with capacity measurements and the E2E drill exist (DEC-0063)."
+    refs: [DEC-0062, DEC-0063]
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT WARN persists for QS-0001..0013 (reconcile defect,
+      .canonflow-updates/HDC-0008) until the CanonFlow pin is updated. HDC-0006 workaround
+      reapplied and recorded in its ficha.
+    evidence: .canonflow/skill-runs/RUN-0014/evidence/EV-0003-compat-views.txt
+limitations:
+  - "The original answer file stays local (answered/ is ignored); only the records carry its content."
+  - "Only the pending_human mirror of method-state was updated (update_state.py)."
+evidence:
+  - .canonflow/skill-runs/RUN-0014/evidence/EV-0001-answers-validation.json
+  - .canonflow/skill-runs/RUN-0014/evidence/EV-0002-publish-ingestion-and-archive.txt
+  - .canonflow/skill-runs/RUN-0014/evidence/EV-0003-compat-views.txt
+  - .canonflow/skill-runs/RUN-0014/evidence/EV-0004-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0014/evidence/EV-0005-hdc-live-sessions.json
+outputs:
+  - .canonflow/decision-records/DEC-0059..DEC-0063 (.json + .md)
+  - .canonflow/decision-sessions/archived/QS-0013.questions.json
+  - .canonflow/decision-state/sessions/QS-0013.lifecycle.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md (reapplication record)
+gates_checked:
+  - {gate: G-REPO, status: PASS, evidence: "tree at 3d7eab64 carried only the HDC submission's compatibility-view writes for ANS-0014"}
+blockers: []
+next_pointer: "Contract 1.2.0 preparation (DEC-0062), then producer control and T-01..T-12 (DEC-0061, DEC-0063)"

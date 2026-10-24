@@ -94,7 +94,7 @@ Se aplicó en `RUN-0001`, el 2026-10-21 a las 18:54 UTC:
   MainSpot»): `--run` obligatorio, sin la línea de QS-0004 y con errores
   explícitos. La derivación no cambia.
 
-Estado vigente, actualizado el 2026-10-24 tras RUN-0013:
+Estado vigente, actualizado el 2026-10-24 tras RUN-0014:
 
 - **Reaplicación en `RUN-0002`** (ingestión de ANS-0004), a las 22:23Z:
   1. QS-0004 se movió con `mv` a `archived/`.
@@ -217,9 +217,19 @@ Estado vigente, actualizado el 2026-10-24 tras RUN-0013:
   - El código de HDC del checkout de `canonflow-keystone` (HEAD `70ff6015`,
     divergente del pin `5e3dc307`) tiene el árbol `decision-console/app`
     idéntico al del pin (`9865e5ef`), igual que `scripts/update_state.py`.
+- **Reaplicación en `RUN-0014`** (ingestión de ANS-0014), entre 07:52:43Z y
+  07:52:45Z, con el servicio detenido durante toda la ventana:
+  1. `publish-ingestion` (DEC-0059..DEC-0063) y `mark-session ARCHIVED` de
+     QS-0013; `mv` a `archived/`.
+  2. Script general con `--run RUN-0014` y `update_state.py pending … remove QS-0013`.
+  3. Arranque del servicio.
+  - **Resultado:** QS-0001..0013 `ARCHIVED`, `latest` = QS-0013 `ARCHIVED`,
+    contadores `qs 13 · ans 14 · dec 63 · apr 2`. Tras arrancar,
+    `writes_enabled: true` (loopback y HTTPS, `generation` 84).
+  - **Evidencia:** `.canonflow/skill-runs/RUN-0014/evidence/EV-0001..EV-0005`.
 - `index.json` registra en `reconstructed.by` la ejecución que lo regeneró (`--run`).
 - La API HTTPS muestra los mismos estados.
-- Persisten doce `DECLARED_STATE_CONFLICT` WARN (QS-0001..0012).
+- Persisten trece `DECLARED_STATE_CONFLICT` WARN (QS-0001..0013).
   `FND-0002` los dio por buenos como diseño, pero es un defecto
   de `reconcile`: está corregido en
   [HDC-0008](HDC-0008-qs-v2-pending-declarado-no-es-conflicto.md) y seguirá

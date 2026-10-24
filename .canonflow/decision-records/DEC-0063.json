@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0063",
+  "kind": "decision",
+  "title": "Condiciones del límite de capacidad S-13, del control del productor y del contrato 1.2.0 (notas del humano en QS-0013)",
+  "decision": "Respuesta a Q-NOTES «Notas para el registro» (texto libre del humano, transcrito íntegro en el campo comment; forma parte de la decisión).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-24T07:50:53Z",
+  "source": "QS-0013/ANS-0014 Q-NOTES",
+  "source_ref": {
+    "question_session_id": "QS-0013",
+    "answer_session_id": "ANS-0014",
+    "question_ids": [
+      "Q-NOTES"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [],
+  "affected_items": [
+    "DEC-0059",
+    "DEC-0060",
+    "DEC-0061",
+    "DEC-0062",
+    "DEC-0049",
+    "DEC-0058",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "scripts/ops/backup/db-backup-remote.py"
+  ],
+  "expiry": "",
+  "comment": "Se aprueba como objetivo de diseño para la etapa inicial un tamaño máximo de 1 GiB por respaldo remoto completo, incluyendo objeto cifrado y manifiesto. Se mantiene la cuota actual de 50 GiB.\n\nEl límite deberá ser exigible por el productor y validarse antes de cualquier operación de escritura S3, incluyendo la iniciación de transferencias multipart. Un respaldo que exceda el límite deberá generar E-SIZE-LIMIT, sin reintentos improductivos, conservar íntegros los archivos locales y producir una alerta inmediata sin secretos.\n\nEl rechazo de un respaldo no deberá impedir procesar respaldos posteriores válidos. Los mecanismos de alerta de frescura deberán seguir funcionando. No se permitirá que un rechazo se considere respaldo remoto exitoso.\n\nSe autoriza preparar la versión contractual 1.2.0, compatible con los formatos y mecanismos criptográficos vigentes, y desarrollar el control y sus pruebas sintéticas bajo CanonFlow.\n\nS-13 no podrá declararse cumplido únicamente por esta decisión. Requerirá el contrato 1.2.0 publicado y reconciliado, la implementación verificada, las pruebas de límites y regresión, una nueva declaración S-15 del operador con mediciones de capacidad y el simulacro E2E correspondiente.\n\nEl tamaño máximo deberá revisarse si se modifica la cuota, la retención o la capacidad, o cuando el tamaño observado supere el 80 % del límite. Cualquier ampliación requerirá una nueva evaluación y la autorización correspondiente.\n\nEsta decisión no autoriza activar respaldos productivos, instalar temporizadores, modificar cuotas o declarar recuperación productiva. La activación seguirá requiriendo autorización independiente mediante HDC."
+}

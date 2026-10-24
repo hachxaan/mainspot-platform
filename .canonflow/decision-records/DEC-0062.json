@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0062",
+  "kind": "decision",
+  "title": "Vía contractual: preparar el contrato 1.2.0 (MENOR) con máximo de diseño, control del productor, E-SIZE-LIMIT y S-13 por máximo de diseño aplicado",
+  "decision": "Respuesta a Q-S13-CONTRACT-PATH «¿Cómo se incorpora la decisión y cómo se acredita S-13 antes de activar?»: `minor_1_2_0` — «Publicar el contrato 1.2.0 (MENOR) con el máximo, el control del productor, E-SIZE-LIMIT y S-13 por máximo de diseño aplicado». Condiciones declaradas en Q-NOTES (DEC-0063).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-24T07:50:53Z",
+  "source": "QS-0013/ANS-0014 Q-S13-CONTRACT-PATH",
+  "source_ref": {
+    "question_session_id": "QS-0013",
+    "answer_session_id": "ANS-0014",
+    "question_ids": [
+      "Q-S13-CONTRACT-PATH"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "politica_implementacion — Registrar solo como política de implementación de MainSpot; el contrato sigue en 1.1.0"
+  ],
+  "affected_items": [
+    "DEC-0049",
+    "DEC-0054",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "DEC-0063"
+  ],
+  "expiry": "",
+  "comment": ""
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0060",
+  "kind": "decision",
+  "title": "Capacidad S-13: se mantiene la cuota de 50 GiB del bucket mainspot-backups",
+  "decision": "Respuesta a Q-S13-QUOTA «¿Mantienes la cuota actual de 50 GiB del bucket mainspot-backups en la etapa inicial?»: `mantener_50gib` — «Mantener 50 GiB». Condiciones declaradas en Q-NOTES (DEC-0063).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-24T07:50:53Z",
+  "source": "QS-0013/ANS-0014 Q-S13-QUOTA",
+  "source_ref": {
+    "question_session_id": "QS-0013",
+    "answer_session_id": "ANS-0014",
+    "question_ids": [
+      "Q-S13-QUOTA"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "ampliar_100gib — Pedir al KVM 4 ampliar a 100 GiB (y la copia protegida en proporción)"
+  ],
+  "affected_items": [
+    "DEC-0048",
+    "DEC-0049",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "DEC-0063"
+  ],
+  "expiry": "",
+  "comment": ""
+}

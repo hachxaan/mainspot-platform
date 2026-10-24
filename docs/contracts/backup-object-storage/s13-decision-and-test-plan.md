@@ -1,10 +1,17 @@
-# S-13: decisión pendiente (QS-0013), análisis normativo y plan de pruebas posterior
+# S-13: decisión (QS-0013 → DEC-0059…DEC-0063), análisis normativo y plan de pruebas posterior
 
-No normativo. **Nada aprobado todavía**: QS-0013 está `PENDING` en el HDC
-(`.canonflow/decision-sessions/pending/QS-0013.questions.json`, sha256
-`0f859a2094096d8b21d6dc39765f0c6ec758dde3bc38eb27f9523b45308a25d7`, RUN-0013). Hasta que el propietario
-responda y se ingiera como DEC, no se cambia código, cuota ni infraestructura. Productor y temporizadores siguen
-desactivados.
+No normativo. **Decidido el 2026-10-24** (ANS-0014, ingerida en RUN-0014; QS-0013 `ARCHIVED`, sha256
+`0f859a2094096d8b21d6dc39765f0c6ec758dde3bc38eb27f9523b45308a25d7`):
+
+- **DEC-0059:** máximo de diseño de 1 GiB por respaldo remoto completo (objeto + manifiesto).
+- **DEC-0060:** se mantiene la cuota de 50 GiB.
+- **DEC-0061:** rechazo seguro con aviso (`E-SIZE-LIMIT`); el respaldo local queda intacto.
+- **DEC-0062:** preparar el contrato 1.2.0 (MENOR).
+- **DEC-0063:** condiciones literales del propietario.
+
+DEC-0063 autoriza preparar 1.2.0 y desarrollar el control y sus pruebas sintéticas; S-13 **no** queda cumplida por la
+decisión. No autoriza activar, instalar temporizadores, cambiar cuotas ni declarar recuperación productiva.
+Productor y temporizadores siguen desactivados.
 
 Referencias: contrato 1.1.0 @ `0cbdfcf`; KVM 4 @ `09e913d3558f1d41bf5cfe2def048b0fac6349cc` (declaración S-15 en
 `f478e7df`, evidence/41); evaluación `s13-capacity-assessment-2026-10-24.md` (mainspot-platform@`65f60d10`).
@@ -75,6 +82,8 @@ límite se inyecta por configuración de laboratorio para no generar archivos de
 | T-08 | reintento del respaldo grande | no se reintenta en bucle; sin escrituras; la ventana de 24 h termina en `E-UPLOAD-WINDOW` |
 | T-09 | frescura | sin respaldo remoto en 26 h → `E-FRESHNESS` en `--check-only` |
 | T-10 | configuración | límite ausente o no válido → falla de forma segura (no sube) y lo indica; sin secretos en los registros |
+| T-11 | un rechazo nunca cuenta como éxito (DEC-0063) | estado distinto de `OK`, sin manifiesto remoto; no satisface la comprobación de frescura de §10.1 |
+| T-12 | aviso inmediato (DEC-0063) | el aviso se emite en la misma ejecución que el rechazo, no al cabo de 26 h |
 
 Más el pase de regresión completo de las suites actuales (52 casos).
 

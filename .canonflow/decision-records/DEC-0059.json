@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0059",
+  "kind": "decision",
+  "title": "Capacidad S-13: tamaño máximo de diseño de 1 GiB por respaldo remoto completo (objeto cifrado + manifiesto) en la etapa inicial",
+  "decision": "Respuesta a Q-S13-DESIGN-MAX «¿Qué tamaño máximo de diseño fijas para un respaldo remoto completo (objeto cifrado + manifiesto) durante la etapa inicial?»: `1gib_total` — «1 GiB por respaldo remoto completo (objeto cifrado + manifiesto)». Condiciones declaradas en Q-NOTES (DEC-0063).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-24T07:50:53Z",
+  "source": "QS-0013/ANS-0014 Q-S13-DESIGN-MAX",
+  "source_ref": {
+    "question_session_id": "QS-0013",
+    "answer_session_id": "ANS-0014",
+    "question_ids": [
+      "Q-S13-DESIGN-MAX"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "1_5gib_total — 1,5 GiB por respaldo (casi el tope de la cuota actual, 1,5625 GiB)",
+    "sin_maximo — No fijar máximo de diseño: S-13 solo con el tamaño observado tras activar"
+  ],
+  "affected_items": [
+    "DEC-0049",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "DEC-0063"
+  ],
+  "expiry": "",
+  "comment": ""
+}

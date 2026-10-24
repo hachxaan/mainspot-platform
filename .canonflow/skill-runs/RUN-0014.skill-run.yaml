@@ -1,0 +1,29 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0014
+skill_id: canonflow-human-decision-console
+mode: ingest
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  Ingest ANS-0014 (QS-0013, answered by Carlos Pinacho at 2026-10-24T07:50:53Z) as
+  DEC-0059..DEC-0063: one record per answered question, Q-NOTES transcribed literally,
+  traceability links ANS-0014 → QS-0013 and DEC → ANS-0014, then archive QS-0013.
+  publish-ingestion, mark-session, compatibility views and the pending_human mirror run
+  with mainspot-hdc.service stopped (HDC-0006/HDC-0007). No answer is reinterpreted.
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 3d7eab6422b28fe7867f5fb188a3fa66afb9c7b6
+inputs:
+  - ".canonflow/decision-sessions/answered/QS-0013.answers.json (ANS-0014; local only, ignored)"
+  - ".canonflow/decision-sessions/pending/QS-0013.questions.json (sha256 0f859a2094096d8b21d6dc39765f0c6ec758dde3bc38eb27f9523b45308a25d7)"
+  - "canonflow-keystone decision-console/app tree 9865e5efca36b4590ad49f4364b9695ed5d7875c (= pin 5e3dc307a4089f462b9742b76fd002cf910102fa)"
+expected_outputs:
+  - .canonflow/decision-records/DEC-0059..DEC-0063 (.json + .md)
+  - .canonflow/decision-sessions/archived/QS-0013.questions.json
+  - .canonflow/decision-state/sessions/QS-0013.lifecycle.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow/skill-runs/RUN-0014.skill-report.yaml
+created_at: "2026-10-24T07:52:00Z"

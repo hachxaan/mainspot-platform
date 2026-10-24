@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0061",
+  "kind": "decision",
+  "title": "Productor remoto: rechazo seguro con aviso (E-SIZE-LIMIT) de respaldos por encima del máximo de diseño; respaldo local intacto",
+  "decision": "Respuesta a Q-S13-OVERSIZE-POLICY «Si un respaldo supera el máximo de diseño, ¿qué debe hacer el productor MainSpot?»: `rechazo_seguro_alerta` — «Rechazo seguro con aviso: no subir, avisar, conservar el respaldo local». Condiciones declaradas en Q-NOTES (DEC-0063).",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-10-24T07:50:53Z",
+  "source": "QS-0013/ANS-0014 Q-S13-OVERSIZE-POLICY",
+  "source_ref": {
+    "question_session_id": "QS-0013",
+    "answer_session_id": "ANS-0014",
+    "question_ids": [
+      "Q-S13-OVERSIZE-POLICY"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "aviso_y_subida_hasta_tope — Avisar y subir si cabe en el tope duro de la cuota; rechazar solo por encima",
+    "sin_control — Sin control en el productor; solo alertas de ocupación del bucket"
+  ],
+  "affected_items": [
+    "DEC-0026",
+    "DEC-0045",
+    "docs/contracts/backup-object-storage/v1/CONTRACT.md",
+    "scripts/ops/backup/db-backup-remote.py",
+    "DEC-0063"
+  ],
+  "expiry": "",
+  "comment": ""
+}

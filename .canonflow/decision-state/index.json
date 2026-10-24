@@ -182,23 +182,31 @@
     },
     {
       "question_session_id": "QS-0013",
-      "state": "PENDING",
+      "state": "ARCHIVED",
       "generated_at": "2026-10-24T07:21:06Z",
-      "records": [],
-      "session_label": "Respaldos remotos (Garage S3, KVM 4): capacidad S-13 en la etapa inicial"
+      "records": [
+        "DEC-0059",
+        "DEC-0060",
+        "DEC-0061",
+        "DEC-0062",
+        "DEC-0063"
+      ],
+      "answered_at": "2026-10-24T07:50:53Z",
+      "session_label": "Respaldos remotos (Garage S3, KVM 4): capacidad S-13 en la etapa inicial",
+      "answer_session_id": "ANS-0014"
     }
   ],
   "counters": {
     "qs": 13,
-    "ans": 13,
-    "dec": 58,
+    "ans": 14,
+    "dec": 63,
     "apr": 2,
     "rsk": 0
   },
   "latest": "QS-0013",
   "reconstructed": {
-    "at": "2026-10-24T07:21:06Z",
-    "by": "RUN-0013 (canonflow-human-decision-console)",
+    "at": "2026-10-24T07:52:44Z",
+    "by": "RUN-0014 (canonflow-human-decision-console)",
     "source": "artifacts+lifecycle+legacy-snapshots; state = evidence-derived effective state",
     "preserved": true
   }

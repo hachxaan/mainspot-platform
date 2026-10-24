@@ -61,7 +61,7 @@ blocks:
   - id: C1-s3-backup-contract
     title: Contrato de integración MainSpot ↔ Garage S3 (KVM 4) para respaldos remotos
     state: PUBLISHED_V1_1
-    implements: [DEC-0026, DEC-0027, DEC-0045, DEC-0046, DEC-0047, DEC-0048, DEC-0049, DEC-0052, DEC-0053, DEC-0055, DEC-0056, DEC-0057, DEC-0058]
+    implements: [DEC-0026, DEC-0027, DEC-0045, DEC-0046, DEC-0047, DEC-0048, DEC-0049, DEC-0052, DEC-0053, DEC-0055, DEC-0056, DEC-0057, DEC-0058, DEC-0059, DEC-0060, DEC-0062, DEC-0063]
     summary: >-
       QS-0010 (ANS-0012) y QS-0011 (ANS-0011) ingeridas en RUN-0010 → DEC-0045..DEC-0054. Contrato 1.1.0
       publicado en hachxaan/mainspot-platform, rama contract/backup-object-storage-v1: commit del contrato
@@ -90,12 +90,12 @@ blocks:
       - "KVM 4 @ 03e71236 (servicio 824a4529, garage-alert 487428df): H-01/H-02, H-03 y H-04/S-08 cumplidos según la evidencia del operador (recepción en Telegram confirmada por el propietario)."
       - "Conformidad externa ejecutada el 2026-10-24 (run 20261024T062159Z-1750b25a, checkout 2d5c807e, servicio 824a4529): conformant=true, 20 PASS, C-21/C-22 MANUAL con evidence/29 y 32; credenciales y clave efímera destruidas. Declaración S-15 en f478e7df (con el cierre del handoff): S-04/S-06/S-11/S-16 PASS, S-13 NO VERIFICADO."
       - "S-13 (s13-capacity-assessment-2026-10-24.md): NO DETERMINABLE. Máximo local observado 120 960 B (base piloto de 10 MB, no representativa); cota con cuota de 50 GiB: objeto ≤ 1,5625 GiB; no hay límite de tamaño documentado ni exigible."
-      - "QS-0013 (RUN-0013) PENDING: máximo de diseño, cuota, política del productor por encima del límite y vía contractual (análisis: la propuesta exige el contrato 1.2.0). Plan T-01..T-10 y alcance E2E en s13-decision-and-test-plan.md, sin ejecutar."
-    next_gate: "Respuesta a QS-0013 → ingestión DEC → (contrato 1.2.0 si se elige) → control del productor y pruebas T-01..T-10 → nueva declaración S-13 del operador → simulacro E2E synthetic-drill y restauración remota (mandato aparte)"
+      - "QS-0013 ingerida en RUN-0014 (ANS-0014): DEC-0059 máximo 1 GiB por respaldo remoto (objeto + manifiesto), DEC-0060 cuota de 50 GiB, DEC-0061 rechazo seguro E-SIZE-LIMIT con el respaldo local intacto, DEC-0062 contrato 1.2.0 (MENOR), DEC-0063 condiciones. S-13 sigue NO VERIFICADO; la decisión no la acredita."
+    next_gate: "Contrato 1.2.0 preparado, publicado por commit y reconciliado con el KVM 4 → control del productor y pruebas T-01..T-12 + regresión → nueva declaración S-15 con mediciones de S-13 → simulacro E2E synthetic-drill (mandato aparte) → sesión de autorización de activación"
   - id: R3-remote-producer
     title: Productor de respaldo remoto (desactivado)
     state: IMPLEMENTED_DISABLED
-    implements: [DEC-0026, DEC-0045, DEC-0046, DEC-0047, DEC-0049, DEC-0055, DEC-0056, DEC-0057, DEC-0058]
+    implements: [DEC-0026, DEC-0045, DEC-0046, DEC-0047, DEC-0049, DEC-0055, DEC-0056, DEC-0057, DEC-0058, DEC-0059, DEC-0061, DEC-0063]
     summary: >-
       scripts/ops/backup/db-backup-remote.py según §8, §10.1, §12, §13 y §16.3 del contrato; sin configuración
       termina status=DISABLED sin red; unidades systemd escritas y no instaladas. 23 pruebas del autor y 29 de la
