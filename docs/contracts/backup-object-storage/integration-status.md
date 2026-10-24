@@ -21,7 +21,7 @@ Sustituye como estado vigente a `v1/infra-reconciliation-ab046d24.md`, que queda
 |---|---|---|---|
 | §9.1 retención (H-01/H-02) | Regla de ciclo de vida exacta como único borrador; vigilante horario sin `DeleteObject`; inventario por `created_at`; 26 PASS | Conforme con DEC-0057 | Comprobación externa |
 | §9.2 copia protegida (H-03) | Opción B: contenedor y volumen propios, clave guard de solo lectura, sin ruta de la clave writer al volumen; caducidad local a 14 días; restauración con originales ausentes; 31 PASS | Conforme con DEC-0056 | C-21/C-22 MANUAL en el informe externo |
-| §10.1 / S-08 aviso externo (H-04) | No implementado: solo journal/status, marcado «pendiente de autorización HDC» | Autorizado por DEC-0055 con las condiciones de DEC-0058 §1 | Bot Telegram dedicado y prueba sintética confirmada por el propietario |
+| §10.1 / S-08 aviso externo (H-04) | Cumplido en `03e71236c1ce1b357053239ff7f97c1f03be59a9`: `garage-alert` (`487428df`) con un bot dedicado; el propietario confirmó la recepción del mensaje de prueba (evidence/37) | Conforme con DEC-0055 y DEC-0058 §1 | — |
 | §18 cita del contrato | `0cbdfcf` citado | Condición 4 cumplida | — |
 | §14 conformidad | Desde el host: 20 PASS, C-21/C-22 MANUAL, `conformant=false` | No sustituye la ejecución externa | Ver abajo |
 
@@ -59,7 +59,7 @@ protegida del servicio.
 | 4 | Contrato reconciliado por commits | CUMPLIDA |
 | 5 | Productor probado con datos sintéticos | PENDIENTE (laboratorio hecho; falta el servicio real) |
 | 6 | Restauración desde el remoto y desde la copia | PENDIENTE (copia: hecha en el KVM 4; remoto: requiere credenciales) |
-| P-3 | Aviso externo | DECIDIDO (DEC-0055), no implementado |
+| P-3 | Aviso externo | CUMPLIDO en el servicio (`03e71236`); plan de conformidad: `external-conformance-plan.md` |
 | 7 | Autorización del propietario en HDC | BLOQUEADA por las anteriores |
 
 Ninguna de estas comprobaciones activa el productor ni autoriza transferir respaldos productivos

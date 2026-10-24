@@ -80,12 +80,13 @@ blocks:
       - evidence/contracts/backup-object-storage-v1/08-publish-v1.1.0.txt
       - .canonflow/skill-runs/RUN-0010.skill-report.yaml
       - docs/contracts/backup-object-storage/integration-status.md
+      - docs/contracts/backup-object-storage/external-conformance-plan.md
       - evidence/coordination/03-kvm-reconciliation-158ec59.md
       - evidence/contracts/backup-object-storage-v1/09-external-conformance-2026-10-23.md
     open_items:
-      - "KVM 4 @ 158ec59 (servicio 824a4529): H-01/H-02 (lifecycle único borrador, vigilante sin borrado) y H-03 (copia protegida opción B) implementados y probados por el operador. Falta H-04: alertas Telegram según DEC-0055/DEC-0058 §1."
-      - "Conformidad externa no ejecutada: el host local no tiene credenciales writer/restore ni autorización como ejecutor externo."
-    next_gate: "Propietario autoriza el ejecutor externo y entrega writer.env/restore.env; informe externo con \"conformant\": true (C-21/C-22 MANUAL con la evidencia del guard); Telegram implementado y mensaje sintético confirmado"
+      - "KVM 4 @ 03e71236 (servicio 824a4529, garage-alert 487428df): H-01/H-02, H-03 y H-04/S-08 cumplidos según la evidencia del operador (recepción en Telegram confirmada por el propietario)."
+      - "Conformidad externa preparada y no ejecutada (external-conformance-plan.md): host físico fuera del KVM 4, runner ae28a41a verificado, venv boto3/botocore 1.43.117, credenciales en tmpfs con limpieza por trap. Falta la autorización del ejecutor y el handoff."
+    next_gate: "Propietario autoriza este host como ejecutor externo → handoff GnuPG (docs/14 del servicio) → informe externo C-01..C-22 (C-21/C-22 MANUAL con evidence/29 y 32) → prueba del productor synthetic-drill y restauración remota"
   - id: R3-remote-producer
     title: Productor de respaldo remoto (desactivado)
     state: IMPLEMENTED_DISABLED
