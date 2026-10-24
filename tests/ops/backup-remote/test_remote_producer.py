@@ -816,11 +816,234 @@ def test_config_permissions_and_lock(env):
         os.close(fd)
 
 
+# --- límite de tamaño (contrato 1.2.0 §8.2 paso 0; DEC-0059, DEC-0061, DEC-0063) ------------
+# El límite real es 1 GiB; MAINSPOT_REMOTE_LAB_MAX_BACKUP_BYTES lo baja para no crear archivos de 1 GiB.
+
+LIMIT_ENV = "MAINSPOT_REMOTE_LAB_MAX_BACKUP_BYTES"
+
+
+def remote_total(env: Env, path: Path, bid: str) -> int:
+    """objeto cifrado + manifiesto exacto que el productor construye (determinista)."""
+    size, sha = mt.file_digest(str(path))
+    m = mt.build_manifest(passphrase=env.passphrase, size=size, sha256=sha, backup_id=bid,
+                          deployment_id=env.deployment_id, database=env.database)
+    return size + len((json.dumps(m, indent=2) + "\n").encode("utf-8"))
+
+
+def alert_hook(env: Env) -> Path:
+    out = env.root / "alerts-delivered.jsonl"
+    hook = env.root / "alert-hook.sh"
+    hook.write_text(f"#!/bin/sh\ncat >> {out}\n")
+    hook.chmod(0o700)
+    env.write_config(MAINSPOT_REMOTE_ALERT_COMMAND=str(hook))
+    return out
+
+
+def requests_for(proxy: Proxy, bid: str) -> list[tuple[str, str]]:
+    return [(m, p) for m, p, hd, st in proxy.log if bid in p]
+
+
+def writes(proxy: Proxy) -> list[tuple[str, str]]:
+    return [(m, p) for m, p, hd, st in proxy.log if m in ("PUT", "POST", "DELETE")]
+
+
+def local_state(path: Path) -> tuple:
+    side = Path(str(path) + ".sha256")
+    return (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns, path.stat().st_size,
+            side.read_bytes(), side.stat().st_mtime_ns)
+
+
+def test_t01_limit_minus_one_byte_uploads_and_warns_over_80pct(tmp_path, lab, proxy):
+    env = Env(tmp_path, lab, lab.writer, endpoint=proxy.endpoint)
+    hook_out = alert_hook(env)
+    bid = now_id()
+    total = remote_total(env, env.make_backup(bid), bid)
+    proc = env.run(extra_env={LIMIT_ENV: str(total + 1)})
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    (line,) = [ln for ln in lines_for(proc, bid) if "status=ALERT" not in ln]
+    assert field(line, "status") == "OK" and field(line, "action") == "uploaded"
+    assert field(line, "total_bytes") == str(total) and field(line, "limit_bytes") == str(total + 1)
+    assert head_or_none(env.s3(), env.keys(bid)[1]) is not None
+    (warn,) = [json.loads(x) for x in hook_out.read_text().splitlines()]
+    assert warn["code"] == "SIZE-OVER-80PCT" and warn["severity"] == "warning" and warn["backup_id"] == bid
+
+
+def test_t02_exact_limit_is_inclusive_and_uploads(tmp_path, lab, proxy):
+    env = Env(tmp_path, lab, lab.writer, endpoint=proxy.endpoint)
+    bid = now_id()
+    total = remote_total(env, env.make_backup(bid), bid)
+    proc = env.run(extra_env={LIMIT_ENV: str(total)})
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    line = [ln for ln in lines_for(proc, bid) if "status=ALERT" not in ln][0]
+    assert field(line, "status") == "OK" and field(line, "action") == "uploaded"
+    okey, mkey = env.keys(bid)
+    h, mh = env.s3().head_object(Bucket=BUCKET, Key=okey), env.s3().head_object(Bucket=BUCKET, Key=mkey)
+    assert h["ContentLength"] + mh["ContentLength"] == total  # lo medido antes es lo que queda en S3
+
+
+def test_t03_limit_plus_one_byte_rejected_without_any_s3_operation(tmp_path, lab, proxy):
+    env = Env(tmp_path, lab, lab.writer, endpoint=proxy.endpoint)
+    bid = now_id()
+    total = remote_total(env, env.make_backup(bid), bid)
+    proc = env.run(extra_env={LIMIT_ENV: str(total - 1)})
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    (line,) = [ln for ln in lines_for(proc, bid) if "status=ALERT" not in ln]
+    assert field(line, "status") == "FAIL" and field(line, "error") == "E-SIZE-LIMIT"
+    assert field(line, "action") == "size-rejected" and field(line, "attempts") == "0"
+    assert field(line, "total_bytes") == str(total) and field(line, "limit_bytes") == str(total - 1)
+    assert requests_for(proxy, bid) == [] and writes(proxy) == []
+    okey, mkey = env.keys(bid)
+    assert head_or_none(env.s3(), okey) is None and head_or_none(env.s3(), mkey) is None
+
+
+def test_t04_rejected_before_multipart_initiation(tmp_path, lab, proxy):
+    env = Env(tmp_path, lab, lab.writer, endpoint=proxy.endpoint)
+    bid = now_id()
+    env.make_backup(bid, plaintext=os.urandom(2 * 1024 * 1024 + 77))
+    proc = env.run(extra_env={LIMIT_ENV: str(1024 * 1024), "MAINSPOT_REMOTE_LAB_SINGLE_PART_MAX": str(1024 * 1024),
+                              "MAINSPOT_REMOTE_LAB_PART_SIZE": str(1024 * 1024)})
+    assert proc.returncode == 1
+    assert field([ln for ln in lines_for(proc, bid) if "status=FAIL" in ln][0], "error") == "E-SIZE-LIMIT"
+    assert not any(m == "POST" for m, p, hd, st in proxy.log)  # sin CreateMultipartUpload
+    assert writes(proxy) == [] and requests_for(proxy, bid) == []
+    assert env.s3().list_multipart_uploads(Bucket=BUCKET, Prefix=env.keys(bid)[0]).get("Uploads", []) == []
+
+
+def test_t05_local_backup_and_sha256_untouched_after_rejections(tmp_path, lab, proxy):
+    env = Env(tmp_path, lab, lab.writer, endpoint=proxy.endpoint)
+    bid = now_id()
+    local = env.make_backup(bid)
+    before = local_state(local)
+    limit = str(remote_total(env, local, bid) - 1)
+    for _ in range(2):
+        env.run(extra_env={LIMIT_ENV: limit})
+        assert local_state(local) == before
+    assert sorted(p.name for p in env.backup_dir.glob(f"{bid}*")) == [f"{bid}.dump.enc", f"{bid}.dump.enc.sha256"]
+
+
+def test_t06_alert_is_sanitized_and_delivered(tmp_path, lab, proxy):
+    env = Env(tmp_path, lab, lab.writer, endpoint=proxy.endpoint)
+    hook_out = alert_hook(env)
+    bid = now_id()
+    local = env.make_backup(bid)
+    total = remote_total(env, local, bid)
+    proc = env.run(extra_env={LIMIT_ENV: str(total - 1)})
+    (event,) = [json.loads(x) for x in hook_out.read_text().splitlines()]
+    assert event == {**event, "code": "E-SIZE-LIMIT", "severity": "error", "producer": "db-backup-remote",
+                     "backup_id": bid, "total_bytes": total, "limit_bytes": total - 1,
+                     "action": "not-uploaded-local-backup-kept"}
+    assert set(event) == {"ts", "producer", "code", "severity", "backup_id", "size_bytes", "manifest_bytes",
+                          "total_bytes", "limit_bytes", "action"}
+    outbox = (env.backup_dir / "remote-alerts.jsonl")
+    assert oct(outbox.stat().st_mode & 0o777) == "0o600" and json.loads(outbox.read_text()) == event
+    (alert_line,) = [ln for ln in proc.stdout.splitlines() if "status=ALERT" in ln]
+    assert field(alert_line, "delivery") == "ok" and field(alert_line, "outbox") == "ok"
+    blob = hook_out.read_text() + outbox.read_text() + proc.stdout + proc.stderr + env.log_text()
+    for secret in (*SECRETS, env.creds[0], env.creds[1]):
+        assert secret not in blob
+
+
+def test_t07_rejection_does_not_block_later_valid_backup(tmp_path, lab, proxy):
+    env = Env(tmp_path, lab, lab.writer, endpoint=proxy.endpoint)
+    big = now_id()
+    small = now_id(dt.timedelta(minutes=-30))
+    big_total = remote_total(env, env.make_backup(big, plaintext=os.urandom(64 * 1024)), big)
+    small_total = remote_total(env, env.make_backup(small), small)
+    assert small_total < big_total
+    proc = env.run(extra_env={LIMIT_ENV: str(big_total - 1)})
+    assert proc.returncode == 1
+    assert field([ln for ln in lines_for(proc, big) if "status=FAIL" in ln][0], "error") == "E-SIZE-LIMIT"
+    ok = lines_for(proc, small)[0]
+    assert field(ok, "status") == "OK" and field(ok, "action") == "uploaded"
+    assert head_or_none(env.s3(), env.keys(small)[1]) is not None
+    assert head_or_none(env.s3(), env.keys(big)[0]) is None
+
+
+def test_t08_rejected_backup_is_not_retried_nor_realerted(tmp_path, lab, proxy):
+    env = Env(tmp_path, lab, lab.writer, endpoint=proxy.endpoint)
+    hook_out = alert_hook(env)
+    bid = now_id()
+    limit = str(remote_total(env, env.make_backup(bid), bid) - 1)
+    assert env.run(extra_env={LIMIT_ENV: limit}).returncode == 1
+    proxy.log.clear()
+    proc = env.run(extra_env={LIMIT_ENV: limit})
+    (line,) = lines_for(proc, bid)
+    assert field(line, "status") == "SKIPPED" and field(line, "error") == "E-SIZE-LIMIT"
+    assert field(line, "action") == "size-rejected" and field(line, "attempts") == "0"
+    assert requests_for(proxy, bid) == [] and writes(proxy) == []
+    assert "status=ALERT" not in proc.stdout and len(hook_out.read_text().splitlines()) == 1
+    # fuera de la ventana de 24 h el respaldo termina en E-UPLOAD-WINDOW (nunca se sube)
+    old = now_id(dt.timedelta(hours=-25))
+    env.make_backup(old, plaintext=os.urandom(64 * 1024))
+    proc = env.run(extra_env={LIMIT_ENV: limit})
+    assert field(lines_for(proc, old)[0], "error") == "E-UPLOAD-WINDOW"
+    assert head_or_none(env.s3(), env.keys(old)[0]) is None
+
+
+def test_t09_freshness_alert_persists_with_only_rejected_backups(tmp_path, lab, proxy):
+    env = Env(tmp_path, lab, lab.writer, endpoint=proxy.endpoint)
+    bid = now_id()
+    limit = str(remote_total(env, env.make_backup(bid), bid) - 1)
+    for args in ((), ("--check-only",)):
+        proc = env.run(*args, extra_env={LIMIT_ENV: limit})
+        (check,) = [ln for ln in proc.stdout.splitlines() if "check=daily" in ln]
+        assert field(check, "status") == "FAIL" and "E-FRESHNESS" in field(check, "error"), check
+        assert proc.returncode == 1
+
+
+@pytest.mark.parametrize("value", ["abc", "0", "-5", str((1 << 30) + 1), "1e6", ""])
+def test_t10_invalid_limit_or_alert_config_fails_safe_without_network(tmp_path, lab, proxy, value):
+    env = Env(tmp_path, lab, lab.writer, endpoint=proxy.endpoint)
+    bid = now_id()
+    local = env.make_backup(bid)
+    before = local_state(local)
+    proc = env.run(extra_env={LIMIT_ENV: value})
+    assert proc.returncode == 1 and "status=FAIL" in proc.stdout and "error=E-CONFIG" in proc.stdout
+    assert proxy.log == [] and local_state(local) == before
+    env.write_config(MAINSPOT_REMOTE_ALERT_COMMAND="relative/hook.sh")
+    proc = env.run()
+    assert proc.returncode == 1 and "error=E-CONFIG" in proc.stdout and proxy.log == []
+
+
+def test_t11_rejection_never_counts_as_success(tmp_path, lab, proxy):
+    env = Env(tmp_path, lab, lab.writer, endpoint=proxy.endpoint)
+    bid = now_id()
+    limit = str(remote_total(env, env.make_backup(bid), bid) - 1)
+    for _ in range(2):  # primera ejecución (FAIL) y siguiente (SKIPPED): nunca OK
+        proc = env.run(extra_env={LIMIT_ENV: limit})
+        assert all(field(ln, "status") in ("FAIL", "SKIPPED", "ALERT") for ln in lines_for(proc, bid))
+        (check,) = [ln for ln in proc.stdout.splitlines() if "check=daily" in ln]
+        assert field(check, "complete") == "0"
+    assert head_or_none(env.s3(), env.keys(bid)[1]) is None
+    assert "status=OK" not in "\n".join(ln for ln in env.log_text().splitlines() if bid in ln)
+
+
+def test_t12_alert_is_emitted_in_the_same_run_even_without_network(tmp_path, lab):
+    env = Env(tmp_path, lab, lab.writer, endpoint="http://127.0.0.1:9")  # S3 inalcanzable
+    hook_out = alert_hook(env)
+    bid = now_id()
+    limit = str(remote_total(env, env.make_backup(bid), bid) - 1)
+    started = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    proc = env.run(extra_env={LIMIT_ENV: limit})
+    ended = dt.datetime.now(dt.timezone.utc)
+    assert proc.returncode == 1
+    out = proc.stdout.splitlines()
+    i_alert = next(i for i, ln in enumerate(out) if "status=ALERT" in ln)
+    i_net = next(i for i, ln in enumerate(out) if "error=E-NETWORK" in ln)
+    assert i_alert < i_net  # el aviso sale antes de cualquier operación S3
+    (event,) = [json.loads(x) for x in hook_out.read_text().splitlines()]
+    ts = dt.datetime.strptime(event["ts"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+    assert started <= ts <= ended and event["code"] == "E-SIZE-LIMIT"
+
+
+
 def test_no_secrets_in_outputs_and_logs(tmp_path):
     assert ALL_OUTPUT and SECRETS
     blobs = list(ALL_OUTPUT)
     for log in tmp_path.parent.glob("*/backups/backup-remote.log"):
         blobs.append(log.read_text())
+    for alerts in tmp_path.parent.glob("*/backups/remote-alerts.jsonl"):  # avisos del límite (1.2.0)
+        blobs.append(alerts.read_text())
     assert len(blobs) > len(ALL_OUTPUT)
     joined = "\n".join(blobs)
     for secret in SECRETS:

@@ -3,9 +3,9 @@
 | Campo | Valor |
 |---|---|
 | Identificador | `mainspot-backup-object-storage` |
-| Versión | `1.1.0` (cambios respecto a `1.0.0`: `CHANGELOG.md`) |
-| Fecha | 2026-10-22 |
-| Estado del documento | Publicado. **Aprobado con condiciones** por el propietario (DEC-0045…DEC-0054; ver §2). La transferencia remota **no está activada** y no se activa sola: puerta de activación en §2.3 |
+| Versión | `1.2.0` (cambios respecto a `1.1.0` y `1.0.0`: `CHANGELOG.md`) |
+| Fecha | 2026-10-24 |
+| Estado del documento | Publicado. **Aprobado con condiciones** por el propietario (DEC-0045…DEC-0063; ver §2). La transferencia remota **no está activada** y no se activa sola: puerta de activación en §2.3 |
 | Productor (cliente) | MainSpot: trabajo de respaldo que corre en el equipo que ejecuta PostgreSQL |
 | Servicio | Garage (S3 compatible) autoalojado en un VPS Hostinger KVM 4, repositorio del servicio `hachxaan/mainspot-s3-backups` |
 | Endpoint | `https://s3.mainspot.canonflow.dev` |
@@ -44,6 +44,10 @@ verifica, se expira y se recupera.
 - La prueba mensual de restauración (§10.2) y el procedimiento de recuperación (§11)
   usan una credencial de solo lectura; ambos incluyen la restauración desde la copia
   protegida con los originales ausentes.
+- Cada respaldo remoto completo (objeto cifrado + manifiesto) tiene un **máximo de 1 GiB**
+  (DEC-0059). El productor lo comprueba antes de cualquier operación S3; si se supera, no
+  sube nada, conserva el respaldo local y avisa de inmediato con `E-SIZE-LIMIT` (§8.2
+  paso 0, DEC-0061). La cuota del bucket sigue en 50 GiB (DEC-0060).
 
 Qué debe construir ahora el operador del servicio (KVM 4): §15 (obligaciones S-01…S-16),
 los cambios que detalla `infra-reconciliation-ab046d24.md` §10 y ejecutar la prueba de
@@ -61,8 +65,10 @@ simular transferencias de respaldos reales, ni pedir o guardar la clave de desci
 | **PROPUESTO** | Decisión técnica de este contrato; vale para construir y probar el servicio, pero puede cambiar antes de activar. |
 | **LECTURA** | Lectura técnica, hecha por los agentes al reconciliar el contrato con la infraestructura, de una decisión ya APROBADA (§9.1 y §9.2). Se mueve dentro de lo decidido y se registra aquí para que el propietario pueda objetarla en el HDC; si lo hace, el contrato cambia en una versión nueva. |
 
-En `1.1.0` ningún elemento queda en estado PROPIETARIO ni PENDIENTE: QS-0010 y QS-0011
-están respondidas e ingeridas (DEC-0045…DEC-0054).
+En `1.1.0` ningún elemento quedó en estado PROPIETARIO ni PENDIENTE: QS-0010 y QS-0011
+están respondidas e ingeridas (DEC-0045…DEC-0054). En `1.2.0` QS-0012 confirmó las dos
+lecturas y el canal de aviso (DEC-0055…DEC-0058) y QS-0013 fijó el límite de capacidad
+(DEC-0059…DEC-0063).
 
 ### 2.2 Estado de cada elemento
 
@@ -78,14 +84,17 @@ están respondidas e ingeridas (DEC-0045…DEC-0054).
 | Destino independiente del servidor que ejecuta PostgreSQL | APROBADO | DEC-0049 §5, DEC-0054 §2 |
 | Custodia de la clave de descifrado: el propietario guarda una copia fuera del equipo de MainSpot y fuera del KVM 4; toda rotación conserva la capacidad de recuperar los respaldos vigentes | APROBADO | DEC-0053 (QS-0010 `Q-BACKUP-KEY`), DEC-0054 §3 |
 | Expiración remota a los 14 días aplicada por el servicio con la regla de ciclo de vida del bucket; MainSpot no borra (§9.1) | APROBADO | DEC-0046 (QS-0011 `Q-S3-RETENTION-ENFORCEMENT`), DEC-0049 §2 |
-| Lectura de DEC-0046: la regla del bucket es el único mecanismo que borra; el vigilante del servicio no borra ni retiene más de 16 días (§9.1) | LECTURA | `infra-reconciliation-ab046d24.md` §5.4 y §11 P-1 |
+| Lectura de DEC-0046: la regla del bucket es el único mecanismo que borra; el vigilante del servicio no borra ni retiene más de 16 días (§9.1) | APROBADO (lectura confirmada) | DEC-0057 (QS-0012 `Q-RETENTION-READING`), DEC-0058 §3 |
 | Riesgo de la credencial de escritura (§17 R1): copia protegida en el KVM 4 **antes** de activar la transferencia (§9.2) | APROBADO | DEC-0047 (QS-0011 `Q-S3-DELETE-RISK`), DEC-0049 §3 y §4 |
-| Forma de la copia protegida: requisitos verificables, opciones B o A/A', comprobaciones C-21/C-22 y obligación S-16 (§9.2) | LECTURA | `infra-reconciliation-ab046d24.md` §7.3 y §11 P-2 |
+| Forma de la copia protegida: requisitos verificables, opción B (volumen propio fuera de Garage), comprobaciones C-21/C-22 y obligación S-16 (§9.2) | APROBADO (opción B) | DEC-0056 (QS-0012 `Q-GUARD-OPTION`), DEC-0058 §2 |
 | Garage de un solo nodo (§17 R2) aceptado para la etapa inicial, con el riesgo registrado | APROBADO | DEC-0048 (QS-0011 `Q-S3-SINGLE-NODE`), DEC-0049 §5 |
 | Puerta de activación de siete condiciones y autorización explícita en el HDC (§2.3) | APROBADO | DEC-0049 §7, DEC-0054 §4 |
 | Manifiesto, MAC de autenticidad, `key_id`, rutas, identificadores, operaciones, verificación, reintentos, errores, conformidad (§5–§14) | PROPUESTO | este contrato |
 | Valor `deployment_id = mainspot-pilot` y región `garage` | PROPUESTO (región confirmada: `<Region>garage</Region>` observado el 2026-10-22) | este contrato |
-| Canal de aviso al propietario desde el KVM 4 (§10.1, S-08) | PROPUESTO; el canal concreto se pregunta al propietario en la sesión de la puerta de activación (P-3) | `infra-reconciliation-ab046d24.md` §11 P-3 |
+| Canal de aviso al propietario desde el KVM 4 (§10.1, S-08): bot de Telegram privado y dedicado, credenciales solo en el KVM 4 | APROBADO | DEC-0055 (QS-0012 `Q-ALERT-CHANNEL`), DEC-0058 §1 |
+| Tamaño máximo de diseño de un respaldo remoto completo: **1 GiB** (objeto cifrado + manifiesto, inclusivo) en la etapa inicial; cuota de `mainspot-backups` **50 GiB** sin cambios (§8.2 paso 0, §15 S-13) | APROBADO | DEC-0059 (QS-0013 `Q-S13-DESIGN-MAX`), DEC-0060 (`Q-S13-QUOTA`), DEC-0063 |
+| Por encima del máximo: rechazo seguro antes de cualquier operación S3, `E-SIZE-LIMIT`, aviso inmediato sin secretos, respaldo local intacto, sin reintentos improductivos, nunca contado como éxito, los respaldos posteriores válidos se siguen procesando y E-FRESHNESS se mantiene (§8.2, §10.1, §13) | APROBADO | DEC-0061 (QS-0013 `Q-S13-OVERSIZE-POLICY`), DEC-0063 |
+| S-13 con el mayor entre el máximo de diseño aplicado por el productor y el máximo observado; revalidación al cambiar capacidad, cuota, límite o retención, o si el observado supera el 80 % del máximo (§10.1, §15 S-13) | APROBADO | DEC-0062 (QS-0013 `Q-S13-CONTRACT-PATH`), DEC-0063 |
 
 ### 2.3 Puerta de activación
 
@@ -112,14 +121,20 @@ Cómo se acredita cada condición en este contrato:
 | 1 | C-01 en PASS contra el endpoint real (§6.1 recoge lo observado el 2026-10-22) |
 | 2 | Informe de §14 ejecutado desde fuera del KVM 4 contra `https://s3.mainspot.canonflow.dev`, con `"conformant": true`, publicado sin secretos, que **cita el commit** del repositorio del servicio contra el que se ejecutó (S-15). Las comprobaciones en MANUAL (C-21 y C-22 con la opción B; C-22 sin A' o sin nada que comparar) se acreditan con la evidencia publicada de §9.2.5 |
 | 3 | S-16 cumplida: copia protegida según §9.2, con C-21 y C-22 en PASS o, cuando quedan en MANUAL, acreditadas por la evidencia de §9.2.5, y la prueba sintética de §9.2.6 publicada |
-| 4 | Esta versión (`1.1.0`) o una posterior, citada por commit por ambos agentes (§18) |
+| 4 | Esta versión (`1.2.0`) o una posterior, citada por commit por ambos agentes (§18) |
 | 5 | Productor de §8 probado con datos sintéticos contra un Garage de laboratorio y contra el servicio real (datos de prueba, borrados al terminar) |
 | 6 | §10.2 ejecutada una vez desde `mainspot-backups` y una vez desde la copia protegida con los originales ausentes (§11.4), con informes sin secretos |
 | 7 | Registro `DEC-…` de la autorización |
 
 Además, antes de pedir la condición 7, el propietario responde en el HDC qué **canal
-de aviso** fuera del KVM 4 autoriza para S-08 (P-3): hasta entonces los avisos del
-servicio solo llegan a su journal y S-08 no se cumple.
+de aviso** fuera del KVM 4 autoriza para S-08 (P-3): lo fijó DEC-0055 (bot de Telegram
+privado y dedicado, con las condiciones de DEC-0058 §1).
+
+S-13 (§15) forma parte de la declaración del operador que exige la condición 2 (S-15) y
+no se cumple solo por aprobar el máximo de diseño (DEC-0063): exige esta versión
+publicada y reconciliada, el control del productor de §8.2 paso 0 verificado con sus
+pruebas de límites y de regresión, una nueva declaración S-15 con mediciones de
+capacidad y el simulacro E2E correspondiente.
 
 Ninguna de estas condiciones activa nada por sí sola. Una prueba de laboratorio no es
 conformidad productiva (DEC-0049 §6).
@@ -460,7 +475,31 @@ antiguo. Un respaldo más antiguo sin copia remota no se sube: su contenido supe
 la cota de 16 días de §9.1 antes de expirar en el servicio. Ese hueco se registra y se
 avisa con E-UPLOAD-WINDOW. El productor se ejecuta justo después de cada respaldo
 local y DEBE volver a intentarlo al menos cada hora mientras un respaldo de menos de
-24 h no tenga copia remota completa.
+24 h no tenga copia remota completa, salvo un respaldo rechazado por E-SIZE-LIMIT
+(paso 0), que no se reintenta mientras el archivo no cambie.
+
+0. **Límite de tamaño** (`1.2.0`, DEC-0059, DEC-0061, DEC-0063). Antes de cualquier
+   operación de escritura S3 de ese respaldo, incluida la iniciación de una subida
+   multiparte (`PutObject`, `CreateMultipartUpload`): comprobar el archivo como en el
+   paso 1, construir el manifiesto exacto que se subirá en el paso 6 y medir `tamaño del
+   objeto + tamaño del manifiesto` en bytes. Si supera **1 GiB (1 073 741 824 bytes; el
+   límite es inclusivo)**:
+   - ninguna escritura S3 de ese respaldo: E-SIZE-LIMIT, registro `FAIL` (§16.3), nunca
+     `OK` ni contado como respaldo remoto completo (el productor de referencia hace esta
+     comprobación antes de cualquier operación S3 de la ejecución, para que el aviso no
+     dependa de la red);
+   - aviso **inmediato**, en la misma ejecución, sin secretos ni contenido (solo
+     código, `backup_id` y tamaños);
+   - el respaldo local y su `.sha256` no se modifican ni se borran;
+   - el rechazo se recuerda localmente y no se reintenta mientras el archivo no cambie
+     (sin reintentos improductivos ni avisos repetidos); al salir de la ventana de 24 h
+     queda como E-UPLOAD-WINDOW;
+   - los demás respaldos de la ejecución se siguen procesando y la comprobación de
+     §10.1 se ejecuta igual (E-FRESHNESS sigue avisando).
+
+   El productor NO DEBE admitir un límite mayor por configuración; para pruebas de
+   laboratorio PUEDE bajarlo, y un valor inválido detiene la ejecución con un error
+   local de configuración antes de contactar con S3.
 
 1. Comprobar el `.sha256` local contra el archivo. Si no coincide: E-LOCAL-INTEGRITY,
    no subir ese respaldo.
@@ -489,9 +528,8 @@ comprueba antes de subir; el candado exclusivo del productor evita carreras.
 
 1. `HeadObject` con `x-amz-checksum-mode: ENABLED`: `Content-Length` = tamaño local
    y `x-amz-checksum-sha256` = SHA-256 local.
-2. `GetObject` completo y SHA-256 del cuerpo = SHA-256 local. Obligatorio en v1
-   (los respaldos son pequeños); si un respaldo supera 1 GiB, una versión MINOR
-   PUEDE sustituirlo por la prueba mensual.
+2. `GetObject` completo y SHA-256 del cuerpo = SHA-256 local. Obligatorio en v1:
+   con el límite del paso 0 ningún objeto supera 1 GiB.
 
 ### 8.4 Integridad en tránsito
 
@@ -763,6 +801,10 @@ Productor, después de cada ejecución, con `ListObjectsV2` sobre
 | Respaldos completos | entre 13 y 16 | aviso si fuera de rango |
 | Objetos `.dump.enc` sin manifiesto con más de 24 h | ninguno | aviso |
 | Configuración de ciclo de vida (`GetBucketLifecycleConfiguration`) | exactamente las reglas de §9.1 (mismos `ID`, `Status`, `Filter.Prefix`, `Expiration.Days` y `DaysAfterInitiation`) y ninguna más | E-RETENTION-VIOLATION |
+| Tamaño (objeto + manifiesto) de un respaldo subido en esta ejecución (`1.2.0`) | no más del 80 % del máximo de §8.2 paso 0 | aviso de revalidación (DEC-0063): revisar S-13, cuota y retención |
+
+Un respaldo rechazado por E-SIZE-LIMIT no es un respaldo remoto completo: no cuenta para
+la frescura ni para la cantidad, y E-FRESHNESS avisa igual si no hay otro.
 
 El servicio hace por su lado la misma comprobación del ciclo de vida (cada hora) y del
 inventario con la edad medida desde `created_at` (cada día), y además comprueba su
@@ -894,11 +936,17 @@ reintentos horarios (§8.2) suben lo que falte mientras siga dentro de la ventan
 | E-RETENTION-VIOLATION | respaldo de más de 16 días o ciclo de vida distinto de §9.1 | — | — | sí (seguridad) |
 | E-RESTORE-MAC | `key_id` o MAC no coinciden, o manifiesto leído de otra clave (§5.3 regla 5) | — | descartar ese respaldo; probar el anterior | sí (seguridad) |
 | E-RESTORE-DECRYPT | fallo de descifrado o de `pg_restore` | — | descartar; probar el anterior | sí |
+| E-SIZE-LIMIT | objeto + manifiesto supera el máximo de §8.2 paso 0 (1 GiB) | no (no se reintenta mientras el archivo no cambie) | ninguna escritura S3 de ese respaldo; conservar el respaldo local; seguir con los demás | sí, **inmediato** |
 
 Los avisos los recibe el propietario. Ningún mensaje de error incluye secretos,
 cabeceras `Authorization` ni el contenido de los respaldos.
 
 ## 14. Conformidad del servicio
+
+En `1.2.0` el script y C-01…C-22 no cambian (sha256 del script
+`ae28a41a6faa188a51f508b027ebe1a72077f16e2ee526af7e01f5655553fc85`, su
+`contract_version` sigue siendo `1.1.0`): `1.2.0` solo cambia el productor y S-13. Un
+informe válido ejecutado con ese script vale para la puerta de `1.2.0`.
 
 `conformance/check_s3_backup_contract.py` (Python 3.10+ y `boto3` ≥ 1.36) comprueba el
 servicio con las credenciales **writer** y **restore** (§6.4). Se ejecuta **desde fuera
@@ -971,7 +1019,7 @@ el **commit** de ese repositorio contra el que se ejecutó y la versión de este
 | S-10 | Hora sincronizada por NTP (§6.5). |
 | S-11 | `consistency_mode = "consistent"`; `metadata_auto_snapshot_interval` configurado (por ejemplo `6h`); limpieza (`scrub`) habilitada; alerta de disco al 80 %. Con un solo nodo, `replication_factor = 1` (riesgo R2, aceptado por DEC-0048). |
 | S-12 | Los registros de acceso PUEDEN guardar claves de objeto y códigos de estado; NO DEBEN guardar cabeceras `Authorization`, firmas ni cuerpos. |
-| S-13 | Capacidad libre para al menos 2 × 16 respaldos del tamaño máximo observado en `mainspot-backups`, más otros 16 en la copia protegida. |
+| S-13 | Capacidad libre para al menos 2 × 16 respaldos del tamaño de referencia en `mainspot-backups`, más otros 16 en la copia protegida. Tamaño de referencia = el **mayor** entre el máximo de diseño aplicado por el productor (§8.2 paso 0: 1 GiB, objeto + manifiesto) y el máximo observado en `mainspot-backups`. Se vuelve a verificar y declarar (S-15) cuando cambian la capacidad, la cuota, el máximo o la retención, o cuando el tamaño observado supera el 80 % del máximo (§10.1); cualquier ampliación del máximo o de la cuota exige una evaluación nueva y la autorización del propietario (DEC-0063). Aprobar el máximo no acredita S-13 por sí solo (§2.3). |
 | S-14 | Cualquier cambio de endpoint, región, bucket, credenciales (nombres o permisos), ciclo de vida o copia protegida se avisa al propietario antes de aplicarlo; si cambia el comportamiento, se publica una versión nueva del contrato. |
 | S-15 | Informe de §14 tras la puesta en marcha y tras cada cambio de versión o de configuración, publicado sin secretos, con el **commit del repositorio del servicio** contra el que se ejecutó y una declaración del operador sobre S-04, S-06, S-11, S-13 y S-16 (lo que la conformidad no puede medir). El primer informe válido para la puerta de §2.3 se ejecuta contra `ab046d24` o posterior **después** de corregir H-01 y H-05 de `infra-reconciliation-ab046d24.md` (vigilante sin borrado y con las reglas de §9.1; credenciales legibles por la conformidad). |
 | S-16 | **Copia protegida** según §9.2: de cada respaldo completo y su manifiesto, cada hora, fuera del alcance de las claves de MainSpot, con proceso e identidad exclusivos del KVM 4, integridad verificada al copiar, expiración a 14 días desde `created_at` (nunca más de 16) auditada por objeto, evidencia publicada (§9.2.5), prueba sintética de §9.2.6 superada antes de la puerta de §2.3 y repetida tras cada cambio, y restauración desde la copia con originales ausentes demostrada (§10.2, §11.4). C-21 y C-22 en PASS o, cuando quedan en MANUAL (opción B; A sin A'; nada que comparar), acreditadas por la evidencia de §9.2.5. La clave de descifrado nunca entra en el KVM 4. |
@@ -994,7 +1042,7 @@ que no puede leer.
 Una línea por respaldo, sin secretos:
 
 ```text
-<UTC ISO-8601> db-backup-remote status=OK|FAIL|SKIPPED backup_id=<…> object_key=<…> size_bytes=<n> sha256=<hex> attempts=<n> duration_s=<n> [error=<código §13>] action=uploaded|already-complete|dry-run|outside-24h-window
+<UTC ISO-8601> db-backup-remote status=OK|FAIL|SKIPPED backup_id=<…> object_key=<…> size_bytes=<n> sha256=<hex> [manifest_bytes=<n> total_bytes=<n> limit_bytes=<n>] attempts=<n> duration_s=<n> [error=<código §13>] action=uploaded|already-complete|dry-run|outside-24h-window|size-rejected
 ```
 
 Además, por ejecución (añadido compatible en 1.1.0, tal como lo implementa el productor):
@@ -1002,6 +1050,7 @@ Además, por ejecución (añadido compatible en 1.1.0, tal como lo implementa el
 - una línea `db-backup-remote check=daily complete=<n> newest_age_h=<h> oldest_age_d=<d> lifecycle=ok|differs|missing warnings=<…>` con el resultado de §10.1;
 - si la ejecución se detiene, una línea `db-backup-remote status=FAIL error=<código §13>` (con `skew_s=<s>` en E-AUTH-SKEW; E-AUTH-DENIED, E-BUCKET y E-DEADLINE sin campos extra);
 - `E-CONFIG` es un código **local** del productor (configuración, permisos o candado), fuera de §13: nunca es un fallo del servicio.
+- (`1.2.0`) cada aviso del productor (E-SIZE-LIMIT y el aviso del 80 % de §10.1) es una línea `db-backup-remote status=ALERT error=<código> severity=error|warning backup_id=<…> … outbox=ok|failed delivery=ok|failed-…|not-configured`, emitida en la misma ejecución, y el mismo evento en JSON en `remote-alerts.jsonl` del directorio de respaldos (0600). El productor de MainSpot PUEDE entregarlo además a un adaptador local (`MAINSPOT_REMOTE_ALERT_COMMAND`), que recibe el JSON por stdin. El evento solo contiene códigos, identificadores y tamaños.
 
 El productor aplica §12 por sí mismo y desactiva los reintentos del SDK
 (`retries={"total_max_attempts": 1}` en botocore: nótese que `max_attempts` cuenta
@@ -1019,6 +1068,7 @@ reintentos, no peticiones).
 | R6 | Garage ignora las escrituras condicionales. | Comprobación del manifiesto y del objeto antes de subir (§8.2) y candado exclusivo del productor. | — |
 | R7 | Si se pierden la clave de descifrado y su copia, todos los respaldos quedan ilegibles. | Custodia por el propietario de una copia fuera del equipo de MainSpot y fuera del KVM 4; toda rotación conserva la capacidad de recuperar los respaldos vigentes (DEC-0054 §3). | APROBADO DEC-0053 (`copia_offline_propietario`) |
 | R8 | El vigilante de `ab046d24` todavía borra por `LastModified`, sobrescribe el ciclo de vida de §9.1 y puede retener sin límite (`halted`). | No conforme hasta reconvertirse (§9.1, H-01/H-02); C-15 y S-08 lo detectan; ningún respaldo real se sube antes de la puerta de §2.3. | — |
+| R9 | (`1.2.0`) Si la base crece por encima de 1 GiB, los respaldos remotos dejan de subirse (E-SIZE-LIMIT) y la copia fuera del equipo se queda en el último respaldo válido. | Aviso al pasar del 80 % del máximo y E-SIZE-LIMIT inmediato; E-FRESHNESS a las 26 h; el respaldo local diario sigue intacto. Ampliar el máximo o la cuota exige una evaluación nueva y autorización (DEC-0063). | APROBADO DEC-0059, DEC-0061, DEC-0063 |
 
 ## 18. Versionado y cambios
 
@@ -1045,6 +1095,14 @@ reintentos, no peticiones).
     restauración desde la copia (§10.2, §11.4) y el canal de aviso fuera del KVM 4.
     El manifiesto (`manifest.schema.json`, `reference/manifest_tool.py`) no cambia: un
     productor `1.0.0` sigue siendo válido (`contract_version` `1.x.y`).
+  - `1.2.0` (2026-10-24): incorpora DEC-0055…DEC-0063. Las lecturas P-1 y P-2 y el
+    canal de aviso pasan a APROBADO (DEC-0055…DEC-0058); máximo de 1 GiB por respaldo
+    remoto completo con cuota de 50 GiB (DEC-0059, DEC-0060); §8.2 paso 0 con
+    E-SIZE-LIMIT, aviso inmediato y sin reintentos (DEC-0061, DEC-0063); aviso del 80 %
+    en §10.1; S-13 por el mayor entre el máximo aplicado y el observado, con sus
+    disparadores de revalidación (DEC-0062, DEC-0063); R9. MENOR: sin cambios de
+    manifiesto, rutas, cifrado, MAC, restauración ni conformidad del servicio; un
+    productor `1.0.0` o `1.1.0` sigue generando respaldos válidos.
 
 ## 19. Verificación de este contrato
 

@@ -176,6 +176,21 @@ argumentos ni por el registro. El archivo se rechaza si sus permisos superan 060
 
 ### Comportamiento (referencias al contrato)
 
+0. Límite de tamaño (contrato 1.2.0 §8.2 paso 0; DEC-0059, DEC-0061, DEC-0063), **antes de
+   cualquier operación S3**: para cada respaldo de la ventana de 24 h se comprueba el
+   `.sha256`, se construye el manifiesto exacto que se subiría y, si `objeto + manifiesto`
+   supera 1 GiB (1 073 741 824 B, inclusivo) ⇒ `status=FAIL error=E-SIZE-LIMIT
+   action=size-rejected attempts=0`, aviso inmediato (`status=ALERT`, evento JSON en
+   `${MAINSPOT_BACKUP_DIR}/remote-alerts.jsonl` 0600 y, si está configurado, el adaptador
+   `MAINSPOT_REMOTE_ALERT_COMMAND` con el JSON por stdin, entorno mínimo, 30 s) y marca en
+   `${MAINSPOT_BACKUP_DIR}/.remote-size-rejected/<backup_id>.json` (tamaño, mtime, límite).
+   Las ejecuciones siguientes registran `SKIPPED error=E-SIZE-LIMIT` sin releer ni avisar
+   mientras el archivo no cambie; el respaldo local y su `.sha256` nunca se tocan; los
+   demás respaldos se procesan y §10.1 sigue avisando (`E-FRESHNESS`). Un respaldo subido
+   por encima del 80 % del máximo genera un aviso `SIZE-OVER-80PCT` (revalidar S-13).
+   `MAINSPOT_REMOTE_LAB_MAX_BACKUP_BYTES` (entorno) solo baja el límite para laboratorio;
+   inválido o > 1 GiB ⇒ `E-CONFIG` sin contactar con S3. El canal externo que entregue
+   estos avisos al propietario no está decidido: el adaptador es el punto de conexión.
 1. `HeadBucket` y medición del reloj con la cabecera `Date` de la primera respuesta:
    > 300 s ⇒ `E-AUTH-SKEW` y se detiene (§6.5).
 2. Por cada `mainspot-db-*.dump.enc` local con `.sha256`, del más nuevo al más antiguo
@@ -220,7 +235,7 @@ argumentos ni por el registro. El archivo se rechaza si sus permisos superan 060
 
 Registro (§16.3): una línea por respaldo en stdout y en
 `${MAINSPOT_BACKUP_DIR}/backup-remote.log` (0600), sin secretos:
-`<UTC> db-backup-remote status=OK|FAIL|SKIPPED backup_id=… object_key=… size_bytes=… sha256=… attempts=… duration_s=… [error=E-…] action=uploaded|already-complete|dry-run|outside-24h-window`
+`<UTC> db-backup-remote status=OK|FAIL|SKIPPED backup_id=… object_key=… size_bytes=… sha256=… [manifest_bytes=… total_bytes=… limit_bytes=…] attempts=… duration_s=… [error=E-…] action=uploaded|already-complete|dry-run|outside-24h-window|size-rejected`
 (`attempts` = peticiones de la operación lógica que más necesitó, incluido el reintento
 tras `InvalidDigest`: un PUT rechazado y uno aceptado ⇒ `attempts=2`),
 más la línea `check=daily` y, si la ejecución se detiene (reloj, credencial, bucket,

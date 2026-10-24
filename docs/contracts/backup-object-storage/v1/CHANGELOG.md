@@ -2,7 +2,32 @@
 
 Versión semántica según `CONTRACT.md` §18. Cada versión se cita por commit (ver
 `../README.md`). El manifiesto (`manifest.schema.json`, `reference/manifest_tool.py`,
-`examples/manifest.example.json`) no ha cambiado entre `1.0.0` y `1.1.0`.
+`examples/manifest.example.json`) no ha cambiado entre `1.0.0`, `1.1.0` y `1.2.0`.
+
+## 1.2.0 — 2026-10-24
+
+Versión MENOR: incorpora DEC-0055…DEC-0063 (QS-0012 y QS-0013). Añade un control y un
+error al productor y redefine cómo se mide S-13. No cambia el manifiesto, las rutas, el
+cifrado, el MAC, la restauración ni las comprobaciones de conformidad del servicio. Un
+productor `1.0.0` o `1.1.0` sigue generando respaldos válidos, y el script de §14 de
+`1.1.0` (sha256 `ae28a41a…fc85`) sigue siendo el de `1.2.0`. La transferencia remota
+sigue **no activada**.
+
+| Sección | Cambio |
+|---|---|
+| Cabecera | Versión `1.2.0`, fecha 2026-10-24, aprobación DEC-0045…DEC-0063. |
+| §1 | Resumen del máximo de 1 GiB por respaldo remoto completo y de la cuota de 50 GiB. |
+| §2.1 / §2.2 | Lectura P-1 → APROBADO (DEC-0057); opción B de la copia protegida → APROBADO (DEC-0056); canal de aviso del KVM 4 → APROBADO (DEC-0055, DEC-0058 §1). Filas nuevas: máximo de 1 GiB y cuota de 50 GiB (DEC-0059, DEC-0060); rechazo seguro (DEC-0061, DEC-0063); S-13 por máximo aplicado y su revalidación (DEC-0062, DEC-0063). |
+| §2.3 | Condición 4 cita `1.2.0`; P-3 decidido por DEC-0055; S-13 no se acredita solo con la decisión (DEC-0063). |
+| §8.2 | Paso 0: límite de 1 GiB (objeto + manifiesto, inclusivo) antes de cualquier escritura S3, incluida la iniciación multiparte; E-SIZE-LIMIT; aviso inmediato; respaldo local intacto; sin reintentos ni avisos repetidos; los demás respaldos siguen; el límite no se puede subir por configuración. |
+| §8.3 | Nota: con el paso 0 ningún objeto supera 1 GiB. |
+| §10.1 | Aviso de revalidación cuando un respaldo subido supera el 80 % del máximo; un rechazo no cuenta como respaldo completo. |
+| §13 | E-SIZE-LIMIT. |
+| §14 | El script y C-01…C-22 no cambian en `1.2.0`. |
+| §15 S-13 | Tamaño de referencia = mayor entre el máximo de diseño aplicado y el máximo observado; disparadores de revalidación; aprobar el máximo no acredita S-13. |
+| §16.3 | Campos `manifest_bytes`, `total_bytes`, `limit_bytes`; `action=size-rejected`; línea `status=ALERT` y `remote-alerts.jsonl`. |
+| §17 | R9: respaldos por encima de 1 GiB dejan de subirse. |
+| §18 | Historial `1.2.0`. |
 
 ## 1.1.0 — 2026-10-22
 

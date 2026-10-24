@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """db-backup-remote.py — copia remota del respaldo cifrado de MainSpot a Garage S3.
 
-Implementa el productor del contrato `mainspot-backup-object-storage` v1
-(docs/contracts/backup-object-storage/v1/CONTRACT.md): §8.2 subida, §8.3
-verificación, §8.4 integridad en tránsito, §8.5 multiparte, §10.1 comprobación
-diaria, §12 reintentos, §13 errores y §16.3 registro.
+Implementa el productor del contrato `mainspot-backup-object-storage` 1.2.0
+(docs/contracts/backup-object-storage/v1/CONTRACT.md): §8.2 subida (con el paso 0,
+límite de tamaño), §8.3 verificación, §8.4 integridad en tránsito, §8.5 multiparte,
+§10.1 comprobación diaria, §12 reintentos, §13 errores y §16.3 registro.
 
 DESACTIVADO POR DEFECTO. Sin el archivo de configuración
 `~/.config/mainspot/backup/remote.env` (ruta sobreescribible con
@@ -24,6 +24,15 @@ Archivo de configuración (permisos 0600; `CLAVE=valor` por línea; `#` comenta)
     AWS_SECRET_ACCESS_KEY=…
     MAINSPOT_BACKUP_DIR=…          (opcional; el entorno tiene prioridad)
     MAINSPOT_BACKUP_KEY=…          (opcional; el entorno tiene prioridad)
+    MAINSPOT_REMOTE_ALERT_COMMAND=… (opcional; ruta absoluta a un ejecutable que recibe
+                                    cada aviso como JSON por stdin: adaptador de entrega)
+
+Límite (§8.2 paso 0, DEC-0059/DEC-0061/DEC-0063): objeto cifrado + manifiesto ≤ 1 GiB
+(inclusivo), comprobado antes de cualquier operación S3. Si se supera: `E-SIZE-LIMIT`,
+aviso inmediato (`status=ALERT`, `$MAINSPOT_BACKUP_DIR/remote-alerts.jsonl` y el
+adaptador si existe), marca local en `.remote-size-rejected/` para no reintentar, y el
+respaldo local intacto. `MAINSPOT_REMOTE_LAB_MAX_BACKUP_BYTES` (entorno) solo puede
+bajarlo, para laboratorio; un valor inválido o mayor es E-CONFIG.
 
 Entorno (no secreto): `MAINSPOT_BACKUP_DIR` (defecto ~/.local/share/mainspot/backups),
 `MAINSPOT_BACKUP_KEY` (defecto ~/.config/mainspot/backup/backup.key; se lee solo
@@ -57,6 +66,7 @@ import os
 import random
 import re
 import stat
+import subprocess
 import time
 from pathlib import Path
 
@@ -100,6 +110,13 @@ MAX_SKEW_S = 300
 # §8.5 (los MAINSPOT_REMOTE_LAB_* solo sirven para probar la ruta multiparte en laboratorio)
 SINGLE_PART_MAX = int(os.environ.get("MAINSPOT_REMOTE_LAB_SINGLE_PART_MAX", 256 * 1024 * 1024))
 PART_SIZE = int(os.environ.get("MAINSPOT_REMOTE_LAB_PART_SIZE", 64 * 1024 * 1024))
+# §8.2 paso 0 (contrato 1.2.0, DEC-0059/DEC-0061/DEC-0063): objeto cifrado + manifiesto ≤ 1 GiB (inclusivo).
+# MAINSPOT_REMOTE_LAB_MAX_BACKUP_BYTES solo puede BAJAR el límite (pruebas de laboratorio); nunca subirlo.
+MAX_REMOTE_BACKUP_BYTES = 1 << 30
+SIZE_WARN_RATIO = 0.8  # §10.1: aviso de revalidación (DEC-0063) por encima del 80 % del máximo
+ALERT_COMMAND_TIMEOUT_S = 30
+REJECTED_DIR = ".remote-size-rejected"
+ALERTS_FILE = "remote-alerts.jsonl"
 
 RETRYABLE_CODES = {"SlowDown", "InternalError", "ServiceUnavailable", "RequestTimeout"}
 SHA256_LINE_RE = re.compile(r"^([0-9a-f]{64})  (\S+)\n?\Z")
@@ -171,6 +188,63 @@ class Log:
                 pass
 
 
+def size_limit(env: dict[str, str]) -> int:
+    """Límite efectivo de §8.2 paso 0. Un override de laboratorio inválido o mayor que el máximo
+    contractual es E-CONFIG (falla segura antes de cualquier operación remota)."""
+    raw = env.get("MAINSPOT_REMOTE_LAB_MAX_BACKUP_BYTES")
+    if raw is None:
+        return MAX_REMOTE_BACKUP_BYTES
+    if not re.fullmatch(r"[0-9]{1,12}", raw) or not 1 <= int(raw) <= MAX_REMOTE_BACKUP_BYTES:
+        raise ProducerError("E-CONFIG", f"MAINSPOT_REMOTE_LAB_MAX_BACKUP_BYTES inválido: entero entre 1 y {MAX_REMOTE_BACKUP_BYTES}")
+    return int(raw)
+
+
+class Alerts:
+    """Aviso inmediato del productor (§13 «Aviso», §16.3): una línea `status=ALERT` en el registro, un
+    evento JSON en `<backup_dir>/remote-alerts.jsonl` (0600) y, si está configurado, el adaptador de
+    entrega `MAINSPOT_REMOTE_ALERT_COMMAND` (recibe el mismo JSON por stdin, entorno mínimo, 30 s).
+    El evento solo lleva códigos, identificadores y tamaños: nunca secretos ni contenido."""
+
+    def __init__(self, log: Log, backup_dir: Path, command: str | None):
+        self.log, self.backup_dir, self.command = log, backup_dir, command
+
+    def send(self, code: str, severity: str, **fields) -> None:
+        event = {"ts": iso(utcnow()), "producer": PRODUCER, "code": code, "severity": severity, **fields}
+        line = json.dumps(event, sort_keys=True, ensure_ascii=True)
+        outbox = "ok"
+        try:
+            fd = os.open(self.backup_dir / ALERTS_FILE, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except OSError:
+            outbox = "failed"
+        delivery = "not-configured"
+        if self.command:
+            try:
+                proc = subprocess.run([self.command], input=line + "\n", text=True, capture_output=True,
+                                      timeout=ALERT_COMMAND_TIMEOUT_S, env={"PATH": "/usr/local/bin:/usr/bin:/bin"})
+                delivery = "ok" if proc.returncode == 0 else f"failed-rc{proc.returncode}"
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                delivery = f"failed-{type(exc).__name__}"
+        self.log.emit("ALERT", error=code, severity=severity, **fields, outbox=outbox, delivery=delivery)
+
+
+def alert_command(values: dict[str, str]) -> str | None:
+    """`MAINSPOT_REMOTE_ALERT_COMMAND`: ruta absoluta a un ejecutable regular no escribible por grupo/otros."""
+    cmd = values.get("MAINSPOT_REMOTE_ALERT_COMMAND", "")
+    if not cmd:
+        return None
+    p = Path(cmd)
+    try:
+        st = p.stat()
+    except OSError:
+        st = None
+    if (not p.is_absolute() or st is None or not stat.S_ISREG(st.st_mode) or not os.access(p, os.X_OK)
+            or st.st_mode & 0o022):
+        raise ProducerError("E-CONFIG", "MAINSPOT_REMOTE_ALERT_COMMAND debe ser una ruta absoluta a un ejecutable no escribible por grupo u otros")
+    return cmd
+
+
 # --- configuración -----------------------------------------------------------------
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -222,6 +296,7 @@ class LocalBackup:
         self.size = 0
         self.sha256 = ""
         self.md5_b64 = ""
+        self.manifest = b""  # cuerpo del manifiesto calculado en el paso 0 (§8.2) y reutilizado en el paso 6
 
     def verify_local(self) -> None:
         """§8.2 paso 1: el .sha256 (formato sha256sum) debe coincidir con el archivo."""
@@ -547,9 +622,96 @@ def lifecycle_rules(rules: list[dict]) -> list[tuple]:
 # --- productor ---------------------------------------------------------------------
 
 class Producer:
-    def __init__(self, cfg: Config, mt, passphrase: bytes, log: Log, remote: Remote, dry_run: bool):
+    def __init__(self, cfg: Config, mt, passphrase: bytes, log: Log, remote: Remote, dry_run: bool,
+                 limit: int = MAX_REMOTE_BACKUP_BYTES, alerts: Alerts | None = None):
         self.cfg, self.mt, self.passphrase, self.log, self.remote, self.dry_run = cfg, mt, passphrase, log, remote, dry_run
+        self.limit, self.alerts = limit, alerts
         self.failed = False
+        self.rejected: set[str] = set()
+        self.rejected_dir = cfg.backup_dir / REJECTED_DIR
+
+    def manifest_body(self, bk: LocalBackup) -> bytes:
+        manifest = self.mt.build_manifest(passphrase=self.passphrase, size=bk.size, sha256=bk.sha256,
+                                          backup_id=bk.backup_id, deployment_id=self.cfg.deployment_id,
+                                          database=self.cfg.database)
+        return (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
+
+    def _marker(self, bk: LocalBackup) -> Path:
+        return self.rejected_dir / f"{bk.backup_id}.json"
+
+    def previously_rejected(self, bk: LocalBackup) -> bool:
+        """Rechazo ya registrado para este mismo archivo (tamaño y mtime) con este mismo límite: no se
+        vuelve a leer, ni a consultar S3, ni a avisar (sin reintentos improductivos, DEC-0063)."""
+        try:
+            m = json.loads(self._marker(bk).read_text(encoding="utf-8"))
+            st = bk.path.stat()
+        except (OSError, ValueError):
+            return False
+        if m.get("size_bytes") == st.st_size and m.get("mtime_ns") == st.st_mtime_ns and m.get("limit_bytes") == self.limit:
+            bk.size, bk.sha256 = m["size_bytes"], m.get("sha256", "")
+            return True
+        return False
+
+    def record_rejection(self, bk: LocalBackup, manifest_bytes: int, total: int) -> None:
+        st = bk.path.stat()
+        self.rejected_dir.mkdir(mode=0o700, exist_ok=True)
+        data = {"backup_id": bk.backup_id, "size_bytes": bk.size, "mtime_ns": st.st_mtime_ns, "sha256": bk.sha256,
+                "manifest_bytes": manifest_bytes, "total_bytes": total, "limit_bytes": self.limit,
+                "rejected_at": iso(utcnow())}
+        tmp = self.rejected_dir / f".{bk.backup_id}.json.tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(data, sort_keys=True) + "\n")
+        os.replace(tmp, self._marker(bk))
+
+    def prune_rejections(self, local_ids: set[str]) -> None:
+        """Borra solo marcas de rechazo cuyo respaldo local ya no existe (nunca respaldos)."""
+        if not self.rejected_dir.is_dir():
+            return
+        for p in self.rejected_dir.glob("*.json"):
+            if p.name[: -len(".json")] not in local_ids:
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+
+    def size_gate(self, bk: LocalBackup, now: dt.datetime) -> bool:
+        """§8.2 paso 0 (1.2.0): para cada respaldo dentro de la ventana, antes de cualquier operación S3 de la
+        ejecución, objeto + manifiesto ≤ límite. Si lo supera: E-SIZE-LIMIT, aviso inmediato, marca local de
+        rechazo (sin reintentos improductivos) y el respaldo local intacto. True si queda rechazado."""
+        if now - bk.created_at >= UPLOAD_WINDOW:
+            return False
+        fields = {"backup_id": bk.backup_id, "object_key": self.keys_for(bk.backup_id)[0]}
+        if self.previously_rejected(bk):
+            self.rejected.add(bk.backup_id)
+            self.log.emit("SKIPPED", **fields, size_bytes=bk.size, sha256=bk.sha256 or None, attempts=0,
+                          error="E-SIZE-LIMIT", action="size-rejected")
+            return True
+        try:
+            bk.verify_local()
+        except ProducerError:
+            return False  # process() lo registra como E-LOCAL-INTEGRITY
+        bk.manifest = self.manifest_body(bk)
+        total = bk.size + len(bk.manifest)
+        if total <= self.limit:
+            return False
+        self.rejected.add(bk.backup_id)
+        self.failed = True
+        sizes = {"size_bytes": bk.size, "sha256": bk.sha256, "manifest_bytes": len(bk.manifest),
+                 "total_bytes": total, "limit_bytes": self.limit, "attempts": 0}
+        if self.dry_run:
+            self.log.emit("FAIL", **fields, **sizes, error="E-SIZE-LIMIT", action="dry-run")
+            return True
+        try:
+            self.record_rejection(bk, len(bk.manifest), total)
+        except OSError:
+            pass  # sin marca: la siguiente ejecución vuelve a rechazar (nunca sube)
+        self.log.emit("FAIL", **fields, **sizes, error="E-SIZE-LIMIT", action="size-rejected")
+        if self.alerts:
+            self.alerts.send("E-SIZE-LIMIT", "error", backup_id=bk.backup_id, size_bytes=bk.size,
+                             manifest_bytes=len(bk.manifest), total_bytes=total, limit_bytes=self.limit,
+                             action="not-uploaded-local-backup-kept")
+        return True
 
     def keys_for(self, backup_id: str) -> tuple[str, str]:
         okey = self.mt.object_key(self.cfg.deployment_id, self.cfg.database, backup_id)
@@ -602,7 +764,15 @@ class Producer:
                 if not self.remote_complete(bk, okey, mkey):
                     done("SKIPPED", "E-UPLOAD-WINDOW", "outside-24h-window")
                 return  # completo: sin línea (el reintento horario no repite respaldos ya copiados)
-            bk.verify_local()  # paso 1 (E-LOCAL-INTEGRITY)
+            if bk.backup_id in self.rejected:  # ya registrado (y avisado) por size_gate, sin ninguna operación S3
+                return
+            if not bk.sha256:
+                bk.verify_local()  # paso 1 (E-LOCAL-INTEGRITY)
+            body = bk.manifest or self.manifest_body(bk)  # determinista: el mismo cuerpo se sube en el paso 6
+            total = bk.size + len(body)
+            fields.update(manifest_bytes=len(body), total_bytes=total, limit_bytes=self.limit)
+            if total > self.limit:  # defensa: size_gate ya filtra antes de contactar con S3
+                raise ProducerError("E-SIZE-LIMIT", "objeto + manifiesto por encima del máximo")
             if self.remote_complete(bk, okey, mkey):  # pasos 2 y 3
                 done("OK", action="already-complete")
                 return
@@ -619,12 +789,11 @@ class Producer:
             size, sha = self.remote.get_sha256(okey)
             if size != bk.size or sha != bk.sha256:
                 raise ProducerError("E-INTEGRITY-VERIFY", "GetObject: el SHA-256 del cuerpo no coincide")
-            manifest = self.mt.build_manifest(passphrase=self.passphrase, size=bk.size, sha256=bk.sha256,
-                                              backup_id=bk.backup_id, deployment_id=self.cfg.deployment_id,
-                                              database=self.cfg.database)
-            body = (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
             self.remote.put_manifest(bk, mkey, body)  # paso 6
             done("OK", action="uploaded")  # paso 7
+            if total > self.limit * SIZE_WARN_RATIO and self.alerts:  # §10.1: revalidar capacidad (DEC-0063)
+                self.alerts.send("SIZE-OVER-80PCT", "warning", backup_id=bk.backup_id, total_bytes=total,
+                                 limit_bytes=self.limit, action="uploaded-revalidate-capacity")
         except ProducerError as exc:
             self.remote.max_attempts = max(self.remote.max_attempts, exc.attempts)
             print(f"{PRODUCER}: {bk.backup_id}: {exc}", file=sys.stderr)
@@ -764,6 +933,8 @@ def main(argv: list[str] | None = None) -> int:
         load_boto()
         cfg = Config(values, env, mt, args.lab_allow_http)
         log = Log(cfg.backup_dir)
+        limit = size_limit(env)
+        alert_cmd = alert_command(values)
         passphrase = mt.read_passphrase(str(cfg.key_file))
     except ImportError:
         log.emit("FAIL", error="E-CONFIG", reason="boto3>=1.36_no_disponible")
@@ -789,13 +960,19 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         remote = Remote(cfg, args.dry_run)
-        producer = Producer(cfg, mt, passphrase, log, remote, args.dry_run)
+        producer = Producer(cfg, mt, passphrase, log, remote, args.dry_run, limit=limit,
+                            alerts=Alerts(log, cfg.backup_dir, alert_cmd))
         now = utcnow()
+        local = [] if args.check_only else discover_local(cfg.backup_dir, mt)
+        if not args.check_only:
+            producer.prune_rejections({bk.backup_id for bk in local})
+        for bk in local:  # §8.2 paso 0: antes de cualquier operación S3 (también si la red no responde)
+            producer.size_gate(bk, now)
         try:
             remote.head_bucket_and_clock()
             if not args.check_only:
                 listed = {o["Key"] for o in remote.list_prefix()}
-                for bk in discover_local(cfg.backup_dir, mt):
+                for bk in local:
                     producer.process(bk, now, listed)
             producer.daily_check(now)
         except ProducerError as exc:

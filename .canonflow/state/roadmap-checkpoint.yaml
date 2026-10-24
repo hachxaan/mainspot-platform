@@ -60,8 +60,8 @@ blocks:
     next_gate: "ANS-0010 (QS-0010) y ANS-0011 (QS-0011) para el destino de los respaldos, la custodia de la clave, la expiración remota y los riesgos de Garage; no bloquea el bloque de producto"
   - id: C1-s3-backup-contract
     title: Contrato de integración MainSpot ↔ Garage S3 (KVM 4) para respaldos remotos
-    state: PUBLISHED_V1_1
-    implements: [DEC-0026, DEC-0027, DEC-0045, DEC-0046, DEC-0047, DEC-0048, DEC-0049, DEC-0052, DEC-0053, DEC-0055, DEC-0056, DEC-0057, DEC-0058, DEC-0059, DEC-0060, DEC-0062, DEC-0063]
+    state: PUBLISHED_V1_2
+    implements: [DEC-0026, DEC-0027, DEC-0045, DEC-0046, DEC-0047, DEC-0048, DEC-0049, DEC-0052, DEC-0053, DEC-0055, DEC-0056, DEC-0057, DEC-0058, DEC-0059, DEC-0060, DEC-0061, DEC-0062, DEC-0063]
     summary: >-
       QS-0010 (ANS-0012) y QS-0011 (ANS-0011) ingeridas en RUN-0010 → DEC-0045..DEC-0054. Contrato 1.1.0
       publicado en hachxaan/mainspot-platform, rama contract/backup-object-storage-v1: commit del contrato
@@ -71,7 +71,11 @@ blocks:
       (S-16, C-21, C-22), reconciliación con hachxaan/mainspot-s3-backups@ab046d24 (versión redactada publicada;
       íntegra solo en evidence/). QS-0012 (ANS-0013) ingerida en RUN-0012 → DEC-0055 (canal de alertas: Telegram
       privado), DEC-0056 (copia protegida: opción B volumen propio), DEC-0057 (retención: regla del bucket borra,
-      proceso vigila), DEC-0058 (notas íntegras con condiciones de activación).
+      proceso vigila), DEC-0058 (notas íntegras con condiciones de activación). Contrato 1.2.0 (DEC-0055..DEC-0063)
+      publicado en la misma rama: commit c4f87c4aa2e875e7ad01861f5f2a809e025d638c, pin del README
+      2bb529054fe295bdc87ff2682c7c9c4f8044c953 (fast-forward desde 7cbbf70, sin force): máximo de 1 GiB por respaldo
+      remoto (objeto + manifiesto), cuota de 50 GiB, §8.2 paso 0 con E-SIZE-LIMIT, aviso del 80 %, S-13 por máximo
+      aplicado; manifiesto, rutas, cifrado, MAC, restauración y script de conformidad (ae28a41a) sin cambios.
     evidence:
       - docs/contracts/backup-object-storage/v1/VERIFICATION.md
       - docs/contracts/backup-object-storage/v1/CHANGELOG.md
@@ -90,8 +94,10 @@ blocks:
       - "KVM 4 @ 03e71236 (servicio 824a4529, garage-alert 487428df): H-01/H-02, H-03 y H-04/S-08 cumplidos según la evidencia del operador (recepción en Telegram confirmada por el propietario)."
       - "Conformidad externa ejecutada el 2026-10-24 (run 20261024T062159Z-1750b25a, checkout 2d5c807e, servicio 824a4529): conformant=true, 20 PASS, C-21/C-22 MANUAL con evidence/29 y 32; credenciales y clave efímera destruidas. Declaración S-15 en f478e7df (con el cierre del handoff): S-04/S-06/S-11/S-16 PASS, S-13 NO VERIFICADO."
       - "S-13 (s13-capacity-assessment-2026-10-24.md): NO DETERMINABLE. Máximo local observado 120 960 B (base piloto de 10 MB, no representativa); cota con cuota de 50 GiB: objeto ≤ 1,5625 GiB; no hay límite de tamaño documentado ni exigible."
-      - "QS-0013 ingerida en RUN-0014 (ANS-0014): DEC-0059 máximo 1 GiB por respaldo remoto (objeto + manifiesto), DEC-0060 cuota de 50 GiB, DEC-0061 rechazo seguro E-SIZE-LIMIT con el respaldo local intacto, DEC-0062 contrato 1.2.0 (MENOR), DEC-0063 condiciones. S-13 sigue NO VERIFICADO; la decisión no la acredita."
-    next_gate: "Contrato 1.2.0 preparado, publicado por commit y reconciliado con el KVM 4 → control del productor y pruebas T-01..T-12 + regresión → nueva declaración S-15 con mediciones de S-13 → simulacro E2E synthetic-drill (mandato aparte) → sesión de autorización de activación"
+      - "QS-0013 ingerida en RUN-0014 (ANS-0014): DEC-0059 máximo 1 GiB por respaldo remoto (objeto + manifiesto), DEC-0060 cuota de 50 GiB, DEC-0061 rechazo seguro E-SIZE-LIMIT con el respaldo local intacto, DEC-0062 contrato 1.2.0 (MENOR), DEC-0063 condiciones."
+      - "Contrato 1.2.0 publicado (c4f87c4, pin 2bb5290); falta la reconciliación del KVM 4 (citar c4f87c4) y su nueva declaración S-15 con mediciones de S-13. S-13 sigue NO VERIFICADO."
+      - "Canal externo de entrega de los avisos del productor MainSpot (§13 «Aviso», incluido E-SIZE-LIMIT) no decidido: hoy registro status=ALERT, remote-alerts.jsonl y adaptador MAINSPOT_REMOTE_ALERT_COMMAND sin configurar."
+    next_gate: "KVM 4 cita 1.2.0 y publica la declaración S-15 con S-13 medido (32 GiB libres en el bucket, 16 GiB en la copia, 48 GiB de disco) → decisión del canal de avisos del productor → simulacro E2E synthetic-drill (mandato aparte) → sesión de autorización de activación"
   - id: R3-remote-producer
     title: Productor de respaldo remoto (desactivado)
     state: IMPLEMENTED_DISABLED
@@ -102,16 +108,22 @@ blocks:
       validación adversarial independiente (fable-xhigh) contra Garage v2.4.1 de laboratorio; D-01 (detección diaria
       por MAC/regla 5) y D-02 (conteo de intentos) corregidos y reverificados; lista blanca de operaciones sin
       Delete/Copy/Lifecycle; sin secretos en registros. Restauración desde origen y desde copia guard demostrada en
-      laboratorio, no contra el servicio real.
+      laboratorio, no contra el servicio real. Contrato 1.2.0: §8.2 paso 0 (límite 1 GiB objeto + manifiesto, antes de
+      cualquier operación S3), E-SIZE-LIMIT con marca local sin reintentos, aviso inmediato (status=ALERT,
+      remote-alerts.jsonl 0600, adaptador opcional) y aviso del 80 %; T-01..T-12 (17 casos) + 52 previas = 69 PASS
+      contra Garage v2.4.1 de laboratorio.
     evidence:
       - evidence/remediation/R3-remote-producer/03-adversarial-validation.md
       - evidence/remediation/R3-remote-producer/05-fixes-tests.txt
       - evidence/remediation/R3-remote-producer/06-adversarial-retest.txt
       - evidence/remediation/R3-remote-producer/07-regression-2026-10-23.txt
+      - evidence/remediation/R3-remote-producer/08-size-limit-tests.txt
+      - docs/contracts/backup-object-storage/v1/VERIFICATION.md (§11)
     open_items:
-      - "O-1..O-3 (baja/informativa) del productor para la auditoría fable-max previa a la condición 7."
+      - "O-1..O-3 (baja/informativa) del productor para la auditoría previa a la condición 7."
       - "Prueba contra el servicio real y restauración remota (condiciones 5–6) requieren credenciales del servicio entregadas por el propietario."
-    next_gate: "Condiciones 1–6 de §2.3 acreditadas (evidence/coordination/02-activation-gate.md) → auditoría fable-max → publicar la sesión de autorización (borrador evidence/coordination/QS-activation-draft.questions.json) → DEC de autorización"
+      - "Canal externo de entrega de avisos del productor no decidido (adaptador MAINSPOT_REMOTE_ALERT_COMMAND listo, sin configurar)."
+    next_gate: "Condiciones 1–6 de §2.3 acreditadas (evidence/coordination/02-activation-gate.md) → auditoría previa a la condición 7 → publicar la sesión de autorización (borrador evidence/coordination/QS-activation-draft.questions.json) → DEC de autorización"
   - id: T1-publication-runtime-eval
     title: Definición técnica de la publicación por tenant (OCI frente a LXC/LXD, proxy, DNS y TLS)
     state: DONE

@@ -13,6 +13,23 @@ DEC-0063 autoriza preparar 1.2.0 y desarrollar el control y sus pruebas sintéti
 decisión. No autoriza activar, instalar temporizadores, cambiar cuotas ni declarar recuperación productiva.
 Productor y temporizadores siguen desactivados.
 
+**Ejecutado el 2026-10-24:**
+
+- Contrato 1.2.0 publicado en la rama `contract/backup-object-storage-v1`: commit
+  `c4f87c4aa2e875e7ad01861f5f2a809e025d638c`, pin del README `2bb529054fe295bdc87ff2682c7c9c4f8044c953`.
+- Control implementado en `scripts/ops/backup/db-backup-remote.py`.
+- Pruebas T-01…T-12: 17 casos, todos PASS, más la regresión de las 52 pruebas previas, también PASS (69 en total,
+  Garage v2.4.1 de laboratorio; `v1/VERIFICATION.md` §11).
+
+Quedan pendientes:
+
+- la reconciliación de 1.2.0 por el KVM 4;
+- su nueva declaración S-15 con mediciones de S-13;
+- la decisión del canal externo de los avisos del productor;
+- el simulacro E2E.
+
+S-13 sigue **NO VERIFICADO**.
+
 Referencias: contrato 1.1.0 @ `0cbdfcf`; KVM 4 @ `09e913d3558f1d41bf5cfe2def048b0fac6349cc` (declaración S-15 en
 `f478e7df`, evidence/41); evaluación `s13-capacity-assessment-2026-10-24.md` (mainspot-platform@`65f60d10`).
 
