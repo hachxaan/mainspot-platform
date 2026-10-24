@@ -117,3 +117,26 @@ operador (simulacro del 2026-10-22). Ese simulacro se repite si cambia el copiad
 - 1, 2: listos para ejecutarse; bloqueados solo por la autorización del ejecutor y el handoff.
 - 5, 6a: preparados (§7); requieren handoff y autorización.
 - 7: sin cambios; ningún paso de este plan activa nada.
+
+## 10. Checkpoint fase 1 — recepción GPG preparada (2026-10-24)
+
+- Autorización: el propietario autorizó (2026-10-24, en la sesión de OMP) a SOL MAIN, en su
+  equipo físico local, a ejecutar C-01…C-22 con writer/restore temporales cifradas con GPG; solo
+  pruebas sintéticas contractuales.
+- Preflight **PASS** con el checkout `03e71236`, que sigue siendo `origin/main`; `preflight`
+  del helper sin cambios.
+- Clave efímera: ed25519 [SC] + cv25519 [E], creada el 2026-10-24T03:35Z; caducan **ambas** el
+  2026-10-26T03:35Z. Huella primaria **`2711 0560 F08B 5903 87C5  BFA0 0D27 EAF5 2803 76AF`**,
+  subclave de cifrado `EE18 3A98 A313 E176 FBAA  1FC9 979E CB7F DA37 2B30`. La clave privada
+  está solo en el tmpfs del equipo local (0700); un reinicio la destruye y obliga a regenerarla.
+  Defecto corregido: con GnuPG 2.4.4, `--quick-gen-key … default default 2d` deja la subclave
+  de cifrado sin caducidad; el helper ahora aplica `--quick-set-expire <fpr> 2d '*'`
+  (sha256 `d02f7d3c531ecb5ac21a95228792d2c04c940f4539745b885233cf0a389f2c60`).
+- Público exportado: `handoff-pub.asc` (sha256 `6eeb80c5…9c9dbd`), sin material secreto.
+- Transferencia: solo saliente desde el equipo local por SSH/SFTP hacia el KVM 4. No se abren
+  puertos ni servicios en el equipo local. Clave SSH dedicada `mainspot-conformance-handoff-20261024`
+  (ed25519, `SHA256:Fxc84HVA7mmGIFtRXQkwUYeih3xr2tHZQAV60ivHaM8`); la clave de host del KVM 4 ya
+  está fijada en `known_hosts`. El KVM 4 la autoriza en un usuario buzón sin privilegios con
+  `restrict,expiry-time,command=sftp-server`. El equipo local sube `handoff-pub.asc` y descarga
+  `conformance-creds.tar.gpg` directamente al tmpfs. Nunca GitHub ni chats.
+- No se solicitó ni recibió ninguna credencial; C-01…C-22 no se ejecutaron.
