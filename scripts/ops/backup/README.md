@@ -250,17 +250,43 @@ identificador del chat solo en este equipo; nunca en Git, registros, documentaci
 agentes.
 
 - **Entrega:** texto plano (sin `parse_mode`) por HTTPS, timeout de 8 s, 2 intentos como mucho (429 con
-  espera ≤ 5 s se respeta), dentro de los 30 s que el productor concede al adaptador. Códigos de salida:
-  `0` entregado, `10` sin configurar, `11` configuración insegura o credenciales rechazadas, `12` evento
-  inválido, `13` Telegram no disponible.
-- **El productor** (`delivery=ok|failed-unavailable|failed-timeout|failed-config|failed-not-configured|failed-invalid|failed-integrity|not-configured`):
+  espera ≤ 5 s se respeta), dentro de los 30 s que el productor concede al adaptador. Primera línea
+  `ID: <event_id>`.
+- **Recibo verificable (F-01, API-0005):** solo hay aceptación (`api_accepted`) si `sendMessage` responde
+  `ok: true` con `result.chat.id` igual al chat configurado, `result.message_id` entero positivo y
+  `result.date` plausible. La correlación `event_id ↔ message_id ↔ date` se persiste en el registro local
+  (`~/.local/state/mainspot/alerts/`, 0700/0600, escritura atómica) y el adaptador imprime una línea
+  `{"receipt": …}` sin secretos. Una respuesta perdida tras el envío o un recibo incompleto queda
+  `api_acceptance_uncertain` y nunca se reenvía automáticamente. Un recibo de otro chat queda `misrouted`.
+  `api_accepted` **no** es un acuse humano.
+- **Códigos de salida:**
+  - `0` aceptado con recibo persistido (o ya aceptado: sin reenvío);
+  - `10` sin configurar;
+  - `11` configuración o estado inseguro o inválido, o credenciales rechazadas;
+  - `12` evento inválido;
+  - `13` no disponible;
+  - `14` mal dirigido;
+  - `15` aceptación incierta;
+  - `16` aceptado sin recibo persistido;
+  - `17` consumidor concurrente o webhook;
+  - `18` avisos que requieren atención.
+- **Acuse humano (F-01, API-0006/API-0008):**
+  - Los avisos de severidad `error` y `TEST-SYNTHETIC` llevan un botón «Confirmar recepción», cuyo `callback_data` es `a1:<event_id>:<HMAC-96>` firmado con la clave exclusiva `~/.config/mainspot/backup/telegram-ack.key` (0600, 64–128 hex; no es el token).
+  - `--ack-poll [--max-seconds N]` es el único consumidor `getUpdates` (`flock`; se niega con webhook o 409). Valida actor, chat, mensaje y fecha contra el recibo, la firma y el estado; persiste el acuse antes de avanzar el cursor y responde con `answerCallbackQuery` (solo interfaz).
+  - `--check-overdue` aplica `ACK_DEADLINE_SECONDS`, `ACK_REMINDER_INTERVAL_SECONDS` y `ACK_MAX_REMINDERS` (en `telegram-alert.env`; las tres o ninguna): `ack_overdue`, recordatorios acotados por el mismo bot (no son redundancia) y `needs_operator_attention`. Un acuse tardío queda `acknowledged_late`.
+  - `--status` da el estado en JSON.
+  - Sin clave o sin política, los avisos se envían sin botón y quedan `needs_operator_attention`.
+  - Ninguna cadencia (servicio o temporizador) está instalada ni activada.
+- **El productor** (`delivery=ok|failed-unavailable|failed-timeout|failed-config|failed-not-configured|failed-invalid|failed-integrity|failed-misrouted|failed-acceptance-uncertain|failed-receipt-untracked|not-configured`; con `delivery=ok` añade `message_id=` y `ack=`):
   - antes de cada ejecución del adaptador comprueba su sha256 (`MAINSPOT_REMOTE_ALERT_COMMAND_SHA256`), que no
     sea un enlace simbólico ni contenga `..`, y que el archivo y todos sus directorios superiores sean del
     usuario o de root y no escribibles por grupo ni otros; lo ejecuta sin shell ni argumentos, con
     `PATH`/`HOME` como único entorno;
   - los fallos reintentables quedan en `remote-alerts-pending/` (0600) y se reintentan al inicio de las
     ejecuciones siguientes (si uno falla por indisponibilidad, el resto espera); tras 24 intentos o 72 h pasan
-    a `remote-alerts-failed/` con `delivery=abandoned`;
+    a `remote-alerts-failed/` con `delivery=abandoned`. `failed-misrouted`, `failed-acceptance-uncertain`,
+    `failed-receipt-untracked` y `failed-timeout` no se reintentan (podrían duplicar el mensaje): pasan
+    directamente a `remote-alerts-failed/` con `needs_operator_attention=yes`;
   - un mismo aviso de §13 no se repite antes de 24 h (`remote-alerts-state.json`); `E-UPLOAD-WINDOW` se avisa
     una vez por respaldo y `E-SIZE-LIMIT` una vez por archivo (marca de rechazo).
 - **Instalación** (el checkout es escribible por el grupo, así que el adaptador no se ejecuta desde él):
@@ -281,8 +307,10 @@ agentes.
   ```
 
 - **Prueba sintética de recepción** (no activa el productor ni toca S3):
-  `~/.local/libexec/mainspot/remote-alert-telegram.py --synthetic-test` imprime el `id` del evento
-  `TEST-SYNTHETIC`. La recepción real solo se da por buena cuando el propietario confirma ese `id` en su chat.
+  `~/.local/libexec/mainspot/remote-alert-telegram.py --synthetic-test` imprime el recibo y el `id` del
+  evento `TEST-SYNTHETIC`. La recepción real solo se da por buena con el acuse del propietario por el botón
+  (`--ack-poll` → `human_acknowledged`) y su confirmación en el issue. Procedimiento preparado, pendiente de
+  autorización: `docs/contracts/backup-object-storage/f01-ack-mini-bootstrap.md`.
 - La conexión con el productor (`MAINSPOT_REMOTE_ALERT_COMMAND` y `MAINSPOT_REMOTE_ALERT_COMMAND_SHA256` en
   `remote.env`) se hace en la activación, que exige su propia autorización en el HDC.
 
