@@ -6,3 +6,11 @@ items_index: .canonflow/canon/technical/index.yaml
 changelog: .canonflow/canon/technical/CHANGELOG.md
 blocking_open:
 - QS-0001
+staging_patches:
+- id: F01-TEC-0.2.0-staging
+  run: RUN-0018
+  branch: feat/f01-telegram-acknowledged-alerts
+  derived_from: F01-FUN-0.2.0-staging
+  items: [API-0005, API-0006, API-0007, API-0008, API-0009, ADR-0001, ADR-0002, ADR-0003, ADR-0004, TR-0001, TR-0002, TR-0003, TR-0004, TR-0005, TR-0006, TR-0007]
+  state: STAGING
+  pending_gates: [independent-review (G-DER), G-TEC]

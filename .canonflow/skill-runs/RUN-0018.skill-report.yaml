@@ -1,0 +1,26 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0018
+run_id: RUN-0018
+skill_id: canonflow-technical-canon
+verdict: PASS_WITH_LIMITATIONS
+scope: Staging patch F01-TEC-0.2.0-staging only; technical canon stays TECHNICAL_CANON_IN_PROGRESS.
+human_summary: |
+  16 PROPOSED items, each with DERIVES_FROM links to staged functional items (or DEC-0065 / API-0003).
+  Key choices: getUpdates single consumer (ADR-0001), local file ledger (ADR-0002), one pinned privileged adapter
+  owns token, ACK key and ledger (ADR-0003), uncertain acceptance is never auto-resent (ADR-0004).
+  Contract 1.2.0 untouched: new delivery values follow its failed-… pattern.
+claims:
+  - class: VERIFIED
+    statement: "Every technical item carries DERIVES_FROM links to functional items or DEC records."
+    evidence: [.canonflow/canon/technical/index.yaml]
+  - class: OPEN
+    statement: "G-DER (independent derivation review) and G-TEC are pending; review delegated to the Loop 3 audit run."
+limitations:
+  - "No production cadence, timer or service is defined or activated (owner mandate)."
+outputs:
+  - .canonflow/canon/technical/items/API-0005.md .. TR-0007.md
+  - .canonflow/canon/technical/index.yaml
+  - .canonflow/canon/technical/CHANGELOG.md
+  - .canonflow/state/technical-canon-state.yaml
+next_pointer: "RUN-0019 implementation increment INC-0008 (Loop 3)"

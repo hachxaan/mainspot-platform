@@ -1,0 +1,20 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0018
+skill_id: canonflow-technical-canon
+mode: builder
+executor: "omp agent session (anthropic/claude-opus-5-5) — SOL MAIN"
+objective: >-
+  Loop 2 for F-01: derive the technical staging patch (0.2.0-staging) from F01-FUN-0.2.0-staging:
+  adapter receipt contract, callback ACK protocol, durable ledger/state machine, overdue/reminders, producer integration,
+  ADRs and residual risks.
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/f01-telegram-acknowledged-alerts
+base_commit: 7677cdf
+inputs:
+  - .canonflow/canon/functional/items/FR-0012..FR-0015, BR-0007, BR-0008, NFR-0006, NFR-0007
+  - SRC-0012 (initial definition), contract 1.2.0 (unchanged), DEC-0065
+expected_outputs:
+  - .canonflow/canon/technical/items/API-0005..API-0009, ADR-0001..ADR-0004, TR-0001..TR-0007
+  - .canonflow/canon/technical/index.yaml, CHANGELOG.md; .canonflow/state/technical-canon-state.yaml
+created_at: "2026-10-25T15:05:00Z"

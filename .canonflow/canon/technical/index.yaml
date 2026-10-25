@@ -28,3 +28,115 @@ items:
   tier_hint: 2
   path: items/API-0004.md
   source: recovered (SRC-0006/SRC-0007)
+- id: API-0005
+  title: 'Adaptador emisor: recibo verificable y contrato de salida'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/API-0005.md
+  derives_from: FR-0012, FR-0013, FR-0014, BR-0007, NFR-0006
+  staging: F-01 0.2.0-staging
+- id: API-0006
+  title: 'Protocolo de acuse por callback (único consumidor getUpdates)'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/API-0006.md
+  derives_from: FR-0014, BR-0007, NFR-0006, NFR-0007
+  staging: F-01 0.2.0-staging
+- id: API-0007
+  title: 'Registro durable de avisos y máquina de estados'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/API-0007.md
+  derives_from: FR-0012..FR-0015, NFR-0006, NFR-0007
+  staging: F-01 0.2.0-staging
+- id: API-0008
+  title: 'Vencimiento, recordatorios acotados y estado observable'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/API-0008.md
+  derives_from: FR-0015, BR-0008, NFR-0007
+  staging: F-01 0.2.0-staging
+- id: API-0009
+  title: 'Integración con el productor (db-backup-remote.py)'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/API-0009.md
+  derives_from: FR-0012, FR-0013, BR-0008
+  staging: F-01 0.2.0-staging
+- id: ADR-0001
+  title: 'Consumo de callbacks: long polling getUpdates, no webhook'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/ADR-0001.md
+  derives_from: FR-0014, NFR-0007
+  staging: F-01 0.2.0-staging
+- id: ADR-0002
+  title: 'Registro local en archivos, no PostgreSQL'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/ADR-0002.md
+  derives_from: NFR-0007, BR-0008
+  staging: F-01 0.2.0-staging
+- id: ADR-0003
+  title: 'Un solo ejecutable privilegiado custodia token, clave de acuse y registro'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/ADR-0003.md
+  derives_from: NFR-0006
+  staging: F-01 0.2.0-staging
+- id: ADR-0004
+  title: 'Entrega incierta: sin reenvío automático; recuperación por el acuse'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/ADR-0004.md
+  derives_from: FR-0012, FR-0013
+  staging: F-01 0.2.0-staging
+- id: TR-0001
+  title: 'Riesgo técnico F-01'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/TR-0001.md
+  derives_from: API-0005..API-0008
+  staging: F-01 0.2.0-staging
+- id: TR-0002
+  title: 'Riesgo técnico F-01'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/TR-0002.md
+  derives_from: API-0005..API-0008
+  staging: F-01 0.2.0-staging
+- id: TR-0003
+  title: 'Riesgo técnico F-01'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/TR-0003.md
+  derives_from: API-0005..API-0008
+  staging: F-01 0.2.0-staging
+- id: TR-0004
+  title: 'Riesgo técnico F-01'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/TR-0004.md
+  derives_from: API-0005..API-0008
+  staging: F-01 0.2.0-staging
+- id: TR-0005
+  title: 'Riesgo técnico F-01'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/TR-0005.md
+  derives_from: API-0005..API-0008
+  staging: F-01 0.2.0-staging
+- id: TR-0006
+  title: 'Riesgo técnico F-01'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/TR-0006.md
+  derives_from: API-0005..API-0008
+  staging: F-01 0.2.0-staging
+- id: TR-0007
+  title: 'Riesgo técnico F-01'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/TR-0007.md
+  derives_from: API-0005..API-0008
+  staging: F-01 0.2.0-staging
