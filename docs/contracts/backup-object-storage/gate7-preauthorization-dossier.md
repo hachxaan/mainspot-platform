@@ -5,7 +5,7 @@ No normativo, sin secretos.
 - **Preparado por:** SOL MAIN, bajo el mandato de [mainspot-platform#2](https://github.com/hachxaan/mainspot-platform/issues/2).
 - **Contrato:** 1.2.0 `c4f87c4aa2e875e7ad01861f5f2a809e025d638c`.
 - **Base MainSpot:** `f70d655876cf88834ed8ff4d02045c54998256db`.
-- **Servicio:** `hachxaan/mainspot-s3-backups@6945a6329f8e36f11a56c380ce6696ef6fae4260`.
+- **Servicio:** `hachxaan/mainspot-s3-backups@2af25580b1a071269a44e73ff8970c2cc85fb3bd` (cierre E4/E5: evidence/49 y evidence/50).
 - **Estado de las condiciones 1–6 y de E1–E5:** `integration-status.md`.
 
 Este dossier **no solicita** la decisión HDC ni activa nada. Prepara el paquete para que el propietario lo revise
@@ -18,13 +18,13 @@ Telegram no equivale a autorizar la producción.
 
 | Pregunta | Dictamen |
 |---|---|
-| ¿Se puede **solicitar** ya la condición 7? | **NO-GO**, mientras falten **E4 independiente** (operador KVM 4) y **E5** del servicio. Sin ellos no están acreditadas documentalmente S-13 (condición 2) ni las condiciones 5 y 6 (`e2e-drill-handoff.md`, fase E) |
-| ¿Qué falta para pasar a GO? | (a) Comentario y commit del operador con E4 contraverificado según `docs/15` §E4 y `docs/14` §5. (b) Informe E5 del servicio que cite 1.2.0 `c4f87c4`, con S-13 tras el simulacro, S-15 vigente, §9.2.6 1–7 y matriz PASS/OPEN. (c) Revisión de este dossier por el propietario. Con (a) y (b) consistentes con lo aquí descrito, el dictamen pasa a **GO para solicitar**, no para activar |
+| ¿Se puede **solicitar** la condición 7? | **GO para solicitar.** Las condiciones 1–6 y el cierre E1–E5 están acreditados documentalmente (`integration-status.md`). E4 independiente y E5 del servicio constan en `2af25580` (evidence/49, evidence/50; [6401546425](https://github.com/hachxaan/mainspot-s3-backups/issues/2#issuecomment-6401546425)). La solicitud **no se ha hecho**: publicar la sesión HDC es decisión del propietario, tras revisar este dossier |
+| ¿Qué falta antes de publicar la sesión? | (a) Revisión del dossier por el propietario. (b) Volver a comprobar los SHA citados en el borrador en el momento de publicar. (c) Asignar al publicar el siguiente identificador libre de QS: `QS-0015` es provisional |
 | ¿Se puede **activar** la producción? | **No.** Solo tras un `DEC-…` de autorización en una sesión HDC propia, y siguiendo el §8 de este dossier |
 | ¿La mejora F-01 (botón de acuse) entra en la activación? | **No.** Está aislada en `feat/f01-telegram-acknowledged-alerts`, sin fusionar ni desplegar, con AUD-01/02/03 pendientes. La activación usa el adaptador `d42fe40b`, el que superó el simulacro |
 
-Fuera de E4/E5 no se ha encontrado ningún bloqueo de la puerta. Los riesgos del §5 los decide el propietario en la
-sesión HDC; no son condiciones de §2.3.
+No se ha encontrado ningún bloqueo de la puerta. Los riesgos del §5 los decide el propietario en la sesión HDC; no son
+condiciones de §2.3.
 
 ## 2. Premisas
 
@@ -77,14 +77,14 @@ sesión HDC; no son condiciones de §2.3.
 | R1 | **La writer puede borrar o sobrescribir y quitar el ciclo de vida** | Mitigado por S-16; ventana ≤ 1 h | Vigilancia horaria; ante sospecha, `garage key deny` inmediato (§9) |
 | R-KEY | **Custodia de la clave (R7, DEC-0053).** No hay evidencia de que la copia de custodia del propietario exista y descifre. Ni los agentes pueden ni deben verificarla | Sin acreditar | El propietario la declara en la sesión HDC. Se propone como control previo una prueba de descifrado de un respaldo local con la copia de custodia, en un equipo propio y sin publicar nada. Sin esa copia, perder el equipo de MainSpot deja todo ilegible |
 | R-SWAP | **Swap sin cifrar.** El equipo de MainSpot tiene `/swap.img` de 8 GiB sin cifrar y ningún volumen `crypt`. En el simulacro las credenciales estuvieron en tmpfs ≈ 1 h 25 min; no hay evidencia de paginación. En producción, `remote.env` (writer) y `backup.key` estarán **en disco en claro, con 0600**, y podrían paginarse | Observado | Opción A: aceptar el riesgo; el disco ya guarda `backup.key` en claro, así que el swap no añade una exposición cualitativa. Opción B: mitigar antes de activar (swap cifrado o `MemorySwapMax=0` en la unidad remota, más revisar el cifrado del disco). Lo decide el propietario |
-| R-CRED | **Credenciales usadas en el simulacro.** Las claves reales writer/reader viajaron cifradas por el buzón temporal y estuvieron en tmpfs en el equipo de MainSpot | El operador concluyó que la rotación no es obligatoria: log S3 sin desviaciones (evidence/48) | Opción A: no rotar. Opción B: rotar writer y reader antes de activar (`docs/07` «Rotación (sin corte)»), con C-03/C-04/C-21/C-22 posteriores. Lo decide el propietario |
+| R-CRED | **Credenciales usadas en el simulacro.** Las claves reales writer/reader viajaron cifradas por el buzón temporal y estuvieron en tmpfs en el equipo de MainSpot | El operador concluyó que la rotación no es obligatoria: log S3 sin desviaciones y 0 peticiones entre 12:00 y 18:33Z (evidence/48 y 49) | Opción A: no rotar. Opción B: rotar writer y reader antes de activar (`docs/07` «Rotación (sin corte)»), con C-03/C-04/C-21/C-22 posteriores. Lo decide el propietario |
 | R-CODE | **Origen del código en producción.** La unidad remota escrita ejecuta el productor desde el checkout de desarrollo. Ese checkout cambia de rama (incluida la rama F-01), así que producción quedaría acoplada a lo que esté desprotegido en cada momento | Detectado en esta revisión | Ejecutar desde una copia fijada por commit y sha256 (§7). Requiere cambiar la unidad dentro del cambio de activación |
 | R-OBS | **Sin «hombre muerto».** E-FRESHNESS lo calcula el propio productor al ejecutarse. Si el temporizador o el equipo dejan de correr, ni MainSpot ni el inventario del KVM 4 avisan (según S-08, ese inventario vigila la cota de 16 días y los huérfanos de 24 h, no la frescura) de que falta el respaldo de hoy | Brecha observada | Verificación diaria del propietario durante la primera semana (§8). Decidir aparte (fuera de la condición 7) un aviso de frescura independiente, p. ej. del vigilante del KVM 4. Requiere un cambio de servicio y posiblemente de contrato |
 | R-ALERT | **Canal de avisos.** Mismo bot = sin redundancia. Recepción del productor acreditada con el adaptador original. F-01 (acuse) no se despliega | Aceptado por DEC-0064/0065 | Sin cambios. F-01 sigue su propio camino de auditoría y gates |
 | R9 | Si la base supera 1 GiB, deja de haber copia remota (E-SIZE-LIMIT) | Lejos del umbral (≈ 121 KB) | Aviso del 80 % y E-FRESHNESS; ampliar exige DEC (DEC-0063) |
 | R-RET | **Retención y copias.** Bucket, copia protegida y local tienen 14 días cada uno. Ninguna copia supera 16 días. No hay copia de más largo plazo | Decidido (DEC-0026/0046/0057) | Sin cambios |
 | O-1…O-3 | Observaciones bajas o informativas del productor (`03-adversarial-validation.md`): ruido E-LOCAL-INTEGRITY fuera de ventana, `check=daily` ausente si una petición agota los reintentos, manifiesto sin objeto pasa a FAIL | Abiertas, sin riesgo para la integridad | Vigilarlas en la operación; ninguna bloquea |
-| S-11 | `scrub` de Garage programado para el 2026-11-23, aún no completado | Declarado por el operador | Verificar tras esa fecha |
+| S-11 | `scrub` de Garage programado para el 2026-11-23, aún no completado | Declarado por el operador (evidence/49) | Verificar tras esa fecha |
 | R-REST | **La prueba mensual remota (§10.2) es manual.** `db-restore-test.sh` solo prueba el respaldo local; la restauración desde el servicio con **restore** no tiene temporizador | Brecha operativa | Primera prueba remota en los 7 días siguientes a activar y luego mensual, siguiendo los pasos C del simulacro y §10.2 (§8) |
 
 ## 6. Responsabilidades
@@ -176,4 +176,4 @@ productor detiene la ejecución con E-AUTH-SKEW si la diferencia de reloj supera
 | Informe del simulacro (rectificado) | `e2e-drill-report-2026-10-25.md` @ `c925e12` |
 | Borrador de la sesión HDC (no publicado; validado offline con el perfil v2) | `gate7-qs-activation-draft.questions.json` |
 | Contrato | `v1/CONTRACT.md` @ `c4f87c4` |
-| Evidencia del operador | `mainspot-s3-backups` evidence/43, 44, 45, 47, 48 |
+| Evidencia del operador | `mainspot-s3-backups` evidence/43, 44, 45, 47, 48 y, en `2af25580`, 49 (E4/E5) y 50 (checkpoint de cierre) |

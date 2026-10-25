@@ -22,7 +22,7 @@ No normativo, sin secretos.
 | **Condición 6b** (copia protegida con originales ausentes, §11.4 B) | **PASS** | D5/D6: archivos de la copia de A2 con sha256 = D1 = los del productor; `v1/` = 0 con restore; `verify` `valid:true` con la clave relativa; descifrado en el equipo de MainSpot; 33 tablas iguales; `reanonymized: 1` |
 | **§9.2.6 pasos 1–6** | **PASS** | 1: dos pares del productor. 2: D1, 2 copias con sha256 = manifiestos. 3: D3a borrado de 4 claves exactas (204 ×4); D3b `DeleteBucketLifecycle` 204 (**T0 = 10:44:22Z**); D3c regla `synthetic-drill-1d` 200. 4: D4a `copies_orphaned=2`, `verify_failed=0`, `anomalies=0`, sin `expire`; D4b writer `HeadBucket` guard → 404, `ListBuckets` solo `mainspot-backups`. 5: D6. 6: el vigilante restauró §9.1 a las 10:58:43Z (restore 10:58:53Z, T0 + 14 min 31 s), `lifecycle_drift restored=true`, sin intervención K3 |
 | **§9.2.6 paso 7 / E2** (limpieza de la copia, `--ack-drift`, salud 9/9) | **PASS (operador)** | 6397100773, `hachxaan/mainspot-s3-backups@6945a6329f8e36f11a56c380ce6696ef6fae4260` (evidence/48): 4 `expire` solo en `synthetic-drill`, 0 copias ajenas antes y después, `--ack-drift` 11:31:05Z, salud 9/9, bucket 0 objetos, ciclo de vida §9.1 exacto, buzón vacío; log S3 de la ventana sin desviaciones (rotación no requerida) |
-| **S-13** | **Evidencia del simulacro PASS** | Máximo observado en `mainspot-backups` durante el simulacro: **94 453 B** (objeto 93 440 + manifiesto 1 013), muy por debajo del máximo de diseño de 1 GiB; rechazo por encima del límite sin escritura; capacidad medida por el operador (S-15 1.2.0, evidence/43); E2 cerrado. Queda la verificación independiente de E4 por el operador |
+| **S-13** | **Evidencia del simulacro PASS** | Máximo observado en `mainspot-backups` durante el simulacro: **94 453 B** (objeto 93 440 + manifiesto 1 013), muy por debajo del máximo de diseño de 1 GiB; rechazo por encima del límite sin escritura; capacidad medida por el operador (S-15 1.2.0, evidence/43; remedida en evidence/49). **S-13 PASS** declarada por el operador en `2af25580` (evidence/49) |
 
 ## Cronología (UTC)
 
@@ -45,9 +45,13 @@ No normativo, sin secretos.
 - **E3:** sin credenciales, claves efímeras, bases ni espacio de trabajo en el equipo de MainSpot; productor
   `DISABLED`, sin `remote.env`, 0 unidades remotas.
 - **E2:** PASS del operador (arriba).
-- **E4:** el propietario ejecutó el teardown; salida `OK usuario eliminado`, `OK sin drop-in, claves ni buzón`,
-  `forcecommand none`, `chrootdirectory none` (6398592957). Falta la verificación independiente del
-  operador.
+- **E4: PASS.** El propietario ejecutó el teardown; salida `OK usuario eliminado`, `OK sin drop-in, claves ni buzón`,
+  `forcecommand none`, `chrootdirectory none` (6398592957). Contraverificación independiente del operador, de solo
+  lectura, 18:32–18:34Z (`mainspot-s3-backups@2af25580b1a071269a44e73ff8970c2cc85fb3bd`, evidence/49, [6401546425](https://github.com/hachxaan/mainspot-s3-backups/issues/2#issuecomment-6401546425)): sin usuario, buzón,
+  drop-in ni claves; acceso denegado; 0 peticiones S3 entre 12:00 y 18:33Z; rotación no obligatoria.
+- **E5: PASS.** Informe MainSpot (este documento e `integration-status.md`) e informe del servicio (evidence/49 y 50),
+  ambos con el contrato 1.2.0 `c4f87c4`. Condiciones 1–6 acreditadas; la condición 7 queda abierta en una sesión HDC
+  propia (`gate7-preauthorization-dossier.md`).
 
 ## F-01 — rectificación del propietario: aviso original recibido (PASS)
 
