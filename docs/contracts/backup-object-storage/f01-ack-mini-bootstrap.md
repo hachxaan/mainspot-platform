@@ -1,5 +1,7 @@
 # F-01 · Mini-bootstrap para la prueba real de acuse (preparado, no ejecutado)
 
+**Rectificación de alcance:** el evento original `ac931611…` **sí fue recibido** y DEC-0065 del simulacro es PASS. Este procedimiento valida exclusivamente el **nuevo botón de acuse y su automatización**, no corrige una entrega histórica fallida. La variante **B (productor E2E local)** es obligatoria para acreditar la ruta completa de la función nueva; A solo es preflight del adaptador.
+
 Estado: **PREPARADO, NO AUTORIZADO.** Este procedimiento no se ha ejecutado. Hace falta un permiso nuevo y
 explícito del propietario en el issue #1 para la ventana, el tipo de evento y las condiciones. Hasta
 entonces están prohibidos: los mensajes reales, el despliegue, los temporizadores, el acceso a Garage y la
@@ -85,8 +87,7 @@ Solo se registran:
 
 Nunca se registran el token, el chat, el usuario ni la clave.
 
-F-01 solo se cierra como PASS con una confirmación humana nueva del propietario en el issue, además del estado
-`human_acknowledged` registrado.
+El evento histórico ya tiene recepción humana PASS. Para aprobar **la funcionalidad nueva del botón** es necesaria una confirmación humana nueva, registrada como `human_acknowledged`, en una prueba variante B expresamente autorizada y documentada; no altera el evento original.
 
 ## 5. Retirada
 
