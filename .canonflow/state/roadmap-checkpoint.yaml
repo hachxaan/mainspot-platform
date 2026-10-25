@@ -92,6 +92,7 @@ blocks:
       - docs/contracts/backup-object-storage/s13-capacity-assessment-2026-10-24.md
       - docs/contracts/backup-object-storage/producer-alert-channel-evidence.md
       - docs/contracts/backup-object-storage/e2e-drill-handoff.md
+      - docs/contracts/backup-object-storage/e2e-drill-report-2026-10-25.md
     open_items:
       - "KVM 4 @ 03e71236 (servicio 824a4529, garage-alert 487428df): H-01/H-02, H-03 y H-04/S-08 cumplidos según la evidencia del operador (recepción en Telegram confirmada por el propietario)."
       - "Conformidad externa ejecutada el 2026-10-24 (run 20261024T062159Z-1750b25a, checkout 2d5c807e, servicio 824a4529): conformant=true, 20 PASS, C-21/C-22 MANUAL con evidence/29 y 32; credenciales y clave efímera destruidas. Declaración S-15 en f478e7df (con el cierre del handoff): S-04/S-06/S-11/S-16 PASS, S-13 NO VERIFICADO."
@@ -99,7 +100,8 @@ blocks:
       - "QS-0013 ingerida en RUN-0014 (ANS-0014): DEC-0059 máximo 1 GiB por respaldo remoto (objeto + manifiesto), DEC-0060 cuota de 50 GiB, DEC-0061 rechazo seguro E-SIZE-LIMIT con el respaldo local intacto, DEC-0062 contrato 1.2.0 (MENOR), DEC-0063 condiciones."
       - "Contrato 1.2.0 publicado (c4f87c4, pin 2bb5290) y reconciliado por el KVM 4 en 9c880469dca65420f57cad2c6193c2982433a608 (evidence/43 S-15 1.2.0 con capacidad S-13 medida para R = 1 GiB; evidence/44). S-13 sigue NO ACREDITADA: falta el simulacro E2E."
       - "Canal de avisos del productor: DEC-0064/DEC-0065. Recepción real sintética acreditada (TEST-SYNTHETIC f7b848ef95468473b7228ddd4fe37244, 2026-10-24T21:52:06Z, adaptador d42fe40b = repo 5ccd4d21, confirmada por el propietario; producer-alert-channel-evidence.md). Aún no hay aviso generado por el productor contra Telegram real."
-    next_gate: "Mandato del propietario para el simulacro E2E (e2e-drill-handoff.md) con entrega temporal de writer/restore → S-13, condiciones 5 y 6a y aviso E2E del productor → sesión de autorización de activación en el HDC"
+      - "Simulacro E2E 2026-10-25 (ventana 08:50–13:00 UTC, e2e-drill-report-2026-10-25.md): condición 5 PASS, 6a PASS, 6b PASS, §9.2.6 pasos 1–6 PASS (T0 10:44:22Z, §9.1 restaurado por el vigilante a las 10:58:43Z), rechazo E-SIZE-LIMIT PASS, aviso del productor entregado (event_id ac931611…). Pendientes: E2 del operador (limpieza de la copia, --ack-drift), E4 teardown del buzón y confirmación del event_id por el propietario."
+    next_gate: "E2 y E4 cerrados y event_id confirmado → S-13 y condiciones 5/6 acreditadas por ambos lados → sesión de autorización de activación en el HDC (condición 7)"
   - id: R3-remote-producer
     title: Productor de respaldo remoto (desactivado)
     state: IMPLEMENTED_DISABLED
