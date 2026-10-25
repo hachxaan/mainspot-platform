@@ -6,9 +6,9 @@
 **Decisiones existentes:** DEC-0064 (bot exclusivo y secretos locales), DEC-0065 (avisar en la ejecución, reintentos acotados y confirmación humana antes de producción).  
 **Contrato Garage:** `contract/backup-object-storage-v1@c4f87c4aa2e875e7ad01861f5f2a809e025d638c`, sin modificar.
 
-## 1. Problema comprobado, no inferir otra causa
+## 1. Origen y rectificación posterior del propietario
 
-El productor rechazó correctamente un objeto sintético sobredimensionado con `E-SIZE-LIMIT`, antes de cualquier S3 write, y registró `delivery=ok`. El adaptador recibió `sendMessage.ok=true` por TLS del bot correcto, pero **el propietario NO recibió el aviso** `event_id=ac931611c7ef4f279c5eef542c4d5b53`. La causa raíz sigue **indeterminada**. `message_id` no fue persistido y no puede recuperarse retroactivamente mediante este flujo.
+El productor rechazó correctamente un objeto sintético sobredimensionado con `E-SIZE-LIMIT`, antes de cualquier S3 write, y registró `delivery=ok`. **Rectificación posterior:** el propietario SÍ recibió el aviso `event_id=ac931611c7ef4f279c5eef542c4d5b53` en el **primer bot**; había revisado solo el segundo. La recepción humana histórica DEC-0065 queda en **PASS**. No hubo fallo de entrega demostrado. Aun así, el adaptador original carecía de correlación persistida y mecanismo automatizado de acuse; esta propuesta se conserva como **mejora de gobernanza**. `message_id` no fue persistido y no puede recuperarse retroactivamente mediante este flujo.
 
 El vigilante del KVM usa otro canal: la recepción de sus mensajes `VIGIL-RETENTION-WARN` no acredita la recepción de avisos del productor.
 
@@ -78,11 +78,11 @@ Base actual: `tests/ops/backup-remote/test_alert_telegram.py`, servidor Telegram
 
 **Prohibido sin una autorización posterior y explícita:** enviar `TEST-SYNTHETIC` o `E-SIZE-LIMIT` real, ejecutar pruebas en Garage, crear/reabrir buzón SFTP, modificar credenciales, activar timers/servicio ACK productivo, desplegar código en host o habilitar condición 7 HDC.
 
-Para levantar F-01 se requerirá (a) código revisado y tests, (b) prueba local generada por **productor**, sin S3 y con mensaje al bot real **tras aprobación de la prueba**, (c) propietario pulsa botón y el sistema registra `human_acknowledged` con IDs correlacionados, (d) verificación independiente de E4 pendiente por OMP KVM 4. **No reinterpretar automáticamente el evento histórico como recibido.**
+La recepción del evento original ya está **confirmada PASS** por la rectificación del propietario, sin depender del botón nuevo. Para habilitar la **mejora futura** se requerirá (a) código revisado y pruebas, (b) auditoría independiente y gates humanos, (c) una prueba local generada por **productor**, sin S3, con bot real **tras aprobación independiente**, (d) pulsación del botón y estado `human_acknowledged` correlacionado. La verificación E4 del KVM es separada. No declarar la funcionalidad del botón en producción sin esos gates.
 
 ## 6. Secuencia para el agente
 
 1. Actualizar definición funcional canónica → técnica canónica → implementación; proponer nuevos IDs/decisiones solo donde sean necesarios, sin reescribir DEC-0064/0065.
 2. Implementar en esta rama por commits pequeños: recibo del proveedor + tests; callback ACK y estado durable + tests; vencimiento/recordatorio + tests.
 3. Ejecutar regresiones, auditoría de secretos y controles de integridad; publicar comandos/salida, SHAs, diseño final y NO-GO/GO del código.
-4. Publicar informe F-01 como **remediación implementada y probada offline**, dejando claramente **recepción humana original FAIL** hasta nueva prueba aprobada y verificada.
+4. Publicar el informe como **mejora de trazabilidad implementada y probada offline**; distinguir **recepción humana original PASS** por constatación del propietario y **botón no validado en Telegram real** hasta una nueva prueba autorizada.
