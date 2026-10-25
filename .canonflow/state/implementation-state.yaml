@@ -30,6 +30,14 @@ increments:
   state: IMPLEMENTED
   risk_tier: 2
   evidence: evidence/14-e2e-inc004-006.txt (base; dashboards fase 2)
+- increment_id: INC-0008
+  title: F-01 avisos del productor con recibo verificable y acuse humano
+  state: IMPLEMENTED
+  scope: offline-only (rama feat/f01-telegram-acknowledged-alerts, sin fusionar ni desplegar)
+  risk_tier: 4
+  derives_from: [API-0005, API-0006, API-0007, API-0008, API-0009]
+  evidence: docs/contracts/backup-object-storage/f01-remediation-report.md; commit 6b66999d2627c195daa7a3bd67e64287b0cbeb52; tests/ops/backup-remote 149 passed
+  pending_gates: [independent-audit, G-FUN, G-TEC, G-PLAN, G-AUD, real-ack-test-authorization]
 note: 'Implementado antes del onboarding canonflow (SRC-0007). Estado IMPLEMENTED
   (no DONE): auditoría independiente formal del método pendiente; remediación PR-01..06
   registrada como revisión interna.'

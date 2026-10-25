@@ -1,0 +1,28 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0019
+run_id: RUN-0019
+skill_id: canonflow-evidence-auditor
+verdict: PASS_WITH_LIMITATIONS
+scope: Self-review (builder == reviewer). Not valid as independent audit or G-AUD.
+human_summary: |
+  Every issue #1 test case maps to at least one passing test (report §4). Three defects found and fixed before commit
+  (ack=pending on failed sends, OSError traceback in --ack-poll, umask-dependent intermediate dirs). Residual risks R1-R8
+  recorded (report §5). Technical verdict: offline PASS; conditional GO to request the real ack test after an independent
+  audit; NO-GO for merge/production; F-01 stays OPEN with original receipt FAIL.
+claims:
+  - class: VERIFIED
+    statement: "Technical items derive from staged functional items (index derives_from) and code derives from API-0005..0009."
+    evidence: [.canonflow/canon/technical/index.yaml, .canonflow/state/implementation-state.yaml]
+  - class: OPEN
+    statement: "Independent audit (different executor) of canon (G-DER) and code is pending."
+findings:
+  - id: FND-0001
+    severity: MAJOR
+    description: "Builder == reviewer for all F-01 runs; independent review required before candidate states, merge or the real test."
+  - id: FND-0002
+    severity: MINOR
+    description: "TR-0004: an orphan duplicate after a processed 5xx cannot be acknowledged (message_not_bound)."
+outputs:
+  - docs/contracts/backup-object-storage/f01-remediation-report.md
+next_pointer: "Independent audit, then human gates G-FUN/G-TEC/G-PLAN/G-AUD"

@@ -105,6 +105,20 @@ queda en **FAIL** hasta una nueva entrega observada.
    `event_id` **y** el `message_id` registrado.
 4. Mantener el criterio en FAIL y no pedir la condición 7 hasta que 2 y 3 estén hechos.
 
+### Estado de la remediación (rama `feat/f01-telegram-acknowledged-alerts`)
+
+**Implementado y probado solo offline**, con un Telegram falso en `127.0.0.1`: sin mensajes reales, sin
+despliegue, sin Garage y sin temporizadores. Informe completo: `f01-remediation-report.md`.
+
+- **Punto 2 cubierto y ampliado:**
+  - recibo verificable (`chat.id`, `message_id`, `date`) persistido;
+  - `event_id` en la primera línea;
+  - botón «Confirmar recepción» con firma HMAC;
+  - consumidor único de callbacks;
+  - vencimiento y recordatorios acotados.
+- **Punto 3 sin ejecutar:** procedimiento preparado en `f01-ack-mini-bootstrap.md`, pendiente de autorización expresa.
+- **El evento histórico `ac931611…` no se reinterpreta.** Sigue sin `message_id` y la recepción humana DEC-0065 se mantiene en **FAIL**. F-01 queda ABIERTO hasta una prueba real autorizada con acuse por el botón (`human_acknowledged`) y la confirmación nueva del propietario en el issue.
+
 ## Riesgo residual observado
 
 Entre la recepción y E3 (≈ 1 h 25 min), las credenciales writer/restore estuvieron en tmpfs (0700/0600)

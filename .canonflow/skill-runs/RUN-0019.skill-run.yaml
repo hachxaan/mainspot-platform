@@ -1,0 +1,17 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0019
+skill_id: canonflow-evidence-auditor
+mode: reviewer
+executor: "omp agent session (anthropic/claude-opus-5-5) — SOL MAIN"
+objective: >-
+  Adversarial review of F-01 loops 1-3 (canon traceability, security of receipt/ack protocol, test coverage vs issue #1).
+  The executor is the same as the builder runs RUN-0017, RUN-0018 and the INC-0008 implementation: this is NOT an independent audit and cannot satisfy G-AUD.
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/f01-telegram-acknowledged-alerts
+base_commit: bd47f8c6e259eb864dd6c0a886c655e2d0a9cd2b
+inputs:
+  - RUN-0017, RUN-0018 outputs and INC-0008 commits 6b66999, bd47f8c
+expected_outputs:
+  - docs/contracts/backup-object-storage/f01-remediation-report.md (§5)
+created_at: "2026-10-25T16:20:00Z"
