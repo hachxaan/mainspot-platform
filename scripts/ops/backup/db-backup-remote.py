@@ -33,7 +33,11 @@ con «Aviso: sí». Cada uno: línea `status=ALERT … delivery=ok|failed-…|no
 `remote-alerts.jsonl` y un intento acotado con el adaptador (sin shell, entorno mínimo, 30 s; antes de
 ejecutarlo se comprueban sha256, propietario y permisos del archivo y de sus directorios). Los fallos
 reintentables quedan en `remote-alerts-pending/` y se reintentan al inicio de las ejecuciones siguientes
-(24 intentos o 72 h; después `remote-alerts-failed/`, `delivery=abandoned`).
+(24 intentos o 72 h; después `remote-alerts-failed/`, `delivery=abandoned`). Las entregas que podrían
+haber creado un mensaje sin recibo válido (`failed-misrouted`, `failed-acceptance-uncertain`,
+`failed-receipt-untracked`, `failed-timeout`) no se reintentan: pasan a `remote-alerts-failed/` con
+`needs_operator_attention=yes` (F-01, API-0009). `delivery=ok` solo significa aceptación por la API con
+recibo verificado (`message_id`); el acuse humano lo registra el adaptador (`--ack-poll`), nunca el productor.
 
 Límite (§8.2 paso 0, DEC-0059/DEC-0061/DEC-0063): objeto cifrado + manifiesto ≤ 1 GiB
 (inclusivo), comprobado antes de cualquier operación S3. Si se supera: `E-SIZE-LIMIT`,
@@ -137,8 +141,12 @@ ALERT_REPEAT_AFTER = dt.timedelta(hours=24)
 ALERT_STATE_KEEP = dt.timedelta(days=16)
 # Códigos de salida del adaptador (scripts/ops/backup/remote-alert-telegram.py) → delivery=
 ALERT_HOOK_RC = {0: "ok", 10: "failed-not-configured", 11: "failed-config", 12: "failed-invalid",
-                 13: "failed-unavailable"}
-ALERT_NOT_RETRIED = {"ok", "not-configured", "failed-invalid"}
+                 13: "failed-unavailable", 14: "failed-misrouted", 15: "failed-acceptance-uncertain",
+                 16: "failed-receipt-untracked"}
+# Pudo crearse un mensaje sin recibo válido: reenviar duplicaría el aviso (F-01, API-0009, ADR-0004).
+ALERT_NO_RESEND = {"failed-misrouted", "failed-acceptance-uncertain", "failed-receipt-untracked", "failed-timeout"}
+ALERT_NOT_RETRIED = {"ok", "not-configured", "failed-invalid"} | ALERT_NO_RESEND
+ALERT_RECEIPT_ACK_RE = re.compile(r"\A[a-z_:]{1,48}\Z")
 # §13 «Aviso: sí» que el productor emite como aviso (E-NETWORK/E-SERVER/E-THROTTLE/E-DEADLINE avisan vía E-FRESHNESS)
 CONTRACT_ALERT_CODES = {"E-TLS", "E-AUTH-SKEW", "E-AUTH-SIGNATURE", "E-AUTH-DENIED", "E-BUCKET", "E-NOT-IMPLEMENTED",
                         "E-REQUEST", "E-UPLOAD-WINDOW", "E-INTEGRITY-UPLOAD", "E-INTEGRITY-VERIFY",
@@ -323,24 +331,49 @@ class Alerts:
         except (OSError, ValueError, AssertionError):
             self.state = {}
 
-    def _deliver(self, event: dict) -> str:
+    def _deliver(self, event: dict) -> tuple[str, dict]:
+        """(delivery, recibo) — el recibo solo trae `message_id` y `ack` validados del adaptador (API-0005)."""
         if not self.command:
-            return "not-configured"
+            return "not-configured", {}
         if self.command.problem():  # se vuelve a comprobar justo antes de ejecutar
-            return "failed-integrity"
+            return "failed-integrity", {}
         try:
             proc = subprocess.run([str(self.command.path)], input=json.dumps(event, sort_keys=True) + "\n",
                                   text=True, capture_output=True, timeout=ALERT_COMMAND_TIMEOUT_S, shell=False,
                                   env={"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(Path.home())})
         except subprocess.TimeoutExpired:
-            return "failed-timeout"
+            return "failed-timeout", {}
         except OSError:
-            return "failed-exec"
-        return ALERT_HOOK_RC.get(proc.returncode, f"failed-rc{proc.returncode}")
+            return "failed-exec", {}
+        return ALERT_HOOK_RC.get(proc.returncode, f"failed-rc{proc.returncode}"), self._receipt(proc.stdout)
+
+    @staticmethod
+    def _receipt(stdout: str) -> dict:
+        try:
+            receipt = json.loads(stdout.split("\n", 1)[0][:2048])["receipt"]
+        except (ValueError, KeyError, TypeError):
+            return {}
+        out: dict = {}
+        if isinstance(receipt, dict):
+            mid, ack = receipt.get("message_id"), receipt.get("ack")
+            if isinstance(mid, int) and not isinstance(mid, bool) and mid > 0:
+                out["message_id"] = mid
+            if isinstance(ack, str) and ALERT_RECEIPT_ACK_RE.match(ack):
+                out["ack"] = ack
+        return out
 
     def _note_unavailable(self, delivery: str) -> None:
         if delivery in ("failed-unavailable", "failed-timeout"):
             self.unavailable = True
+
+    def _record_failed(self, event: dict, delivery: str) -> None:
+        try:
+            self.failed_dir.mkdir(mode=0o700, exist_ok=True)
+            write_private_json(self.failed_dir / f"{event['event_id']}.json",
+                               {"event": event, "attempts": 1, "first_failed_at": event["ts"], "last_delivery": delivery,
+                                "needs_operator_attention": True})
+        except OSError:
+            pass
 
     def _queue(self, event: dict, delivery: str) -> None:
         try:
@@ -379,12 +412,16 @@ class Alerts:
                 fh.write(json.dumps(event, sort_keys=True, ensure_ascii=True) + "\n")
         except OSError:
             outbox = "failed"
-        delivery = self._deliver(event)
+        delivery, receipt = self._deliver(event)
         self._note_unavailable(delivery)
-        if delivery not in ALERT_NOT_RETRIED:
+        if delivery in ALERT_NO_RESEND:
+            self._record_failed(event, delivery)
+        elif delivery not in ALERT_NOT_RETRIED:
             self._queue(event, delivery)
         self.log.emit("ALERT", error=code, severity=severity, event_id=event["event_id"], **fields,
-                      outbox=outbox, delivery=delivery, pending="yes" if delivery not in ALERT_NOT_RETRIED else None)
+                      outbox=outbox, delivery=delivery, **receipt,
+                      pending="yes" if delivery not in ALERT_NOT_RETRIED else None,
+                      needs_operator_attention="yes" if delivery in ALERT_NO_RESEND else None)
 
     def retry_pending(self) -> None:
         """Reintento controlado de avisos no entregados (antes de cualquier operación S3 de la ejecución)."""
@@ -407,20 +444,23 @@ class Alerts:
                 self._move_failed(path)
                 self.log.emit("ALERT", **base, attempts=attempts, delivery="abandoned")
                 continue
-            delivery = self._deliver(event)
+            delivery, receipt = self._deliver(event)
             self._note_unavailable(delivery)
-            if delivery == "failed-invalid":
-                self._move_failed(path)
-            elif delivery == "ok":
+            if delivery == "ok":
                 path.unlink(missing_ok=True)
             else:
                 rec.update(attempts=attempts + 1, last_delivery=delivery)
+                if delivery in ALERT_NO_RESEND:
+                    rec["needs_operator_attention"] = True
                 try:
                     write_private_json(path, rec)
                 except OSError:
                     pass
-            self.log.emit("ALERT", **base, attempts=attempts + 1, delivery=delivery, retry="yes",
-                          pending="yes" if delivery not in ALERT_NOT_RETRIED else None)
+                if delivery == "failed-invalid" or delivery in ALERT_NO_RESEND:
+                    self._move_failed(path)
+            self.log.emit("ALERT", **base, attempts=attempts + 1, delivery=delivery, **receipt, retry="yes",
+                          pending="yes" if delivery not in ALERT_NOT_RETRIED else None,
+                          needs_operator_attention="yes" if delivery in ALERT_NO_RESEND else None)
 
     def _move_failed(self, path: Path) -> None:
         try:
