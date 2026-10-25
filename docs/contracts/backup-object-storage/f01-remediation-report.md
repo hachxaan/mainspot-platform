@@ -4,6 +4,8 @@ Rama: `feat/f01-telegram-acknowledged-alerts`, sin fusionar.
 
 Mandato: issue `hachxaan/mainspot-platform#1`. Definición inicial: `f01-telegram-ack-design.md` @ `4817ef1`.
 
+**RECTIFICACIÓN posterior del propietario:** el aviso original `E-SIZE-LIMIT` `ac931611c7ef4f279c5eef542c4d5b53` SÍ llegó al primer bot. El propietario inicialmente revisó únicamente el segundo bot. **Recepción humana histórica DEC-0065 = PASS**, coincidente con el log de 2026-10-25T10:00:22Z. La mejora del botón es independiente de ese resultado y permanece sin activar; referencia: issue #1 comentario `6401208492`, issue #2 `6401207482`.
+
 Alcance ejecutado: diseño canónico, implementación y pruebas **offline**. No hubo:
 - mensajes reales a Telegram;
 - despliegue, ni temporizadores o servicios;
@@ -18,7 +20,8 @@ Alcance ejecutado: diseño canónico, implementación y pruebas **offline**. No 
 | Implementación y pruebas offline | **PASS**: 149/149 en `tests/ops/backup-remote` |
 | Solicitar autorización para la prueba real de acuse (`f01-ack-mini-bootstrap.md`) | **GO técnico condicionado**: antes de ejecutarla hace falta la auditoría independiente (§6) |
 | Fusionar con `master` o activar en producción | **NO-GO**: gates humanos G-FUN, G-TEC, G-PLAN y G-AUD pendientes; auditoría independiente pendiente; cadencia del consumidor y de `--check-overdue` sin definir ni autorizar |
-| F-01 | **ABIERTO**. Recepción humana DEC-0065 del evento `ac931611…`: **FAIL**, sin reinterpretar. Solo se cierra con una prueba real autorizada, acuse por el botón (`human_acknowledged`) y la confirmación nueva del propietario |
+| **Recepción del evento original** | **PASS tras rectificación del propietario**: recibió `ac931611…` en el primer bot. No existió fallo de entrega demostrado | 
+| **Mejora de acuse por botón** | **NO-GO para prueba real/merge/despliegue** hasta resolver AUD-01/02/03, auditoría independiente y gates humanos. 149/149 pruebas **offline** reportadas PASS |
 
 ## 1. Commits
 
@@ -136,6 +139,6 @@ stateDiagram-v2
 
 1. Auditoría independiente: otra ejecución, que no haya construido el cambio, revisa el canon (G-DER) y el código. Esta sesión no pudo hacerla porque el mandato excluye subagentes.
 2. Gates humanos G-FUN, G-TEC, G-PLAN y G-AUD.
-3. Permiso del propietario para la prueba real (mini-bootstrap, variante A o B). Después, confirmación humana nueva y cierre de F-01.
+3. Eventual permiso del propietario para probar la **nueva funcionalidad del botón**, luego de auditoría. Variante B obligatoria si se quiere validar el flujo del productor; variante A solo sirve para el adaptador. La prueba nueva **no es requisito retroactivo** para la recepción PASS del aviso original.
 4. Decisión sobre la cadencia del consumidor y de `--check-overdue` antes de la activación (condición 7, aparte).
 5. Verificación independiente de E4 en el KVM (issue #2), sin cambios.
