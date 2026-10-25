@@ -141,3 +141,59 @@ items:
   tier_hint: 4
   path: items/NFR-0005.md
   source: recovered (SRC-0006/SRC-0007)
+- id: FR-0012
+  title: Aviso del productor por el bot exclusivo, en la misma ejecución y sin éxito falso
+  state: DECIDED
+  tier_hint: 3
+  path: items/FR-0012.md
+  source: DEC-0064, DEC-0065
+  staging: F-01 (canon 0.2.0-staging, rama feat/f01-telegram-acknowledged-alerts)
+- id: FR-0013
+  title: Recibo verificable de aceptación por la API, distinto del acuse humano
+  state: PROPOSED
+  tier_hint: 3
+  path: items/FR-0013.md
+  source: SRC-0011/SRC-0012/SRC-0013 (F-01)
+  staging: F-01 (canon 0.2.0-staging, rama feat/f01-telegram-acknowledged-alerts)
+- id: FR-0014
+  title: Acuse humano con botón «Confirmar recepción»
+  state: PROPOSED
+  tier_hint: 4
+  path: items/FR-0014.md
+  source: SRC-0011/SRC-0012 (F-01)
+  staging: F-01 (canon 0.2.0-staging, rama feat/f01-telegram-acknowledged-alerts)
+- id: FR-0015
+  title: 'Avisos sin acuse: vencimiento, recordatorios acotados y atención del operador'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/FR-0015.md
+  source: SRC-0011/SRC-0012 (F-01)
+  staging: F-01 (canon 0.2.0-staging, rama feat/f01-telegram-acknowledged-alerts)
+- id: BR-0007
+  title: La confirmación humana solo procede de una acción autenticada del propietario
+  state: DECIDED
+  tier_hint: 4
+  path: items/BR-0007.md
+  source: DEC-0065
+  staging: F-01 (canon 0.2.0-staging, rama feat/f01-telegram-acknowledged-alerts)
+- id: BR-0008
+  title: El respaldo nunca espera al acuse
+  state: DECIDED
+  tier_hint: 3
+  path: items/BR-0008.md
+  source: DEC-0065
+  staging: F-01 (canon 0.2.0-staging, rama feat/f01-telegram-acknowledged-alerts)
+- id: NFR-0006
+  title: Secretos del canal de avisos solo en el equipo de MainSpot
+  state: DECIDED
+  tier_hint: 4
+  path: items/NFR-0006.md
+  source: DEC-0064, DEC-0065
+  staging: F-01 (canon 0.2.0-staging, rama feat/f01-telegram-acknowledged-alerts)
+- id: NFR-0007
+  title: Estado de avisos y acuses durable, local e independiente de PostgreSQL
+  state: PROPOSED
+  tier_hint: 3
+  path: items/NFR-0007.md
+  source: SRC-0011/SRC-0012 (F-01)
+  staging: F-01 (canon 0.2.0-staging, rama feat/f01-telegram-acknowledged-alerts)

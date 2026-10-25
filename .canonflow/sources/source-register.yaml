@@ -91,3 +91,28 @@ sources:
   registered_at: '2026-09-21'
   notes: 'Topología piloto sin Docker: contenedores LXC mainspot-db/mainspot-app;
     secretos fuera del repo (0600).'
+- id: SRC-0011
+  title: Mandato del propietario F-01 (issue hachxaan/mainspot-platform#1)
+  kind: decision-mandate
+  location: https://github.com/hachxaan/mainspot-platform/issues/1
+  fingerprint: sha256:0e7a7cd904f74bb478186faf52acbcf423c579cd54c2f7a79486a7b65725d221
+  reliability: authoritative-for-development
+  registered_at: '2026-10-25'
+  notes: Autoriza diseño, implementación en rama aislada y pruebas offline del acuse Telegram; no es un
+    DEC del HDC. Prohíbe mensajes reales, despliegue, timers, Garage y gate 7 sin nueva autorización.
+- id: SRC-0012
+  title: Definición inicial F-01 (f01-telegram-ack-design.md @ 4817ef1)
+  kind: document
+  location: docs/contracts/backup-object-storage/f01-telegram-ack-design.md@4817ef18e0572db052bdeb5690ba39f0d653556f
+  fingerprint: sha256:b007fff3c47458649cc7b83919d7e4a066ad4b3641ae01c80c6cee4bf7803197
+  reliability: authoritative-for-development
+  registered_at: '2026-10-25'
+  notes: Definición funcional y técnica inicial preparada para el mandato SRC-0011.
+- id: SRC-0013
+  title: Hallazgo F-01 del simulacro E2E (e2e-drill-report-2026-10-25.md @ 48272cc)
+  kind: evidence
+  location: docs/contracts/backup-object-storage/e2e-drill-report-2026-10-25.md@48272cc40dc4aaef2dbfc12b8ba83cbad242e5c3
+  fingerprint: sha256:060dd0b35adaa3311bfe2076ac5d10d74fbc1115cb929a6e28351a2c8b38b0b0
+  reliability: authoritative
+  registered_at: '2026-10-25'
+  notes: 'E-SIZE-LIMIT ac931611… aceptado por la API (delivery=ok) y no recibido por el propietario; causa raíz no determinada.'

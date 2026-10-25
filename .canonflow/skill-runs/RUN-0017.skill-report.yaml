@@ -1,0 +1,34 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0017
+run_id: RUN-0017
+skill_id: canonflow-functional-canon
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Staging patch F01-FUN-0.2.0-staging only. Not a canon approval; the canon stays FUNCTIONAL_CANON_IN_PROGRESS.
+human_summary: |
+  8 atomic items staged with one epistemic state each. DECIDED (bound by DEC records): FR-0012, BR-0007, BR-0008, NFR-0006.
+  PROPOSED (development mandate SRC-0011, no HDC DEC): FR-0013 receipt != human ack, FR-0014 «Confirmar recepción» button,
+  FR-0015 overdue/reminders/operator attention, NFR-0007 durable local state. Invariant carried in FR-0013/BR-0007:
+  api_accepted never equals human_acknowledged. No CONFLICTED statements; no product question blocks the authorized offline work.
+claims:
+  - class: VERIFIED
+    statement: "Every staged item links to a DEC record or to a registered source (SRC-0011..SRC-0013) with fingerprint."
+    evidence: [.canonflow/canon/functional/index.yaml, .canonflow/sources/source-register.yaml]
+  - class: OPEN
+    statement: "PROPOSED items bind only after human G-FUN; the owner mandate authorizes development on the isolated branch, not canon approval."
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      Builder and reviewer must be distinct runs; the independent review of this patch is delegated to the Loop 3 audit run
+      (separate executor) together with G-DER of the technical patch. Candidate state is not set by this run.
+limitations:
+  - "G-FUN session not generated: the owner asked to avoid new human decisions during development; it is a precondition for merge."
+outputs:
+  - .canonflow/canon/functional/items/FR-0012.md .. NFR-0007.md
+  - .canonflow/canon/functional/index.yaml
+  - .canonflow/canon/functional/CHANGELOG.md
+  - .canonflow/state/functional-canon-state.yaml
+  - .canonflow/sources/source-register.yaml
+next_pointer: "RUN-0018 technical canon (Loop 2)"

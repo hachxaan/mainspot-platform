@@ -1,0 +1,21 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0017
+skill_id: canonflow-functional-canon
+mode: builder
+executor: "omp agent session (anthropic/claude-opus-5-5) — SOL MAIN"
+objective: >-
+  Loop 1 for F-01: consolidate the functional canon of producer alerts with verifiable human acknowledgement
+  as a staging patch (canon 0.2.0-staging) from DEC-0061/0063/0064/0065 and the registered development
+  sources SRC-0011 (owner mandate, issue #1), SRC-0012 (initial definition) and SRC-0013 (F-01 finding).
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/f01-telegram-acknowledged-alerts
+base_commit: 4817ef18e0572db052bdeb5690ba39f0d653556f
+inputs:
+  - .canonflow/decision-records/DEC-0061, DEC-0063, DEC-0064, DEC-0065
+  - SRC-0011, SRC-0012, SRC-0013 (registered in .canonflow/sources/source-register.yaml)
+expected_outputs:
+  - .canonflow/canon/functional/items/FR-0012..FR-0015, BR-0007, BR-0008, NFR-0006, NFR-0007
+  - .canonflow/canon/functional/index.yaml, CHANGELOG.md; .canonflow/state/functional-canon-state.yaml (staging_patches)
+  - .canonflow/sources/source-register.yaml (SRC-0011..SRC-0013)
+created_at: "2026-10-25T14:40:00Z"

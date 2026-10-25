@@ -9,3 +9,10 @@ blocking_open:
 note: v0.1.0 fijada desde la baseline aprobada upstream (DEC-015). El delta de plataforma
   (items INFERRED + cierre TENTATIVA) requiere decisiones humanas vía HDC antes de
   REVIEW_CANDIDATE (G-EPI).
+staging_patches:
+- id: F01-FUN-0.2.0-staging
+  run: RUN-0017
+  branch: feat/f01-telegram-acknowledged-alerts
+  items: [FR-0012, FR-0013, FR-0014, FR-0015, BR-0007, BR-0008, NFR-0006, NFR-0007]
+  state: STAGING
+  pending_gates: [independent-review, G-FUN]
