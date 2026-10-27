@@ -1,11 +1,12 @@
-# Entorno fijado del productor remoto (gate 7, dossier §A P-03). Instalar SOLO con:
-#   python3 -m venv <dir>/venv && <dir>/venv/bin/pip install --no-deps --only-binary=:all: --require-hashes -r gate7-producer-requirements.lock
-# Mismas versiones que el entorno de usuario con el que el productor superó el simulacro (2026-10-25).
-# Allí urllib3, six y python-dateutil venían del sistema (Ubuntu); aquí son los wheels de PyPI de esas versiones.
+# Entorno fijado del productor remoto (gate 7, dossier §5 P-03), revisión 3. Instalar SOLO con un venv sin pip:
+#   python3 -m venv --without-pip <dir>/venv
+#   pip --python <dir>/venv/bin/python install --no-deps --only-binary=:all: --require-hashes -r gate7-producer-requirements.lock
+# boto3/botocore 1.43.85 = las del simulacro; dependencias transitivas actualizadas a versiones sin avisos conocidos
+# (urllib3 2.8.0; pip-audit 2.10.1, bases PyPI y OSV, 2026-10-27: 0 vulnerabilidades). Hashes de los wheels de PyPI.
 boto3==1.43.85 --hash=sha256:f11bdaca18e59f53ec0529f4d6203dd1f0bb7ff165e51559d62fd863024abc9b
 botocore==1.43.85 --hash=sha256:685510e5f4c0f321806c815a60f121a176c0969665f053c4a336209cbe62b1d5
 jmespath==1.1.0 --hash=sha256:a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64
-python-dateutil==2.8.2 --hash=sha256:961d03dc3453ebbc59dbdea9e4e11c5651520a876d0f4db161e8674aae935da9
-s3transfer==0.19.2 --hash=sha256:d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25
-six==1.16.0 --hash=sha256:8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254
-urllib3==2.0.7 --hash=sha256:fdb6d215c776278489906c2f8916e6e7d4f5a9b602ccbcfdf7f016fc8da0596e
+python-dateutil==2.9.0.post0 --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
+s3transfer==0.19.3 --hash=sha256:24eb7535804306355e31c952a90022bf5b2f9d760f9a11062c7493a217c08553
+six==1.17.0 --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
+urllib3==2.8.0 --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3
