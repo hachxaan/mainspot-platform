@@ -1,83 +1,63 @@
 {
  "schema_version": 2,
  "question_session_id": "QS-0015",
- "session_label": "Condición 7: autorizar la activación de la copia remota de respaldos (Garage S3, KVM 4)",
- "title": "BORRADOR — NO PUBLICAR sin decisión expresa del propietario tras revisar el dossier. ¿Autorizas activar la transferencia remota de respaldos de MainSpot a Garage S3 con los parámetros del dossier?",
- "generated_at": "2026-10-25T18:42:45Z",
+ "session_label": "Condición 7: autorización condicionada de la copia remota de respaldos (Garage S3, KVM 4)",
+ "title": "BORRADOR — NO PUBLICAR sin decisión expresa del propietario. Condición 7: ¿autorizas la activación CONDICIONADA de la transferencia remota de respaldos según el dossier revisión 2?",
+ "generated_at": "2026-10-27T09:42:28Z",
  "state": "PENDING",
  "ui_language": "es",
  "risk_tier": 3,
  "affected_loop": "implementation_loop",
- "intervention_reason": "Condición 7 de la puerta de activación (DEC-0049 §7, DEC-0054 §4, DEC-0058 §4; contrato 1.2.0 §2.3, commit c4f87c4aa2e875e7ad01861f5f2a809e025d638c): la transferencia remota solo se activa con un registro DEC explícito tuyo, después de acreditar las condiciones 1–6 y el cierre E1–E5 del simulacro. Dossier: docs/contracts/backup-object-storage/gate7-preauthorization-dossier.md (mainspot-platform, rama feat/canonflow-implementation). Recibir un mensaje de Telegram no equivale a esta autorización.",
- "decision_impact": "Si autorizas: el productor (código fijado por commit y sha256, dossier §7) se instala con la credencial writer que tú escribes en el equipo; se habilita el temporizador horario (minuto 20) y empieza la copia cifrada diaria a https://s3.mainspot.canonflow.dev/mainspot-backups; se ejecuta la verificación inicial del dossier §8 con sus criterios de parada. El respaldo local no cambia. La clave de descifrado nunca sale del equipo de MainSpot. Si no autorizas: nada cambia; el productor sigue DISABLED y se registra el motivo. Esta decisión no modifica DEC-0045…DEC-0065 ni el contrato.",
- "initial_instructions": "Antes de responder, comprueba que cada evidencia citada existe en el commit indicado y dice lo que aquí se afirma; si algo no coincide, responde «no autorizar». Nunca escribas credenciales, claves, tokens ni identificadores de chat.",
+ "intervention_reason": "Condición 7 de la puerta de activación (DEC-0049 §7, DEC-0054 §4, DEC-0058 §4; contrato 1.2.0 §2.3, commit c4f87c4aa2e875e7ad01861f5f2a809e025d638c): la transferencia remota solo se activa con un registro DEC explícito tuyo. Esta sesión separa los requisitos obligatorios, que ninguna respuesta puede sustituir (dossier §5), de las decisiones de aceptación de riesgo que solo tú puedes tomar (dossier §6). Recibir un mensaje de Telegram no equivale a esta autorización.",
+ "decision_impact": "Aprobar NO activa nada por sí solo: concede una autorización condicionada que se ejecuta únicamente si se cumplen todos los requisitos obligatorios del dossier §5 y los que añadan tus respuestas, acreditados en un registro de preflight publicado, dentro de 30 días (regla del dossier §7). Si no se cumplen, el productor sigue DISABLED y la autorización caduca. Rechazar o aplazar: nada cambia. Esta decisión no modifica DEC-0045…DEC-0065 ni el contrato.",
+ "initial_instructions": "Lee el dossier ligado a la pregunta de autorización; el HDC comprueba al enviar que su contenido no ha cambiado. Comprueba que la evidencia citada existe en los commits indicados; si algo no coincide, rechaza o aplaza. Ninguna opción va preseleccionada. Las notas no pueden relajar requisitos. Nunca escribas credenciales, claves, tokens ni identificadores de chat.",
  "topics": [
   {
-   "topic_id": "condiciones_previas",
-   "title": "Condiciones previas que solo tú puedes declarar o decidir"
+   "topic_id": "riesgos",
+   "title": "Decisiones de aceptación de riesgo (dossier §6)"
   },
   {
-   "topic_id": "activacion",
-   "title": "Autorización de la activación"
+   "topic_id": "autorizacion",
+   "title": "Autorización condicionada (dossier §5 y §7)"
   }
  ],
  "questions": [
   {
-   "question_id": "Q-KEY-CUSTODY",
-   "type": "single_choice",
-   "topic_id": "condiciones_previas",
+   "question_id": "Q-WATCHDOG-EXCEPTION",
+   "type": "risk_acceptance",
+   "topic_id": "riesgos",
    "affected_loop": "implementation_loop",
    "required": true,
    "requires_comment": false,
    "risk_tier": 3,
-   "title": "¿Tienes la copia de custodia de la clave de descifrado y de la credencial restore fuera del equipo de MainSpot y del KVM 4 (DEC-0053)?",
-   "short_description": "Sin esa copia, perder el equipo de MainSpot deja ilegibles todos los respaldos remotos (riesgo R7). Los agentes no pueden ni deben verificarlo.",
-   "full_explanation": "DEC-0053 y DEC-0054 §3 te asignan la custodia de una copia de la clave de descifrado fuera de ambos equipos, y la recuperación debe funcionar aunque se pierda el equipo de MainSpot. No hay evidencia publicada de que esa copia exista ni de que descifre (dossier §5 R-KEY). Se recomienda comprobarla descifrando un respaldo local en un equipo tuyo, sin publicar nada. Si respondes «no tengo copia», la respuesta coherente a la activación es «no autorizar».",
-   "why_this_matters": "La copia remota solo sirve para recuperar si existe una clave fuera del equipo que se perdería.",
-   "options": [
-    {
-     "value": "custodia_verificada",
-     "label": "Tengo la copia fuera de ambos equipos y comprobé que descifra un respaldo",
-     "impact": "condición previa de recuperación cumplida",
-     "risk": "ninguno adicional"
-    },
-    {
-     "value": "custodia_sin_prueba",
-     "label": "Tengo la copia fuera de ambos equipos, pero no la he probado",
-     "impact": "la activación es posible; la prueba de descifrado queda como control de la primera semana",
-     "risk": "si la copia no descifra, no se sabrá hasta necesitarla"
-    },
-    {
-     "value": "sin_custodia",
-     "label": "No tengo esa copia todavía",
-     "impact": "no se debe activar hasta crearla",
-     "risk": "perder el equipo de MainSpot = perder los respaldos"
-    }
-   ]
+   "title": "¿Aceptas un piloto TEMPORAL sin vigilancia de frescura independiente (excepción a P-05)?",
+   "short_description": "Si el productor o el equipo de MainSpot dejan de ejecutarse, hoy nadie avisa: E-FRESHNESS la calcula el propio productor y S-08 del KVM 4 no vigila la frescura.",
+   "full_explanation": "No aceptar: P-05 es obligatorio; antes de activar, el operador del KVM 4 implementa y prueba una vigilancia de frescura que no corre en el equipo de MainSpot (aviso si el respaldo completo más reciente tiene más de 26 h, por el bot del KVM 4). Puede requerir un cambio del servicio, avisado según S-14. Aceptar: se permite activar sin P-05 como piloto temporal hasta la fecha de caducidad que indiques (máximo 30 días desde la activación), con revisión humana diaria registrada y control de salida: si al vencer P-05 no está en PASS, o si faltan dos revisiones diarias seguidas, el productor se desactiva (el respaldo local sigue). No es adecuado si prevés ausencias. Dossier §6 D-1 y §7.",
+   "why_this_matters": "Sin vigilancia independiente, una parada silenciosa deja de copiar respaldos fuera del equipo sin que nadie lo sepa."
   },
   {
    "question_id": "Q-CREDENTIAL-ROTATION",
    "type": "single_choice",
-   "topic_id": "condiciones_previas",
+   "topic_id": "riesgos",
    "affected_loop": "implementation_loop",
    "required": true,
    "requires_comment": false,
    "risk_tier": 2,
    "title": "¿Rotamos las credenciales writer y reader antes de activar?",
-   "short_description": "Las claves reales viajaron cifradas por el buzón temporal del simulacro y estuvieron en tmpfs en el equipo de MainSpot. El operador no vio desviaciones y concluyó que la rotación no es obligatoria.",
-   "full_explanation": "En el simulacro del 2026-10-25 se usaron las credenciales reales writer (mainspot-backup-writer) y reader (mainspot-backup-reader), destruidas después en el equipo de MainSpot (E3). El log S3 de la ventana solo muestra peticiones del ejecutor sobre claves sintéticas (evidence/48). Rotar sigue docs/07 «Rotación (sin corte)» del servicio y repite C-03/C-04/C-21/C-22 antes de activar. Dossier §5 R-CRED.",
-   "why_this_matters": "La writer puede borrar y sobrescribir en mainspot-backups (R1); rotar elimina cualquier duda sobre su exposición en el simulacro.",
+   "short_description": "Se usaron en el simulacro (buzón cifrado, tmpfs, destruidas después). El operador no vio desviaciones y concluyó que la rotación no es obligatoria (evidence/49).",
+   "full_explanation": "Rotar sigue docs/07 «Rotación (sin corte)» del servicio y añade el requisito P-07: C-03, C-04, C-21 y C-22 en PASS con las claves nuevas antes de activar. No rotar acepta la exposición acotada del simulacro. Ninguna de las dos opciones exime de los requisitos obligatorios. Dossier §6 D-2.",
+   "why_this_matters": "La writer puede borrar y sobrescribir en mainspot-backups (R1).",
    "options": [
     {
      "value": "rotar_antes",
-     "label": "Rotar writer y reader antes de activar",
-     "impact": "una entrega nueva de credenciales y una comprobación previa",
-     "risk": "más pasos manuales"
+     "label": "Rotar writer y reader antes de activar (añade P-07)",
+     "impact": "nueva entrega de credenciales y comprobación de permisos antes de activar",
+     "risk": "más pasos manuales; la activación espera a P-07"
     },
     {
      "value": "no_rotar",
      "label": "No rotar: usar las credenciales actuales",
-     "impact": "sin pasos adicionales",
+     "impact": "sin pasos adicionales; los requisitos obligatorios siguen aplicando",
      "risk": "se acepta la exposición acotada del simulacro"
     }
    ]
@@ -85,64 +65,56 @@
   {
    "question_id": "Q-SWAP-RISK",
    "type": "single_choice",
-   "topic_id": "condiciones_previas",
+   "topic_id": "riesgos",
    "affected_loop": "implementation_loop",
    "required": true,
    "requires_comment": false,
    "risk_tier": 2,
-   "title": "¿Cómo tratamos el swap sin cifrar del equipo de MainSpot?",
-   "short_description": "El equipo tiene un swap de 8 GiB sin cifrar y ningún volumen cifrado; la credencial writer y la clave de cifrado estarán en disco con permisos 0600 y podrían paginarse.",
-   "full_explanation": "Observado en el simulacro (informe, «Riesgo residual observado») y reverificado el 2026-10-25: /swap.img sin cifrar, 0 volúmenes crypt. backup.key ya está hoy en disco en claro (0600), así que el swap no añade una exposición cualitativa, pero sí otra superficie. Mitigar antes significa añadir MemorySwapMax=0 a la unidad remota y/o cifrar el swap; el cifrado del disco sería una decisión aparte. Dossier §5 R-SWAP.",
-   "why_this_matters": "Quien acceda al disco del equipo podría recuperar credenciales paginadas.",
+   "title": "¿Cómo tratamos la paginación a un swap sin cifrar en el equipo de MainSpot?",
+   "short_description": "Swap de 8 GiB sin cifrar y ningún volumen cifrado. backup.key, remote.env y telegram-alert.env estarán en disco en claro (0600) con cualquiera de las dos opciones.",
+   "full_explanation": "Aceptar: sin cambios en el equipo; las credenciales podrían paginarse a un swap en claro. Mitigar la paginación: añade P-08: swap cifrado con clave efímera o sin swap, comprobado tras un reinicio, y MemorySwapMax=0 en las unidades del respaldo local, de la prueba de restauración y del productor remoto. Es una mitigación PARCIAL: no cifra los archivos en disco ni cubre otros procesos; el cifrado del disco sería otra decisión. Ninguna opción deja el riesgo en cero. Dossier §6 D-3.",
+   "why_this_matters": "Quien acceda al disco del equipo podría recuperar credenciales paginadas o los archivos en claro.",
    "options": [
     {
-     "value": "aceptar",
-     "label": "Aceptar el riesgo para la etapa inicial",
+     "value": "aceptar_riesgo",
+     "label": "Aceptar el riesgo de paginación y de archivos en claro para la etapa inicial",
      "impact": "sin cambios en el equipo",
-     "risk": "credenciales posiblemente paginadas en swap en claro"
+     "risk": "credenciales posiblemente paginadas en un swap en claro; archivos en claro en disco"
     },
     {
-     "value": "mitigar_antes",
-     "label": "Mitigar antes de activar (MemorySwapMax=0 en la unidad remota y/o swap cifrado)",
-     "impact": "un cambio de configuración adicional en el equipo",
-     "risk": "ninguno relevante para el respaldo"
+     "value": "mitigar_paginacion",
+     "label": "Mitigar la paginación antes de activar (añade P-08; mitigación parcial)",
+     "impact": "swap cifrado o desactivado y MemorySwapMax=0, comprobados tras reinicio",
+     "risk": "los archivos siguen en claro en disco; requiere un reinicio planificado"
     }
    ]
   },
   {
-   "question_id": "Q-ACTIVATE-REMOTE-BACKUP",
-   "type": "single_choice",
-   "topic_id": "activacion",
+   "question_id": "Q-ACTIVATION-CONDITIONAL",
+   "type": "approval",
+   "topic_id": "autorizacion",
    "affected_loop": "implementation_loop",
    "required": true,
    "requires_comment": false,
    "risk_tier": 3,
-   "title": "¿Autorizas activar la transferencia remota de respaldos de MainSpot a Garage S3 (condición 7)?",
-   "short_description": "Solo si las condiciones 1–6 y E1–E5 están acreditadas con la evidencia citada y aceptas los parámetros y los riesgos del dossier.",
-   "full_explanation": "Evidencia por condición (contrato 1.2.0, commit c4f87c4aa2e875e7ad01861f5f2a809e025d638c, §2.3; estado conciliado en docs/contracts/backup-object-storage/integration-status.md):\n1. Certificado: C-01 PASS en el informe externo (mainspot-platform@6db95cc827c75118a20d91a6a90486afe0737d67, run 20261024T062159Z-1750b25a); reobservado el 2026-10-25T18:36Z (Let's Encrypt YE2, notAfter 2027-01-20).\n2. Conformidad: conformant=true, 20 PASS, C-21/C-22 MANUAL (evidence/29 y 32); S-15 1.2.0 en mainspot-s3-backups@9c880469 (evidence/43); S-13 PASS en mainspot-s3-backups@2af25580b1a071269a44e73ff8970c2cc85fb3bd (evidence/49).\n3. Copia protegida: S-16 PASS (evidence/43); §9.2.6 pasos 1–7 PASS con pares del productor real (simulacro 2026-10-25; E2 en mainspot-s3-backups@6945a6329f8e36f11a56c380ce6696ef6fae4260).\n4. Contrato 1.2.0 citado por ambas partes (pin 2bb52905; KVM 9c880469).\n5. Productor: 69 PASS de laboratorio; simulacro B1–B4 contra el servicio real, datos borrados (e2e-drill-report-2026-10-25.md @ c925e1234599d70e2ba72853b399e89329719410).\n6. Restauración: 6a desde mainspot-backups y 6b desde la copia con originales ausentes, 33 tablas iguales y bajas reaplicadas (mismo informe).\nCierre del simulacro: E1, E2 y E3 PASS; E4 independiente PASS y E5 PASS (mainspot-s3-backups@2af25580b1a071269a44e73ff8970c2cc85fb3bd, evidence/49 y evidence/50; comentario 6401546425; rotación no obligatoria según el operador).\nCanal de aviso: servicio S-08 PASS (DEC-0055); productor DEC-0064/0065 PASS (TEST-SYNTHETIC y E-SIZE-LIMIT ac931611… recibido por ti, comentario 6401207482).\n\nParámetros (dossier §7): DEPLOYMENT_ID=mainspot-pilot y región garage (hoy PROPUESTOS en el contrato §2.2, esta autorización los confirmaría); productor b714c783… y manifest_tool b330ddfa… fijados por commit fuera del checkout de desarrollo; adaptador d42fe40b… (el del simulacro; la mejora F-01 del botón NO se incluye); temporizador horario en el minuto 20. Verificación inicial (dossier §8): ejecución vigilada, copia protegida antes de 1 h, revisión diaria durante 7 días y primera restauración remota antes del día 7; criterios de parada y desactivación en §8–§9. Riesgos residuales (dossier §5): nodo único (aceptado DEC-0048), writer con capacidad de borrado (mitigado por la copia protegida, ventana ≤ 1 h), sin aviso independiente si el productor deja de ejecutarse, prueba mensual remota manual, expiración real a 14 días no observada todavía.",
-   "why_this_matters": "Es la única decisión que permite empezar a copiar respaldos reales fuera del equipo de MainSpot.",
-   "options": [
-    {
-     "value": "autorizar",
-     "label": "Autorizo la activación con los parámetros y la verificación inicial del dossier",
-     "impact": "se instala y habilita el productor tras cumplir tus respuestas anteriores; empieza la copia diaria",
-     "risk": "los riesgos residuales del dossier §5"
-    },
-    {
-     "value": "no_autorizar",
-     "label": "No autorizo por ahora",
-     "impact": "nada cambia; el productor sigue desactivado",
-     "risk": "sin copia fuera del equipo de MainSpot"
-    }
-   ]
+   "title": "¿Apruebas la autorización CONDICIONADA de la condición 7 según el dossier revisión 2?",
+   "short_description": "Aprobar no activa nada por sí solo: la activación se ejecuta solo si se cumplen todos los requisitos obligatorios y los que añadan tus respuestas (dossier §7). Rechazar exige comentario; aplazar no cambia nada.",
+   "full_explanation": "Evidencia de §2.3 (estado conciliado en integration-status.md): condiciones 1–6 PASS y E1–E5 PASS. Certificado C-01 PASS (6db95cc8); conformidad conformant=true; S-15 1.2.0 y S-13 PASS (mainspot-s3-backups evidence/43 y 49 en 2af25580b1a071269a44e73ff8970c2cc85fb3bd); copia protegida S-16 y §9.2.6 1–7 PASS; contrato 1.2.0 citado por ambas partes; productor probado contra el servicio real y restauraciones 6a/6b PASS (e2e-drill-report-2026-10-25.md @ c925e1234599d70e2ba72853b399e89329719410); E4 independiente y E5 en 2af25580b1a071269a44e73ff8970c2cc85fb3bd (comentario 6401546425). Avisos: S-08 PASS; productor DEC-0065 PASS (E-SIZE-LIMIT ac931611… recibido por ti, 6401207482).\n\nRequisitos obligatorios (dossier §5; ninguna respuesta de esta sesión los sustituye):\nP-01 Custodia recuperable de la clave: tu copia de custodia descifra un respaldo real fuera del equipo de MainSpot y del KVM 4 (sha256 del claro coincidente). Una copia sin probar NO cumple.\nP-02 Credencial restore en custodia y operativa: HeadBucket y ListObjectsV2 de solo lectura desde un equipo tuyo distinto del de MainSpot.\nP-03 Ejecución fijada e inmutable: copia de solo lectura del productor b714c783… y manifest_tool b330ddfa…, venv con hashes, python -I, unidad con sha256 exacto; nunca desde el checkout de desarrollo.\nP-04 Adaptador original del simulacro d42fe40b… (sin F-01).\nP-05 Vigilancia de frescura independiente del equipo de MainSpot, probada (salvo la excepción temporal que puedes aceptar en Q-WATCHDOG-EXCEPTION).\nP-06 Estado sin cambios: contrato c4f87c4aa2e875e7ad01861f5f2a809e025d638c, servicio 2af25580 o posterior sin cambio de comportamiento, salud 9/9, ciclo de vida exacto.\nP-07 Rotación con C-03/C-04/C-21/C-22 en PASS, solo si eliges rotar.\nP-08 Swap cifrado o desactivado y MemorySwapMax=0 en las unidades de respaldo, comprobados tras reinicio, solo si eliges mitigar.\nP-09 Todo lo aplicable en PASS dentro de los 30 días siguientes al DEC; si no, la autorización caduca.\nP-10 remote.env escrito por ti en el equipo (0600), sin variables de laboratorio.\n\nRegla (dossier §7): la activación ocurre si y solo si hay DEC con esta aprobación, P-01, P-02, P-03, P-04, P-06, P-09 y P-10 en PASS, P-05 en PASS o la excepción temporal aceptada y vigente, P-07 si eliges rotar, P-08 si eliges mitigar, y ninguna nota contradice la regla. En cualquier otro caso no se activa. Parámetros (dossier §10): DEPLOYMENT_ID=mainspot-pilot y región garage (PROPUESTOS en el contrato; esta aprobación los confirma), temporizador horario en el minuto 20. Verificación inicial, criterios de parada y desactivación: dossier §11–§12. Riesgos residuales: dossier §8.",
+   "why_this_matters": "Es la única decisión que permite, una vez cumplidos los requisitos, copiar respaldos reales fuera del equipo de MainSpot.",
+   "artifact_ref": "gate7-preauthorization-dossier revisión 2",
+   "artifact_binding": {
+    "artifact_ref": "gate7-preauthorization-dossier revisión 2",
+    "path": "docs/contracts/backup-object-storage/gate7-preauthorization-dossier.md",
+    "sha256": "adaecf96003bc6370a839e3942b1e0f8bd46a446b08aac9cd8616a4b4443bbbc"
+   }
   },
   {
    "question_id": "Q-NOTES",
    "type": "free_text",
-   "topic_id": "activacion",
+   "topic_id": "autorizacion",
    "required": false,
    "title": "Notas para el registro",
-   "short_description": "Opcional. Se transcribe literalmente en el registro de decisión. Nunca escribas credenciales, claves, tokens, identificadores de chat ni direcciones.",
+   "short_description": "Opcional. Se transcribe literalmente. No puede relajar requisitos. Nunca escribas credenciales, claves, tokens, identificadores de chat ni direcciones.",
    "options": []
   }
  ]

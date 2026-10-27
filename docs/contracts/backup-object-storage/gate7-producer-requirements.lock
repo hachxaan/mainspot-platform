@@ -1,0 +1,11 @@
+# Entorno fijado del productor remoto (gate 7, dossier §A P-03). Instalar SOLO con:
+#   python3 -m venv <dir>/venv && <dir>/venv/bin/pip install --no-deps --only-binary=:all: --require-hashes -r gate7-producer-requirements.lock
+# Mismas versiones que el entorno de usuario con el que el productor superó el simulacro (2026-10-25).
+# Allí urllib3, six y python-dateutil venían del sistema (Ubuntu); aquí son los wheels de PyPI de esas versiones.
+boto3==1.43.85 --hash=sha256:f11bdaca18e59f53ec0529f4d6203dd1f0bb7ff165e51559d62fd863024abc9b
+botocore==1.43.85 --hash=sha256:685510e5f4c0f321806c815a60f121a176c0969665f053c4a336209cbe62b1d5
+jmespath==1.1.0 --hash=sha256:a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64
+python-dateutil==2.8.2 --hash=sha256:961d03dc3453ebbc59dbdea9e4e11c5651520a876d0f4db161e8674aae935da9
+s3transfer==0.19.2 --hash=sha256:d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25
+six==1.16.0 --hash=sha256:8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254
+urllib3==2.0.7 --hash=sha256:fdb6d215c776278489906c2f8916e6e7d4f5a9b602ccbcfdf7f016fc8da0596e
