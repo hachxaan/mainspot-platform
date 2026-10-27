@@ -1,10 +1,18 @@
 # Dossier de preautorización: condición 7 (activación de respaldos remotos MainSpot → Garage S3)
 
-No normativo, sin secretos. **Revisión 3**, del 2026-10-27, que atiende G7-REV2-01…03 ([mainspot-platform#2,
-comentario 6438826575](https://github.com/hachxaan/mainspot-platform/issues/2#issuecomment-6438826575)) y sustituye a la
-revisión 2 (`e90b093`). La revisión 2 atendió G7-REV-01…05 (comentario 6402562530).
+No normativo, sin secretos. **Revisión 4**, del 2026-10-27. Sustituye a la revisión 3 (`d3eb3d2`) y solo cambia lo
+necesario para resolver **G7-REV3-01** ([comentario 6441378247](https://github.com/hachxaan/mainspot-platform/issues/2#issuecomment-6441378247)):
+la compatibilidad entre P-05, P-06 y las obligaciones S-14/S-15 del contrato.
 
-**Cambios respecto a la revisión 2:**
+**Cambios respecto a la revisión 3:**
+- Nuevo §5.1: límite funcional y técnico del monitor de frescura P-05 y su clasificación contractual. Dentro de ese límite, P-05 **no cambia el comportamiento contractual** del servicio: no hace falta versión nueva del contrato, ni aviso S-14 obligatorio, ni ninguna decisión aprobada se modifica. Sí activa **S-15**, porque es un cambio de configuración del servicio.
+- P-05 y P-06 se reescriben para encajar con ese límite: P-06 deja de aceptar la declaración genérica «el comportamiento no cambia» y pasa a exigir un alcance verificable del diff y el informe S-15. No se relaja ninguna garantía.
+- Las comprobaciones de salud dejan de exigir el literal «9/9».
+- Sin cambios en código, lock, unidades, contrato ni en las preguntas y opciones de la sesión. Las pruebas de la revisión 3 siguen siendo válidas y no se repiten (§14.4).
+
+**Cambios de la revisión 3 respecto a la revisión 2** (atienden G7-REV2-01…03, [comentario
+6438826575](https://github.com/hachxaan/mainspot-platform/issues/2#issuecomment-6438826575); la revisión 2 atendió
+G7-REV-01…05, comentario 6402562530):
 - **G7-REV2-01.** El entorno Python fijado deja de usar `urllib3` 2.0.7, una versión de PyPI sin los parches que Ubuntu aplica en USN-8926-1. Ahora usa `urllib3` 2.8.0 y las dependencias transitivas vigentes, con hashes nuevos y `pip-audit` limpio. Las pruebas se repitieron con el entorno definitivo: suite de laboratorio y E2E sintético por TLS + SigV4 (§14).
 - **G7-REV2-02.** Se elimina la excepción temporal D-1, por preferencia del propietario. **P-05 es obligatorio siempre**, sin alternativa. El dossier ya no promete un control de salida automático.
 - **G7-REV2-03.** Desaparece con D-1: ya no hay ninguna aceptación de riesgo con justificación en la sesión.
@@ -93,12 +101,67 @@ en un **registro de preflight** publicado (§11). Si uno falla, no hay activaci�
 | **P-02** | **Credencial restore en custodia y operativa** fuera del equipo de MainSpot (DEC-0054 §3, §6.4) | Desde un equipo del propietario distinto del de MainSpot y con la credencial de custodia, comprobación de solo lectura: `HeadBucket mainspot-backups` → 200 y `ListObjectsV2` con prefijo `v1/` → 200. Se registran fecha y códigos, nunca la clave ni su id | Propietario | Sin activación |
 | **P-03** | **Ejecución fijada e inmutable** (G7-REV-02): nunca desde el checkout de desarrollo | Ver la lista de comprobaciones bajo la tabla. Ensayo offline hecho en §14.1; la instalación real se repite en el preflight | SOL MAIN | Sin activación |
 | **P-04** | **Adaptador original del simulacro** | `sha256(~/.local/libexec/mainspot/remote-alert-telegram.py)` = `d42fe40b…f442b1` = `MAINSPOT_REMOTE_ALERT_COMMAND_SHA256`; ningún artefacto de la rama F-01 instalado | SOL MAIN | Sin activación |
-| **P-05** | **Vigilancia de frescura independiente** (G7-REV-03, G7-REV2-02), **obligatoria sin excepción** | Un proceso que **no** corre en el equipo de MainSpot comprueba al menos cada hora que el respaldo completo más reciente en `v1/mainspot-pilot/postgres/mainspot/` tiene menos de 26 h (por manifiesto o `created_at`), y avisa por un canal fuera del equipo de MainSpot (bot del KVM 4, DEC-0055). El operador publica, con commit del servicio, una prueba sintética: aviso FIRING con el bucket sin respaldo reciente y RESOLVED al volver a haberlo | Operador KVM 4 (implementa); propietario (confirma la recepción) | Sin activación |
-| **P-06** | **Estado sin cambios respecto a la sesión** | Contrato `c4f87c4`. Servicio en `2af25580`, o posterior con declaración del operador de que el comportamiento no cambia. Salud 9/9, ciclo de vida §9.1 exacto y `v1/mainspot-pilot/` vacío el día de la activación. Hashes del §2.3 sin cambios | Operador; SOL MAIN | Sin activación; si cambió algo normativo, nueva sesión |
+| **P-05** | **Vigilancia de frescura independiente** (G7-REV-03, G7-REV2-02), **obligatoria sin excepción**. Debe cumplir el límite del §5.1 | Las evidencias P05-E1…E6 del §5.1, publicadas por el operador con commit del servicio, incluida la prueba sintética FIRING/RESOLVED con la recepción confirmada por el propietario. Todo **antes** de habilitar el productor | Operador KVM 4 (implementa y publica); propietario (autoriza la ventana de la prueba y confirma la recepción) | Sin activación |
+| **P-06** | **Estado sin cambios respecto a la sesión, salvo la incorporación de P-05 dentro de su límite** (G7-REV3-01) | (a) Contrato `c4f87c4`, sin versión nueva. (b) Servicio en el commit que publica P-05, o posterior. `git diff 2af25580..<commit>` solo toca los archivos del componente P-05 (código, pruebas y unidad o configuración propia) más `evidence/` y `docs/`. Ningún cambio en los elementos de S-14 (endpoint, región, bucket, nombres o permisos de credenciales, ciclo de vida, copia protegida) ni en Garage, el proxy, la firma S3 o las reglas 1–6 del vigilante de §9.1. (c) Informe **S-15** en ese commit: §14 ejecutada desde el KVM 4 con el mismo resultado que la referencia del operador (20 PASS; C-21 y C-22 MANUAL acreditadas por §9.2.5), más la declaración S-04, S-06, S-11, S-13 y S-16 sin cambios. (d) El día de la activación: todas las comprobaciones de salud en `ok` (las previas, ninguna retirada, más las que añada P-05), ciclo de vida §9.1 exacto, `v1/mainspot-pilot/` vacío y P-05 en estado `unarmed` sin avisos. (e) Hashes del §2.3 sin cambios | Operador (b–d); SOL MAIN comprueba el diff, el informe y los hashes | Sin activación. Si P-05 no cabe en el §5.1 o el diff lo excede: §5.1 rama B (contrato nuevo y nuevo ciclo de Gate 7) |
 | **P-07** | **Rotación**, solo si D-2 = `rotar_antes` | `docs/07` «Rotación (sin corte)» aplicado; C-03, C-04, C-21 y C-22 en PASS con las claves nuevas; claves anteriores revocadas | Operador; propietario | Sin activación |
 | **P-08** | **Mitigación de la paginación**, solo si D-3 = `mitigar_paginacion` | (a) Tras un reinicio, swap cifrado con clave efímera o sin swap: `swapon --show` y `lsblk -o NAME,TYPE` muestran el dispositivo de swap como `crypt`, o ninguno. (b) `MemorySwapMax=0` en `mainspot-db-backup-remote.service` (variante B, §10), `mainspot-db-backup.service` y `mainspot-db-restore-test.service`, comprobado con `systemctl --user show -p MemorySwapMax` = 0. El controlador de memoria está delegado en este equipo y el efecto se comprobó el 2026-10-27 (`memory.swap.max` = 0) | SOL MAIN; propietario (reinicio) | Sin activación |
 | **P-09** | **Vigencia de la autorización** | Todos los requisitos aplicables en PASS dentro de los **30 días** siguientes al DEC | — | La autorización caduca; hace falta una sesión nueva |
 | **P-10** | **`remote.env` provisto por el propietario en el equipo** | Archivo 0600 en un directorio 0700, con las claves del §10 y sin `MAINSPOT_REMOTE_LAB_*`; secretos nunca transmitidos por chats ni issues | Propietario; SOL MAIN comprueba permisos y claves (no valores) | Sin activación |
+
+### 5.1 Límite de P-05 y clasificación contractual (G7-REV3-01)
+
+**Base contractual (1.2.0 `c4f87c4`, sin cambios):**
+- §1: el servicio «PUEDE vigilar y auditar», pero ningún proceso del servicio borra objetos ni los retiene más de 16 días.
+- §3: el servicio opera el «monitoreo (§15)».
+- S-02: los procesos propios del KVM 4 («vigilante…, copiador…, monitor») PUEDEN usar el puerto interno.
+- §9.1, reglas 1–6 del vigilante: lista `v1/`, mide la edad desde `created_at` y avisa; NO DEBE borrar, retener ni instalar otro ciclo de vida.
+- §10.1: los avisos del servicio salen del KVM 4 por el canal autorizado.
+- S-08 obliga a vigilar el ciclo de vida y el inventario, pero no la frescura. El contrato **no obliga ni prohíbe** una comprobación de frescura del servicio.
+
+**Límite funcional y técnico.** P-05 debe cumplir **todo** lo siguiente:
+
+| Id | Límite |
+|---|---|
+| L1 | Se ejecuta en el KVM 4, sin ningún componente en el equipo de MainSpot, y avisa por el bot del KVM 4 (DEC-0055), con las condiciones de DEC-0058 §1: sin secretos, con control de duplicados, reintentos limitados y aviso si falla la entrega. Es un aviso operativo sobre el contenido de `mainspot-backups`, dentro del uso «alertas operativas de Garage S3» de DEC-0058 §1 |
+| L2 | **Sin credenciales, claves ni permisos nuevos.** Usa la identidad de un proceso existente del KVM 4 y solo operaciones de lectura sobre `mainspot-backups` (`ListObjectsV2`; `HeadObject`/`GetObject` de manifiestos si hiciera falta). Recomendación: implementarlo como una regla adicional del vigilante `mainspot-s3-retention`, que ya lista `v1/` cada hora con la clave **operator**. Así no hay operaciones nuevas sobre el bucket |
+| L3 | **Aditivo y pasivo.** No escribe ni borra objetos, no retiene (§9.1 regla 5: una parada del productor no es motivo para retener), no toca el ciclo de vida, la copia protegida, el guard ni Garage. No modifica las reglas 1–6 del vigilante ni sus avisos actuales |
+| L4 | **Alcance.** Prefijo `v1/mainspot-pilot/postgres/mainspot/`. Respaldo completo = par objeto + manifiesto con clave §7.3. Edad del más reciente desde su `created_at`. Umbral **26 h**, el de E-FRESHNESS en §10.1. Evaluación al menos cada hora |
+| L5 | **Estados.** `unarmed`: nunca se ha visto un respaldo completo; no avisa, pero lo informa en su estado. `ok`. `stale`: un aviso FIRING al entrar y RESOLVED al salir. El armado es automático y persistente con el primer respaldo completo, sin cambio de configuración al activar. Desarmarlo solo es posible con una acción auditada del operador, avisada antes al propietario |
+| L6 | **Falla ruidosa.** Si no puede evaluar durante 3 ciclos seguidos (listado fallido), avisa. Si el proceso muere, lo detecta la salud existente (comprobación `retention` de `garage-health`, si va dentro del vigilante) o una comprobación nueva |
+| L7 | Configuración y estado sin secretos. Los avisos PUEDEN contener claves de objeto (§10.1) |
+
+**Clasificación.**
+
+**Rama A, dentro del límite L1–L7: no es un cambio de comportamiento contractual.**
+- No modifica ninguna obligación del contrato: §5–§14 y S-01…S-16 siguen iguales.
+- No cambia ningún elemento de la lista de S-14 (endpoint, región, bucket, credenciales, ciclo de vida, copia protegida), así que **no hay versión nueva del contrato** ni aviso previo obligatorio por S-14.
+- No toca ninguna decisión aprobada: DEC-0046/0057 (solo detecta y avisa, no borra ni retiene), DEC-0055/0058 §1 (mismo canal y condiciones), DEC-0047/0056 (no toca la copia).
+- Sí es un **cambio de configuración del servicio**, así que se aplica **S-15**: informe de §14 en el nuevo commit y declaración del operador (P-06 c).
+- Por buena fe, el operador anuncia el despliegue en el issue antes de aplicarlo. No es una exigencia de S-14, y hacerlo no relaja nada.
+
+**Rama B, si la implementación excede el límite** (por ejemplo, una clave nueva o un permiso nuevo, otro canal, escrituras, cambios en el ciclo de vida o en el guard, o cambios en las reglas 1–6): **sí es un cambio contractual.**
+- Aviso previo S-14.
+- Versión nueva del contrato publicada por MainSpot: como mínimo PARCHE si solo cambia un nombre real; MENOR si cambia una obligación o se añade un papel en §6.4/S-07.
+- Reconciliación por commit de ambas partes (condición 4) y S-15 con la versión nueva.
+- Si afecta a una decisión aprobada (por ejemplo, otro canal distinto de DEC-0055), sesión HDC propia.
+- En esta rama P-06 falla y Gate 7 vuelve a empezar: dossier nuevo con el nuevo pin y sesión nueva. Ningún agente puede declararlo «sin cambio».
+
+**Evidencias que debe publicar OMP KVM 4 (rama A):**
+
+| Id | Evidencia |
+|---|---|
+| P05-E1 | Commit del servicio con P-05 y el diff respecto a `2af25580` limitado al componente (P-06 b) |
+| P05-E2 | Pruebas del componente: `unarmed` sin aviso; `stale` → FIRING una sola vez; vuelta a `ok` → RESOLVED; falla ruidosa tras 3 listados fallidos; **lista blanca de operaciones observadas** (solo lecturas; ningún PUT, DELETE ni subrecurso de ciclo de vida); sin secretos |
+| P05-E3 | Prueba sintética real en una ventana autorizada por el propietario, sin datos reales: bucket de laboratorio o simulación del tiempo, nunca objetos en `mainspot-backups`. Avisos FIRING y RESOLVED por el bot del KVM 4, con la recepción confirmada por el propietario en el issue |
+| P05-E4 | Declaración del operador sobre L1–L7, con conclusión explícita «rama A» y referencia a las pruebas |
+| P05-E5 | Informe S-15 en el commit de P05-E1 (P-06 c) |
+| P05-E6 | Salud y estado tras el despliegue: todas las comprobaciones en `ok`, ciclo de vida exacto, P-05 `unarmed` |
+
+**Fuera de esta tarea:** implementar o desplegar P-05. Esta revisión solo fija el límite y las evidencias. P-05 se
+implementa **antes** de habilitar el productor.
+
+**Riesgo residual.** P-05 corre en el KVM 4: si ese equipo cae, no avisa. En ese caso el productor de MainSpot falla
+con errores de red y avisa por su propio bot (DEC-0064), salvo que caigan los dos equipos a la vez (riesgo análogo a R2).
 
 **Comprobaciones de P-03:**
 - **Origen.** `git archive` de un commit cuyo productor y `manifest_tool.py` tienen los sha256 del §2.3, en `~/.local/libexec/mainspot/backup-remote/b714c783/`. Se conserva la ruta relativa que usa `REPO_ROOT`.
@@ -184,7 +247,7 @@ probar + `approve`»: P-01 no está en PASS, así que no hay activación (G7-REV
 |---|---|---|
 | Propietario | Revisar el dossier; decidir si se publica la sesión; responder D-0, D-2 y D-3; P-01, P-02 y P-10; reinicio de P-08 si procede; confirmar la recepción de la prueba de P-05 | Avisos; custodia; autorizar cambios (DEC) |
 | SOL MAIN | Este dossier; paso 1 de P-01; P-03 (con `pip-audit`), P-04, P-06 (lado MainSpot) y P-08; registro de preflight; **nunca habilitar el temporizador sin todos los requisitos en PASS** | Verificación inicial (§11), restauración remota con el propietario, informes sin secretos |
-| OMP KVM 4 | P-05 (vigilancia de frescura); P-06 (lado servicio); P-07 si procede | Ciclo de vida, vigilante, copia protegida, salud, S-08 y vigilancia de frescura; S-14 y S-15 |
+| OMP KVM 4 | P-05 dentro del límite del §5.1 y sus evidencias P05-E1…E6 (incluido el informe S-15); P-06 (lado servicio); P-07 si procede | Ciclo de vida, vigilante, copia protegida, salud, S-08 y vigilancia de frescura; S-14 y S-15; cualquier cambio de P-05 fuera del §5.1 sigue la rama B |
 
 ## 10. Parámetros exactos de activación
 
@@ -244,7 +307,7 @@ La primera pasada útil del día es a las 03:20 America/Cancun (08:20Z), 5 min d
 1. **Registro de preflight**, publicado sin secretos en el issue de seguimiento y en Git. Una fila por requisito aplicable: id, resultado, evidencia y fecha. Si falta una fila o alguna está en FAIL, se para aquí.
 2. `--dry-run` con la configuración real y la unidad fijada → `OK action=dry-run`, sin escrituras.
 3. Habilitar el temporizador y lanzar una ejecución manual: se espera `OK action=uploaded attempts=1`, verificación §8.3 y `check=daily` con `lifecycle=ok`.
-4. **Antes de 1 h**, el operador confirma la copia protegida (`copied`, `verify ok`), salud 9/9, ciclo de vida exacto y, si existe P-05, que la vigilancia de frescura ve el respaldo.
+4. **Antes de 1 h**, el operador confirma la copia protegida (`copied`, `verify ok`), todas las comprobaciones de salud en `ok`, ciclo de vida exacto y que P-05 ha pasado de `unarmed` a `ok` con el primer respaldo.
 5. **Días 1–7.** Revisión diaria del registro y de los avisos, además de la vigilancia P-05.
 6. **Antes del día 7.** Primera restauración remota §10.2 con el **restore de custodia**: `verify` → `pg_restore` desechable → conteo → `--reapply-exits` → informe sin secretos. Después, mensual con evidencia.
 7. Informe de activación con los SHA de ambos repositorios y el registro de preflight.
@@ -339,6 +402,24 @@ ejercitó, porque no se publicó la sesión.
 
 No hace falta ninguna excepción. No se analizó si esos avisos eran explotables en el uso concreto de boto3 hacia el
 endpoint del contrato. La actualización elimina la regresión sin depender de ese análisis.
+
+### 14.4 Revisión 4 (G7-REV3-01)
+
+Solo cambia el texto de la puerta: §5 P-05 y P-06, §5.1, §9 y §11. No cambian el código, el lock, las unidades, el
+contrato ni las preguntas y opciones de la sesión. Por eso **no se repiten** la suite de laboratorio, el E2E por TLS +
+SigV4 ni `pip-audit` (§14.1 y §14.3 siguen siendo válidos). Sí se repiten, porque el sha256 del dossier cambia:
+
+- **Esquema HDC v2:** 0 errores de esquema y 0 de reglas cruzadas (validador idéntico al del pin `5e3dc307`).
+- **Validador de respuestas:** los 12 conjuntos completos son válidos; se rechazan una pregunta obligatoria sin responder, una respuesta a la pregunta retirada y `reject` sin comentario.
+- **Regla del §7:** 73 728 combinaciones, 9 activaciones, **0 indebidas**. Quitar P-05 o P-06 de la regla produce, en cada caso, 9 activaciones indebidas.
+- **Coherencia G7-REV3-01:**
+  - P-06 del dossier y del borrador ya no contiene «9/9» ni la declaración genérica «el comportamiento no cambia»;
+  - P-06 cita S-14, S-15, §5.1 y `2af25580`;
+  - el §5.1 contiene L1–L7, P05-E1…E6 y las ramas A y B;
+  - P-05 del borrador remite al §5.1;
+  - `v1/` (contrato) no cambia respecto a `d3eb3d2`.
+
+  Para comprobar que el chequeo detecta regresiones, se reintrodujo «9/9» en P-06 del borrador y se detectó.
 
 ## 15. Paquete para la revisión
 
