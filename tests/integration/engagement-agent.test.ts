@@ -166,6 +166,7 @@ test('AG-02: reseña delicada → caso humano con 3 alternativas, aviso Telegram
   const sent = transcript().filter((m) => m.to === String(chat) && m.text.includes(c.case_id));
   assert.equal(sent.length, 1, 'un solo aviso por caso');
   assert.match(sent[0]!.text, /1\) .+\n2\) .+\n3\) /);
+  assert.ok(sent[0]!.text.includes(`/panel#caso-${c.case_id}`) && /Panel: https?:\/\//.test(sent[0]!.text), 'enlace absoluto al caso (exige sesión)');
   await run(a.token);
   assert.equal(transcript().filter((m) => m.to === String(chat) && m.text.includes(c.case_id)).length, 1, 'sin alertas duplicadas');
 
@@ -380,6 +381,15 @@ test('AG-04: sin chat de Telegram, fallo de envío de aviso y fallo de lectura d
   await run(a.token);
   assert.equal(transcript().filter((m) => m.to === String(chat) && m.text.includes(c.case_id)).length, 1, 'un aviso entregado, sin duplicados');
 
+  // Desconexión: tras desvincular, los casos nuevos quedan visibles en el panel sin destino.
+  assert.equal((await api(t.baseUrl, '/api/backoffice/telegram/link', { method: 'DELETE', headers: authHeaders(a.token) })).status, 200);
+  const beforeUnlinked = transcript().filter((m) => m.to === String(chat)).length;
+  await injectReview(a.token, 'Me cobraron de más, quiero que me regresen el dinero', 1, 'n2');
+  const r5 = await run(a.token);
+  assert.equal(r5.notifications.no_destination, 1);
+  assert.equal(one(await cases(a.token), 'n2').notify_status, 'no_destination');
+  assert.equal(transcript().filter((m) => m.to === String(chat)).length, beforeUnlinked, 'el chat desvinculado no recibe más avisos');
+
   await api(t.baseUrl, '/api/backoffice/dev/simulator/faults', { method: 'POST', headers: authHeaders(a.token), body: JSON.stringify({ origin: 'google_review', kind: 'list_error', count: 1 }) });
   const r4 = await run(a.token);
   assert.deepEqual(r4.ingest_errors, ['google_review:simulated_list_error']);
@@ -390,5 +400,5 @@ test('AG-04: sin chat de Telegram, fallo de envío de aviso y fallo de lectura d
   const ro = await run(other.token);
   assert.equal(ro.ingested.google_review, 1, 'el fallo de un tenant no afecta a otro');
   assert.equal((await cases(other.token)).length, 1);
-  assert.equal((await cases(a.token)).length, 1, 'aislamiento: A no ve casos de B');
+  assert.equal((await cases(a.token)).length, 2, 'aislamiento: A no ve casos de B');
 });

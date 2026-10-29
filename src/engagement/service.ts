@@ -106,8 +106,8 @@ export interface EngagementServiceDeps {
   replier: EngagementReplier;
   phones: ContactPhoneService;
   channel: ChannelAdapter;
-  /** Ruta del panel incluida en los avisos (enlace autorizado: exige sesión). */
-  panelPath?: string;
+  /** URL del panel incluida en los avisos (enlace autorizado: exige sesión). */
+  panelUrl: string;
 }
 
 type Db = Pool | PoolClient;
@@ -522,7 +522,7 @@ export class EngagementService {
     ];
     row.drafts.slice(0, 3).forEach((d, i) => lines.push(`${i + 1}) ${d}`));
     lines.push(`Para aprobar: /aprobar ${row.case_id} 1 (o 2, 3) · Para descartar: /rechazar ${row.case_id}`);
-    lines.push(`Panel: ${this.deps.panelPath ?? '/panel'}#caso-${row.case_id}`);
+    lines.push(`Panel: ${this.deps.panelUrl}#caso-${row.case_id}`);
     return lines.join('\n');
   }
 

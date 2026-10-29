@@ -23,6 +23,7 @@ import { SessionResolver, UNKNOWN_ACTOR_ID } from '../boundary/session.ts';
 import { type LooseRequest, requirePermission } from '../boundary/middleware.ts';
 import { signSessionToken } from '../shared/jwt.ts';
 import { log } from '../shared/logger.ts';
+import type { OnboardingService } from '../identity/onboarding.ts';
 
 interface RouteDeps {
   pool: Pool;
@@ -33,6 +34,8 @@ interface RouteDeps {
   dataRepo: TenantDataRepository;
   actionRepo: DemoActionRepository;
   loginRateLimiter: LoginRateLimiter;
+  /** DEV-E2E-02 (FLOW-01): alta asistida con invitación de un solo uso. */
+  onboarding?: OnboardingService;
 }
 
 function rcOf(lreq: LooseRequest): { request_id: string; session: SessionSummary | null } {
@@ -59,11 +62,13 @@ export function authRouter(deps: RouteDeps): Router {
   router.post('/login', ah(async (req, res) => {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
-    const { login, password, tenant_id } = (req.body ?? {}) as { login?: string; password?: string; tenant_id?: string };
+    const body = (req.body ?? {}) as { login?: string; password?: string; tenant_id?: string };
+    const { login, password } = body;
+    let tenant_id = body.tenant_id;
 
-    if (!login || !password || !tenant_id) {
+    if (!login || !password) {
       return res.status(400).json({
-        error: { code: 'validation_error', message: 'Faltan datos para ingresar: escribe usuario, contraseña y cliente.' },
+        error: { code: 'validation_error', message: 'Faltan datos para ingresar: escribe tu correo y tu contraseña.' },
       });
     }
 
@@ -75,6 +80,20 @@ export function authRouter(deps: RouteDeps): Router {
       return res.status(429).json({
         error: { code: 'too_many_attempts', message: 'Hubo demasiados intentos de ingreso. Espera un momento y vuelve a intentarlo.' },
       });
+    }
+
+    // DEV-E2E-02 (FLOW-01): sin tenant_id, el negocio se resuelve por las credenciales. Solo
+    // quien demuestra la contraseña ve a qué negocios pertenece (varios ⇒ debe elegir uno).
+    if (!tenant_id) {
+      const matches = await deps.identityRepo.tenantsForCredentials(login, password);
+      if (matches.length > 1) {
+        deps.loginRateLimiter.recordSuccess(ip, login);
+        return res.status(409).json({
+          error: { code: 'tenant_selection_required', message: 'Tu usuario pertenece a varios negocios. Elige con cuál quieres entrar.' },
+          tenants: matches,
+        });
+      }
+      tenant_id = matches[0]?.tenant_id ?? 'unknown';
     }
 
     const user = await deps.identityRepo.findLoginInTenant(login, tenant_id);
@@ -90,7 +109,7 @@ export function authRouter(deps: RouteDeps): Router {
         result: 'invalid_credentials',
       });
       deps.loginRateLimiter.recordFailure(ip, login);
-      return res.status(401).json({ error: { code: 'invalid_credentials', message: 'El usuario, la contraseña o el cliente no coinciden. Revisa los datos o consulta a tu administrador.' } });
+      return res.status(401).json({ error: { code: 'invalid_credentials', message: 'El correo o la contraseña no coinciden. Revisa los datos o consulta a tu administrador.' } });
     }
 
     const passwordOk = await deps.identityRepo.verifyPassword(user.user_id, password);
@@ -106,7 +125,7 @@ export function authRouter(deps: RouteDeps): Router {
         result: 'invalid_credentials',
       });
       deps.loginRateLimiter.recordFailure(ip, login);
-      return res.status(401).json({ error: { code: 'invalid_credentials', message: 'El usuario, la contraseña o el cliente no coinciden. Revisa los datos o consulta a tu administrador.' } });
+      return res.status(401).json({ error: { code: 'invalid_credentials', message: 'El correo o la contraseña no coinciden. Revisa los datos o consulta a tu administrador.' } });
     }
 
     const roles = await deps.identityRepo.listRolesForUserInTenant(user.user_id, tenant_id);
@@ -171,6 +190,38 @@ export function authRouter(deps: RouteDeps): Router {
         permissions,
       },
     });
+  }));
+
+  // DEV-E2E-02 (FLOW-01): invitación de un solo uso. El token viaja en el cuerpo (nunca en la
+  // URL del servidor) y toda invitación no válida recibe la misma respuesta neutra.
+  router.post('/invitation', ah(async (req, res) => {
+    if (!deps.onboarding) return res.status(404).json({ error: { code: 'not_found', message: 'No disponible.' } });
+    const ip = req.ip ?? 'unknown';
+    if (!deps.loginRateLimiter.allow(ip, 'invitation')) {
+      return res.status(429).json({ error: { code: 'too_many_attempts', message: 'Hubo demasiados intentos. Espera un momento y vuelve a intentarlo.' } });
+    }
+    try {
+      return res.json(await deps.onboarding.describe(String((req.body ?? {}).token ?? '')));
+    } catch (err) {
+      if (err instanceof AppError && err.code === DENY_CODES.NOT_FOUND) deps.loginRateLimiter.recordFailure(ip, 'invitation');
+      throw err;
+    }
+  }));
+
+  router.post('/invitation/accept', ah(async (req, res) => {
+    if (!deps.onboarding) return res.status(404).json({ error: { code: 'not_found', message: 'No disponible.' } });
+    const ip = req.ip ?? 'unknown';
+    if (!deps.loginRateLimiter.allow(ip, 'invitation')) {
+      return res.status(429).json({ error: { code: 'too_many_attempts', message: 'Hubo demasiados intentos. Espera un momento y vuelve a intentarlo.' } });
+    }
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const account = await deps.onboarding.accept({ token: b['token'], displayName: b['display_name'], password: b['password'] });
+      return res.status(201).json({ ok: true, login: account.login, message: 'Tu cuenta está lista. Entra con tu correo y tu contraseña.' });
+    } catch (err) {
+      if (err instanceof AppError && err.code === DENY_CODES.NOT_FOUND) deps.loginRateLimiter.recordFailure(ip, 'invitation');
+      throw err;
+    }
   }));
 
   router.post('/logout', ah(async (req, res) => {

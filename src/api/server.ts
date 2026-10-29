@@ -17,7 +17,7 @@ import { ActionRateLimiter } from '../boundary/action-ratelimit.ts';
 import { authRouter, backofficeRouter } from './routes.ts';
 import { conversationRouter, type ConversationRouteDeps } from './conversation-routes.ts';
 import { previewRouter } from './preview-routes.ts';
-import { loginPageHtml, panelPageHtml, errorPageHtml } from './ui.ts';
+import { loginPageHtml, panelPageHtml, errorPageHtml, invitationPage } from './ui.ts';
 import { log } from '../shared/logger.ts';
 import { AppError } from '../shared/errors.ts';
 import { buildInc001Hooks } from '../hooks/contracts.ts';
@@ -53,6 +53,7 @@ import { AnalyticsService } from '../analytics/summary.ts';
 import { analyticsRouter } from './analytics-routes.ts';
 // DEV-E2E-02: teléfonos de contacto por integración (SHARED-CONTRACT §A).
 import { ContactPhoneService } from '../contact/phones.ts';
+import { OnboardingService } from '../identity/onboarding.ts';
 import { contactRouter } from './contact-routes.ts';
 // DEV-E2E-02: agente de atención por políticas, Telegram y ficha de Google (simulados sin credenciales).
 import { EngagementService } from '../engagement/service.ts';
@@ -149,7 +150,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   const realGoogle = config.reputationProvider === 'google_business_profile' && Boolean(config.googleGbpToken);
   const realMeta = config.socialProvider === 'meta' && Boolean(config.metaGraphToken);
   const replier = realGoogle || realMeta ? new RealReplier(reputationProvider) : new SimulatedReplier(pool);
-  const engagement = new EngagementService({ pool, sink, replier, phones, channel, panelPath: '/panel' });
+  const engagement = new EngagementService({ pool, sink, replier, phones, channel, panelUrl: `${config.publicBaseUrl}/panel` });
   const engagementWorker = new EngagementWorker({
     pool, service: engagement, reputationEngine,
     comments: realMeta ? new NotVerifiedCommentSource() : new SimulatedCommentSource(pool),
@@ -183,6 +184,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     dataRepo,
     actionRepo,
     loginRateLimiter,
+    onboarding: new OnboardingService({ pool, sink }),
   };
 
   const conversationDeps: ConversationRouteDeps = {
@@ -232,6 +234,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   // Minimal UX pages (AC-008).
   app.get('/', (req, res) => res.type('html').send(loginPageHtml()));
   app.get('/panel', (req, res) => res.type('html').send(panelPageHtml()));
+  app.get('/invitacion', (req, res) => res.type('html').send(invitationPage()));
   app.get('/health', (req, res) => res.json({ ok: true, app: 'mainspot-platform', increments: ['INC-001', 'INC-002', 'INC-003', 'INC-004', 'INC-005', 'INC-006', 'INC-007'] }));
 
   // Central error handling: controlled + plain language (AC-008), structured log.

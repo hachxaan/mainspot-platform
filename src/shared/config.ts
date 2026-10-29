@@ -106,6 +106,8 @@ export interface AppConfig {
   engagementWorkerIntervalMs: number;
   engagementPollIntervalMs: number;
   telegramWebhookSecret: string;
+  /** DEV-E2E-02: URL pública del panel para enlaces en avisos e invitaciones. */
+  publicBaseUrl: string;
 }
 
 export interface LoadConfigOptions {
@@ -248,6 +250,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     engagementWorkerIntervalMs: Math.max(1000, Number(process.env.ENGAGEMENT_WORKER_INTERVAL_MS ?? 15_000)),
     engagementPollIntervalMs: Math.max(0, Number(process.env.ENGAGEMENT_POLL_INTERVAL_MS ?? 60_000)),
     telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
+    publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? `http://localhost:${Number(process.env.PORT ?? 3000)}`).replace(/\/$/, ''),
   };
 
   return { ...config, ...overrides };

@@ -84,6 +84,9 @@ npm run db:setup     # asegura la BD, aplica migraciones + seed (idempotente)
   - `0013_jev_gate_final_outcome.sql` — DEC-0033/DEC-0034: `jev_evaluation_run` añade `risk_definition` (`jev_only` en las ejecuciones anteriores, `final_outcome` desde DEC-0033), `jev_risky_misses` (cifra de Jev solo, informativa; backfill = `risky_misses` en las anteriores) y `decision_code_sha256` (bytes de `classifier.ts` + `jev-classifier.ts` evaluados). CHECK: una fila `final_outcome` exige hash de 64 hex y `jev_risky_misses`.
   - `0014_quota_reservation.sql` — DEC-0005 + NFR-0001: `quota_reservation` (una fila por consumo o reserva de cuota: `reserved` → `committed` | `released` | `expired`), única por `(tenant_id, capability, idempotency_key)`; FK a `client` RESTRICT; índices parciales de reservas vigentes y de vencimiento. Sin datos personales.
   - `0015_retention_policy.sql` — QS-0006 (DEC-0021..0027): `content_purged_at` en `conversation_request`/`action_proposal`/`jev_classification` (el CHECK de Jev admite cuerpos raw purgados), `retention_run` (informe de cada ejecución, solo totales; una programada completada por día UTC), estados de `client` `exiting`/`anonymized`, `tenant_exit` (baja confirmada con sha256 del export; anonimización ≥ 30 días después) y `anonymized_tenant` (solo sha256 del id, para no reintroducir bajas al restaurar). Permiso `analytics.purge` → `analytics.retention`.
+  - `0016_contact_phones.sql` — DEV-E2E-02: `business_contact` (teléfono principal) e `integration_phone` (una fila por `website`/`google_business_profile`/`facebook` con su `mode` y su propio `other_*`).
+  - `0017_engagement_agent.sql` — DEV-E2E-02: `engagement_policy` (versionada, opt-in con consentimiento), `engagement_case` (único por `tenant+origin+external_ref`), `engagement_cursor`, `engagement_notification` (única por caso+chat), `telegram_link`/`telegram_link_code` (código hasheado de un uso), `gbp_profile` (ficha simulada), `sim_provider_*` (simulador determinista con fallos inyectables) y permisos `engagement.*`/`telegram.link`.
+  - `0018_owner_onboarding.sql` — DEV-E2E-02: `owner_invitation` (token solo como SHA-256, caducidad, un solo uso).
 - El runner registra archivos en `schema_migrations` con advisory lock (replay seguro). Seeds 0002/0005/0009 idempotentes (`ON CONFLICT DO NOTHING`).
 - **Regeneración de BD dev/test**: `npm run db:setup` (dev) o `npm run test:integration`/`test:e2e` (recrean `mainspot_test` desde cero con `scripts/test-prep.ts`). Si una BD existente ya tiene datos, `npm run migrate` aplica 0011 y convierte los legacy de `scheduled_post` automáticamente (no se pierde la intención de las filas aprobadas).
 
@@ -349,8 +352,19 @@ npm test                  # typecheck + unit + integration + smoke + e2e
 
 ```bash
 npm run db:up && npm run db:setup && npm run test:e2e
-# Escribe evidence/e2e-inc002-inc003.txt y evidence/e2e-inc004-006.txt
+# Escribe evidence/e2e-inc002-inc003.txt, evidence/e2e-inc004-006.txt y evidence/e2e-dev-e2e-02.txt
+# (este último arranca el servidor real, el CLI de alta y el worker independiente)
 ```
+
+### DEV-E2E-02 — alta asistida, teléfonos por integración y agente de atención (simulado)
+
+```bash
+node scripts/invite-owner.ts --business "Mi Negocio" --email duena@example.com   # imprime el enlace /invitacion#… (un solo uso, 72 h)
+npm start                                   # el observador corre dentro del servidor (ENGAGEMENT_WORKER=on, cada 15 s)
+ENGAGEMENT_WORKER=off npm start & node scripts/engagement-worker.ts   # o como proceso propio
+```
+
+El dueño entra en `/` con correo + contraseña (sin id de cliente). Decisiones y shape de API: `docs/handoffs/e2e-parallel-2026-10-29/DECISION-LOG.md`. Google, Meta y Telegram funcionan solo en modo **simulado**; los adaptadores reales no están certificados (`not_verified`).
 
 ## 12. Evidencia reproducible (AC-009)
 

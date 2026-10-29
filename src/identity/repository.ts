@@ -57,6 +57,20 @@ export class IdentityRepository {
     return res.rows[0] ?? null;
   }
 
+  /** DEV-E2E-02: negocios activos donde (login, contraseña) son válidos — para entrar sin tenant_id. */
+  async tenantsForCredentials(login: string, password: string): Promise<Array<{ tenant_id: string; business_name: string }>> {
+    const res = await this.pool.query<{ tenant_id: string; business_name: string }>(`
+      SELECT DISTINCT u.tenant_id, c.business_name FROM internal_user u
+      JOIN user_role ur ON ur.user_id = u.user_id AND ur.tenant_id = u.tenant_id
+      JOIN client c ON c.client_id = u.tenant_id
+      WHERE u.login = $1 AND u.status = 'active' AND c.status = 'active'
+        AND u.password_hash = crypt($2, u.password_hash)
+      ORDER BY c.business_name
+      LIMIT 20
+    `, [login, password]);
+    return res.rows;
+  }
+
   /** Verify a password using pgcrypto crypt(). */
   async verifyPassword(userId: string, password: string, db: Pool | PoolClient = this.pool): Promise<boolean> {
     const res = await db.query<{ ok: boolean }>(

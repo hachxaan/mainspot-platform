@@ -65,6 +65,7 @@ const TENANT_TABLES: ReadonlyArray<{ table: string; key: string; exportSkip?: re
   { table: 'sim_provider_event', key: 'tenant_id' },
   { table: 'sim_provider_fault', key: 'tenant_id' },
   { table: 'gbp_profile', key: 'tenant_id' },
+  { table: 'owner_invitation', key: 'tenant_id', exportSkip: ['token_hash'] },
   // DEV-E2E-02: teléfonos de contacto por integración.
   { table: 'integration_phone', key: 'tenant_id' },
   { table: 'business_contact', key: 'tenant_id' },

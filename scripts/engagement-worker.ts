@@ -32,9 +32,7 @@ async function main(): Promise<void> {
   process.once('SIGINT', () => stop('SIGINT'));
 }
 
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop() ?? '')) {
-  main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
-}
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

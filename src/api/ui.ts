@@ -5,6 +5,8 @@
  * replaced by a real frontend in later increments.
  */
 
+import { E2E_CSS, e2eCardsHtml, e2eScript, invitationPageHtml } from './ui-e2e.ts';
+
 const SHARED_CSS = `
   :root { color-scheme: light; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
   body { margin: 0; background: #f5f7fa; color: #1f2933; }
@@ -44,14 +46,16 @@ export function loginPageHtml(): string {
 <main>
   <div class="card">
     <h1>Bienvenido a MainSpot</h1>
-    <p>Panel interno de trabajo. Ingresa con el usuario, la contraseña y el cliente que tu administrador te haya dado.</p>
+    <p>Ingresa con tu correo y tu contraseña.</p>
     <form id="loginForm" autocomplete="on">
-      <label for="login">Usuario</label>
+      <label for="login">Correo o usuario</label>
       <input id="login" name="login" type="text" autocomplete="username" required>
       <label for="password">Contraseña</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required>
-      <label for="tenant_id">Cliente</label>
-      <input id="tenant_id" name="tenant_id" type="text" autocomplete="organization" placeholder="client_a o client_b" required>
+      <div id="tenantBox" hidden>
+        <label for="tenant_id">Negocio</label>
+        <select id="tenant_id" name="tenant_id"></select>
+      </div>
       <div style="margin-top:1rem">
         <button type="submit">Ingresar</button>
       </div>
@@ -66,11 +70,12 @@ const error = document.getElementById('error');
 form.addEventListener('submit', async (ev) => {
   ev.preventDefault();
   error.textContent = '';
+  const tenantSel = document.getElementById('tenant_id');
   const body = {
     login: document.getElementById('login').value,
     password: document.getElementById('password').value,
-    tenant_id: document.getElementById('tenant_id').value,
   };
+  if (!document.getElementById('tenantBox').hidden && tenantSel.value) body.tenant_id = tenantSel.value;
   try {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
@@ -78,12 +83,19 @@ form.addEventListener('submit', async (ev) => {
       body: JSON.stringify(body),
     });
     const data = await res.json();
+    if (res.status === 409 && data.tenants) {
+      // DEV-E2E-02: el mismo usuario pertenece a varios negocios; elige uno (sin escribir ids).
+      tenantSel.innerHTML = '';
+      data.tenants.forEach((t) => { const o = document.createElement('option'); o.value = t.tenant_id; o.textContent = t.business_name; tenantSel.appendChild(o); });
+      document.getElementById('tenantBox').hidden = false;
+      error.textContent = data.error.message;
+      return;
+    }
     if (!res.ok) {
       error.textContent = data.error && data.error.message ? data.error.message : 'No se pudo ingresar. Inténtalo de nuevo.';
       return;
     }
     sessionStorage.setItem('mainspot.token', data.token);
-    sessionStorage.setItem('mainspot.tenant', body.tenant_id);
     window.location.href = '/panel';
   } catch (err) {
     error.textContent = 'No se pudo conectar con el servidor. Inténtalo de nuevo.';
@@ -105,7 +117,7 @@ export function panelPageHtml(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MainSpot — Panel</title>
-<style>${SHARED_CSS}</style>
+<style>${SHARED_CSS}${E2E_CSS}</style>
 </head>
 <body>
 <main>
@@ -191,6 +203,7 @@ export function panelPageHtml(): string {
     <h2>Plan y límites</h2>
     <div id="subscriptionBody"></div>
   </div>
+${e2eCardsHtml()}
   <div class="card" id="dataCard" hidden>
     <h2>Datos del cliente</h2>
     <p id="dataEmpty"></p>
@@ -336,6 +349,7 @@ async function init() {
   if (has('social.read')) loadSocial();
   if (has('reputation.read')) loadReputation();
   if (has('subscription.read')) loadSubscription();
+  if (window.initE2E) window.initE2E();
   if (has('data.read')) loadData();
   if (has('audit.read')) loadAudit();
 }
@@ -815,6 +829,7 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   sessionStorage.removeItem('mainspot.token');
   window.location.href = '/';
 });
+${e2eScript()}
 init();
 </script>
 </body>
@@ -896,4 +911,8 @@ export function previewNotFoundPageHtml(): string {
 <head><meta charset="utf-8"><title>MainSpot — Enlace no válido</title><style>${SHARED_CSS}</style></head>
 <body><main><div class="card"><h1>Enlace no válido</h1><p>Este enlace de vista previa no existe o ya no es válido.</p><p><a href="/">Volver al inicio</a></p></div></main></body>
 </html>`;
+}
+
+export function invitationPage(): string {
+  return invitationPageHtml(SHARED_CSS);
 }
