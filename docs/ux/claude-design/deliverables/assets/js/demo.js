@@ -8,21 +8,27 @@
   var MS = window.MS;
   var esc = MS.esc, icon = MS.icon, UI = MS.ui;
   var root;
-  var open = false;
+  var open = false, justOpened = false;
 
   var TOUR = [
     ['admin', 'Dar de alta el negocio', '#/admin'],
     ['activated', 'Activar la cuenta con la invitación', null],
     ['telegram', 'Conectar Telegram', '#/telegram'],
     ['live', 'Aprobar y publicar la primera página', null],
-    ['changePublished', 'Pedir un cambio desde el panel y publicarlo', '#/cambios/nuevo'],
-    ['tgPublished', 'Pedir un cambio desde Telegram y publicarlo', '#/chat']
+    ['google', 'Conectar Google Maps (simulado)', '#/google'],
+    ['facebook', 'Conectar Facebook (simulado)', '#/facebook'],
+    ['phones3', 'Tres números distintos: página, Google y Facebook', null],
+    ['policy', 'Autorizar respuestas automáticas', '#/atencion/reglas'],
+    ['caseHuman', 'Resolver un caso delicado (panel o Telegram)', '#/atencion'],
+    ['fbPost', 'Publicar en Facebook', '#/facebook/nueva'],
+    ['changePublished', 'Pedir un cambio a la página y publicarlo', '#/cambios/nuevo']
   ];
 
   var SCREENS = [
     ['DS-01', 'Alta administrada'], ['DS-02', 'Invitación'], ['DS-03', 'Contraseña y datos'], ['DS-04', 'Entrar'],
     ['DS-05', 'Inicio'], ['DS-06', 'Mi negocio y plan'], ['DS-07', 'Telegram'], ['DS-08', 'Pedir un cambio'],
-    ['DS-09', 'Vista previa'], ['DS-10', 'Aprobación'], ['DS-11', 'Mi página'], ['DS-12', 'Avisos']
+    ['DS-09', 'Vista previa'], ['DS-10', 'Aprobación'], ['DS-11', 'Mi página'], ['DS-12', 'Avisos'],
+    ['DS-13', 'Google Maps'], ['DS-14', 'Facebook'], ['DS-15', 'Atención'], ['DS-16', 'Caso delicado'], ['DS-17', 'Reglas del agente']
   ];
 
   function b(label, action, arg, pressed, ds) {
@@ -48,6 +54,12 @@
         b('Invitación válida', 'demo-invite', 'valida') + b('Ya usada', 'demo-invite', 'usada') + b('Caducada o anulada', 'demo-invite', 'no-valida') + b('Enlace roto', 'demo-invite', 'rota') + '</div></section>' +
       '<section><h3>Telegram</h3><div class="dp-grid">' +
         b('Código caducado', 'demo-tg', 'expired') + b('Código ya usado', 'demo-tg', 'used') + b('Código anulado', 'demo-tg', 'revoked') + b('Escribe un chat sin conectar', 'demo-tg', 'unlinked-chat') + '</div></section>' +
+      '<section><h3>Teléfonos por canal</h3><div class="dp-grid">' +
+        b('TEL-01: tres números distintos', 'demo-tel', 'three') + b('Sin número principal', 'demo-tel', 'noprimary') + b('Facebook con número de EE. UU.', 'demo-tel', 'us') + b('Todo con mi número', 'demo-tel', 'own') + '</div></section>' +
+      '<section><h3>Atención a clientes</h3><div class="dp-grid">' +
+        b('Conectar Google y Facebook', 'demo-connect') + b('Reseña positiva', 'demo-arrive', 'g_thanks2') + b('Reseña de 2★', 'demo-arrive', 'g_complaint') + b('Comentario simple', 'demo-arrive', 'f_thanks') + b('Piden descuento', 'demo-arrive', 'f_discount') +
+        b('Llegan 3 a la vez', 'demo-batch') + b('Llega un duplicado', 'demo-dupe') + b('Autorizar agradecimientos', 'demo-policy') +
+        b('Google no responde', 'demo-down', 'google', S.prov.google.down) + b('Facebook no responde', 'demo-down', 'facebook', S.prov.facebook.down) + b('Facebook sin permiso', 'demo-perm', null, !S.prov.facebook.perm) + b('Pausar vigilancia', 'demo-watch', null, !S.agent.watching) + b('Llegó la hora programada', 'demo-sched') + '</div></section>' +
       '<section><h3>Cambios y publicación</h3><div class="dp-grid">' +
         b('Pedido ambiguo', 'demo-ambiguous') + b('Pregunta simple', 'demo-question') + b('Vencer la vista previa', 'demo-preview-expire') + b('Abrir una vista previa ya usada', 'demo-preview-used') +
         b('Repetir la última aprobación', 'demo-repeat') + b('Fallar la próxima publicación', 'demo-fail', null, S.demo.failNextPublish) + '</div></section>' +
@@ -64,7 +76,7 @@
       if (!root) return;
       var hadFocus = root.contains(document.activeElement) ? (document.activeElement.dataset.action + '|' + (document.activeElement.dataset.arg || '')) : null;
       var scroll = root.querySelector('.demo-panel') ? root.querySelector('.demo-panel').scrollTop : 0;
-      root.innerHTML = open ? panel() : '<button type="button" class="demo-fab" data-action="demo-open" aria-label="Probar estados (herramienta de demostración)">' + icon('flask-conical') + '<span>Probar estados</span></button>';
+      root.innerHTML = open ? panel().replace('class="demo-panel on-dark"', 'class="demo-panel on-dark' + (justOpened ? ' opening' : '') + '"') : '<button type="button" class="demo-fab" data-action="demo-open" aria-label="Probar estados (herramienta de demostración)">' + icon('flask-conical') + '<span>Probar estados</span></button>';
       var p = root.querySelector('.demo-panel');
       if (p) p.scrollTop = scroll;
       if (hadFocus) {
@@ -79,7 +91,7 @@
   function close() { open = false; MS.demo.render(); }
   function done(msg) { close(); MS.emit(); if (msg) UI.toast(msg, 'flask-conical'); }
 
-  D['demo-open'] = function () { open = true; MS.demo.render(); var c = root.querySelector('[data-action="demo-close"]'); if (c) c.focus(); };
+  D['demo-open'] = function () { open = true; justOpened = true; MS.demo.render(); justOpened = false; var c = root.querySelector('[data-action="demo-close"]'); if (c) c.focus(); };
   D['demo-close'] = function () { close(); var f = root.querySelector('.demo-fab'); if (f) f.focus(); };
   D['demo-reset'] = function () { MS.reset(); MS.syncNames(); open = false; MS.go('#/'); MS.emit(); UI.toast('Reiniciamos la demo'); };
 
@@ -116,10 +128,72 @@
         h = ap ? '#/aprobado/' + ap.id : '#/cambios'; break;
       case 'DS-11': MS.ff('active'); h = '#/pagina'; break;
       case 'DS-12': MS.ff('active'); h = '#/avisos'; break;
+      case 'DS-13': MS.ff('active'); h = '#/google'; break;
+      case 'DS-14': MS.ff('active'); h = '#/facebook'; break;
+      case 'DS-15': MS.ff('active'); h = '#/atencion'; break;
+      case 'DS-16':
+        MS.ff('active'); connectNow();
+        var hc = S.cases.filter(function (c) { return c.status === 'needs_human'; })[0];
+        if (!hc) { MS.agent.ingest([Object.assign({}, MS.agent.FIX.g_complaint)]); close(); MS.go('#/atencion?estado=decidir'); setTimeout(function () { var c2 = MS.S.cases.filter(function (c) { return c.status === 'needs_human'; })[0]; if (c2) MS.go('#/caso/' + c2.id); }, 1900); return; }
+        h = '#/caso/' + hc.id; break;
+      case 'DS-17': MS.ff('active'); h = '#/atencion/reglas'; break;
     }
     close();
     MS.emit();
     MS.go(h);
+  };
+
+  function connectNow() {
+    ['google', 'facebook'].forEach(function (ch) { if (!MS.S.prov[ch].connected) MS.connect.confirm(ch); });
+  }
+
+  D['demo-tel'] = function (el) {
+    var k = el.dataset.arg, S = MS.S;
+    MS.ff('active');
+    ['website', 'google', 'facebook', 'primary'].forEach(MS.ph.resetDraft);
+    if (k === 'three') {
+      S.primary = { iso: 'MX', nat: '9830000000' };
+      S.phones.website.mode = 'other'; S.phones.website.other = { iso: 'MX', nat: '9831111111' };
+      S.phones.google.mode = 'other'; S.phones.google.other = { iso: 'MX', nat: '9832222222' };
+      S.phones.facebook.mode = 'other'; S.phones.facebook.other = { iso: 'MX', nat: '9833333333' };
+      MS.ph.propagate(['website', 'google', 'facebook']);
+      MS.tourDone('phones3');
+    } else if (k === 'noprimary') {
+      S.primary = null;
+    } else if (k === 'us') {
+      S.phones.facebook.mode = 'other'; S.phones.facebook.other = { iso: 'US', nat: '2025550143' };
+      MS.ph.propagate(['facebook']);
+    } else {
+      ['website', 'google', 'facebook'].forEach(function (ch) { S.phones[ch].mode = 'own'; });
+      MS.ph.propagate(['website', 'google', 'facebook']);
+    }
+    close(); MS.emit(); MS.go('#/negocio?ir=principal');
+  };
+  D['demo-connect'] = function () { MS.ff('active'); connectNow(); close(); MS.emit(); MS.go('#/atencion'); };
+  D['demo-arrive'] = function (el) { MS.ff('active'); connectNow(); close(); MS.agent.arrive(el.dataset.arg); MS.go('#/atencion'); };
+  D['demo-batch'] = function () { MS.ff('active'); connectNow(); close(); var F = MS.agent.FIX; MS.agent.ingest([Object.assign({}, F.g_complaint), Object.assign({}, F.g_mixed), Object.assign({}, F.f_discount)]); MS.go('#/atencion'); };
+  D['demo-dupe'] = function () {
+    MS.ff('active'); connectNow(); close();
+    var c = MS.S.cases[0];
+    if (!c) { UI.toast('Primero debe llegar algo', 'info'); return; }
+    MS.agent.ingest([{ ext: c.ext, source: c.source, author: c.author, rating: c.rating, text: c.text, intent: c.intent, sentiment: c.sentiment, confidence: c.confidence }]);
+    UI.toast('Llegó otra vez «' + c.author + '». Lo ignoramos: no se responde dos veces.', 'info');
+    MS.go('#/caso/' + c.id);
+  };
+  D['demo-policy'] = function () {
+    MS.ff('active'); MS.S.role = 'administration';
+    MS.agent.setPolicy({ enabled: true, thanks: 'auto', info: MS.S.agent.policy.info, scope: { google: true, facebook: true } }, MS.me().name + ' (atajo de demo)');
+    MS.mem.polDraft = null; MS.tourDone('policy');
+    close(); MS.emit(); MS.go('#/atencion/reglas');
+  };
+  D['demo-down'] = function (el) { var p = MS.S.prov[el.dataset.arg]; p.down = !p.down; MS.emit(); UI.toast((el.dataset.arg === 'google' ? 'Google' : 'Facebook') + (p.down ? ' no responde (simulado)' : ' responde otra vez'), 'flask-conical'); };
+  D['demo-perm'] = function () { var p = MS.S.prov.facebook; p.perm = !p.perm; MS.emit(); UI.toast(p.perm ? 'Facebook con permiso' : 'Facebook sin permiso para responder (simulado)', 'flask-conical'); };
+  D['demo-watch'] = function () { MS.agent.setWatching(!MS.S.agent.watching); UI.toast(MS.S.agent.watching ? 'Vigilancia reanudada: recuperamos lo pendiente' : 'Vigilancia en pausa (simula una caída)', 'flask-conical'); };
+  D['demo-sched'] = function () {
+    var p = MS.S.posts.filter(function (x) { return x.status === 'scheduled'; })[0];
+    close();
+    if (!p) { UI.toast('No hay publicaciones programadas', 'info'); return; }
+    MS.fb.publish(p.id); MS.go('#/facebook/post/' + p.id);
   };
 
   /* Crea una solicitud ya lista para revisar (atajo de demo). */

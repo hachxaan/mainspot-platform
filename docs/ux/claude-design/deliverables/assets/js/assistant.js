@@ -66,8 +66,11 @@
     if (/(precio|cuesta|cuestan|\$|pesos)/.test(n)) {
       return { type: 'info', text: 'Tu página todavía no muestra precios, así que no puedo agregarlos. Si es importante para tu negocio, coméntalo con el equipo de MainSpot.' };
     }
-    if (/(instagram|facebook|whatsapp|google|tiktok|redes)/.test(n)) {
-      return { type: 'info', text: 'Por ahora te ayudo con tu página web: horario, teléfono, dirección y lo que vendes.' };
+    if (/(facebook|publica en|publicacion|post)/.test(n)) {
+      return { type: 'info', text: 'Las publicaciones de Facebook se preparan en su propia sección: escribes la idea, ves cómo queda y decides si publicarla o programarla.', actions: [{ label: 'Crear publicación en Facebook', act: 'open', arg: '#/facebook/nueva', style: 'secondary' }] };
+    }
+    if (/(instagram|tiktok|anuncio)/.test(n)) {
+      return { type: 'info', text: 'Por ahora MainSpot te ayuda con tu página web, Google Maps y Facebook. Instagram y anuncios no están incluidos.' };
     }
 
     // Preguntas simples: se responden sin aprobación (FLOW-003).
@@ -110,7 +113,12 @@
 
     // Teléfono
     var digits = n.replace(/\D/g, '');
-    if (/(telefono|tel\b|numero|celular)/.test(n) || (pend && pend.topic === 'phone')) {
+    if (/(telefono|tel\b|numero|celular|whatsapp)/.test(n) && !isQuestion) {
+      // Los teléfonos ahora se eligen por canal (contrato §A): se cambian en su tarjeta, no por chat.
+      var effw = MS.ph.effective('website');
+      return { type: 'info', text: 'Cada canal tiene su propio teléfono. Tu página muestra ' + (effw ? effw.intl : 'ningún número') + '. Puedes usar tu número principal u otro número solo para la página.', actions: [{ label: 'Cambiar el teléfono de mi página', act: 'open', arg: '#/pagina?ir=phone-website', style: 'secondary' }] };
+    }
+    if (false) {
       if (digits.length >= 8) {
         var ph = fmtPhone(digits);
         if (ph === base.phone) return { type: 'info', text: 'Tu página ya tiene ese teléfono: ' + ph + '.' };
@@ -203,7 +211,7 @@
     var p = MS.parse(text, channel);
     if (p.type === 'answer' || p.type === 'info') {
       S().pending[channel] = null;
-      MS.botSay(channel, p.text);
+      MS.botSay(channel, p.text, p.actions || []);
       return;
     }
     if (p.type === 'clarify') {
@@ -259,6 +267,12 @@
     var a = m.actions[idx];
     if (a.act === 'text') { MS.send(channel, a.arg); return; }
     if (a.act === 'open') { location.hash = a.arg; return; }
+    if (a.act.indexOf('case-') === 0) {
+      // Casos de atención: elegir opción no bloquea las demás; confirmar o descartar sí.
+      if (a.act === 'case-yes' || a.act === 'case-reject') { if (m.used !== undefined && m.used !== false) { MS.agent.tgAct({ act: 'case-yes-again', arg: a.arg }); return; } m.used = idx; }
+      MS.agent.tgAct(a);
+      return;
+    }
     if (m.used) {
       if (a.act === 'approve' || a.act === 'approve-yes') { MS.botSay(channel, 'Ya habías aprobado este cambio. No se publicará dos veces.'); MS.emit(); }
       return;

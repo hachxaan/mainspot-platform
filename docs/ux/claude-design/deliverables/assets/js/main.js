@@ -22,7 +22,7 @@
 
   function resolve(r) {
     var S = MS.S, p = r.parts, q = r.q;
-    var needAuth = ['inicio', 'negocio', 'telegram', 'chat', 'cambios', 'vista-previa', 'aprobado', 'pagina', 'sitio', 'avisos'];
+    var needAuth = ['inicio', 'negocio', 'telegram', 'chat', 'cambios', 'vista-previa', 'aprobado', 'pagina', 'sitio', 'avisos', 'google', 'facebook', 'atencion', 'caso'];
     if (needAuth.indexOf(p[0]) >= 0 && !S.session) return redirect(S.account.activated ? '#/entrar' : '#/');
     switch (p[0]) {
       case undefined: return V.hub();
@@ -53,6 +53,13 @@
       case 'pagina': return V.page();
       case 'sitio': return V.site();
       case 'avisos': return V.notices(q);
+      case 'google': return V.google();
+      case 'facebook':
+        if (p[1] === 'nueva') return V.fbNew();
+        if (p[1] === 'post') return V.fbPost(p[2]);
+        return V.facebook();
+      case 'atencion': return p[1] === 'reglas' ? V.rules() : V.attention(q);
+      case 'caso': return V.caseView(p[1]);
       default:
         return { title: 'No encontrado', shell: !!S.session, tab: '', html: UI.empty('No encontramos esta pantalla', 'Puede que el enlace esté incompleto.', UI.btn('Ir al inicio', { href: S.session ? '#/inicio' : '#/' })) };
     }
@@ -123,6 +130,10 @@
     var tb = document.getElementById('topbar');
     if (tb) tb.classList.toggle('scrolled', window.scrollY > 4);
     if (MS.demo) MS.demo.render();
+    if (routeChanged && r.q.ir) {
+      var tgt = document.getElementById(r.q.ir);
+      if (tgt) { tgt.scrollIntoView({ block: 'start' }); var f = tgt.querySelector('input:checked, input, select, button'); if (f) f.focus({ preventScroll: true }); }
+    }
     lastPath = r.raw;
   }
   MS.render = render;
@@ -264,6 +275,102 @@
         { label: 'Cancelar', style: 'secondary' }] });
     },
     'notices-read': function () { MS.S.notices.forEach(function (n) { n.read = true; }); MS.emit(); UI.toast('Marcaste todo como leído'); },
+    /* --- Teléfonos por integración --- */
+    'ph-save': function (el) {
+      var ch = el.dataset.arg, label = ch === 'primary' ? 'principal' : MS.ph.CH[ch].label;
+      if (ch === 'primary') {
+        var r = MS.ph.savePrimary();
+        MS.emit();
+        if (r.ok) UI.toast('Guardamos tu número principal. ' + (r.changed.length ? 'Cambia en: ' + r.changed.map(function (c) { return MS.ph.CH[c].label; }).join(', ') + '.' : 'Ningún canal lo usa ahora.') + (r.kept.length ? ' No cambia: ' + r.kept.map(function (c) { return MS.ph.CH[c].label; }).join(', ') + '.' : ''));
+        else { var inp = document.getElementById('ph-num-primary'); if (inp) inp.focus(); }
+        return;
+      }
+      var res = MS.ph.saveChannel(ch);
+      MS.emit();
+      if (res.ok) {
+        var others = MS.ph.ORDER.filter(function (c) { return c !== ch; }).map(function (c) { return MS.ph.CH[c].label; }).join(' ni ');
+        UI.toast('Guardamos el teléfono de ' + label + '. No cambia ' + others + '.');
+        MS.tourDone('phone-' + ch);
+        var e3 = MS.ph.ORDER.map(function (c) { return MS.S.phones[c].mode === 'other' ? MS.ph.e164(MS.S.phones[c].other) : null; });
+        if (e3.every(Boolean) && e3[0] !== e3[1] && e3[1] !== e3[2] && e3[0] !== e3[2]) { MS.tourDone('phones3'); MS.save(); }
+      } else { var n = document.getElementById('ph-num-' + ch); if (n) n.focus(); }
+    },
+    'ph-cancel': function (el) { MS.ph.resetDraft(el.dataset.arg); MS.emit(); },
+    'ph-clear': function (el) {
+      var ch = el.dataset.arg;
+      UI.sheet({ title: '¿Borrar el otro número de ' + MS.ph.CH[ch].label + '?', body: 'Ya no lo guardaremos. Los otros canales no cambian.', actions: [
+        { label: 'Sí, borrarlo', style: 'danger-solid', fn: function () { MS.ph.clearOther(ch); MS.emit(); UI.toast('Borramos ese número'); } },
+        { label: 'Cancelar', style: 'secondary' }] });
+    },
+    'ph-retry': function (el) { MS.ph.retrySync(el.dataset.arg); MS.emit(); },
+    /* --- Conexiones simuladas --- */
+    'conn-start': function (el) { MS.connect.start(el.dataset.arg); },
+    'conn-confirm': function (el) { MS.connect.confirm(el.dataset.arg); UI.toast('Conectada (simulación). MainSpot ya está pendiente.'); },
+    'conn-cancel': function (el) { MS.connect.cancel(el.dataset.arg); },
+    'conn-off': function (el) {
+      var ch = el.dataset.arg;
+      UI.sheet({ title: '¿Desconectar ' + (ch === 'google' ? 'Google' : 'Facebook') + '?', body: 'MainSpot dejará de estar pendiente de ese canal. Tus casos y números guardados se conservan.', actions: [
+        { label: 'Sí, desconectar', style: 'danger-solid', fn: function () { MS.connect.disconnect(ch); UI.toast('Desconectado'); } },
+        { label: 'Cancelar', style: 'secondary' }] });
+    },
+    'perm-fix': function (el) { MS.S.prov[el.dataset.arg].perm = true; MS.emit(); UI.toast('Permiso recuperado (simulado)'); },
+    /* --- Facebook --- */
+    'fb-chip': function (el) { var t = document.getElementById('fb-prompt'); if (t) { t.value = el.dataset.arg; t.focus(); } },
+    'fb-when': function (el) { if (MS.mem.fbDraft) { MS.mem.fbDraft.when = el.dataset.arg; var tx = document.getElementById('fb-text'); if (tx) MS.mem.fbDraft.text = tx.value; MS.emit(); } },
+    'fb-back': function () { if (MS.mem.fbDraft) MS.mem.fbDraft.step = 'write'; MS.emit(); },
+    'fb-approve': function (el) {
+      var p = MS.fb.get(el.dataset.arg);
+      UI.sheet({ title: p.scheduledFor ? '¿Programar esta publicación?' : '¿Publicar en Facebook?', body: 'Quedará registrado que tú la aprobaste. (simulado: no se publica nada real)', actions: [
+        { label: p.scheduledFor ? 'Sí, programar' : 'Sí, publicar', style: 'primary', fn: function () { p.approvedBy = MS.me().name; if (p.scheduledFor) { p.status = 'scheduled'; MS.emit(); } else MS.fb.publish(p.id); UI.toast(p.scheduledFor ? 'Publicación programada' : 'Publicando en Facebook (simulado)'); } },
+        { label: 'Todavía no', style: 'secondary' }] });
+    },
+    'fb-reject': function (el) { var p = MS.fb.get(el.dataset.arg); p.status = 'rejected'; MS.emit(); UI.toast(p.scheduledFor ? 'Cancelaste la programación' : 'Descartaste la publicación'); },
+    'fb-retry': function (el) { var p = MS.fb.get(el.dataset.arg); p.status = 'approved'; MS.fb.publish(p.id); },
+    /* --- Atención a clientes --- */
+    arrive: function (el) { MS.agent.arrive(el.dataset.arg); UI.toast('Llegó algo nuevo (simulado)', 'messages-square'); },
+    'case-pick': function (el) {
+      var parts = el.dataset.arg.split('|'), c = MS.agent.get(parts[0]);
+      if (!c) return;
+      MS.mem.caseDraft[c.id] = { pick: +parts[1], text: c.drafts[+parts[1]].text };
+      var t = document.getElementById('case-text-' + c.id); if (t) t.value = c.drafts[+parts[1]].text;
+      MS.emit();
+    },
+    'case-reject': function (el) {
+      var id = el.dataset.arg;
+      UI.sheet({ title: '¿No responder?', body: 'No publicaremos ninguna respuesta. La opinión sigue publicada tal cual; MainSpot nunca la oculta ni la borra.', actions: [
+        { label: 'Sí, no responder', style: 'primary', fn: function () { var r = MS.agent.resolve(id, 'reject', '', 'panel'); UI.toast(r.ok ? 'Listo: no responderemos' : r.message, r.ok ? 'circle-check' : 'info'); } },
+        { label: 'Cancelar', style: 'secondary' }] });
+    },
+    'case-outside': function (el) { var r = MS.agent.resolve(el.dataset.arg, 'outside', '', 'panel'); UI.toast(r.ok ? 'Marcado como atendido fuera de MainSpot' : r.message, 'info'); },
+    'case-retry': function (el) { MS.agent.retryNow(el.dataset.arg); UI.toast('Lo intentamos de nuevo', 'refresh-cw'); },
+    /* --- Reglas del agente --- */
+    'pol-toggle': function () { var d = MS.mem.polDraft; d.enabled = !d.enabled; MS.emit(); },
+    'pol-set': function (el) { var p = el.dataset.arg.split('|'); MS.mem.polDraft[p[0]] = p[1]; MS.emit(); },
+    'pol-scope': function (el) { var d = MS.mem.polDraft; d.scope[el.dataset.arg] = !d.scope[el.dataset.arg]; MS.emit(); },
+    'pol-cancel': function () { MS.mem.polDraft = null; MS.emit(); },
+    'pol-save': function () {
+      var cur = MS.S.agent.policy, d = MS.mem.polDraft;
+      var grants = [];
+      ['thanks', 'info'].forEach(function (k) { if (d.enabled && d[k] === 'auto' && !(cur.enabled && cur[k] === 'auto')) grants.push(k === 'thanks' ? 'Agradecimientos y comentarios positivos' : 'Preguntas sobre tu negocio, con datos que tú confirmaste'); });
+      var scopeAdded = d.enabled && ((d.scope.google && !cur.scope.google) || (d.scope.facebook && !cur.scope.facebook));
+      function save() { MS.agent.setPolicy(MS.clone(d), MS.me().name); MS.mem.polDraft = null; MS.tourDone('policy'); MS.emit(); UI.toast('Guardamos tus reglas (versión ' + MS.S.agent.version + ')'); }
+      if (!grants.length && !scopeAdded) { save(); return; }
+      var where = ['google', 'facebook'].filter(function (k) { return d.scope[k]; }).map(function (k) { return k === 'google' ? 'reseñas de Google' : 'comentarios de Facebook'; }).join(' y ');
+      UI.sheet({
+        title: '¿Autorizas a MainSpot a responder por ti?',
+        html: '<p>MainSpot responderá <strong>públicamente y sin preguntarte</strong> en ' + MS.esc(where) + ' a:</p><ul>' + (grants.length ? grants : ['Las mismas categorías, en más canales']).map(function (g) { return '<li>' + MS.esc(g) + '</li>'; }).join('') + '</ul>' +
+          '<p>Nunca responderá quejas, descuentos, acusaciones ni temas delicados sin ti. Puedes apagarlo cuando quieras y verás cada respuesta en tu historial.</p>' +
+          '<label class="check" style="margin-top:12px"><input type="checkbox" id="pol-consent"><span>Lo autorizo para ' + MS.esc(MS.DATA.business) + '</span></label>' +
+          '<p class="field-error" id="pol-consent-err" hidden>' + MS.icon('circle-alert') + '<span>Marca la casilla para autorizarlo.</span></p>' + UI.note('Modo de prueba: las respuestas automáticas son simuladas.'),
+        actions: [
+          { label: 'Autorizar y guardar', style: 'primary', keepOpen: true, fn: function () {
+            var cb = document.getElementById('pol-consent');
+            if (!cb || !cb.checked) { document.getElementById('pol-consent-err').hidden = false; cb && cb.focus(); return; }
+            UI.closeSheet(true); save();
+          } },
+          { label: 'Cancelar', style: 'secondary' }]
+      });
+    },
     'notice-open': function (el) {
       var n = MS.S.notices.filter(function (x) { return x.id === el.dataset.arg; })[0];
       if (!n) return;
@@ -302,6 +409,56 @@
   function val(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
 
   var F = {
+    'fb-write': function () {
+      var t = document.getElementById('fb-prompt'), v = t.value.trim();
+      if (!v) { t.focus(); UI.toast('Escribe qué quieres publicar', 'info'); return; }
+      MS.mem.fbDraft = { prompt: v, text: MS.fb.write(v), step: 'preview', when: 'now' };
+      MS.emit();
+      var h = document.querySelector('[data-focus]'); if (h) h.focus();
+    },
+    'fb-confirm': function () {
+      var d = MS.mem.fbDraft, text = document.getElementById('fb-text').value.trim();
+      d.text = text;
+      if (!text) { d.error = 'Escribe el texto de la publicación.'; MS.emit(); return; }
+      var at = null;
+      if (d.when === 'later') {
+        var dd = document.getElementById('fb-date').value, tt = document.getElementById('fb-time').value;
+        d.date = dd; d.time = tt;
+        at = new Date(dd + 'T' + tt).getTime();
+        if (!dd || !tt || isNaN(at) || at < Date.now() + 60000) { d.error = 'Elige un día y una hora en el futuro.'; MS.emit(); return; }
+      }
+      d.error = '';
+      var post = { id: MS.id('p'), text: text, status: MS.can('approve') ? 'draft' : 'awaiting_approval', createdAt: Date.now(), by: MS.me().name, scheduledFor: at };
+      if (!MS.can('approve')) {
+        MS.S.posts.unshift(post); MS.mem.fbDraft = null; MS.notify('approval', 'Una publicación espera tu aprobación', 'Facebook', '#/facebook/post/' + post.id); MS.emit(); go('#/facebook/post/' + post.id); UI.toast('Enviamos la publicación a aprobación'); return;
+      }
+      UI.sheet({ title: at ? '¿Programar esta publicación?' : '¿Publicar en Facebook?', body: (at ? 'Se publicará el ' + MS.date(at) + ' a las ' + MS.time(at) + '. ' : '') + 'Quedará registrado que tú la aprobaste. (simulado: no se publica nada real)', actions: [
+        { label: at ? 'Sí, programar' : 'Sí, publicar', style: 'primary', fn: function () {
+          post.approvedBy = MS.me().name;
+          MS.S.posts.unshift(post); MS.mem.fbDraft = null;
+          if (at) { post.status = 'scheduled'; MS.emit(); UI.toast('Publicación programada (simulado)'); }
+          else { MS.fb.publish(post.id); UI.toast('Publicando en Facebook (simulado)'); }
+          go('#/facebook/post/' + post.id);
+        } },
+        { label: 'Todavía no', style: 'secondary' }] });
+    },
+    'case-reply': function (form) {
+      var id = form.dataset.arg, t = document.getElementById('case-text-' + id), text = t.value.trim();
+      if (!text) { t.focus(); UI.toast('Escribe la respuesta', 'info'); return; }
+      if (/(descuento|\d+\s*%|gratis|reembolso|te regalamos)/i.test(text)) {
+        UI.sheet({ title: 'Revisa tu respuesta', body: 'Parece que ofrece un descuento, algo gratis o un reembolso. MainSpot no lo sugiere; si de verdad lo decidiste, publícalo bajo tu responsabilidad.', actions: [
+          { label: 'Publicar así', style: 'primary', fn: send }, { label: 'Volver a editar', style: 'secondary', fn: function () { t.focus(); } }] });
+        return;
+      }
+      if (!MS.can('approve')) { send(); return; }
+      UI.sheet({ title: '¿Publicar esta respuesta?', html: '<p>«' + MS.esc(text) + '»</p><p>Se publicará en ' + MS.esc(MS.agent.SRC[MS.agent.get(id).source].short) + ' a tu nombre. (simulado)</p>', actions: [
+        { label: 'Sí, publicar', style: 'primary', fn: send }, { label: 'Todavía no', style: 'secondary' }] });
+      function send() {
+        var r = MS.agent.resolve(id, 'reply', text, 'panel');
+        if (r.ok) MS.tourDone('caseHuman');
+        UI.toast(r.ok ? (r.message || 'Publicando tu respuesta (simulado)') : r.message, r.ok ? 'circle-check' : 'info');
+      }
+    },
     admin: function (form) {
       var biz = val('a-biz'), owner = val('a-owner'), email = val('a-email'), bad = null;
       setError('a-biz', biz ? '' : 'Escribe el nombre del negocio.');
@@ -347,8 +504,9 @@
       }, 800);
     },
     business: function (form) {
-      var phone = val('b-phone'), digits = phone.replace(/\D/g, '');
-      setError('b-phone', digits.length === 10 ? '' : 'Escribe los 10 dígitos del teléfono, sin espacios o con espacios.');
+      var phd = MS.ph.draft('primary');
+      var phr = MS.ph.parse(phd.iso, phd.nat);
+      setError('ph-num-primary', phr.ok ? '' : phr.error);
       setError('b-address', val('b-address') ? '' : 'Escribe la dirección para que tus clientes te encuentren.');
       setError('b-line', val('b-line') ? '' : 'Escribe una frase corta, por ejemplo qué vendes.');
       ['b-hw', 'b-hs', 'b-hd'].forEach(function (id) { setError(id, val(id) ? '' : 'Escribe el horario o «Cerrado».'); });
@@ -361,7 +519,8 @@
       busy(document.getElementById('biz-submit'), true, 'Guardando…');
       setTimeout(function () {
         var b = MS.S.biz;
-        b.line = val('b-line'); b.phone = digits.slice(0, 2) + ' ' + digits.slice(2, 6) + ' ' + digits.slice(6);
+        b.line = val('b-line');
+        MS.ph.savePrimary(); // también actualiza el número que usará la página (modo «Usar mi número»)
         b.address = val('b-address');
         b.hours = { week: val('b-hw'), sat: val('b-hs'), sun: val('b-hd') };
         b.services = chosen;
@@ -432,7 +591,7 @@
     if (!el) return;
     var name = el.dataset.action;
     var fn = A[name] || (MS.demo && MS.demo.actions[name]);
-    if (fn) { e.preventDefault(); fn(el, e); }
+    if (fn) { if (el.tagName !== 'INPUT') e.preventDefault(); fn(el, e); }
   });
   document.addEventListener('submit', function (e) {
     var f = e.target.closest('[data-form]');

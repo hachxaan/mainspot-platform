@@ -175,7 +175,7 @@
       '<form class="stack" style="margin-top:20px" data-form="business" novalidate>' +
         '<div class="field"><label for="b-name">Nombre del negocio</label><input class="input" id="b-name" value="' + esc(b.name) + '" readonly><span class="hint">Lo registró el equipo de MainSpot. Si está mal, avísanos.</span></div>' +
         '<div class="field" id="f-b-line"><label for="b-line">Una frase sobre tu negocio</label><input class="input" id="b-line" name="line" value="' + esc(b.line) + '" maxlength="80"></div>' +
-        '<div class="field" id="f-b-phone"><label for="b-phone">Teléfono del negocio</label><span class="hint" id="b-phone-hint">10 dígitos. Así te llamarán tus clientes.</span><input class="input" id="b-phone" name="phone" inputmode="tel" autocomplete="tel" value="' + esc(b.phone) + '" aria-describedby="b-phone-hint"></div>' +
+        '<fieldset class="fieldset field"><legend>Teléfono del negocio</legend><span class="hint">Será tu número principal. Después podrás usar otro número distinto en tu página, en Google Maps y en Facebook.</span>' + MS.ph.numberFields('primary', MS.ph.draft('primary')) + '</fieldset>' +
         '<div class="field" id="f-b-address"><label for="b-address">Dirección</label><input class="input" id="b-address" name="address" autocomplete="street-address" value="' + esc(b.address) + '"></div>' +
         '<fieldset class="fieldset field"><legend>Horario</legend><span class="hint">Escribe «Cerrado» si ese día no abres.</span><div class="hours-grid" style="margin-top:6px">' +
           hours('b-hw', 'Lunes a viernes', b.hours.week) + hours('b-hs', 'Sábado', b.hours.sat) + hours('b-hd', 'Domingo', b.hours.sun) +

@@ -13,9 +13,10 @@
   /* ---------- Estructura común ---------- */
   var TABS = [
     { key: 'inicio', href: '#/inicio', label: 'Inicio', ic: 'house' },
-    { key: 'cambios', href: '#/cambios', label: 'Cambios', ic: 'message-square-text' },
     { key: 'pagina', href: '#/pagina', label: 'Mi página', ic: 'globe' },
-    { key: 'negocio', href: '#/negocio', label: 'Mi negocio', ic: 'store' }
+    { key: 'google', href: '#/google', label: 'Google', ic: 'map-pin' },
+    { key: 'facebook', href: '#/facebook', label: 'Facebook', ic: 'megaphone' },
+    { key: 'atencion', href: '#/atencion', label: 'Atención', ic: 'messages-square' }
   ];
 
   MS.shell = function (v) {
@@ -23,7 +24,9 @@
     var pend = MS.S.requests.filter(function (r) { return r.status === 'preview_ready' || r.status === 'awaiting_confirm' || r.status === 'expired'; }).length;
     var unread = MS.unread();
     function badge(key) {
-      if (key === 'cambios' && pend) return '<span class="badge-count" aria-label="' + pend + ' pendientes">' + pend + '</span>';
+      if (key === 'pagina' && pend) return '<span class="badge-count" aria-label="' + pend + ' pendientes">' + pend + '</span>';
+      var need = MS.agent.needs().length;
+      if (key === 'atencion' && need) return '<span class="badge-count" aria-label="' + need + ' necesitan tu decisión">' + need + '</span>';
       if (key === 'avisos' && unread) return '<span class="badge-count" aria-label="' + unread + ' sin leer">' + unread + '</span>';
       return '';
     }
@@ -31,7 +34,7 @@
     var side = '<aside class="sidebar" aria-label="Menú">' +
       '<a class="brand" href="#/inicio"><span class="brand-mark" aria-hidden="true"></span>MainSpot</a>' +
       '<nav aria-label="Principal"><ul class="side-nav">' +
-        TABS.concat([{ key: 'avisos', href: '#/avisos', label: 'Avisos', ic: 'bell' }]).map(function (t) {
+        TABS.concat([{ key: 'avisos', href: '#/avisos', label: 'Avisos', ic: 'bell' }, { key: 'negocio', href: '#/negocio', label: 'Mi negocio', ic: 'store' }]).map(function (t) {
           return '<li><a href="' + t.href + '"' + (v.tab === t.key ? ' aria-current="page"' : '') + '>' + icon(t.ic) + '<span>' + t.label + '</span>' + badge(t.key) + '</a></li>';
         }).join('') +
       '</ul></nav>' +
@@ -43,6 +46,7 @@
     var top = '<header class="topbar" id="topbar">' +
       (v.back ? '<a class="btn btn-ghost back" href="' + v.back + '">' + icon('chevron-left') + '<span>' + esc(v.backLabel || 'Volver') + '</span></a><span class="grow"></span>'
               : '<a class="brand hide-desk" href="#/inicio"><span class="brand-mark" aria-hidden="true"></span>MainSpot</a><span class="grow"></span>') +
+      '<a class="icon-btn hide-desk" href="#/negocio" aria-label="Mi negocio"' + (v.tab === 'negocio' ? ' aria-current="page"' : '') + '>' + icon('store') + '</a>' +
       '<a class="icon-btn" href="#/avisos" aria-label="Avisos' + (unread ? ', ' + unread + ' sin leer' : '') + '">' + icon('bell') + (unread ? '<span class="badge-count" aria-hidden="true">' + unread + '</span>' : '') + '</a>' +
       '</header>';
 
@@ -82,6 +86,18 @@
     }
     html += '<div class="stack">';
 
+    // Lo que hizo MainSpot por ti (agente de atención)
+    if (S.prov.google.connected || S.prov.facebook.connected) {
+      html += '<section class="card stack" aria-labelledby="ag-t"><div class="section-title" style="margin:0"><h2 id="ag-t">Tus clientes</h2><a class="small" href="#/atencion">Ver todo</a></div>' + UI.watchLine() + UI.agentSummary() + '</section>';
+      var allNeed = MS.agent.needs(), needCases = allNeed.slice(0, 2);
+      needCases.forEach(function (c, i) {
+        var src = MS.agent.SRC[c.source];
+        html += '<section class="decide" aria-label="Un cliente necesita tu decisión"><div class="kicker">' + icon('messages-square', 'ic-sm') + (c.status === 'failed' ? 'No se pudo responder' : 'Un cliente necesita tu decisión') + '</div><h3>' + esc(src.label) + ' de ' + esc(c.author) + ' ' + UI.stars(c.rating) + '</h3><p>«' + esc(c.text) + '»</p>' +
+          UI.btn(c.status === 'failed' ? 'Ver qué pasó' : 'Elegir respuesta', { href: '#/caso/' + c.id, style: i === 0 && !S.requests.some(function (r) { return r.status === 'preview_ready'; }) ? 'primary' : 'secondary' }) + '</section>';
+      });
+      if (allNeed.length > 2) html += '<a class="btn btn-secondary btn-block" href="#/atencion?estado=decidir">Ver los ' + allNeed.length + ' que necesitan tu decisión</a>';
+    }
+
     // Estado de la página
     var st = UI.siteState();
     html += '<section class="siteband" aria-labelledby="band-t"><span class="spot spot-' + st.spot + '" aria-hidden="true">' + icon(st.ic) + '</span><div><h2 id="band-t">' + esc(st.title) + '</h2>' +
@@ -119,7 +135,7 @@
         var hasDecision = S.requests.some(function (r) { return r.status === 'preview_ready'; }) && MS.can('approve');
         html += '<section class="composer" aria-labelledby="ask-t"><h2 id="ask-t">¿Qué quieres cambiar en tu página?</h2><p class="lead">Escríbelo con tus palabras. Te enseñamos cómo queda antes de publicar.</p>' +
           '<form data-form="ask"><label class="sr-only" for="home-ask">Describe el cambio</label><textarea class="textarea" id="home-ask" name="ask" placeholder="Por ejemplo: el sábado abrimos de 8 a 2"></textarea>' +
-          '<div class="chips" aria-label="Ejemplos">' + ['El sábado abrimos de 8 a 2', 'Cambia mi teléfono', 'Agrega pan de muerto'].map(function (c) { return '<button type="button" class="chip" data-action="ask-chip" data-arg="' + esc(c) + '">' + esc(c) + '</button>'; }).join('') + '</div>' +
+          '<div class="chips" aria-label="Ejemplos">' + ['El sábado abrimos de 8 a 2', 'El domingo no abrimos', 'Agrega pan de muerto'].map(function (c) { return '<button type="button" class="chip" data-action="ask-chip" data-arg="' + esc(c) + '">' + esc(c) + '</button>'; }).join('') + '</div>' +
           '<div class="send-row">' + (hasDecision ? '<button type="submit" class="btn" style="background:#fff;color:var(--ink)">' + icon('send') + '<span>Enviar</span></button>' : UI.btn('Enviar', { type: 'submit', icon: 'send' })) + '</div></form></section>';
       }
     }
@@ -130,7 +146,10 @@
       { t: 'Activa tu cuenta', done: true },
       { t: 'Conecta tu Telegram', done: S.telegram.status === 'linked', href: '#/telegram', cta: 'Conectar' },
       { t: 'Revisa y aprueba tu primera página', done: !!(firstR && (firstR.status === 'approved' || firstR.status === 'published')), href: firstR ? '#/vista-previa/' + firstR.id : '#/pagina', cta: 'Revisar' },
-      { t: 'Tu página llega a internet', done: !!S.site.published, href: '#/pagina', cta: 'Ver' }
+      { t: 'Tu página llega a internet', done: !!S.site.published, href: '#/pagina', cta: 'Ver' },
+      { t: 'Conecta tu ficha de Google', done: S.prov.google.connected, href: '#/google', cta: 'Conectar' },
+      { t: 'Conecta tu página de Facebook', done: S.prov.facebook.connected, href: '#/facebook', cta: 'Conectar' },
+      { t: 'Elige qué puede responder MainSpot por ti', done: S.agent.version > 1, href: '#/atencion/reglas', cta: 'Elegir' }
     ];
     var doneCount = stepsList.filter(function (s) { return s.done; }).length;
     if (doneCount < stepsList.length && MS.S.role === 'administration') {
@@ -139,12 +158,19 @@
         '</ul></section>';
     }
 
-    // Telegram y plan
+    // Tus canales: estado y número que ve cada uno
     var tg = S.telegram.status === 'linked';
-    html += '<section class="card card-flush" aria-label="Tu cuenta"><ul class="list">' +
-      '<li><a class="list-row" href="#/telegram"><span class="lead">' + icon('message-circle') + '</span><span class="grow"><span class="title" style="display:block">Telegram</span><span class="sub" style="display:block">' + (tg ? 'Conectado: ' + esc(S.telegram.chatName) : 'Pide cambios y recibe avisos por chat') + '</span><span style="display:block;margin-top:6px">' + (tg ? UI.tag('Conectado', 'nopal') : UI.tag('Sin conectar', 'neutral')) + '</span></span>' + icon('chevron-right', 'chev') + '</a></li>' +
-      '<li><a class="list-row" href="#/negocio/plan"><span class="lead">' + icon('calendar') + '</span><span class="grow"><span class="title" style="display:block">Prueba gratis</span><span class="sub" style="display:block">' + esc(MS.trialText()) + '</span><span style="display:block;margin-top:6px">' + (S.trial === 'expired' ? UI.tag('Terminada', 'alerta') : (S.trial === 'ending' ? UI.tag('Por vencer', 'ocre') : UI.tag('Vigente', 'nopal'))) + '</span></span>' + icon('chevron-right', 'chev') + '</a></li>' +
-      '</ul></section>';
+    function chRow(href, ic, title, sub, tag) {
+      return '<li><a class="list-row" href="' + href + '"><span class="lead">' + icon(ic) + '</span><span class="grow"><span class="title" style="display:block">' + title + '</span><span class="sub" style="display:block">' + sub + '</span><span style="display:block;margin-top:6px">' + tag + '</span></span>' + icon('chevron-right', 'chev') + '</a></li>';
+    }
+    function phSub(ch) { var e = MS.ph.effective(ch); return 'Teléfono: ' + esc(e ? e.intl : 'sin número') + (S.phones[ch].mode === 'other' ? ' (otro número)' : ''); }
+    html += '<section aria-labelledby="ch-t"><div class="section-title"><h2 id="ch-t">Tus canales</h2></div><div class="card card-flush"><ul class="list">' +
+      chRow('#/pagina', 'globe', 'Página web', phSub('website'), S.site.published ? UI.tag('En internet', 'nopal') : UI.tag('Sin publicar', 'neutral')) +
+      chRow('#/google', 'map-pin', 'Google Maps', phSub('google'), S.prov.google.connected ? UI.tag('Conectada (simulado)', 'nopal') : UI.tag('Sin conectar', 'neutral')) +
+      chRow('#/facebook', 'megaphone', 'Facebook', phSub('facebook'), S.prov.facebook.connected ? UI.tag('Conectada (simulado)', 'nopal') : UI.tag('Sin conectar', 'neutral')) +
+      chRow('#/telegram', 'message-circle', 'Telegram', tg ? 'Avisos y pedidos por chat: ' + esc(S.telegram.chatName) : 'Para avisos y pedidos por chat', tg ? UI.tag('Conectado', 'nopal') : UI.tag('Sin conectar', 'neutral')) +
+      chRow('#/negocio/plan', 'calendar', 'Prueba gratis', esc(MS.trialText()), S.trial === 'expired' ? UI.tag('Terminada', 'alerta') : (S.trial === 'ending' ? UI.tag('Por vencer', 'ocre') : UI.tag('Vigente', 'nopal'))) +
+      '</ul></div></section>';
 
     // Actividad reciente
     var ev = [];
@@ -164,10 +190,10 @@
     var S = MS.S, me = MS.me();
     var d = MS.siteBase();
     var html = head('Mi negocio', MS.DATA.business) + '<div class="stack-lg">' +
+      MS.ph.primaryCard() + MS.ph.overview() +
       '<section aria-labelledby="data-t"><div class="section-title"><h2 id="data-t">Lo que muestra tu página</h2></div>' +
         UI.facts([
           ['message-square-text', 'Frase', esc(d.line)],
-          ['phone', 'Teléfono', esc(d.phone)],
           ['map-pin', 'Dirección', esc(d.address)],
           ['clock', 'Horario', 'Lunes a viernes: ' + esc(d.hours.week) + '<br>Sábado: ' + esc(d.hours.sat) + '<br>Domingo: ' + esc(d.hours.sun)],
           ['store', 'Lo que vendes', esc(d.services.join(', '))]
@@ -287,7 +313,7 @@
         return '<li><a class="list-row" href="#/cambios/' + r.id + '"><span class="lead">' + icon(r.channel === 'telegram' ? 'message-circle' : (r.kind === 'first' ? 'globe' : 'message-square-text')) + '</span><span class="grow"><span class="title" style="display:block">' + esc(r.title) + '</span><span class="sub">' + (r.kind === 'first' ? 'Preparada por MainSpot' : 'Pedido por ' + esc(r.by) + ' en ' + UI.channelName(r.channel)) + ', ' + esc(MS.when(last ? last.at : r.createdAt)) + '</span><span style="display:block;margin-top:6px">' + UI.statusTag(r) + '</span></span>' + icon('chevron-right', 'chev') + '</a></li>';
       }).join('') + '</ul></div>';
     }
-    return { tab: 'cambios', screen: 'DS-08', title: 'Cambios', html: html };
+    return { tab: 'pagina', screen: 'DS-08', title: 'Cambios', html: html };
   };
 
   V.ask = function () {
@@ -300,12 +326,12 @@
     } else {
       html += '<div class="banner ' + (MS.expired() ? 'banner-alerta' : 'banner-lila') + '" style="margin-top:16px">' + icon('lock') + '<span>' + (MS.expired() ? 'Tu prueba terminó. Para pedir cambios, contacta a MainSpot.' : 'Tu perfil puede ver los cambios, pero no pedirlos. Pídele ayuda a quien administra tu negocio.') + '</span></div>';
     }
-    return { tab: 'cambios', screen: 'DS-08', title: 'Pedir un cambio', html: html, back: '#/cambios', backLabel: 'Cambios', convo: 'panel' };
+    return { tab: 'pagina', screen: 'DS-08', title: 'Pedir un cambio', html: html, back: '#/cambios', backLabel: 'Cambios', convo: 'panel' };
   };
 
   V.changeDetail = function (id) {
     var r = MS.req(id);
-    if (!r) return { tab: 'cambios', screen: 'DS-08', title: 'Cambio', html: UI.empty('No encontramos ese cambio', 'Puede que el enlace esté incompleto.', UI.btn('Ver mis cambios', { href: '#/cambios' })), back: '#/cambios', backLabel: 'Cambios' };
+    if (!r) return { tab: 'pagina', screen: 'DS-08', title: 'Cambio', html: UI.empty('No encontramos ese cambio', 'Puede que el enlace esté incompleto.', UI.btn('Ver mis cambios', { href: '#/cambios' })), back: '#/cambios', backLabel: 'Cambios' };
     var html = '<div class="page-head"><div style="margin-bottom:8px">' + UI.statusTag(r) + '</div><h1 tabindex="-1" data-focus>' + esc(r.title) + '</h1><p>' + (r.kind === 'first' ? 'Preparada por MainSpot con los datos de tu alta.' : 'Pedido por ' + esc(r.by) + ' en ' + UI.channelName(r.channel) + (r.text ? ': «' + esc(r.text) + '»' : '.')) + '</p></div>';
     html += '<div class="stack-lg">';
     if (r.changes.length && r.kind !== 'restore') html += '<section aria-labelledby="ch-t"><h2 id="ch-t" style="font-size:var(--fs-lg);margin-bottom:10px">El cambio</h2>' + UI.diff(r.changes) + '</section>';
@@ -324,13 +350,13 @@
         return '<li class="' + (i === arr.length - 1 ? 'ok' : 'done') + '"><span class="node">' + icon(mine ? 'user' : 'shield-check') + '</span><div><div class="t">' + esc(MS.evText(e)) + '</div><div class="d">' + esc(e.who === MS.me().name ? e.who + ' (tú)' : e.who) + ', ' + esc(MS.when(e.at)) + '</div></div></li>';
       }).join('') + '</ol>' + UI.note('Quién pidió, aprobó y publicó queda registrado (REQ-009). El asistente propone; las aprobaciones siempre son de una persona.') + '</section>';
     html += '</div>';
-    return { tab: 'cambios', screen: 'DS-08', title: r.title, html: html, back: '#/cambios', backLabel: 'Cambios' };
+    return { tab: 'pagina', screen: 'DS-08', title: r.title, html: html, back: '#/cambios', backLabel: 'Cambios' };
   };
 
   /* ---------- DS-09 · Vista previa ---------- */
   V.preview = function (id, q) {
     var r = MS.req(id);
-    var back = { back: '#/cambios', backLabel: 'Cambios', tab: 'cambios', screen: 'DS-09' };
+    var back = { back: '#/cambios', backLabel: 'Cambios', tab: 'pagina', screen: 'DS-09' };
     function stateView(spotCls, ic, title, body, actions) {
       return Object.assign({ title: title, html: '<div class="result"><div class="big-spot ' + spotCls + '">' + icon(ic) + '</div><h1 tabindex="-1" data-focus>' + esc(title) + '</h1><p>' + esc(body) + '</p><div class="btn-row" style="justify-content:center;margin-top:24px">' + (actions || '') + '</div></div>' }, back);
     }
@@ -387,7 +413,7 @@
       '<p>Quedó registrado a tu nombre, ' + esc(MS.when(r.approvedAt)) + '. ' + (r.status === 'published' ? 'Ya está en tu página.' : 'Ahora lo estamos publicando y te avisaremos cuando esté listo.') + '</p></div>';
     if (p && p.reqId === r.id) html += '<section class="card" aria-label="Avance de la publicación">' + UI.track(p) + '</section>';
     html += '<div class="btn-row" style="margin-top:24px;justify-content:center">' + (r.status === 'published' ? UI.btn('Ver mi página', { href: '#/sitio', icon: 'external-link' }) : UI.btn('Ver cómo va', { href: '#/pagina' })) + UI.btn('Volver al inicio', { href: '#/inicio', style: 'secondary' }) + '</div>';
-    return { tab: 'cambios', screen: 'DS-10', title: 'Aprobaste el cambio', html: html };
+    return { tab: 'pagina', screen: 'DS-10', title: 'Aprobaste el cambio', html: html };
   };
 
   /* ---------- DS-11 · Mi página ---------- */
@@ -410,6 +436,15 @@
       html += UI.note('Tiempos acelerados para la demo. Sin conexión real: los pasos se simulan.') + '</section>';
     }
 
+    // Cambios a la página y teléfono propio de la página web
+    var nPend = S.requests.filter(function (r) { return ['awaiting_confirm', 'preparing', 'preview_ready', 'expired', 'approved'].indexOf(r.status) >= 0; }).length;
+    html += '<section class="card card-flush" aria-label="Cambios a tu página"><ul class="list">' +
+      (MS.can('request') && !MS.expired() ? '<li><a class="list-row" href="#/cambios/nuevo"><span class="lead">' + icon('pencil') + '</span><span class="grow"><span class="title" style="display:block">Pedir un cambio</span><span class="sub" style="display:block">Escríbelo con tus palabras</span></span>' + icon('chevron-right', 'chev') + '</a></li>' : '') +
+      '<li><a class="list-row" href="#/cambios"><span class="lead">' + icon('message-square-text') + '</span><span class="grow"><span class="title" style="display:block">Cambios pendientes</span><span class="sub" style="display:block">' + (nPend ? nPend + (nPend === 1 ? ' cambio en camino' : ' cambios en camino') : 'Nada pendiente') + '</span></span>' + (nPend ? '<span class="badge-inline">' + nPend + '</span>' : '') + icon('chevron-right', 'chev') + '</a></li>' +
+      '<li><a class="list-row" href="#/cambios/historial"><span class="lead">' + icon('history') + '</span><span class="grow"><span class="title" style="display:block">Historial</span><span class="sub" style="display:block">Quién pidió, aprobó y publicó cada cambio</span></span>' + icon('chevron-right', 'chev') + '</a></li>' +
+      '</ul></section>';
+    html += MS.ph.card('website');
+
     // Versiones
     html += '<section aria-labelledby="ver-t"><div class="section-title"><h2 id="ver-t">Versiones publicadas</h2></div>';
     if (!S.site.versions.length) html += '<p class="card muted">Cuando publiques tu página, aquí guardaremos cada versión. Así podrás regresar a una anterior si lo necesitas.</p>';
@@ -431,7 +466,7 @@
   };
 
   /* ---------- DS-12 · Avisos ---------- */
-  var NK = { approval: ['rosa', 'eye'], live: ['nopal', 'globe'], failed: ['alerta', 'triangle-alert'], trial: ['ocre', 'clock'], tg: ['lila', 'message-circle'] };
+  var NK = { approval: ['rosa', 'eye'], live: ['nopal', 'globe'], failed: ['alerta', 'triangle-alert'], trial: ['ocre', 'clock'], tg: ['lila', 'message-circle'], 'case': ['rosa', 'messages-square'], case_failed: ['alerta', 'triangle-alert'] };
   V.notices = function (q) {
     var S = MS.S;
     var onlyUnread = q && q.filtro === 'sin-leer';

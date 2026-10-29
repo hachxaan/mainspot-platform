@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   var MS = (window.MS = window.MS || {});
-  var KEY = 'mainspot-prototipo-v1';
+  var KEY = 'mainspot-prototipo-v2';
 
   /* ---------- Datos de demostración ---------- */
   MS.DATA = {
@@ -23,7 +23,7 @@
       name: 'Panadería Lupita',
       line: 'Pan dulce y salado, recién horneado cada mañana',
       about: 'Horneamos en el barrio desde 1998. Conchas, orejas, bolillos y pasteles por encargo.',
-      phone: '55 5123 4567',
+      phone: '+52 983 000 0000',
       address: 'Calle de los Fresnos 12, Col. Ejemplo, Ciudad de México',
       hours: { week: '7:00 a 20:00', sat: '7:00 a 15:00', sun: '8:00 a 13:00' },
       services: ['Pan dulce', 'Bolillo y telera', 'Pasteles por encargo', 'Café de olla']
@@ -48,7 +48,7 @@
   function fresh() {
     var now = Date.now();
     return {
-      v: 1,
+      v: 2,
       createdAt: now,
       invite: { status: 'not_sent', sentAt: null, code: 'K7Q2-PL' },
       account: { activated: false, activatedAt: null },
@@ -67,6 +67,27 @@
       notices: [],
       seq: 1,
       tour: {},
+      // Teléfonos (contrato compartido §A): un principal y un «otro número» INDEPENDIENTE por integración.
+      primary: { iso: 'MX', nat: '9830000000' },
+      phones: {
+        website: { mode: 'own', other: null, savedAt: null },
+        google: { mode: 'own', other: null, savedAt: null, sync: null },
+        facebook: { mode: 'own', other: null, savedAt: null, sync: null }
+      },
+      // Integraciones simuladas: nunca hay conexión real con Google ni Meta.
+      prov: {
+        google: { connected: false, down: false, perm: true, connectedAt: null },
+        facebook: { connected: false, down: false, perm: true, connectedAt: null }
+      },
+      posts: [],
+      // Agente de atención (contrato §B). Por defecto todo pasa a revisión humana.
+      agent: {
+        watching: true, lastCheck: now, queue: [], seen: {}, dupes: 0, fixture: 0,
+        policy: { enabled: false, thanks: 'review', info: 'review', scope: { google: true, facebook: true } },
+        version: 1,
+        versions: [{ v: 1, at: now, by: 'MainSpot', summary: 'Predeterminado: todas las respuestas públicas se revisan antes de publicarse.' }]
+      },
+      cases: [],
       demo: { notes: true, failNextPublish: false, dashError: false, dashLoading: false }
     };
   }
@@ -78,7 +99,7 @@
       var raw = window.localStorage.getItem(KEY);
       if (raw) {
         var s = JSON.parse(raw);
-        if (s && s.v === 1) return s;
+        if (s && s.v === 2) return s;
       }
     } catch (e) { /* sin almacenamiento: seguimos en memoria */ }
     return fresh();
