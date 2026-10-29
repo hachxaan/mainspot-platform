@@ -47,6 +47,12 @@ export const ACTIONS = [
   'analytics.export',
   // QS-0006 (DEC-0025): la retención es automática; solo se consulta su vista previa.
   'analytics.retention',
+  // DEV-E2E-02: agente de atención por políticas y avisos por Telegram (SHARED-CONTRACT §B).
+  'engagement.read',
+  'engagement.respond',
+  'engagement.approve',
+  'engagement.policy.manage',
+  'telegram.link',
 ] as const;
 
 export type ActionName = (typeof ACTIONS)[number];
@@ -94,8 +100,11 @@ export const MATRIX: Record<RoleName, readonly ActionName[]> = {
     'social.schedule',
     'subscription.read',
     'analytics.read',
+    'engagement.read',
+    'engagement.respond',
+    'telegram.link',
   ],
-  read_only: ['data.read', 'conversation.read', 'reputation.read', 'social.read', 'subscription.read', 'analytics.read'],
+  read_only: ['data.read', 'conversation.read', 'reputation.read', 'social.read', 'subscription.read', 'analytics.read', 'engagement.read'],
 };
 
 export const ALLOWED_EFFECT = 'allow' as const;
@@ -143,6 +152,11 @@ export const ACTION_LABELS: Record<ActionName, string> = {
   'analytics.read': 'Ver resúmenes de actividad del cliente',
   'analytics.export': 'Exportar eventos de auditoría del cliente',
   'analytics.retention': 'Ver qué datos purgará la retención automática',
+  'engagement.read': 'Ver casos del agente de atención y sus políticas',
+  'engagement.respond': 'Editar borradores de respuesta de un caso',
+  'engagement.approve': 'Aprobar o rechazar la respuesta pública de un caso',
+  'engagement.policy.manage': 'Activar o revocar respuestas automáticas seguras',
+  'telegram.link': 'Vincular el propio chat de Telegram para avisos',
 };
 
 export const ROLE_LABELS: Record<RoleName, string> = {

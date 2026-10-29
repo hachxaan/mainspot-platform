@@ -29,6 +29,8 @@ test('AC-001 unit: operation creates/executes ops, reads/writes data, drives con
       'reputation.read', 'reputation.respond', 'reputation.escalate',
       'social.read', 'social.create', 'social.schedule',
       'subscription.read', 'analytics.read',
+      // DEV-E2E-02: lee casos del agente, edita borradores y vincula su Telegram; no aprueba.
+      'engagement.read', 'engagement.respond', 'telegram.link',
     ].includes(action);
     assert.equal(can('operation', action), expected, `operation ${action} expected ${expected}`);
   }
@@ -42,6 +44,7 @@ test('AC-001 unit: read_only can read data, conversation, reputation, social, su
     const expected = [
       'data.read', 'conversation.read',
       'reputation.read', 'social.read', 'subscription.read', 'analytics.read',
+      'engagement.read',
     ].includes(action);
     assert.equal(can('read_only', action), expected, `read_only ${action} expected ${expected}`);
   }

@@ -53,6 +53,18 @@ const OPEN_PROPOSAL_STATES = ['drafted', 'awaiting_confirmation', 'confirmed', '
  * `exportSkip`: columnas que nunca salen en la exportación (credenciales derivadas).
  */
 const TENANT_TABLES: ReadonlyArray<{ table: string; key: string; exportSkip?: readonly string[] }> = [
+  // DEV-E2E-02: agente de atención, Telegram, ficha de Google y simulador (antes de review,
+  // social_post e internal_user por sus FK).
+  { table: 'engagement_notification', key: 'tenant_id' },
+  { table: 'engagement_case', key: 'tenant_id' },
+  { table: 'engagement_policy', key: 'tenant_id' },
+  { table: 'engagement_cursor', key: 'tenant_id' },
+  { table: 'telegram_link_code', key: 'tenant_id', exportSkip: ['code_hash'] },
+  { table: 'telegram_link', key: 'tenant_id' },
+  { table: 'sim_provider_reply', key: 'tenant_id' },
+  { table: 'sim_provider_event', key: 'tenant_id' },
+  { table: 'sim_provider_fault', key: 'tenant_id' },
+  { table: 'gbp_profile', key: 'tenant_id' },
   // DEV-E2E-02: teléfonos de contacto por integración.
   { table: 'integration_phone', key: 'tenant_id' },
   { table: 'business_contact', key: 'tenant_id' },

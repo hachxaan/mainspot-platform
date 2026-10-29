@@ -54,6 +54,14 @@ import { analyticsRouter } from './analytics-routes.ts';
 // DEV-E2E-02: teléfonos de contacto por integración (SHARED-CONTRACT §A).
 import { ContactPhoneService } from '../contact/phones.ts';
 import { contactRouter } from './contact-routes.ts';
+// DEV-E2E-02: agente de atención por políticas, Telegram y ficha de Google (simulados sin credenciales).
+import { EngagementService } from '../engagement/service.ts';
+import { EngagementWorker } from '../engagement/worker.ts';
+import { TelegramLinkService } from '../engagement/telegram.ts';
+import { NotVerifiedCommentSource, RealReplier, SimulatedCommentSource, SimulatedReplier } from '../engagement/providers.ts';
+import { GbpProfileService } from '../google/profile.ts';
+import { engagementRouter, telegramWebhookRouter } from './engagement-routes.ts';
+import type { ChannelAdapter } from '../channels/types.ts';
 
 export interface AppHandle {
   app: express.Express;
@@ -71,6 +79,11 @@ export interface AppHandle {
   retention: RetentionService;
   /** DEV-E2E-02: teléfonos de contacto (principal + override por integración). */
   phones: ContactPhoneService;
+  /** DEV-E2E-02: agente de atención; el worker corre en main (o en su propio proceso). */
+  engagement: EngagementService;
+  engagementWorker: EngagementWorker;
+  telegram: TelegramLinkService;
+  channel: ChannelAdapter;
 }
 
 /** IR-13: basic security headers (CSP baseline, HSTS, nosniff, frame guard). */
@@ -114,7 +127,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   publishers.register(new WebsitePublisher(pool, domainService, phones));
   publishers.register(new StubPublisher());
   // INC-004/005: publishers de reputación y social (solo tras aprobación humana).
-  const reputationProvider = createReputationProvider(config);
+  const reputationProvider = createReputationProvider(config, pool);
   publishers.register(new ReputationPublisher(pool, reputationProvider, sink));
   const socialProvider = createSocialProvider(config);
   publishers.register(new SocialPublisher(pool, socialProvider, sink));
@@ -131,6 +144,19 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   const exporter = new ExportService(pool);
   const retention = new RetentionService({ pool, sink });
   const analyticsService = new AnalyticsService({ pool });
+  // DEV-E2E-02: proveedores simulados (deterministas, sin red) salvo credenciales; con
+  // credenciales los adaptadores reales quedan NO certificados (nunca se afirma éxito real).
+  const realGoogle = config.reputationProvider === 'google_business_profile' && Boolean(config.googleGbpToken);
+  const realMeta = config.socialProvider === 'meta' && Boolean(config.metaGraphToken);
+  const replier = realGoogle || realMeta ? new RealReplier(reputationProvider) : new SimulatedReplier(pool);
+  const engagement = new EngagementService({ pool, sink, replier, phones, channel, panelPath: '/panel' });
+  const engagementWorker = new EngagementWorker({
+    pool, service: engagement, reputationEngine,
+    comments: realMeta ? new NotVerifiedCommentSource() : new SimulatedCommentSource(pool),
+    pollIntervalMs: config.engagementPollIntervalMs,
+  });
+  const telegram = new TelegramLinkService({ pool, sink, channel, engagement });
+  const gbp = new GbpProfileService({ pool, sink, phones, mode: realGoogle ? 'not_verified' : 'simulated' });
   const machine: StateMachineDeps = {
     pool,
     sink,
@@ -184,6 +210,9 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   // Auth (public endpoints: login/logout).
   app.use('/api/auth', authRouter(deps));
 
+  // Webhook de Telegram (público; secreto obligatorio en producción).
+  app.use(telegramWebhookRouter({ config, telegram }));
+
   // Preview/sandbox público (INC-002, CAP-008): enlace seguro con token.
   app.use(previewRouter({ config, sink, repo: conversationRepo, machine, approvalRateLimiter, phones }));
 
@@ -198,6 +227,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   app.use('/api/backoffice', subscriptionRouter({ pool, config, sink, entitlements, subscriptionRepo }));
   app.use('/api/backoffice', analyticsRouter({ pool, config, sink, exporter, retention, analytics: analyticsService }));
   app.use('/api/backoffice', contactRouter({ pool, sink, phones }));
+  app.use('/api/backoffice', engagementRouter({ pool, config, sink, engagement, telegram, worker: engagementWorker, gbp }));
 
   // Minimal UX pages (AC-008).
   app.get('/', (req, res) => res.type('html').send(loginPageHtml()));
@@ -227,7 +257,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     }
   });
 
-  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones };
+  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones, engagement, engagementWorker, telegram, channel };
 }
 
 /** DEC-0005: cada cuánto se cierran las reservas de cuota vencidas (caídas a mitad). */
@@ -236,7 +266,7 @@ export const QUOTA_RECONCILE_INTERVAL_MS = 60_000;
 export const RETENTION_CHECK_INTERVAL_MS = 15 * 60_000;
 
 async function main(): Promise<void> {
-  const { app, config, jev, quota, retention } = createApp();
+  const { app, config, jev, quota, retention, engagementWorker } = createApp();
   app.listen(config.port, () => {
     log.info('server.started', `mainspot-platform listening on :${config.port}`, { port: config.port });
   });
@@ -256,6 +286,11 @@ async function main(): Promise<void> {
   retain();
   const retentionTimer = setInterval(retain, RETENTION_CHECK_INTERVAL_MS);
   retentionTimer.unref();
+  // DEV-E2E-02: observador del agente de atención (sin navegador abierto).
+  if (config.engagementWorkerEnabled) {
+    engagementWorker.start(config.engagementWorkerIntervalMs);
+    log.info('engagement.worker.started', 'engagement worker running in server process', { interval_ms: config.engagementWorkerIntervalMs });
+  }
   if (jev) {
     // Apagado ordenado: espera las clasificaciones Jev pendientes de persistir
     // (cada llamada acotada a 10 s) antes de salir.

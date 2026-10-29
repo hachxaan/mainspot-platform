@@ -7,6 +7,7 @@
  * texto) ⇒ mismo external_ref.
  */
 
+import type { Pool } from 'pg';
 import type { ReputationProvider, ReviewInput, PublicResponseResult } from './provider.ts';
 import { createHash } from 'node:crypto';
 
@@ -28,10 +29,32 @@ const DATASET: Record<string, ReviewInput[]> = {
 
 export class SimulatedReviews implements ReputationProvider {
   readonly provider = 'simulated' as const;
+  /** DEV-E2E-02: con pool, además del dataset pinned lee las reseñas inyectadas en el simulador
+   *  (sim_provider_event) para probar «llega una reseña nueva» entre procesos y tras reinicios. */
+  private readonly pool: Pool | null;
+
+  constructor(pool?: Pool) {
+    this.pool = pool ?? null;
+  }
 
   async listReviews(tenantId: string): Promise<ReviewInput[]> {
     // Devuelve una copia: el caller nunca muta el dataset pinned.
-    return (DATASET[tenantId] ?? []).map((r) => ({ ...r }));
+    const pinned = (DATASET[tenantId] ?? []).map((r) => ({ ...r }));
+    if (!this.pool) return pinned;
+    const fault = await this.pool.query(
+      `UPDATE sim_provider_fault SET remaining = remaining - 1
+        WHERE tenant_id = $1 AND origin = 'google_review' AND kind = 'list_error' AND remaining > 0 RETURNING remaining`,
+      [tenantId],
+    );
+    if ((fault.rowCount ?? 0) > 0) throw new Error('simulated_list_error');
+    const injected = await this.pool.query<{ external_ref: string; author_label: string; rating: number | null; body: string }>(
+      `SELECT external_ref, author_label, rating, body FROM sim_provider_event
+        WHERE tenant_id = $1 AND origin = 'google_review' ORDER BY event_seq`,
+      [tenantId],
+    );
+    return [...pinned, ...injected.rows.map((r) => ({
+      source_review_id: r.external_ref, author_name: r.author_label, star_rating: r.rating ?? 5, review_text: r.body, source: 'google' as const,
+    }))];
   }
 
   async postPublicResponse(tenantId: string, sourceReviewId: string, text: string): Promise<PublicResponseResult> {

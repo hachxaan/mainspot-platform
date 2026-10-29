@@ -101,6 +101,11 @@ export interface AppConfig {
   paymentProvider: PaymentProviderName;
   // APR-0002: Jev como clasificador semántico (disabled | shadow | primary).
   jev: JevConfig;
+  // DEV-E2E-02: agente de atención (observador sin navegador) y webhook de Telegram.
+  engagementWorkerEnabled: boolean;
+  engagementWorkerIntervalMs: number;
+  engagementPollIntervalMs: number;
+  telegramWebhookSecret: string;
 }
 
 export interface LoadConfigOptions {
@@ -237,6 +242,12 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     paymentProvider: enumValue<PaymentProviderName>('PAYMENT_PROVIDER', process.env.PAYMENT_PROVIDER, PAYMENT_PROVIDERS, 'simulated'),
     // APR-0002: Jev disabled|shadow|primary, solo tenants sintéticos (DEC-0019).
     jev: loadJevConfig(),
+    // DEV-E2E-02: el observador corre en el proceso del servidor salvo ENGAGEMENT_WORKER=off
+    // (p. ej. cuando corre como proceso propio con scripts/engagement-worker.ts).
+    engagementWorkerEnabled: (process.env.ENGAGEMENT_WORKER ?? 'on') !== 'off',
+    engagementWorkerIntervalMs: Math.max(1000, Number(process.env.ENGAGEMENT_WORKER_INTERVAL_MS ?? 15_000)),
+    engagementPollIntervalMs: Math.max(0, Number(process.env.ENGAGEMENT_POLL_INTERVAL_MS ?? 60_000)),
+    telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
   };
 
   return { ...config, ...overrides };

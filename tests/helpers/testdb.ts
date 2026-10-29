@@ -5,7 +5,7 @@
 
 import type { AddressInfo, Server } from 'node:net';
 import pg from 'pg';
-import { createApp } from '../../src/api/server.ts';
+import { createApp, type AppHandle } from '../../src/api/server.ts';
 import { loadConfig, type AppConfig } from '../../src/shared/config.ts';
 import type { JevClassifier } from '../../src/conversation/jev-classifier.ts';
 
@@ -31,12 +31,15 @@ export interface TestApi {
   pool: pg.Pool;
   /** Presente solo si la config habilita Jev (shadow o primary). */
   jev?: JevClassifier;
+  /** Servicios internos del proceso (worker del agente, canal simulado…) para pruebas. */
+  handle: AppHandle;
   close: () => Promise<void>;
 }
 
 export async function bootApi(configOverrides: Partial<AppConfig> = {}): Promise<TestApi> {
   const pool = new Pool({ connectionString: TEST_URL, max: 5 });
-  const { app, jev } = createApp({ config: { ...TEST_CONFIG, ...configOverrides }, pool });
+  const handle = createApp({ config: { ...TEST_CONFIG, engagementPollIntervalMs: 0, ...configOverrides }, pool });
+  const { app, jev } = handle;
   const server: Server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
@@ -45,7 +48,9 @@ export async function bootApi(configOverrides: Partial<AppConfig> = {}): Promise
     baseUrl: `http://127.0.0.1:${address.port}`,
     pool,
     jev,
+    handle,
     close: async () => {
+      handle.engagementWorker.stop();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await jev?.drain();
       await pool.end();

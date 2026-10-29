@@ -10,6 +10,7 @@
 
 import type { ReputationProvider, ReviewInput, PublicResponseResult } from './provider.ts';
 import { SimulatedReviews } from './simulated.ts';
+import type { Pool } from 'pg';
 import type { AppConfig } from '../shared/config.ts';
 
 export class GoogleBusinessProfileAdapter implements ReputationProvider {
@@ -56,10 +57,10 @@ export class GoogleBusinessProfileAdapter implements ReputationProvider {
   }
 }
 
-export function createReputationProvider(config: Pick<AppConfig, 'reputationProvider' | 'googleGbpToken' | 'googleGbpBaseUrl'>): ReputationProvider {
+export function createReputationProvider(config: Pick<AppConfig, 'reputationProvider' | 'googleGbpToken' | 'googleGbpBaseUrl'>, pool?: Pool): ReputationProvider {
   if (config.reputationProvider === 'google_business_profile' && config.googleGbpToken) {
     return new GoogleBusinessProfileAdapter(config.googleGbpToken, config.googleGbpBaseUrl);
   }
   // DEC-026: sin credenciales => simulado funcional (E2E/piloto).
-  return new SimulatedReviews();
+  return new SimulatedReviews(pool);
 }
