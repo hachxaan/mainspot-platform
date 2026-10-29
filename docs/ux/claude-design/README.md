@@ -8,6 +8,16 @@
 
 > **Misión:** crear una experiencia visual de alta calidad, **interactiva y recorrible de principio a fin**, con datos ficticios, para que el propietario evalúe la UX antes de que SOL MAIN implemente el producto. **No queremos más documentación de planificación como sustituto del diseño. Queremos un prototipo que se abra y funcione.**
 
+### Autorización operativa y persistencia en GitHub (2026-10-29)
+
+**Autorización expresa del propietario:** Claude Design **PUEDE crear, editar, versionar, hacer commits y push** de su trabajo de diseño, prototipos, recursos visuales, versiones intermedias y reportes en el repositorio `hachxaan/mainspot-platform`, rama **`feat/canonflow-implementation`**, **exclusivamente dentro de `docs/ux/claude-design/**`**. No necesita solicitar permiso en cada commit o ajuste de UX reversible.
+
+Este permiso comprende `working/` (iteraciones), `deliverables/` (prototipo revisable), `reports/` (avance y comprobaciones), imágenes y otros recursos de diseño. Documenta brevemente avances y problemas reales en vez de crear gates formales. **Lee [WORKFLOW.md](WORKFLOW.md)** para el procedimiento exacto, seguridad y forma de entrega.
+
+La autorización de escritura **no concede acceso técnico por sí sola**: si Claude no tiene GitHub conectado o permisos de push, debe entregar los archivos exportables en idéntica estructura, sin afirmar que hizo push. La propiedad del repositorio y el alcance autorizado no cambian.
+
+**Fuentes de verdad intactas:** `.canonflow/`, `docs/ux/claude-design-brief.md`, código `src/`, infraestructura, contratos y HDC son de **solo lectura** para este encargo. Nada de producción; `QS-0015` no se responde.
+
 ### 1. Qué leer y en qué orden
 
 Los siguientes archivos YA existen. **No reescribas el canon ni inventes políticas de negocio.** Sus enlaces son relativos a la raíz del repositorio:
@@ -108,27 +118,36 @@ Crear un **prototipo HTML/CSS/JS realmente navegable**, ejecutable en navegador 
 - Si trabajas con una herramienta de diseño que no puede escribir archivos directamente, exporta un **paquete HTML estático** con la estructura de la §6 para que pueda incorporarse tal cual al repositorio. No uses capturas como único entregable.
 - Para revisión, deja una ruta feliz completa y al menos un camino de error/recuperación que una persona pueda ejecutar sin instrucciones técnicas.
 
-### 6. Ubicación y entrega
+### 6. Ubicación, versiones y entrega
 
-**Escribe o solicita incorporar ÚNICAMENTE los archivos nuevos del prototipo bajo:**
+**Toda la producción de Claude Design se guarda exclusivamente en `docs/ux/claude-design/`**, conforme a la autorización operativa al inicio. No se limita a los archivos finales: puede persistir el proceso completo, decisiones de diseño reversibles, recursos visuales, evidencias y reportes.
 
 ```text
 docs/ux/claude-design/
-├── README.md                # Este encargo: no reemplazar
+├── README.md                     # Este encargo y fuentes: conservar
+├── WORKFLOW.md                   # Reglas para trabajar, commit y push
+├── working/
+│   └── README.md                 # Borradores, iteraciones y exploraciones
+├── reports/
+│   ├── README.md                 # Formato mínimo de reportes
+│   └── PROGRESS.md               # Estado actual, avances y bloqueos
 └── deliverables/
-    ├── index.html           # Prototipo navegable, punto de entrada
-    ├── SCREEN-MAP.md        # ID de pantallas, rutas/acciones y estados
-    ├── manifest.sha256      # SHA-256 de cada archivo entregado
-    └── assets/              # Solo si se necesitan assets locales
+    ├── README.md                 # Instrucciones de entrega (ya existe)
+    ├── index.html                # Prototipo navegable, punto de entrada
+    ├── SCREEN-MAP.md             # IDs de pantallas, acciones y estados
+    ├── manifest.sha256           # SHA-256 de cada archivo final
+    └── assets/                   # Recursos locales, solo si se necesitan
 ```
 
-- `deliverables/README.md`, si existe, es una guía de ubicación: se puede conservar o reemplazar por una nota de uso. **No cambia el brief**.
-- Permite abrir el prototipo con doble clic sobre `index.html` o mediante servidor estático si estrictamente necesario; di cuál método funciona.
-- `SCREEN-MAP.md`: breve tabla pantalla → acciones → siguiente estado → variante de error, más un **recorrido de demostración de máximo 2 minutos**; no una nueva especificación.
-- `manifest.sha256`: huellas de `index.html`, `SCREEN-MAP.md` y assets estáticos para aprobación por contenido `DEC-0040`; no listar el propio manifiesto (evita autorreferencia).
-- Si tienes permisos para escribir en GitHub: haz commit y push a **`feat/canonflow-implementation`** y entrega enlace a `index.html`, commit y manifest. **No tocar código fuente, contrato, HDC ni backend.**
-- Si la integración de Claude Design con GitHub solo permite lectura: entrega los archivos exportables y la misma estructura de carpetas; el usuario o SOL MAIN hará el push sin alterar contenido.
-- Si tienes que dejar una única salida prioriza: **`index.html` completamente navegable**, luego mapa y manifest.
+- Los directorios `working/` y `reports/` pueden contener archivos adicionales conforme evolucionen los prototipos; mantener nombres claros y evitar duplicación innecesaria.
+- `deliverables/index.html`: debe poder abrirse con doble clic o documentar la necesidad de un servidor estático local; **sin llamadas externas en tiempo de ejecución**.
+- `SCREEN-MAP.md`: tabla breve de vista → acciones → estado siguiente → errores, más una demostración de máximo dos minutos.
+- `manifest.sha256`: incluir los archivos finales (HTML, mapa, assets) calculando los hashes **sobre los bytes finales**, no incluirse a sí mismo ni materiales de trabajo.
+- Hacer commit y **push directo a `feat/canonflow-implementation`**, verificando el HEAD previo y sin force-push. Esta acción queda autorizada dentro de la carpeta propia, sin aprobación por commit.
+- Al terminar cada iteración útil, actualizar `reports/PROGRESS.md` y señalar el commit y los enlaces de la versión navegable; no generar reportes extensos.
+- **No cambiar este documento de requisitos** durante la producción del diseño, salvo correcciones operativas sin impacto en el canon. No modificar fuera de esta carpeta.
+- Si GitHub está disponible solo en lectura o falla el push, exportar todos los archivos conservando esta estructura y comunicar claramente que quedaron pendientes de publicar.
+- Si debes priorizar una sola salida: **`deliverables/index.html` plenamente navegable**; después mapa, manifiesto y reporte breve.
 
 ### 7. Criterios de aceptación: demostrar, no solo declarar
 
