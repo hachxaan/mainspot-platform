@@ -20,6 +20,8 @@ La autorización de escritura **no concede acceso técnico por sí sola**: si Cl
 
 **Complemento de visión del producto (iteración 2):** además del flujo de páginas, Google Maps/Business Profile y Facebook, **debe mostrarse un agente activo que detecta nuevas reseñas/comentarios, clasifica, atiende automáticamente lo autorizado por políticas y escala las excepciones al panel y Telegram con respuestas sugeridas**. Leer [AUTONOMOUS-ENGAGEMENT-UX.md](AUTONOMOUS-ENGAGEMENT-UX.md) antes de ampliar el prototipo. **Hoy las respuestas públicas siguen exigiendo aprobación humana por DEC-011; el modo autónomo se representa como diseño propuesto, no como comportamiento activo aprobado.**
 
+**Nuevo mandato de desarrollo paralelo (2026-10-29):** [ITERATION-2-E2E-HANDOFF.md](ITERATION-2-E2E-HANDOFF.md) y [contrato compartido](../../handoffs/e2e-parallel-2026-10-29/SHARED-CONTRACT.md). El propietario autorizó trabajo de frontend y backend E2E **en paralelo sin gates HDC de desarrollo**. **Cada integración (Página Web, Google Maps, Facebook) tiene su propio «Otro número» independiente**; no hay un único teléfono alternativo. El prototipo y el backend pueden avanzar sin esperar revisión intermedia; conservar los DEC como historia y registrar decisiones operativas en el handoff. No confundir esto con una puesta en producción.
+
 ### 1. Qué leer y en qué orden
 
 Los siguientes archivos YA existen. **No reescribas el canon ni inventes políticas de negocio.** Sus enlaces son relativos a la raíz del repositorio:
