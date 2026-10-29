@@ -206,19 +206,26 @@
       "answered_at": "2026-10-24T20:35:46Z",
       "session_label": "Respaldos remotos: canal externo de los avisos del productor MainSpot",
       "answer_session_id": "ANS-0015"
+    },
+    {
+      "question_session_id": "QS-0015",
+      "state": "PENDING",
+      "generated_at": "2026-10-29T07:43:55Z",
+      "records": [],
+      "session_label": "Condición 7: autorización condicionada de la copia remota de respaldos (Garage S3, KVM 4)"
     }
   ],
   "counters": {
-    "qs": 14,
+    "qs": 15,
     "ans": 15,
     "dec": 65,
     "apr": 2,
     "rsk": 0
   },
-  "latest": "QS-0014",
+  "latest": "QS-0015",
   "reconstructed": {
-    "at": "2026-10-24T20:46:04Z",
-    "by": "RUN-0016 (canonflow-human-decision-console)",
+    "at": "2026-10-29T07:44:04Z",
+    "by": "RUN-0020 (canonflow-human-decision-console)",
     "source": "artifacts+lifecycle+legacy-snapshots; state = evidence-derived effective state",
     "preserved": true
   }

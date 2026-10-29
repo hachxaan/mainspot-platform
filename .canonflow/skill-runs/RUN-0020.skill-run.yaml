@@ -1,0 +1,24 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0020
+skill_id: canonflow-human-decision-console
+mode: generate
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  Publish the Gate 7 (condition 7) HDC session from dossier revision 5 under the owner's explicit authorization
+  (mainspot-platform#2 comment 6490824289). Publication only: no answer is written or inferred, no DEC, no activation.
+  Service stopped during the publication window (HDC-0007); stamped publish (HDC-0009); compatibility views (HDC-0006).
+  Run number 20 skips 17-19 on this branch because feat/f01-telegram-acknowledged-alerts already uses RUN-0017..0019.
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 391ff02c1a95a1b4ef6760634e3ddb31a4b4f8ba
+inputs:
+  - "docs/contracts/backup-object-storage/gate7-preauthorization-dossier.md sha256 48d1f24501f76d5bf2b55e7957496940ca551627109feacd32bfdcef49be3120"
+  - "docs/contracts/backup-object-storage/gate7-qs-activation-draft.questions.json sha256 b17ec24b08b3e9aba18d9a00b76cb574b233d36644259d3c514b27b3093e9a3c"
+expected_outputs:
+  - .canonflow/decision-sessions/pending/QS-0015.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow/skill-runs/RUN-0020.skill-report.yaml
+created_at: "2026-10-29T07:43:00Z"

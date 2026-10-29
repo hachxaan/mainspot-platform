@@ -1,0 +1,29 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0020
+run_id: RUN-0020
+skill_id: canonflow-human-decision-console
+verdict: PASS
+scope: Publication of QS-0015 (PENDING). No answer, no ingestion, no DEC, no production change.
+human_summary: |
+  QS-0015 published from the rev 5 draft. Differences from the draft bytes: generated_at stamped at publication
+  (HDC-0009) and the title prefix "BORRADOR — NO PUBLICAR sin decisión expresa del propietario." removed because the
+  owner gave that decision; question_session_id (QS-0015, allocated by the HDC as the next free id), topics, questions,
+  options and the artifact_binding to the dossier are identical. JSON re-serialized by publish-session (indent 2).
+claims:
+  - class: VERIFIED
+    statement: "Published QS sha256 7045c193aff25fe495181ba130c7a60baa16bbc7db4a3030a576377b2a08401d; v2 profile, 0 schema and 0 cross-rule errors; artifact_binding = dossier sha256 48d1f245…; no preselection."
+    evidence: [.canonflow/skill-runs/RUN-0020/evidence/EV-0001-publish-session.txt, .canonflow/skill-runs/RUN-0020/evidence/EV-0004-final-validation.txt]
+  - class: VERIFIED
+    statement: "Compatibility views --run RUN-0020: qs 15 · ans 15 · dec 65 · apr 2, latest QS-0015 PENDING; pending_human [QS-0015]; service stopped 07:43:55Z-07:44:05Z; after restart ready, writes_enabled=true; live API QS-0015 declared/effective PENDING, can_answer=true, no diagnostics; HTTPS 200."
+    evidence: [.canonflow/skill-runs/RUN-0020/evidence/EV-0002-compat-views.txt, .canonflow/skill-runs/RUN-0020/evidence/EV-0003-hdc-live-session.txt]
+  - class: VERIFIED
+    statement: "No answers file and no new decision record were created."
+limitations:
+  - "The dossier must stay byte-identical until the owner submits: the HDC re-verifies the approval binding at submit time (APPROVAL_BINDING_CHANGED otherwise)."
+outputs:
+  - .canonflow/decision-sessions/pending/QS-0015.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml
+next_pointer: "Owner reads and answers QS-0015 in the HDC; then RUN ingest (only after a real answer exists)"
