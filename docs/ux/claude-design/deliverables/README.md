@@ -1,13 +1,25 @@
 # Entregables de Claude Design
 
-Coloca aquí la **versión navegable** del flujo del propietario de MainSpot. El documento de trabajo y sus criterios están en [../README.md](../README.md).
+Versión navegable del flujo del propietario de MainSpot (**iteración 1**, en desarrollo). El encargo y sus criterios están en [../README.md](../README.md).
 
-**Contenido esperado tras diseñar:**
-- `index.html`: abrir y recorrer el prototipo desde el navegador.
-- `SCREEN-MAP.md`: mapa breve de pantallas, acciones, errores y recorrido de demo.
-- `manifest.sha256`: huellas SHA-256 de los archivos finales (sin incluir el propio manifiesto).
-- `assets/`: recursos locales si fueran necesarios.
+## Cómo abrirlo
 
-Claude Design tiene autorización para crear, modificar y hacer push de todos los archivos del prototipo dentro de esta carpeta. Puede mantener versiones y recursos auxiliares; no es necesario solicitar autorización por cada ajuste visual.
+- **Local:** doble clic en [`index.html`](index.html). No necesita servidor ni internet.
+- **En línea:** el enlace de vista directa está en [../reports/PROGRESS.md](../reports/PROGRESS.md).
+- Para empezar de cero: «Probar estados» → «Reiniciar la demo».
 
-Esta carpeta **aún no contiene el prototipo**. No confundas esta guía de entrega con un diseño final. El producto está en **desarrollo**, con datos ficticios y sin integraciones reales.
+## Contenido
+
+| Archivo | Qué es |
+|---|---|
+| `index.html` | Punto de entrada del prototipo |
+| `assets/css/app.css` | Estilos y tokens visuales (`:root`) |
+| `assets/js/*.js` | Pantallas, estado simulado y herramienta de demostración |
+| `assets/fonts/` | Bricolage Grotesque y Atkinson Hyperlegible Next (SIL OFL 1.1, licencias incluidas) |
+| `assets/js/icons.js` | Iconos Lucide como sprite local (ISC, licencia incluida) |
+| [`SCREEN-MAP.md`](SCREEN-MAP.md) | Pantallas DS-01…DS-12, acciones, estados y demostración de 2 minutos |
+| `manifest.sha256` | Huellas SHA-256 de todos los archivos de esta carpeta, salvo el propio manifiesto |
+
+Todo es ficticio: no hay llamadas a Telegram, DNS, publicación real ni ningún servicio externo. No es código de producción ni una decisión nueva; es la referencia de UX a revisar conforme a DEC-0040.
+
+Comprobar huellas: `cd docs/ux/claude-design/deliverables && sha256sum -c manifest.sha256`
