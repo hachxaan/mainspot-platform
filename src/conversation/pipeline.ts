@@ -25,6 +25,7 @@ import { ConversationRepository, newConversationIds, type ConversationRequestRow
 import { buildReadOnlyAnswer } from './read-answers.ts';
 import { editWebsiteByInstruction, sentenceList } from '../website/edit-mapper.ts';
 import type { WebsiteRepository } from '../website/repository.ts';
+import { formatInternational, type ContactPhoneService } from '../contact/phones.ts';
 import { runAtomic } from './state-machine.ts';
 import { normalizeWebsiteData } from '../website/template.ts';
 
@@ -50,6 +51,8 @@ export interface PipelineDeps {
   quota?: QuotaLedger;
   /** Opcional (JEV_MODE=shadow|primary, APR-0002): Jev como clasificador; ver jev-classifier.ts. */
   jev?: JevClassifier;
+  /** DEV-E2E-02: si la web tiene teléfono configurado por canal, el chat no lo edita (una sola fuente). */
+  phones?: ContactPhoneService;
 }
 
 /** Senencia de confirmación detallada (AC-006) en lenguaje claro. */
@@ -240,6 +243,25 @@ export class ConversationPipeline {
         const site = await this.deps.websiteRepo.websiteForTenant(input.tenantId);
         const current = site ? this.deps.websiteRepo.dataOf(site) : normalizeWebsiteData({});
         const edit = editWebsiteByInstruction(current, input.text);
+        // DEV-E2E-02: con «Teléfonos de contacto» configurado, el número de la web sale de esa
+        // configuración; editarlo por chat crearía una segunda fuente (la vista previa mostraría
+        // otro número). Se orienta a la tarjeta del canal sin crear propuesta.
+        const webPhone = edit.patches.some((x) => x.field === 'contact.phone') && this.deps.phones
+          ? await this.deps.phones.effectivePhone(input.tenantId, 'website')
+          : null;
+        if (webPhone) {
+          const note = `El teléfono de tu página se cambia en «Teléfonos de contacto» → Página web (hoy muestra ${formatInternational(webPhone)}); así no cambia el de Google ni el de Facebook.`;
+          const request = await this.persistRequest(input, input.requestId, classification, 'answered', note, reservation);
+          await sink.write({
+            tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole,
+            action: 'conversation.answered', resource: `request:${request.request_id}`,
+            request_id: input.requestId, decision: 'allow', result: 'phone_managed_by_channel',
+          });
+          return {
+            requestId: request.request_id, actionClass: 'read_only', intent: classification.intent,
+            capabilityTarget: classification.capabilityTarget, requestStatus: 'answered', responseText: note,
+          };
+        }
         const draft: ProposalDraft = {
           proposalType: classification.proposalType ?? 'website.edit',
           capabilityTarget: 'website',

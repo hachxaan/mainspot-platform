@@ -168,7 +168,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   // APR-0002: Jev como clasificador — UN cliente por proceso, solo con
   // JEV_MODE=shadow|primary y solo para tenants sintéticos (DEC-0019).
   const jev = createJevClassifier(config.jev, new JevRepository(pool));
-  const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo, quota, jev });
+  const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo, quota, jev, phones });
   const approvalRateLimiter = new ActionRateLimiter(
     config.approvalRateLimitMax,
     config.approvalRateLimitWindowMs,

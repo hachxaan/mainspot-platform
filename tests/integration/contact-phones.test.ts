@@ -179,3 +179,26 @@ test('TEL-04: aislamiento tenant, RBAC y auditoría sin PII', async () => {
   assert.ok(!/983\d{7}|\+52/.test(blob), 'la auditoría no contiene dígitos del teléfono');
   console.log('TEST_PASS TEL-04 aislamiento/RBAC/auditoría sin PII');
 });
+
+test('FLOW-02: con teléfono configurado por canal, el chat no edita el número de la web (una sola fuente)', async () => {
+  const { token, tenant } = await createTenantWithPlan(t, { conversations: 10, website: 1 }, 'client_tel5');
+  assert.equal((await api(t.baseUrl, '/api/backoffice/website', { method: 'POST', headers: authHeaders(token), body: JSON.stringify({ slug: `tel5-${Date.now()}`, site_name: 'Tel 5' }) })).status, 201);
+  await setPrimary(token, MX('9830000000'));
+  await setChannel(token, 'website', { mode: 'other', other_phone: MX('9831111111') });
+  const send = (text: string) => api(t.baseUrl, '/api/backoffice/conversation/messages', { method: 'POST', headers: authHeaders(token), body: JSON.stringify({ text, channel: 'simulated' }) });
+
+  const phoneChange = await send('necesito cambiar el teléfono a 983 444 4444');
+  assert.equal(phoneChange.status, 201);
+  assert.equal(phoneChange.body.proposal_id ?? null, null, 'sin propuesta: el número se cambia en su tarjeta');
+  assert.match(phoneChange.body.response, /Teléfonos de contacto/);
+  assert.match(phoneChange.body.response, /\+52 983 111 1111/);
+
+  const hours = await send('necesito cambiar el horario a 09:00-18:00');
+  assert.ok(hours.body.proposal_id, 'los demás cambios de la web siguen su flujo');
+  const conf = await api(t.baseUrl, `/api/backoffice/conversation/proposals/${hours.body.proposal_id}/confirm`, { method: 'POST', headers: authHeaders(token) });
+  const html = await (await fetch(`${t.baseUrl}${conf.body.preview.url}`)).text();
+  assert.ok(html.includes('+52 983 111 1111') && !html.includes('983 444 4444'), 'la vista previa muestra el número del canal');
+  const view = (await phones(token)).body;
+  assert.equal(view.integration_phones.website.effective_phone, '+529831111111', 'la configuración del canal no cambia por chat');
+  assert.equal(view.tenant_id, tenant);
+});
