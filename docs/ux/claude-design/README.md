@@ -18,6 +18,8 @@ La autorización de escritura **no concede acceso técnico por sí sola**: si Cl
 
 **Fuentes de verdad intactas:** `.canonflow/`, `docs/ux/claude-design-brief.md`, código `src/`, infraestructura, contratos y HDC son de **solo lectura** para este encargo. Nada de producción; `QS-0015` no se responde.
 
+**Complemento de visión del producto (iteración 2):** además del flujo de páginas, Google Maps/Business Profile y Facebook, **debe mostrarse un agente activo que detecta nuevas reseñas/comentarios, clasifica, atiende automáticamente lo autorizado por políticas y escala las excepciones al panel y Telegram con respuestas sugeridas**. Leer [AUTONOMOUS-ENGAGEMENT-UX.md](AUTONOMOUS-ENGAGEMENT-UX.md) antes de ampliar el prototipo. **Hoy las respuestas públicas siguen exigiendo aprobación humana por DEC-011; el modo autónomo se representa como diseño propuesto, no como comportamiento activo aprobado.**
+
 ### 1. Qué leer y en qué orden
 
 Los siguientes archivos YA existen. **No reescribas el canon ni inventes políticas de negocio.** Sus enlaces son relativos a la raíz del repositorio:
