@@ -12,6 +12,7 @@ import type { Pool } from 'pg';
 import type { DbExecutor, PublishResult, Publisher, PublisherContext } from '../publishing/publisher.ts';
 import type { DomainService } from '../domain/service.ts';
 import { normalizeWebsiteData, renderSite, type WebsiteData } from '../website/template.ts';
+import { withEffectivePhone, type ContactPhoneService } from '../contact/phones.ts';
 
 /** Payload esperado: { after: WebsiteData, diff_sentences: string[] } */
 export function extractWebsitePayload(payload: Record<string, unknown>): { data: WebsiteData; sentences: string[] } {
@@ -27,15 +28,20 @@ export class WebsitePublisher implements Publisher {
   readonly name = 'website' as const;
   private readonly pool: Pool;
   private readonly domainService: DomainService | null;
+  private readonly phones: ContactPhoneService | null;
 
-  constructor(pool: Pool, domainService?: DomainService) {
+  constructor(pool: Pool, domainService?: DomainService, phones?: ContactPhoneService) {
     this.pool = pool;
     this.domainService = domainService ?? null;
+    this.phones = phones ?? null;
   }
 
   async publish(ctx: PublisherContext, db?: DbExecutor): Promise<PublishResult> {
-    const { data, sentences } = extractWebsitePayload(ctx.payload);
+    const extracted = extractWebsitePayload(ctx.payload);
     const conn: DbExecutor = db ?? this.pool;
+    // DEV-E2E-02: el teléfono publicado es el efectivo del canal website (principal u «Otro número» propio).
+    const data = await withEffectivePhone(this.phones ?? undefined, ctx.tenantId, extracted.data, conn);
+    const sentences = extracted.sentences;
 
     const siteRes = await conn.query<{ website_id: string; slug: string; published_version: number }>(
       'SELECT website_id, slug, published_version FROM client_website WHERE tenant_id = $1',

@@ -20,6 +20,7 @@ import { approveAndPublish, AlreadyPublishedError, expirePreviewAndProposal, res
 import type { ActionRateLimiter } from '../boundary/action-ratelimit.ts';
 import { previewPageHtml, previewExpiredPageHtml, previewNotFoundPageHtml } from './ui.ts';
 import { renderSite, normalizeWebsiteData } from '../website/template.ts';
+import { withEffectivePhone, type ContactPhoneService } from '../contact/phones.ts';
 import type { PublisherContext } from '../publishing/publisher.ts';
 
 export interface PreviewRouteDeps {
@@ -28,6 +29,8 @@ export interface PreviewRouteDeps {
   repo: ConversationRepository;
   machine: StateMachineDeps;
   approvalRateLimiter: ActionRateLimiter;
+  /** DEV-E2E-02: la vista previa muestra el teléfono efectivo del canal website. */
+  phones?: ContactPhoneService;
 }
 
 function ah(fn: (req: Request, res: Response) => Promise<unknown>) {
@@ -70,7 +73,8 @@ export function previewRouter(deps: PreviewRouteDeps): Router {
     let previewHtml: string | null = null;
     if (proposal.capability_target === 'website') {
       const payload = (proposal.detail ?? {}) as PublisherContext['payload'];
-      previewHtml = renderSite(normalizeWebsiteData(payload['after']), { previewBanner: 'Vista previa — aún no publicado' });
+      const data = await withEffectivePhone(deps.phones, resolved.tenantId, normalizeWebsiteData(payload['after']));
+      previewHtml = renderSite(data, { previewBanner: 'Vista previa — aún no publicado' });
     }
 
     return res.status(200).type('html').send(previewPageHtml({

@@ -53,6 +53,9 @@ const OPEN_PROPOSAL_STATES = ['drafted', 'awaiting_confirmation', 'confirmed', '
  * `exportSkip`: columnas que nunca salen en la exportación (credenciales derivadas).
  */
 const TENANT_TABLES: ReadonlyArray<{ table: string; key: string; exportSkip?: readonly string[] }> = [
+  // DEV-E2E-02: teléfonos de contacto por integración.
+  { table: 'integration_phone', key: 'tenant_id' },
+  { table: 'business_contact', key: 'tenant_id' },
   { table: 'jev_classification', key: 'tenant_id' },
   { table: 'scheduled_post', key: 'tenant_id' },
   { table: 'website_content', key: 'tenant_id' },

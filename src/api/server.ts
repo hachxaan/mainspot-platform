@@ -51,6 +51,9 @@ import { ExportService } from '../analytics/export.ts';
 import { RetentionService } from '../retention/service.ts';
 import { AnalyticsService } from '../analytics/summary.ts';
 import { analyticsRouter } from './analytics-routes.ts';
+// DEV-E2E-02: teléfonos de contacto por integración (SHARED-CONTRACT §A).
+import { ContactPhoneService } from '../contact/phones.ts';
+import { contactRouter } from './contact-routes.ts';
 
 export interface AppHandle {
   app: express.Express;
@@ -66,6 +69,8 @@ export interface AppHandle {
   quota: QuotaLedger;
   /** QS-0006: retención global (ejecución diaria en main; tests y scripts la invocan directamente). */
   retention: RetentionService;
+  /** DEV-E2E-02: teléfonos de contacto (principal + override por integración). */
+  phones: ContactPhoneService;
 }
 
 /** IR-13: basic security headers (CSP baseline, HSTS, nosniff, frame guard). */
@@ -99,7 +104,14 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   const domainService = new DomainService(pool, config);
   const channel = createChannelAdapter(config);
   const publishers = new PublisherRegistry();
-  publishers.register(new WebsitePublisher(pool, domainService));
+  const phones = new ContactPhoneService({
+    pool, sink,
+    providerModes: {
+      google_business_profile: config.reputationProvider === 'google_business_profile' && config.googleGbpToken ? 'real' : 'simulated',
+      facebook: config.socialProvider === 'meta' && config.metaGraphToken ? 'real' : 'simulated',
+    },
+  });
+  publishers.register(new WebsitePublisher(pool, domainService, phones));
   publishers.register(new StubPublisher());
   // INC-004/005: publishers de reputación y social (solo tras aprobación humana).
   const reputationProvider = createReputationProvider(config);
@@ -173,7 +185,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   app.use('/api/auth', authRouter(deps));
 
   // Preview/sandbox público (INC-002, CAP-008): enlace seguro con token.
-  app.use(previewRouter({ config, sink, repo: conversationRepo, machine, approvalRateLimiter }));
+  app.use(previewRouter({ config, sink, repo: conversationRepo, machine, approvalRateLimiter, phones }));
 
   // Protected backoffice API: session -> tenant override guard -> permission.
   app.use('/api/backoffice', resolveSession(sessionResolver, sink, pool));
@@ -185,6 +197,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   app.use('/api/backoffice', socialRouter({ pool, config, sink, service: socialService, approvalRateLimiter }));
   app.use('/api/backoffice', subscriptionRouter({ pool, config, sink, entitlements, subscriptionRepo }));
   app.use('/api/backoffice', analyticsRouter({ pool, config, sink, exporter, retention, analytics: analyticsService }));
+  app.use('/api/backoffice', contactRouter({ pool, sink, phones }));
 
   // Minimal UX pages (AC-008).
   app.get('/', (req, res) => res.type('html').send(loginPageHtml()));
@@ -214,7 +227,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     }
   });
 
-  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention };
+  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones };
 }
 
 /** DEC-0005: cada cuánto se cierran las reservas de cuota vencidas (caídas a mitad). */
