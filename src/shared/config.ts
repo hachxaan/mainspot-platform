@@ -262,7 +262,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     // INC-004: umbral de enrutamiento de reseñas configurable por entorno (DEC-023),
     // default <4 estrellas; valor definitivo pendiente de investigación con datos (Q-013).
     reviewThreshold: Number(process.env.REVIEW_THRESHOLD ?? 4),
-    // INC-004: Google Business Profile — simulado salvo GOOGLE_GBP_TOKEN (DEC-026).
+    // INC-004: modo explícito; OAuth y tokens cifrados por negocio (sin fallback real→simulado).
     reputationProvider: enumValue<ReputationProviderName>('REPUTATION_PROVIDER', process.env.REPUTATION_PROVIDER, REPUTATION_PROVIDERS, 'simulated'),
     // INC-005: Meta/Facebook; las credenciales pertenecen a la conexión cifrada de cada tenant.
     socialProvider: enumValue<SocialProviderName>('SOCIAL_PROVIDER', process.env.SOCIAL_PROVIDER, SOCIAL_PROVIDERS, 'simulated'),

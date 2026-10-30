@@ -2,10 +2,8 @@
  * ReputationProvider — reseñas y respuestas públicas de Google Business Profile
  * (INC-004, CAP-002/CAP-004, REQ-015, FLOW-004).
  *
- * DEC-026: interfaz de adaptador + implementación real opcional + MODO SIMULADO
- * funcional (E2E/piloto sin credenciales). El adaptador real SOLO se instancia
- * con GOOGLE_GBP_TOKEN; sin token SIEMPRE se usa SimulatedReviews (fail-safe:
- * nunca se llama a la API real sin credenciales).
+ * DEC-026/DEV-E2E-04: simulación explícita o conector Google por negocio en src/google/.
+ * El modo real exige autorización utilizable y nunca convierte un fallo en datos simulados.
  *
  * INVARIANTES: no hay manipulación de opiniones (ocultar/borrar está
  * bloqueado); la respuesta pública es un cambio visible (DEC-011) y se publica

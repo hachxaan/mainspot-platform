@@ -116,7 +116,7 @@ export class GoogleReputationProvider implements ReputationProvider {
         const closed = await this.deps.pool.query(
           `UPDATE review SET state = 'published', published_text = $3, published_at = COALESCE($4::timestamptz, now()),
                   reply_origin = COALESCE(reply_origin, 'google'), updated_at = now()
-            WHERE tenant_id = $1 AND source_review_id = $2 AND state <> 'published' RETURNING review_id`, [tenantId, r.name, r.reviewReply.comment, r.reviewReply.updateTime ?? null]);
+            WHERE tenant_id = $1 AND source_review_id = $2 AND state <> 'published' AND content_purged_at IS NULL RETURNING review_id`, [tenantId, r.name, r.reviewReply.comment, r.reviewReply.updateTime ?? null]);
         if (closed.rowCount) {
           await this.deps.sink.write({
             tenant_id: tenantId, actor_id: 'system:google-sync', actor_role: null,

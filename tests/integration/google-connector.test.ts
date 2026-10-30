@@ -47,7 +47,7 @@ const fake: typeof fetch = async (input, init) => {
   const parent = '/v4/accounts/ga/locations/gl/reviews';
   if (url.pathname === parent) {
     const second = url.searchParams.get('pageToken') === 'page-2';
-    return json({ reviews: [{ name: `accounts/ga/locations/gl/reviews/${second ? 'r2' : 'r1'}`, reviewId: second ? 'r2' : 'r1', starRating: 'FIVE', comment: second ? 'Gracias dos' : 'Gracias uno', updateTime: second ? '2026-10-29T11:00:00Z' : '2026-10-29T12:00:00Z' }], ...(second ? {} : { nextPageToken: 'page-2' }) });
+    return json({ reviews: [{ name: `accounts/ga/locations/gl/reviews/${second ? 'r2' : 'r1'}`, reviewId: second ? 'r2' : 'r1', starRating: 'FIVE', comment: second ? 'Gracias dos' : 'Gracias uno', updateTime: second ? '2026-10-29T11:00:00Z' : '2026-10-29T12:00:00Z', ...(!second && reply ? { reviewReply: reply } : {}) }], ...(second ? {} : { nextPageToken: 'page-2' }) });
   }
   if (url.pathname === `${parent}/r1/reply`) { reply = JSON.parse(String(init?.body)); writes += 1; return json(reply); }
   if (url.pathname === `${parent}/r1`) return json({ name: 'accounts/ga/locations/gl/reviews/r1', reviewId: 'r1', starRating: 'FIVE', reviewReply: reply });
@@ -175,16 +175,22 @@ test('401 renueva una vez; 403 registra permisos y 429 respeta Retry-After sin s
 });
 
 test('retención elimina texto/reviewer de Google antiguo sin borrar hechos ni contenido reciente', async () => {
+  await connect();
   const ids = ['g-ret-old', 'g-ret-new'];
   try {
     for (const [index, id] of ids.entries()) await pool.query(
       `INSERT INTO review (review_id, tenant_id, source_review_id, author_name, star_rating, review_text, source, classification, state, created_at)
        VALUES ($1,$2,$3,'Nombre externo',5,'Texto externo','google','positive','detected', now() - make_interval(days => $4))`,
-      [id, tenant, `accounts/ga/locations/gl/reviews/${id}`, index === 0 ? 31 : 1]);
+      [id, tenant, `accounts/ga/locations/gl/reviews/${index === 0 ? 'r1' : id}`, index === 0 ? 31 : 1]);
     const report = await integration.retention.purge({ tenantId: tenant });
     assert.equal(report.failures, 0);
     const rows = await pool.query('SELECT review_id, review_text, content_purged_at FROM review WHERE review_id = ANY($1) ORDER BY review_id', [ids]);
     assert.equal(rows.rows.find((r) => r.review_id === ids[0]).review_text, GOOGLE_PURGED_TEXT);
     assert.equal(rows.rows.find((r) => r.review_id === ids[1]).review_text, 'Texto externo');
+    reply = { comment: 'Respuesta externa antigua que Google vuelve a entregar' };
+    await integration.reputationProvider.listReviews(tenant);
+    const replay = (await pool.query('SELECT review_text, published_text FROM review WHERE review_id=$1', [ids[0]])).rows[0];
+    assert.equal(replay.review_text, GOOGLE_PURGED_TEXT);
+    assert.equal(replay.published_text, null, 'un re-sync no vuelve a almacenar contenido externo después de purgarlo');
   } finally { await pool.query('DELETE FROM review WHERE review_id = ANY($1)', [ids]); }
 });

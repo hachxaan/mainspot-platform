@@ -77,7 +77,7 @@ function childEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   return {
     ...env, DATABASE_URL: TEST_URL, TEST_DATABASE_URL: TEST_URL, APP_ENV: 'test', JWT_SECRET: 'e2e-dev-e2e-03-secret-only-for-tests',
     JEV_MODE: 'disabled', CHANNEL_PRIMARY: 'simulated', REPUTATION_PROVIDER: 'simulated', SOCIAL_PROVIDER: 'simulated',
-    GOOGLE_GBP_TOKEN: '', META_GRAPH_TOKEN: '', RATE_LIMIT_MAX: '5',
+    RATE_LIMIT_MAX: '5',
     ENGAGEMENT_WORKER_INTERVAL_MS: '1000', ENGAGEMENT_POLL_INTERVAL_MS: '0', LOG_LEVEL: 'warn', ...extra,
   };
 }
