@@ -1,0 +1,38 @@
+{
+  "generated_at": "2026-10-30T20:40:36.088Z",
+  "environment": "lab",
+  "real_providers": true,
+  "report": [
+    {
+      "use_case": "conversation.intent.classify",
+      "model": "ts:jev-1.14.0",
+      "route_id": "rte_0909c4d8-a5e0-4e3a-8806-bc9e6285b024",
+      "route_version": 2,
+      "suite": "alcance-de-edicion@v1",
+      "run_id": "evr_8432019b-8f02-4515-9681-938e7b7347fa",
+      "status": "failed",
+      "cases": 8,
+      "passed": 6,
+      "pass_rate": 0.75,
+      "latency_p50_ms": 709,
+      "latency_p95_ms": 866,
+      "cost_usd": 0.000202,
+      "cost_per_case_usd": 0.000025,
+      "wall_ms": 4903,
+      "failures": [
+        {
+          "case": "r",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "p",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -48,6 +48,17 @@ export class ReputationPublisher implements Publisher {
       return { ok: true, version: 1, external_ref: ref };
     }
 
+    // FR-0016: una sola respuesta pública por reseña entre todos los caminos (agente de atención,
+    // panel, Telegram, reputación). Si otro camino ya la reclamó, aquí no se publica.
+    const owner = `proposal:${ctx.proposalId}`;
+    const claim = await conn.query(
+      `INSERT INTO response_ledger (tenant_id, origin, target_ref, path, owner_ref) VALUES ($1,'google_review',$2,'reputation',$3)
+       ON CONFLICT (tenant_id, origin, target_ref) DO UPDATE SET updated_at = now() WHERE response_ledger.owner_ref = EXCLUDED.owner_ref
+       RETURNING owner_ref`, [ctx.tenantId, review.source_review_id, owner]);
+    if (!claim.rowCount) {
+      return { ok: false, external_ref: `answered_elsewhere:${reviewId}`, error: 'answered_elsewhere' };
+    }
+
     // Efecto externo REAL (simulado sin token): publicación de la respuesta.
     const result = await this.provider.postPublicResponse(ctx.tenantId, review.source_review_id, responseText);
     if (!result.ok) {
@@ -59,6 +70,8 @@ export class ReputationPublisher implements Publisher {
        WHERE review_id = $2 AND tenant_id = $3`,
       [responseText, reviewId, ctx.tenantId],
     );
+    await conn.query(`UPDATE response_ledger SET state = 'sent', external_ref = $4, updated_at = now() WHERE tenant_id = $1 AND origin = 'google_review' AND target_ref = $2 AND owner_ref = $3`,
+      [ctx.tenantId, review.source_review_id, owner, result.external_ref]);
     await this.sink.write({
       tenant_id: ctx.tenantId, actor_id: ctx.proposalId, actor_role: null,
       action: 'reputation.published', resource: `review/${reviewId}`,

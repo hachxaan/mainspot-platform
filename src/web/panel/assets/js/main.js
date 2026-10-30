@@ -21,7 +21,7 @@
 
   function redirect(h) { history.replaceState(null, '', h); return resolve(parseHash()); }
 
-  var NEED_AUTH = ['inicio', 'negocio', 'telegram', 'chat', 'cambios', 'vista-previa', 'aprobado', 'pagina', 'sitio', 'avisos', 'google', 'facebook', 'atencion', 'caso'];
+  var NEED_AUTH = ['inicio', 'negocio', 'telegram', 'chat', 'cambios', 'vista-previa', 'aprobado', 'pagina', 'sitio', 'avisos', 'google', 'facebook', 'atencion', 'caso', 'ia'];
   function resolve(r) {
     var S = MS.S, p = r.parts, q = r.q;
     if (S.booting) return { title: 'MainSpot', shell: false, html: '<div class="ob"><div class="ob-wrap"><main class="ob-body" id="main" aria-busy="true"><h1 tabindex="-1" data-focus>Cargando MainSpot…</h1></main></div></div>' };
@@ -59,6 +59,7 @@
         return V.facebook(q);
       case 'atencion': return p[1] === 'reglas' ? V.rules() : V.attention(q);
       case 'caso': return V.caseView(p[1]);
+      case 'ia': return V.ai(p[1]);
       default:
         return { title: 'No encontrado', shell: !!S.session, tab: '', html: UI.empty('No encontramos esta pantalla', 'Puede que el enlace esté incompleto.', UI.btn('Ir al inicio', { href: S.session ? '#/inicio' : '#/entrar' })) };
     }
@@ -779,6 +780,9 @@
       });
     }
   };
+  // AI Core (views-ai.js): formularios y acciones propias, mismo despacho delegado.
+  Object.assign(A, MS.aiActions || {});
+  Object.assign(F, MS.aiForms || {});
 
   /** DS-02: valida el enlace de invitación (respuesta neutra si no sirve). */
   MS.loadInvitation = function () {

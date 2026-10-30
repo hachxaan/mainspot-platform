@@ -53,6 +53,16 @@ export const ACTIONS = [
   'engagement.approve',
   'engagement.policy.manage',
   'telegram.link',
+  // AI Core (FR-0013..FR-0017): marca, generación, biblioteca, asistente, campañas e insights.
+  'brand.read',
+  'brand.manage',
+  'ai.generate',
+  'media.read',
+  'media.manage',
+  'assistant.ask',
+  'campaign.plan',
+  'campaign.approve',
+  'insights.read',
 ] as const;
 
 export type ActionName = (typeof ACTIONS)[number];
@@ -103,8 +113,15 @@ export const MATRIX: Record<RoleName, readonly ActionName[]> = {
     'engagement.read',
     'engagement.respond',
     'telegram.link',
+    'brand.read',
+    'ai.generate',
+    'media.read',
+    'media.manage',
+    'assistant.ask',
+    'campaign.plan',
+    'insights.read',
   ],
-  read_only: ['data.read', 'conversation.read', 'reputation.read', 'social.read', 'subscription.read', 'analytics.read', 'engagement.read'],
+  read_only: ['data.read', 'conversation.read', 'reputation.read', 'social.read', 'subscription.read', 'analytics.read', 'engagement.read', 'brand.read', 'media.read', 'assistant.ask', 'insights.read'],
 };
 
 export const ALLOWED_EFFECT = 'allow' as const;
@@ -157,6 +174,15 @@ export const ACTION_LABELS: Record<ActionName, string> = {
   'engagement.approve': 'Aprobar o rechazar la respuesta pública de un caso',
   'engagement.policy.manage': 'Activar o revocar respuestas automáticas seguras',
   'telegram.link': 'Vincular el propio chat de Telegram para avisos',
+  'brand.read': 'Ver la memoria de marca del negocio',
+  'brand.manage': 'Confirmar o cambiar los datos de la marca',
+  'ai.generate': 'Pedir a MainSpot diseños, textos e imágenes',
+  'media.read': 'Ver la biblioteca de imágenes',
+  'media.manage': 'Subir, aprobar o archivar imágenes',
+  'assistant.ask': 'Preguntar al asistente por el estado de la cuenta',
+  'campaign.plan': 'Preparar propuestas de campaña (sin gasto)',
+  'campaign.approve': 'Aprobar el plan de una campaña (no autoriza gasto)',
+  'insights.read': 'Ver resúmenes y recomendaciones del negocio',
 };
 
 export const ROLE_LABELS: Record<RoleName, string> = {

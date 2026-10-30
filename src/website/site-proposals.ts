@@ -192,6 +192,35 @@ export async function preparePhoneUpdate(deps: SiteProposalDeps, input: SiteProp
     (open) => ((open.detail as { after?: { phone?: unknown } }).after?.phone ?? null) !== phone);
 }
 
+export const AI_DESIGN_PROPOSAL_TYPE = 'website.ai_design' as const;
+export const AI_EDIT_PROPOSAL_TYPE = 'website.ai_edit' as const;
+
+export interface AiSiteChange {
+  type: typeof AI_DESIGN_PROPOSAL_TYPE | typeof AI_EDIT_PROPOSAL_TYPE;
+  after: WebsiteData;
+  summary: string;
+  sentences: string[];
+  /** Trazabilidad: invocaciones, versión de marca y job (nunca prompts ni salidas crudas). */
+  ai: { job_id: string; invocation_ids: string[]; brand_version: number | null; route_ids: string[] };
+}
+
+/**
+ * Diseño o edición generada por el AI Core: misma vista previa/aprobación humana que cualquier
+ * cambio. Guarda la versión publicada sobre la que se generó (`base_version`): si al aprobar hay
+ * otra encima, el publicador responde 409 y no pisa nada. Un job nuevo reemplaza la abierta.
+ */
+export async function prepareAiSiteChange(deps: SiteProposalDeps, input: SiteProposalInput, change: AiSiteChange): Promise<SiteProposalOutcome> {
+  const site = await requireSite(deps, input.tenantId);
+  const base = Number(site.published_version);
+  if (change.type === AI_EDIT_PROPOSAL_TYPE && base === 0) {
+    throw new AppError(409, 'validation_error', 'Tu página todavía no está publicada: primero publica su primera versión.');
+  }
+  return openOrCreate(deps, input, change.type, {
+    summary: change.summary.slice(0, 240),
+    detail: { after: change.after, diff_sentences: change.sentences.slice(0, 20), patches: [], base_version: base, ai: change.ai },
+  }, (open) => (open.detail as { ai?: { job_id?: unknown } }).ai?.job_id !== change.ai.job_id);
+}
+
 export interface RestoreInput {
   /** Versión a restaurar (website_content.version del tenant). */
   version: number;

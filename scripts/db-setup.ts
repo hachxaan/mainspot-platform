@@ -11,6 +11,8 @@ import { withRequestContext } from '../src/shared/context.ts';
 import { applyMigrations } from './migrate.ts';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { ensureAiCatalog, SEED_ACTOR } from '../src/ai/catalog.ts';
+import { ensureEvalSuites } from '../src/ai/evals.ts';
 
 const { Pool } = pg;
 
@@ -40,6 +42,9 @@ async function main(): Promise<void> {
     try {
       const sql = await readFile(path.resolve('migrations/0002_seed.sql'), 'utf8');
       await pool.query(sql);
+      // AI Core: catálogo, prompts v1, rutas candidatas y suites (idempotente; nunca reescribe revisiones).
+      await ensureAiCatalog(pool);
+      await ensureEvalSuites(pool, SEED_ACTOR);
     } finally {
       await pool.end();
     }

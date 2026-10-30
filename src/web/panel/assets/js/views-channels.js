@@ -224,7 +224,7 @@
     html += '<div class="banner banner-lila" style="margin-bottom:16px">' + icon('info') + '<span>' +
       (prov.mode === 'real' ? 'Facebook real por negocio. Solo se marca una publicación como publicada tras confirmarla en Meta; los resultados inciertos requieren reconciliación o revisión.' : 'Facebook simulado: nada aparece en Facebook.') + '</span></div>';
     html += '<div class="stack-lg">' + metaConnectionCard(q) +
-      (canAsk ? '<div>' + UI.btn('Nueva publicación', { href: '#/facebook/nueva', icon: 'plus' }) + '</div>' : '') +
+      (canAsk ? '<div class="btn-row">' + UI.btn('Nueva publicación', { href: '#/facebook/nueva', icon: 'plus' }) + (MS.can('ai.generate') ? UI.btn('Escribir con IA', { href: '#/ia/publicar', icon: 'sparkles', style: 'secondary' }) + UI.btn('Calendario de ideas', { href: '#/ia/calendario', icon: 'calendar', style: 'ghost' }) : '') + '</div>' : '') +
       '<section aria-labelledby="fb-posts"><div class="section-title"><h2 id="fb-posts">Publicaciones</h2>' + simTag(prov.mode) + '</div>' +
       (S().posts.length ? '<div class="card card-flush"><ul class="list" id="fb-post-list">' + S().posts.slice().sort(function (a, b) { return (b.publishedAt || b.scheduledFor || b.createdAt) - (a.publishedAt || a.scheduledFor || a.createdAt); }).map(function (x) {
         var st = x.status === 'published' && x.external && x.external.indexOf('sim:') !== 0 ? ['Publicada en Facebook', 'nopal'] : POST_ST[x.status] || [x.status, 'neutral'];

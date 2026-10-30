@@ -31,7 +31,11 @@ export interface LocalSiteOptions {
   domain: string;
   /** Hostnames que jamás se tratan como sitio de cliente (el del panel). */
   excludeHosts?: readonly string[];
+  /** AI Core (FR-0013): imágenes de la biblioteca, acotadas al negocio dueño del sitio. */
+  media?: { variant(assetId: string, variant: string, tenantScope?: string): Promise<{ mime: string; bytes: Buffer } | null> };
 }
+
+const MEDIA_PATH = /^\/media\/([A-Za-z0-9_-]{1,80})\/([a-z0-9]{1,16})\.webp$/;
 
 export interface LocalSiteInfo {
   hostname: string;
@@ -79,6 +83,25 @@ export function localSiteMiddleware(opts: LocalSiteOptions): (req: Request, res:
     const slug = slugFromHost(req.headers.host, opts.domain, exclude);
     if (!slug) {
       next();
+      return;
+    }
+    const media = MEDIA_PATH.exec(req.path);
+    if (media && opts.media && (req.method === 'GET' || req.method === 'HEAD')) {
+      const media_ = opts.media;
+      opts.pool.query<{ tenant_id: string }>(
+        `SELECT w.tenant_id FROM client_website w JOIN client c ON c.client_id = w.tenant_id AND c.status = 'active'
+          WHERE w.slug = $1 AND w.status = 'published'`, [slug],
+      ).then(async (r) => {
+        const tenant = r.rows[0]?.tenant_id;
+        const found = tenant ? await media_.variant(media[1] as string, media[2] as string, tenant) : null;
+        if (!found) {
+          res.setHeader('Cache-Control', 'no-store');
+          res.status(404).type('html').send(errorPageHtml(NOT_FOUND, 404));
+          return;
+        }
+        res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+        res.status(200).type(found.mime).send(found.bytes);
+      }).catch(next);
       return;
     }
     res.setHeader('Cache-Control', 'no-store');

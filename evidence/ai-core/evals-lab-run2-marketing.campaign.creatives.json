@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-10-30T20:43:11.650Z",
+  "environment": "lab",
+  "real_providers": true,
+  "report": [
+    {
+      "use_case": "marketing.campaign.creatives",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_46ece6e1-83c5-44a7-abd5-f05bc7a5c495",
+      "route_version": 2,
+      "suite": "creatividades@v1",
+      "run_id": "evr_a6b1c78b-ad1f-4d0e-8dad-75a1883e7190",
+      "status": "passed",
+      "cases": 2,
+      "passed": 2,
+      "pass_rate": 1,
+      "latency_p50_ms": 5804,
+      "latency_p95_ms": 8620,
+      "cost_usd": 0.001161,
+      "cost_per_case_usd": 0.00058,
+      "wall_ms": 14472,
+      "failures": []
+    },
+    {
+      "use_case": "marketing.campaign.creatives",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_b5c69305-a2b9-4fbf-b94b-7f092a1c6f8f",
+      "route_version": 3,
+      "suite": "creatividades@v1",
+      "run_id": "evr_9ac14ac4-b539-4f87-ba48-0ae1ee6db918",
+      "status": "passed",
+      "cases": 2,
+      "passed": 2,
+      "pass_rate": 1,
+      "latency_p50_ms": 4998,
+      "latency_p95_ms": 12777,
+      "cost_usd": 0.002298,
+      "cost_per_case_usd": 0.001149,
+      "wall_ms": 17840,
+      "failures": []
+    }
+  ]
+}

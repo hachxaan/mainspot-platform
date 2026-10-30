@@ -559,6 +559,27 @@
       "original_path": ".canonflow/decision-state/latest.json",
       "sha256": "7dbffc4dd1cb63950f95c01ba95b1cb3c582add6656269af19b8a3072c4b0cb9",
       "snapshot_path": ".canonflow/decision-state/legacy/latest.json.7dbffc4dd1cb63950f95c01ba95b1cb3c582add6656269af19b8a3072c4b0cb9.json"
+    },
+    {
+      "bytes": 6473,
+      "captured_at": "2026-10-30T14:32:11Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "b1e9a2910ef0e5dc8f7eca0793e2e1c1994a82b3ee5bdf32f792e159d2c7584e",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.b1e9a2910ef0e5dc8f7eca0793e2e1c1994a82b3ee5bdf32f792e159d2c7584e.json"
+    },
+    {
+      "bytes": 6707,
+      "captured_at": "2026-10-30T14:32:13Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "960872a88ac136b083b47a90749736ae4ada6766a610199a9eb96838b1a69562",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.960872a88ac136b083b47a90749736ae4ada6766a610199a9eb96838b1a69562.json"
+    },
+    {
+      "bytes": 88,
+      "captured_at": "2026-10-30T14:32:13Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "1a7a9808f6333bfbe8feca6de92b4f8a6f179fe68e57a52f9a3c0b2b7b045dd3",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.1a7a9808f6333bfbe8feca6de92b4f8a6f179fe68e57a52f9a3c0b2b7b045dd3.json"
     }
   ],
   "schema_version": 1,

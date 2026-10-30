@@ -1,8 +1,8 @@
 /**
  * Agente de atención por políticas (DEV-E2E-02, SHARED-CONTRACT §B).
  *
- * Flujo: ingesta → dedupe (tenant+origin+external_ref) → clasificación determinista →
- *   política opt-in vigente + acción segura → respuesta (simulada) con evidencia
+ * Flujo: ingesta → dedupe (tenant+origin+external_ref) → lectura Jev (AI Core, FR-0016; sin ruta
+ *   activa: reglas deterministas) → política opt-in vigente + acción segura → respuesta con evidencia
  *   resto → caso humano (hasta 3 borradores) → panel + Telegram → aprobar/editar/rechazar →
  *   respuesta (simulada).
  *
@@ -21,7 +21,8 @@ import { formatInternational, type ContactPhoneService, type PhoneChannel } from
 import { runAtomic } from '../conversation/state-machine.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
-import { autoReplyText, classify, decide, humanDrafts, type EngagementCategory, type EngagementOrigin, type InfoTopic, type PolicySnapshot } from './classifier.ts';
+import { autoReplyText, classify, decide, humanDrafts, type Classification, type Decision, type EngagementCategory, type EngagementOrigin, type InfoTopic, type PolicySnapshot } from './classifier.ts';
+import type { EngagementSemantics } from './ai-semantics.ts';
 import { consumeSimFault, type EngagementReplier, type ReplyResult } from './providers.ts';
 
 export const ENGAGEMENT_ORIGINS = ['google_review', 'facebook_comment'] as const;
@@ -108,6 +109,8 @@ export interface EngagementServiceDeps {
   channel: ChannelAdapter;
   /** URL del panel incluida en los avisos (enlace autorizado: exige sesión). */
   panelUrl: string;
+  /** AI Core (FR-0016): lectura Jev y respuestas con hechos verificados; ausente = solo reglas deterministas. */
+  semantics?: EngagementSemantics;
 }
 
 type Db = Pool | PoolClient;
@@ -252,7 +255,21 @@ export class EngagementService {
   }
 
   async classifyCase(row: CaseRow): Promise<CaseRow | null> {
-    const classification = classify({ body: row.body, rating: row.rating, origin: row.origin });
+    const rules = classify({ body: row.body, rating: row.rating, origin: row.origin });
+    let classification: Classification = rules;
+    let semanticSource: 'jev' | 'blocked_external' | 'unavailable' | null = null;
+    let reading: Record<string, unknown> | null = null;
+    if (this.deps.semantics) {
+      const read = await this.deps.semantics.read(row);
+      if (read.ok) {
+        // Las reglas de riesgo deterministas se suman (red de seguridad); nunca quitan una bandera de Jev.
+        classification = { ...read.classification, risk_flags: [...new Set([...read.classification.risk_flags, ...rules.risk_flags])] };
+        semanticSource = 'jev';
+        reading = { ...read.reading, invocation_id: read.invocationId };
+      } else if (read.source !== 'not_configured') {
+        semanticSource = read.source;
+      }
+    }
     const business = await this.businessName(row.tenant_id);
     const verified = await this.verifiedAnswer(row.tenant_id, row.origin, classification.info_topic);
     const policy = await this.policyFor(row.tenant_id, row.origin, classification.category, this.deps.pool);
@@ -260,28 +277,41 @@ export class EngagementService {
       `SELECT count(*) AS n FROM engagement_case
         WHERE tenant_id = $1 AND origin = $2 AND decision = 'auto_reply' AND classified_at > now() - interval '1 hour'`,
       [row.tenant_id, row.origin]);
-    const decision = decide({ classification, policy, autoRepliesLastHour: Number(rate.rows[0]?.n ?? 0), verifiedAnswer: verified });
+    let decision: Decision = semanticSource === 'blocked_external' || semanticSource === 'unavailable'
+      // Con el AI Core desplegado y sin lectura semántica, nada se publica solo.
+      ? { decision: 'human_review', reason: `semantic_${semanticSource}` }
+      : decide({ classification, policy, autoRepliesLastHour: Number(rate.rows[0]?.n ?? 0), verifiedAnswer: verified });
     const author = row.author_label;
+    // Respuesta redactada con hechos verificados (el teléfono lo inserta el servidor, nunca el modelo).
+    const generated = semanticSource === 'jev' && this.deps.semantics && !(classification.category === 'basic_info' && classification.info_topic === 'phone')
+      ? await this.deps.semantics.reply(row, classification, { name: business, verified_answer: verified })
+      : null;
+    if (decision.decision === 'auto_reply' && generated?.needsHuman) decision = { decision: 'human_review', reason: 'reply_needs_human' };
     return runAtomic(this.deps.pool, async (client) => {
       let res;
       if (decision.decision === 'auto_reply') {
-        const text = autoReplyText({ category: classification.category, author, business, verifiedAnswer: verified });
+        const text = generated?.text ?? autoReplyText({ category: classification.category, author, business, verifiedAnswer: verified });
         res = await client.query<CaseRow>(
           `UPDATE engagement_case SET state = 'classified', decision = 'auto_reply', reason = $2, category = $3,
              risk_flags = $4, confidence = $5, policy_id = $6, policy_version = $7, response_text = $8,
+             sentiment = $9, semantic = $10, semantic_source = $11, reply_invocation_id = $12,
              classified_at = now(), next_attempt_at = now(), updated_at = now()
            WHERE case_id = $1 AND state = 'received' RETURNING *`,
           [row.case_id, decision.reason, classification.category, JSON.stringify(classification.risk_flags),
-            classification.confidence, policy?.policy_id ?? null, policy?.version ?? null, text]);
+            classification.confidence, policy?.policy_id ?? null, policy?.version ?? null, text,
+            classification.sentiment, reading ? JSON.stringify(reading) : null, semanticSource, generated?.invocationId ?? null]);
       } else {
-        const drafts = humanDrafts({ classification, author, business, verifiedAnswer: verified }).slice(0, 3);
+        const rulesDrafts = humanDrafts({ classification, author, business, verifiedAnswer: verified });
+        const drafts = [...(generated ? [generated.text] : []), ...rulesDrafts].slice(0, 3);
         res = await client.query<CaseRow>(
           `UPDATE engagement_case SET state = 'needs_human', decision = 'human_review', reason = $2, category = $3,
              risk_flags = $4, confidence = $5, policy_id = $6, policy_version = $7, drafts = $8, response_text = $9,
+             sentiment = $10, semantic = $11, semantic_source = $12, reply_invocation_id = $13,
              classified_at = now(), notify_status = 'pending', updated_at = now()
            WHERE case_id = $1 AND state = 'received' RETURNING *`,
           [row.case_id, decision.reason, classification.category, JSON.stringify(classification.risk_flags),
-            classification.confidence, policy?.policy_id ?? null, policy?.version ?? null, JSON.stringify(drafts), drafts[0] ?? null]);
+            classification.confidence, policy?.policy_id ?? null, policy?.version ?? null, JSON.stringify(drafts), drafts[0] ?? null,
+            classification.sentiment, reading ? JSON.stringify(reading) : null, semanticSource, generated?.invocationId ?? null]);
       }
       const updated = res.rows[0] ?? null;
       if (updated) {
@@ -415,6 +445,14 @@ export class EngagementService {
       }
     }
 
+    // FR-0016: ledger único por destino público (comentario/reseña). Otro camino ya respondió => no se duplica.
+    const owner = `case:${row.case_id}`;
+    const claim = await this.deps.pool.query(
+      `INSERT INTO response_ledger (tenant_id, origin, target_ref, path, owner_ref) VALUES ($1,$2,$3,'engagement',$4)
+       ON CONFLICT (tenant_id, origin, target_ref) DO UPDATE SET updated_at = now() WHERE response_ledger.owner_ref = EXCLUDED.owner_ref
+       RETURNING owner_ref`, [row.tenant_id, row.origin, row.external_ref, owner]);
+    if (!claim.rowCount) return this.closeElsewhere(row, 'answered_elsewhere');
+
     let result: ReplyResult;
     const timer = new AbortController();
     try {
@@ -452,6 +490,8 @@ export class EngagementService {
               WHERE review_id = $2 AND tenant_id = $3 AND state <> 'published'`,
             [row.response_text, row.review_id, row.tenant_id]);
         }
+        await client.query(`UPDATE response_ledger SET state = 'sent', external_ref = $5, updated_at = now() WHERE tenant_id = $1 AND origin = $2 AND target_ref = $3 AND owner_ref = $4`,
+          [row.tenant_id, row.origin, row.external_ref, owner, ok.external_ref]);
         await this.deps.sink.write({
           tenant_id: row.tenant_id, actor_id: auto ? SYSTEM_ACTOR : (row.resolved_by ?? SYSTEM_ACTOR), actor_role: null,
           action: 'engagement.responded', resource: `engagement_case/${row.case_id}`,
@@ -484,6 +524,11 @@ export class EngagementService {
              WHERE case_id = $1 AND state = 'responding' AND $3::int >= 0 RETURNING *`;
     }
     const res = await this.deps.pool.query<CaseRow>(sql, [row.case_id, fail.error.slice(0, 120), backoffSeconds(row.attempts)]);
+    // Agotado sin publicar: se libera el destino para que otra decisión (humana) pueda responder.
+    if (exhausted) {
+      await this.deps.pool.query('DELETE FROM response_ledger WHERE tenant_id = $1 AND origin = $2 AND target_ref = $3 AND owner_ref = $4 AND state = \'claimed\'',
+        [row.tenant_id, row.origin, row.external_ref, owner]).catch(() => undefined);
+    }
     await this.deps.sink.write({
       tenant_id: row.tenant_id, actor_id: SYSTEM_ACTOR, actor_role: null,
       action: 'engagement.respond_failed', resource: `engagement_case/${row.case_id}`,
@@ -493,14 +538,14 @@ export class EngagementService {
     return res.rows[0] ?? null;
   }
 
-  private async closeElsewhere(row: CaseRow): Promise<CaseRow | null> {
+  private async closeElsewhere(row: CaseRow, reason: 'answered_in_reviews' | 'answered_elsewhere' = 'answered_in_reviews'): Promise<CaseRow | null> {
     const res = await this.deps.pool.query<CaseRow>(
-      `UPDATE engagement_case SET state = 'closed_elsewhere', lease_until = NULL, reason = 'answered_in_reviews', updated_at = now()
-        WHERE case_id = $1 RETURNING *`, [row.case_id]);
+      `UPDATE engagement_case SET state = 'closed_elsewhere', lease_until = NULL, reason = $2, updated_at = now()
+        WHERE case_id = $1 RETURNING *`, [row.case_id, reason]);
     await this.deps.sink.write({
       tenant_id: row.tenant_id, actor_id: SYSTEM_ACTOR, actor_role: null,
       action: 'engagement.closed_elsewhere', resource: `engagement_case/${row.case_id}`,
-      request_id: `eng_${row.case_id}`, decision: 'allow', result: 'review_already_published',
+      request_id: `eng_${row.case_id}`, decision: 'allow', result: reason === 'answered_in_reviews' ? 'review_already_published' : 'ledger_owned_by_other_path',
     }).catch(() => undefined);
     return res.rows[0] ?? null;
   }

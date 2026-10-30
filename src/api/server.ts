@@ -80,6 +80,18 @@ import { localSiteMiddleware } from '../website/local-site.ts';
 import { createMailer, type Mailer } from '../mail/mailer.ts';
 import { PasswordResetService } from '../identity/password-reset.ts';
 import { passwordResetRouter } from './password-reset-routes.ts';
+// AI Core (issue #9): registro/despacho de IA, jobs durables, marca, biblioteca, web generativa,
+// capacidades de negocio, atención con Jev y consolas de plataforma (Administration + Engineering).
+import { AiDispatcher } from '../ai/dispatcher.ts';
+import { AiJobs } from '../ai/jobs.ts';
+import { AiBusinessService } from '../ai/business.ts';
+import { BrandService } from '../brand/service.ts';
+import { MediaService } from '../media/service.ts';
+import { AiSiteService } from '../website/ai-site.ts';
+import { AiEngagementSemantics } from '../engagement/ai-semantics.ts';
+import { PlatformAuth } from '../platform/auth.ts';
+import { aiRouter, mediaRouter } from './ai-routes.ts';
+import { platformRouter } from './platform-routes.ts';
 
 export interface AppHandle {
   app: express.Express;
@@ -111,6 +123,14 @@ export interface AppHandle {
   passwordReset: PasswordResetService;
   /** DEV-E2E-04 (P1 Google): conector real (conexión OAuth, cliente, retención de contenido 30 días). */
   google: GoogleIntegration;
+  /** AI Core: despacho versionado, jobs durables, marca, biblioteca y servicios generativos. */
+  dispatcher: AiDispatcher;
+  aiJobs: AiJobs;
+  brand: BrandService;
+  media: MediaService;
+  aiSite: AiSiteService;
+  aiBusiness: AiBusinessService;
+  platformAuth: PlatformAuth;
 }
 
 /**
@@ -194,7 +214,15 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
     google_review: realGoogle ? google.replier : simulatedReplier,
     facebook_comment: realMeta ? new MetaCommentReplier(pool, socialProvider) : simulatedReplier,
   });
-  const engagement = new EngagementService({ pool, sink, replier, phones, channel, panelUrl: `${config.publicBaseUrl}/panel` });
+  // AI Core: un despachador por proceso (ruta fijada por invocación, presupuesto y trazas).
+  const dispatcher = new AiDispatcher({ pool, config });
+  const aiJobs = new AiJobs({ pool, registry: dispatcher.registry, environment: config.aiEnvironment });
+  const brand = new BrandService({ pool, sink });
+  const media = new MediaService({ pool, sink });
+  const engagement = new EngagementService({
+    pool, sink, replier, phones, channel, panelUrl: `${config.publicBaseUrl}/panel`,
+    semantics: new AiEngagementSemantics({ dispatcher, environment: config.aiEnvironment }),
+  });
   const engagementWorker = new EngagementWorker({
     pool, service: engagement, reputationEngine,
     comments: realMeta ? new MetaCommentSource(pool, socialProvider) : new SimulatedCommentSource(pool),
@@ -213,6 +241,9 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   // JEV_MODE=shadow|primary y solo para tenants sintéticos (DEC-0019).
   const jev = createJevClassifier(config.jev, new JevRepository(pool));
   const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo, quota, jev, phones });
+  const aiSite = new AiSiteService({ pool, dispatcher, jobs: aiJobs, brand, media, site: { pool, sink, repo: conversationRepo, machine, websiteRepo, phones } });
+  const aiBusiness = new AiBusinessService({ pool, sink, dispatcher, jobs: aiJobs, brand, media, social: socialService });
+  const platformAuth = new PlatformAuth({ pool, mfaKey: config.platformMfaKey, jwtSecret: config.jwtSecret, ttlMinutes: config.platformSessionTtlMinutes });
   const approvalRateLimiter = new ActionRateLimiter(
     config.approvalRateLimitMax,
     config.approvalRateLimitWindowMs,
@@ -256,7 +287,11 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
 
   // DEV-E2E-04 (P3): peticiones con Host de sitio de cliente (<slug>.<LOCAL_SITE_DOMAIN>) se atienden
   // aquí y nunca llegan al panel ni a la API; el host del panel (PUBLIC_BASE_URL) queda excluido.
-  app.use(localSiteMiddleware({ pool, domain: config.localSiteDomain, excludeHosts: [new URL(config.publicBaseUrl).hostname] }));
+  app.use(localSiteMiddleware({ pool, domain: config.localSiteDomain, excludeHosts: [new URL(config.publicBaseUrl).hostname], media }));
+
+  // AI Core: imágenes de la biblioteca (capability URL) y API de plataforma (otra sesión/clave/auditoría).
+  app.use(mediaRouter(media));
+  app.use('/api/platform', platformRouter({ pool, sink, auth: platformAuth, dispatcher, subscriptions: subscriptionRepo, environment: config.aiEnvironment, realProviders: config.aiRealProviders }));
 
   // Auth (public endpoints: login/logout).
   app.use('/api/auth', authRouter(deps));
@@ -289,6 +324,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   app.use('/api/backoffice', contactRouter({ pool, sink, phones }));
   app.use('/api/backoffice', engagementRouter({ pool, config, sink, engagement, telegram, worker: engagementWorker, gbp, channel }));
   app.use('/api/backoffice', googleConnectionRouter({ pool, sink, service: google.connection, publicBaseUrl: config.publicBaseUrl }));
+  app.use('/api/backoffice', aiRouter({ pool, sink, brand, media, jobs: aiJobs, business: aiBusiness, site: aiSite, registry: dispatcher.registry, environment: config.aiEnvironment, repo: conversationRepo, websiteRepo, phones }));
 
   // DEV-E2E-03: interfaz de Claude Design integrada (src/web/panel, adaptada del prototipo
   // docs/ux/claude-design/deliverables). Un solo shell para entrar, invitación y panel; las
@@ -299,7 +335,14 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
     res.setHeader('Cache-Control', 'no-store');
     res.sendFile(panelShell);
   });
-  app.get('/health', (req, res) => res.json({ ok: true, app: 'mainspot-platform', increments: ['INC-001', 'INC-002', 'INC-003', 'INC-004', 'INC-005', 'INC-006', 'INC-007'] }));
+  // FR-0018/FR-0019: consolas de plataforma (shell propio; misma CSP, sin scripts en línea).
+  app.use('/platform-assets', express.static(fileURLToPath(new URL('../web/platform/assets/', import.meta.url)), { index: false, maxAge: 0 }));
+  const platformShell = fileURLToPath(new URL('../web/platform/index.html', import.meta.url));
+  app.get(['/plataforma', '/ingenieria'], (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(platformShell);
+  });
+  app.get('/health', (req, res) => res.json({ ok: true, app: 'mainspot-platform', increments: ['INC-001', 'INC-002', 'INC-003', 'INC-004', 'INC-005', 'INC-006', 'INC-007', 'AI-CORE'] }));
 
   // Central error handling: controlled + plain language (AC-008), structured log.
   app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
@@ -324,7 +367,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
     }
   });
 
-  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones, engagement, engagementWorker, telegram, channel, connections, socialScheduler, mailer, passwordReset, google };
+  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones, engagement, engagementWorker, telegram, channel, connections, socialScheduler, mailer, passwordReset, google, dispatcher, aiJobs, brand, media, aiSite, aiBusiness, platformAuth };
 }
 
 /** DEC-0005: cada cuánto se cierran las reservas de cuota vencidas (caídas a mitad). */
@@ -333,7 +376,7 @@ export const QUOTA_RECONCILE_INTERVAL_MS = 60_000;
 export const RETENTION_CHECK_INTERVAL_MS = 15 * 60_000;
 
 async function main(): Promise<void> {
-  const { app, config, jev, quota, retention, engagementWorker, socialScheduler, google } = createApp();
+  const { app, config, jev, quota, retention, engagementWorker, socialScheduler, google, aiJobs } = createApp();
   app.listen(config.port, () => {
     log.info('server.started', `mainspot-platform listening on :${config.port}`, { port: config.port });
   });
@@ -368,6 +411,11 @@ async function main(): Promise<void> {
     log.info('social.scheduler.started', 'social scheduler running in server process', {
       interval_ms: config.socialSchedulerIntervalMs, timezone: config.socialSchedulerTimezone, provider: socialScheduler.provider.provider,
     });
+  }
+  // AI Core: jobs durables (diseño web, ediciones, composición social) con lease y reintento acotado.
+  if (config.aiJobWorkerEnabled) {
+    aiJobs.start(config.aiJobWorkerIntervalMs);
+    log.info('ai.jobs.started', 'ai job worker running in server process', { interval_ms: config.aiJobWorkerIntervalMs, environment: config.aiEnvironment, real_providers: config.aiRealProviders });
   }
   if (jev) {
     // Apagado ordenado: espera las clasificaciones Jev pendientes de persistir

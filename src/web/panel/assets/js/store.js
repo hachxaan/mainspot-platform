@@ -153,7 +153,9 @@
     return {
       name: s(r.name), line: s(r.line), about: s(r.about), phone: s(r.phone), email: s(r.email), address: s(r.address),
       hours: s(r.hours), services: Array.isArray(r.services) ? r.services.filter(function (x) { return typeof x === 'string'; }) : [],
-      sections: Array.isArray(r.sections) ? r.sections.filter(function (x) { return x && typeof x.title === 'string'; }) : []
+      sections: Array.isArray(r.sections) ? r.sections.filter(function (x) { return x && typeof x.title === 'string'; }) : [],
+      // AI Core: la página tiene diseño generado (se previsualiza con el HTML del servidor).
+      designed: !!(r.design && typeof r.design === 'object')
     };
   }
   MS.siteData = siteData;
@@ -190,6 +192,9 @@
   };
   function changesOf(p) {
     var patches = (p.detail && Array.isArray(p.detail.patches)) ? p.detail.patches : [];
+    if (!patches.length && p.detail && p.detail.ai && Array.isArray(p.detail.diff_sentences)) {
+      return p.detail.diff_sentences.slice(1).map(function (s) { return { field: 'generic', label: 'Cambio', before: '', after: String(s), sentence: String(s) }; });
+    }
     return patches.map(function (x) {
       var f = PATCH_FIELD[x.field] || 'generic';
       return { field: f, label: MS.FIELD_LABEL[f] || MS.cap(x.label), before: x.before || '', after: f === 'generic' ? (x.sentence || x.after) : (x.after || ''), sentence: x.sentence || '' };
@@ -199,6 +204,7 @@
     if (p.proposal_type === 'website.initial') return 'first';
     if (p.proposal_type === 'website.phone') return 'phone';
     if (p.proposal_type === 'website.restore') return 'restore';
+    if (p.proposal_type === 'website.ai_design' || p.proposal_type === 'website.ai_edit') return 'ai';
     if (p.capability_target === 'website') return 'change';
     if (p.capability_target === 'social') return 'social';
     return 'sensitive';
@@ -208,6 +214,7 @@
     if (kind === 'phone') return 'Teléfono de tu página';
     if (kind === 'restore') return 'Volver a la versión ' + ((p.detail && p.detail.restore && p.detail.restore.source_version) || '');
     if (kind === 'sensitive') return 'Decisión que requiere aprobación';
+    if (kind === 'ai') { var t = String(p.summary || 'Propuesta de MainSpot'); return t.length > 60 ? t.slice(0, 57) + '…' : t; }
     if (changes.length === 1 && changes[0].field !== 'generic') {
       var c = changes[0];
       if (c.field === 'services.add') return 'Agregar ' + c.after;
@@ -223,6 +230,7 @@
     if (kind === 'first') push(p.created_at, 'Preparamos la primera página con los datos de tu negocio', 'MainSpot');
     else if (kind === 'phone') push(p.created_at, '[Cambiaste|Cambió] el teléfono de la página web', MS.who(p.created_by));
     else if (kind === 'restore') push(p.created_at, '[Pediste|Pidió] volver a la versión ' + ((p.detail && p.detail.restore && p.detail.restore.source_version) || ''), MS.who(p.created_by));
+    else if (kind === 'ai') push(p.created_at, 'MainSpot preparó la propuesta con IA a partir de [tu|su] pedido', MS.who(p.created_by));
     else push(p.created_at, '[Pediste|Pidió] el cambio', MS.who(p.created_by));
     if (p.confirmed_at) push(p.confirmed_at, 'Preparamos la vista previa', 'MainSpot');
     if (p.rejected_at) push(p.rejected_at, '[Descartaste|Descartó] el cambio', MS.who(p.rejected_by));
@@ -243,6 +251,7 @@
       changes: changes, status: P_STATUS[p.status] || p.status, raw: p.status, target: p.capability_target,
       createdAt: MS.ts(p.created_at), updatedAt: MS.ts(p.updated_at), events: eventsOf(p, kind),
       after: p.detail && p.detail.after ? siteData(p.detail.after) : null,
+      designed: !!(p.detail && p.detail.after && p.detail.after.design),
       approvedBy: p.approved_by ? MS.who(p.approved_by) : null, approvedAt: MS.ts(p.approved_at),
       version: p.published_version, preview: p.status === 'preview_ready' ? { readyAt: MS.ts(p.updated_at) } : null
     };

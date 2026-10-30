@@ -31,20 +31,26 @@ test('AC-001 unit: operation creates/executes ops, reads/writes data, drives con
       'subscription.read', 'analytics.read',
       // DEV-E2E-02: lee casos del agente, edita borradores y vincula su Telegram; no aprueba.
       'engagement.read', 'engagement.respond', 'telegram.link',
+      // AI Core: genera y prepara (marca en lectura, biblioteca, campañas sin aprobar); no confirma marca ni aprueba planes.
+      'brand.read', 'ai.generate', 'media.read', 'media.manage', 'assistant.ask', 'campaign.plan', 'insights.read',
     ].includes(action);
     assert.equal(can('operation', action), expected, `operation ${action} expected ${expected}`);
   }
   // governance: aprobar/rechazar es solo administración (TENTATIVA, INC-001).
   assert.equal(can('operation', 'operation.approve'), false);
   assert.equal(can('operation', 'operation.reject'), false);
+  assert.equal(can('operation', 'brand.manage'), false);
+  assert.equal(can('operation', 'campaign.approve'), false);
 });
 
-test('AC-001 unit: read_only can read data, conversation, reputation, social, subscription and analytics', () => {
+test('AC-001 unit: read_only can read data, conversation, reputation, social, subscription, analytics and AI Core read surfaces', () => {
   for (const action of ACTIONS) {
     const expected = [
       'data.read', 'conversation.read',
       'reputation.read', 'social.read', 'subscription.read', 'analytics.read',
       'engagement.read',
+      // AI Core (BR-0007): consultar marca, biblioteca, asistente e insights; nunca generar ni aprobar.
+      'brand.read', 'media.read', 'assistant.ask', 'insights.read',
     ].includes(action);
     assert.equal(can('read_only', action), expected, `read_only ${action} expected ${expected}`);
   }

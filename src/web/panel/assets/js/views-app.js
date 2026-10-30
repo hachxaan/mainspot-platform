@@ -34,7 +34,7 @@
     var side = '<aside class="sidebar" aria-label="Menú">' +
       '<a class="brand" href="#/inicio"><span class="brand-mark" aria-hidden="true"></span>MainSpot</a>' +
       '<nav aria-label="Principal"><ul class="side-nav">' +
-        TABS.concat([{ key: 'avisos', href: '#/avisos', label: 'Avisos', ic: 'bell' }, { key: 'negocio', href: '#/negocio', label: 'Mi negocio', ic: 'store' }]).map(function (t) {
+        TABS.concat([{ key: 'ia', href: '#/ia', label: 'IA de tu negocio', ic: 'sparkles' }, { key: 'avisos', href: '#/avisos', label: 'Avisos', ic: 'bell' }, { key: 'negocio', href: '#/negocio', label: 'Mi negocio', ic: 'store' }]).map(function (t) {
           return '<li><a href="' + t.href + '"' + (v.tab === t.key ? ' aria-current="page"' : '') + '>' + icon(t.ic) + '<span>' + t.label + '</span>' + badge(t.key) + '</a></li>';
         }).join('') +
       '</ul></nav>' +
@@ -46,6 +46,7 @@
     var top = '<header class="topbar" id="topbar">' +
       (v.back ? '<a class="btn btn-ghost back" href="' + v.back + '">' + icon('chevron-left') + '<span>' + esc(v.backLabel || 'Volver') + '</span></a><span class="grow"></span>'
               : '<a class="brand hide-desk" href="#/inicio"><span class="brand-mark" aria-hidden="true"></span>MainSpot</a><span class="grow"></span>') +
+      '<a class="icon-btn hide-desk" href="#/ia" aria-label="IA de tu negocio"' + (v.tab === 'ia' ? ' aria-current="page"' : '') + '>' + icon('sparkles') + '</a>' +
       '<a class="icon-btn hide-desk" href="#/negocio" aria-label="Mi negocio"' + (v.tab === 'negocio' ? ' aria-current="page"' : '') + '>' + icon('store') + '</a>' +
       '<a class="icon-btn" href="#/avisos" aria-label="Avisos' + (unread ? ', ' + unread + ' sin leer' : '') + '">' + icon('bell') + (unread ? '<span class="badge-count" aria-hidden="true">' + unread + '</span>' : '') + '</a>' +
       '</header>';
@@ -332,7 +333,7 @@
     var canAsk = MS.can('request') && !MS.expired() && !!MS.S.website;
     html += '<div class="row" style="justify-content:space-between;flex-wrap:wrap;margin-bottom:16px">' +
       '<div class="segmented" role="tablist" aria-label="Ver"><button role="tab" aria-selected="' + !hist + '" data-action="go" data-arg="#/cambios">Pendientes' + (nPend ? ' (' + nPend + ')' : '') + '</button><button role="tab" aria-selected="' + hist + '" data-action="go" data-arg="#/cambios/historial">Historial</button></div>' +
-      (canAsk ? UI.btn('Pedir un cambio', { href: '#/cambios/nuevo', icon: 'plus', style: nPend ? 'secondary' : 'primary' }) : '') + '</div>';
+      (canAsk ? UI.btn('Pedir un cambio', { href: '#/cambios/nuevo', icon: 'plus', style: nPend ? 'secondary' : 'primary' }) : '') + (MS.can('ai.generate') ? UI.btn('Diseñar con IA', { href: '#/ia/pagina', icon: 'sparkles', style: 'secondary' }) : '') + '</div>';
     if (!list.length) {
       html += hist ? UI.empty('Todavía no hay historial', 'Cuando pidas, apruebes o publiques un cambio, quedará registrado aquí.', '')
                    : UI.empty('No tienes cambios pendientes', 'Cuando pidas un cambio, aquí verás si espera tu decisión.', canAsk ? UI.btn('Pedir un cambio', { href: '#/cambios/nuevo' }) : '');
@@ -431,12 +432,14 @@
       html += '<div class="banner banner-lila" id="no-approve">' + icon('info') + '<span><strong>Tu perfil no permite aprobar cambios</strong>' + (MS.S.role === 'operation' ? 'Quien administra tu negocio lo revisará y decidirá.' : 'Puedes ver la vista previa. Quien administra tu negocio decide si se publica.') + '</span></div>';
     }
 
-    // Página completa
+    // Página completa: con diseño generado se muestra el HTML real del servidor (el mismo que se publicaría).
     var hl = r.changes.filter(function (c) { return c.field !== 'generic'; });
+    var full = r.designed || (MS.S.site.published && MS.S.site.published.designed)
+      ? MS.ai.previewFrame(r.id, mode === 'antes' ? 'antes' : 'despues')
+      : UI.browser(mode === 'antes' ? UI.site(base) : UI.site(after, { highlight: hl }), { flag: mode === 'antes' ? 'Así se ve hoy' : 'Vista previa: aún no publicada', label: mode === 'antes' ? 'Tu página como se ve hoy' : 'Vista previa de tu página' });
     html += '<section aria-labelledby="full-t"><div class="section-title" style="flex-wrap:wrap"><h2 id="full-t">Tu página completa</h2>' +
       (!first && MS.S.site.published ? '<div class="segmented" role="group" aria-label="Comparar"><button type="button" aria-pressed="' + (mode === 'antes') + '" data-action="go" data-arg="#/vista-previa/' + r.id + '?ver=antes">Antes</button><button type="button" aria-pressed="' + (mode === 'despues') + '" data-action="go" data-arg="#/vista-previa/' + r.id + '">Después</button></div>' : '') + '</div>' +
-      UI.browser(mode === 'antes' ? UI.site(base) : UI.site(after, { highlight: hl }), { flag: mode === 'antes' ? 'Así se ve hoy' : 'Vista previa: aún no publicada', label: mode === 'antes' ? 'Tu página como se ve hoy' : 'Vista previa de tu página' }) +
-      '</section>';
+      full + '</section>';
     html += '</div>';
     return Object.assign({ title: 'Vista previa', html: html }, back);
   };
@@ -506,7 +509,7 @@
     if (!S.site.published) return { tab: 'pagina', screen: 'DS-11', title: 'Mi página', back: '#/pagina', backLabel: 'Mi página', html: UI.empty('Tu página todavía no está publicada', 'Cuando apruebes tu primera versión y termine la publicación, la verás aquí.', UI.btn('Ir a Mi página', { href: '#/pagina' })) };
     var v = S.site.versions[0];
     var loc = S.site.local && S.site.local.provisioned ? S.site.local : null;
-    var html = '<div class="page-head"><h1 tabindex="-1" data-focus>Tu página publicada</h1><p>Así la ven tus clientes' + (v ? '. Versión ' + v.n + ', publicada ' + esc(MS.when(v.at)) : '') + '.</p></div>' + UI.browser(UI.site(S.site.published), { label: 'Tu página publicada' }) +
+    var html = '<div class="page-head"><h1 tabindex="-1" data-focus>Tu página publicada</h1><p>Así la ven tus clientes' + (v ? '. Versión ' + v.n + ', publicada ' + esc(MS.when(v.at)) : '') + '.</p></div>' + (S.site.published.designed ? MS.ai.previewFrame('published', 'antes') : UI.browser(UI.site(S.site.published), { label: 'Tu página publicada' })) +
       (loc ? '<p class="tiny" style="margin-top:8px"><a href="' + esc(loc.url) + '" target="_blank" rel="noopener">' + esc(loc.url) + '</a> — sitio local real en esta red de desarrollo (no está en internet).</p>' : UI.note('Publicación de desarrollo: la página no está realmente en internet.'));
     return { tab: 'pagina', screen: 'DS-11', title: 'Tu página', html: html, back: '#/pagina', backLabel: 'Mi página' };
   };

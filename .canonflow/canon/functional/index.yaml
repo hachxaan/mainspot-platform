@@ -141,3 +141,77 @@ items:
   tier_hint: 4
   path: items/NFR-0005.md
   source: recovered (SRC-0006/SRC-0007)
+# AI Core (issue #9, 2026-10-30): PROPOSED = redactado por el agente a partir de la definición del
+# propietario; obligatorio solo tras la respuesta de QS-0016. No modifica los ítems DECIDED.
+- id: FR-0012
+  title: 'MainSpot AI Core: un asistente, catálogo de casos de uso y Jev como clasificador primario'
+  state: PROPOSED
+  tier_hint: 4
+  path: items/FR-0012.md
+  source: issue #9 + QS-0016
+- id: FR-0013
+  title: Brand Studio, hechos verificados y biblioteca multimedia
+  state: PROPOSED
+  tier_hint: 3
+  path: items/FR-0013.md
+  source: issue #9 + QS-0016
+- id: FR-0014
+  title: Diseño y edición web generativos con preview, aprobación y versiones
+  state: PROPOSED
+  tier_hint: 4
+  path: items/FR-0014.md
+  source: issue #9 + QS-0016
+- id: FR-0015
+  title: Publicaciones de Facebook generativas y calendario editorial
+  state: PROPOSED
+  tier_hint: 3
+  path: items/FR-0015.md
+  source: issue #9 + QS-0016
+- id: FR-0016
+  title: 'Comentarios y reseñas: clasificación Jev, respuestas generadas y ledger único'
+  state: PROPOSED
+  tier_hint: 4
+  path: items/FR-0016.md
+  source: issue #9 + QS-0016
+- id: FR-0017
+  title: Asistente del dueño con estado real, campañas propuestas e insights fundamentados
+  state: PROPOSED
+  tier_hint: 4
+  path: items/FR-0017.md
+  source: issue #9 + QS-0016
+- id: FR-0018
+  title: 'MainSpot Administration: plano de control del operador'
+  state: PROPOSED
+  tier_hint: 4
+  path: items/FR-0018.md
+  source: issue #9 + QS-0016
+- id: FR-0019
+  title: 'MainSpot Engineering Console: prompts, rutas, evaluaciones y despliegue sin código'
+  state: PROPOSED
+  tier_hint: 4
+  path: items/FR-0019.md
+  source: issue #9 + QS-0016
+- id: NFR-0006
+  title: 'Costo de IA: medición, presupuestos y techo duro'
+  state: PROPOSED
+  tier_hint: 4
+  path: items/NFR-0006.md
+  source: issue #9 + QS-0016
+- id: NFR-0007
+  title: Seguridad del AI Core
+  state: PROPOSED
+  tier_hint: 4
+  path: items/NFR-0007.md
+  source: issue #9 + QS-0016
+- id: NFR-0008
+  title: Metas cuantitativas por caso de uso
+  state: PROPOSED
+  tier_hint: 3
+  path: items/NFR-0008.md
+  source: issue #9 + QS-0016
+- id: BR-0007
+  title: Datos hacia proveedores de IA, consentimiento, dinero y roles
+  state: PROPOSED
+  tier_hint: 4
+  path: items/BR-0007.md
+  source: issue #9 + QS-0016

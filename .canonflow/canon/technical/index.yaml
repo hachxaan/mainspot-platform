@@ -28,3 +28,28 @@ items:
   tier_hint: 2
   path: items/API-0004.md
   source: recovered (SRC-0006/SRC-0007)
+# AI Core (issue #9): derivado de FR-0012..FR-0019, NFR-0006..0008 y BR-0007; PROPOSED hasta QS-0016.
+- id: ARC-0001
+  title: 'Arquitectura del AI Core: registro, despacho con versión fijada y adaptadores'
+  state: PROPOSED
+  tier_hint: 4
+  path: items/ARC-0001.md
+  source: issue #9 + QS-0016
+- id: DAT-0001
+  title: Modelo de datos del AI Core (migración aditiva 0025)
+  state: PROPOSED
+  tier_hint: 3
+  path: items/DAT-0001.md
+  source: issue #9 + QS-0016
+- id: SEC-0001
+  title: Modelo de amenazas del AI Core y pruebas negativas obligatorias
+  state: PROPOSED
+  tier_hint: 4
+  path: items/SEC-0001.md
+  source: issue #9 + QS-0016
+- id: OPS-0001
+  title: 'Operación del AI Core: proveedores, presupuestos, despliegue y rollback'
+  state: PROPOSED
+  tier_hint: 3
+  path: items/OPS-0001.md
+  source: issue #9 + QS-0016

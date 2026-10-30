@@ -1,0 +1,160 @@
+{
+  "schema_version": 2,
+  "session_label": "AI Core: canon, Jev primario, datos reales y presupuesto de IA",
+  "title": "¿Apruebas el canon del AI Core y fijas el alcance de Jev, los datos reales y el presupuesto de IA generativa?",
+  "generated_at": "2026-10-30T14:32:11Z",
+  "state": "PENDING",
+  "ui_language": "es",
+  "risk_tier": 3,
+  "affected_loop": "functional_canon_loop",
+  "intervention_reason": "Issue #9 define el AI Core y aprueba Jev como clasificador primario para conversaciones. Esa aprobación no está formalizada como registro, DEC-0019 sigue vedando mensajes reales a TypeSafe y DEC-0032 solo cubre USD 1/día de TypeSafe. La autorización de usar OpenRouter con techo de USD 25 y solo datos sintéticos se dio en la conversación del 2026-10-30 y debe quedar registrada.",
+  "decision_impact": "Las respuestas se ingieren como APR/DEC. Mientras no se respondan, la implementación aplica las restricciones vigentes: Jev y la IA generativa solo con negocios clasificados como sintéticos, ningún dato real sale, gasto de IA generativa con techo duro de USD 25 en laboratorio.",
+  "initial_instructions": "La opción recomendada es una propuesta del agente, no una decisión. No escribas claves, tokens ni datos personales en las notas.",
+  "topics": [
+    {
+      "topic_id": "canon",
+      "title": "Canon funcional y técnico del AI Core"
+    },
+    {
+      "topic_id": "jev",
+      "title": "Jev: alcance y datos reales"
+    },
+    {
+      "topic_id": "presupuesto",
+      "title": "Presupuesto de IA generativa"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q-AICORE-CANON",
+      "type": "approval",
+      "topic_id": "canon",
+      "affected_loop": "functional_canon_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 3,
+      "title": "¿Apruebas el canon AI Core 0.2.0 (FR-0012..FR-0019, NFR-0006..NFR-0008, BR-0007, ARC-0001, DAT-0001, SEC-0001, OPS-0001) como base de implementación?",
+      "short_description": "Aprobar fija la base canónica del AI Core. No autoriza datos reales, gasto en anuncios ni publicar en cuentas de terceros. Rechazar exige comentario; aplazar mantiene los ítems como PROPOSED.",
+      "full_explanation": "El dossier enumera los 16 ítems con su sha256. Incluye: un asistente con catálogo de casos de uso; prompts y rutas de modelo versionados con consola de ingeniería, canary y rollback; Jev como clasificador semántico primario sin autoridad de ejecución; Brand Studio con hechos confirmados; web generativa en DSL de bloques sin JavaScript; publicaciones con imagen; respuestas con ledger único; asistente con herramientas de solo lectura; campañas solo propuestas; consolas centrales con MFA y step-up; costos con reserva y techo duro; metas cuantitativas provisionales.",
+      "why_this_matters": "Sin esta aprobación el AI Core se implementa como propuesta y su conformidad no puede auditarse contra un canon aprobado.",
+      "artifact_ref": "AI-CORE-CANON-PROPOSAL 0.2.0",
+      "artifact_binding": {
+        "artifact_ref": "AI-CORE-CANON-PROPOSAL 0.2.0",
+        "path": "docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-CANON-PROPOSAL.md",
+        "sha256": "f129b92b2b6e7926babd6790d01e5b75dbdb4cea7e0d374405c6d60c3642f6a7"
+      }
+    },
+    {
+      "question_id": "Q-JEV-PRIMARY-SCOPE",
+      "type": "single_choice",
+      "topic_id": "jev",
+      "affected_loop": "functional_canon_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 3,
+      "title": "¿Qué alcance tiene Jev como clasificador semántico primario?",
+      "short_description": "Formaliza la decisión de issue #9. APR-0002 ya aprobó los modos disabled/shadow/primary solo con tenants sintéticos para la intención del dueño.",
+      "full_explanation": "Hoy Jev solo clasifica intención y capacidad de los mensajes del dueño (APR-0002), con el gate de evaluación de DEC-0031/DEC-0033, y el clasificador de comentarios/reseñas es por palabras clave. El AI Core propone que Jev clasifique también sentimiento, categoría, urgencia, riesgo y PII de comentarios y reseñas, y el alcance simple/complejo de las ediciones web. Las validaciones deterministas se conservan como salvaguarda (PII, amenazas), no como clasificador semántico. Jev nunca concede permisos.",
+      "why_this_matters": "Define si el sentimiento y el riesgo de lo que escriben los clientes del negocio los decide Jev o reglas fijas.",
+      "recommended_option": "todo_texto_con_gate",
+      "options": [
+        {
+          "value": "todo_texto_con_gate",
+          "label": "Primario para todo mensaje y evento de texto (dueño, comentarios, reseñas, alcance de edición), con gate de evaluación por pregunta y solo para negocios autorizados en datos",
+          "impact": "Jev decide la clasificación semántica; si no está disponible o no está autorizado, revisión humana o ruta de calidad, nunca acción automática",
+          "risk": "dependencia de un proveedor externo para la clasificación; mitigada con gate, presupuesto y degradación segura"
+        },
+        {
+          "value": "solo_intencion_dueno",
+          "label": "Mantener el alcance de APR-0002: solo intención/capacidad de mensajes del dueño",
+          "impact": "comentarios y reseñas siguen con reglas por palabras clave",
+          "risk": "ironía, negación y mensajes mixtos se clasifican peor"
+        },
+        {
+          "value": "otro_en_notas",
+          "label": "Otro alcance (descríbelo en las notas)",
+          "impact": "el agente prepara la propuesta",
+          "risk": "puede requerir otra sesión"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-JEV-REAL-DATA",
+      "type": "single_choice",
+      "topic_id": "jev",
+      "affected_loop": "functional_canon_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 4,
+      "title": "¿Qué hacemos con el envío de mensajes REALES de clientes a TypeSafe (DEC-0019)?",
+      "short_description": "DEC-0019 no aceptó enviar mensajes reales. Esta decisión es independiente del alcance de Jev.",
+      "full_explanation": "Para usar Jev con negocios reales hay que resolver: base legal y aviso a los clientes del negocio, minimización (solo el texto del mensaje, sin nombre ni identificadores, máximo 8 KiB), retención y uso por el proveedor según su contrato, ubicación del tratamiento y límites de consumo. Mientras no se decida, las funciones semánticas de negocios reales quedan BLOCKED_EXTERNAL y pasan a revisión humana.",
+      "why_this_matters": "Es la condición para que el asistente funcione con clientes reales; un envío sin base adecuada expone datos personales de terceros.",
+      "recommended_option": "dossier_privacidad",
+      "options": [
+        {
+          "value": "dossier_privacidad",
+          "label": "Mantener bloqueado y preparar un dossier de privacidad (contrato y retención de TypeSafe, minimización, base legal, aviso) para una sesión posterior",
+          "impact": "ningún dato real sale; la decisión se toma con evidencia contractual",
+          "risk": "los negocios reales no tienen clasificación semántica automática hasta esa sesión"
+        },
+        {
+          "value": "piloto_minimizado",
+          "label": "Autorizar envío minimizado (solo texto, sin identificadores, ≤ 8 KiB) para negocios piloto con consentimiento escrito, con vencimiento 2026-12-31",
+          "impact": "Jev operaría con clientes piloto reales",
+          "risk": "transferencia de datos personales de terceros sin revisión contractual previa del proveedor"
+        },
+        {
+          "value": "otro_en_notas",
+          "label": "Otra opción (descríbela en las notas)",
+          "impact": "el agente prepara la propuesta",
+          "risk": "puede requerir otra sesión"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-AI-BUDGET",
+      "type": "single_choice",
+      "topic_id": "presupuesto",
+      "affected_loop": "implementation_loop",
+      "required": true,
+      "requires_comment": false,
+      "risk_tier": 3,
+      "title": "¿Qué presupuesto rige la IA generativa (texto e imágenes vía OpenRouter)?",
+      "short_description": "En la conversación del 2026-10-30 autorizaste usar OPENROUTER_API_KEY con techo de USD 25 y solo datos sintéticos. Esta respuesta lo formaliza.",
+      "full_explanation": "DEC-0032 cubre solo TypeSafe (USD 1/día). El AI Core reserva el costo estimado antes de cada llamada y bloquea al llegar al techo. Los precios usados son los publicados por OpenRouter el 2026-10-30 y el costo reportado por cada respuesta.",
+      "why_this_matters": "Sin presupuesto registrado no hay consumo real fuera del laboratorio autorizado.",
+      "recommended_option": "lab_25_total",
+      "options": [
+        {
+          "value": "lab_25_total",
+          "label": "USD 25 en total para laboratorio con datos sintéticos; cualquier ampliación en otra sesión",
+          "impact": "formaliza lo ya autorizado",
+          "risk": "las demostraciones se detienen al agotarlo"
+        },
+        {
+          "value": "lab_25_mas_mensual",
+          "label": "USD 25 para laboratorio y USD 30 al mes para desarrollo continuo, ambos solo con datos sintéticos",
+          "impact": "permite evaluar cambios de prompts y modelos de forma continua",
+          "risk": "gasto recurrente"
+        },
+        {
+          "value": "otro_en_notas",
+          "label": "Otro presupuesto (descríbelo en las notas)",
+          "impact": "el agente ajusta los límites",
+          "risk": "puede requerir otra sesión"
+        }
+      ]
+    },
+    {
+      "question_id": "Q-NOTES",
+      "type": "free_text",
+      "topic_id": "canon",
+      "required": false,
+      "title": "Notas para el registro",
+      "short_description": "Opcional. Se transcribe literalmente. No escribas claves, tokens ni datos personales.",
+      "options": []
+    }
+  ],
+  "question_session_id": "QS-0016"
+}

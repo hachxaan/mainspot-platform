@@ -88,6 +88,11 @@ export class WebsitePublisher implements Publisher {
     if (extracted.restore && extracted.restore.current_version !== Number(site.published_version)) {
       throw new AppError(409, 'stale_version', 'Tu página cambió después de preparar la restauración. Vuelve a elegir la versión.');
     }
+    // AI Core: un diseño o edición generada sobre la versión N no se publica si ya hay otra encima.
+    const base = ctx.payload['base_version'];
+    if (typeof base === 'number' && Number.isInteger(base) && base !== Number(site.published_version)) {
+      throw new AppError(409, 'stale_version', 'Tu página cambió después de preparar este cambio. Pídelo otra vez sobre la versión actual.');
+    }
 
     const nextVersion = Number(site.published_version) + 1;
     const html = renderSite(data, { version: nextVersion });
@@ -104,6 +109,11 @@ export class WebsitePublisher implements Publisher {
        WHERE website_id = $3 AND tenant_id = $4`,
       [JSON.stringify(data), nextVersion, site.website_id, ctx.tenantId],
     );
+    // Las imágenes de la biblioteca que usa la versión publicada quedan aprobadas (no se archivan mientras se usen).
+    const assetIds = Object.values(data.design?.assets ?? {}).map((a) => a?.asset_id).filter((id): id is string => typeof id === 'string');
+    if (assetIds.length) {
+      await conn.query(`UPDATE media_asset SET status = 'approved', updated_at = now() WHERE tenant_id = $1 AND asset_id = ANY($2::text[]) AND status = 'draft'`, [ctx.tenantId, assetIds]);
+    }
 
     return {
       ok: true,

@@ -1,0 +1,88 @@
+{
+  "generated_at": "2026-10-30T20:40:47.588Z",
+  "environment": "lab",
+  "real_providers": true,
+  "report": [
+    {
+      "use_case": "engagement.facebook.comment.classify",
+      "model": "ts:jev-1.14.0",
+      "route_id": "rte_6f581281-7371-4f4c-b2d1-aa7b2ae65961",
+      "route_version": 2,
+      "suite": "sentimiento-y-riesgo@v1",
+      "run_id": "evr_cfa0e417-ce1c-4d7d-85c9-b5ad3016757c",
+      "status": "failed",
+      "cases": 20,
+      "passed": 10,
+      "pass_rate": 0.5,
+      "latency_p50_ms": 797,
+      "latency_p95_ms": 950,
+      "cost_usd": 0.000583,
+      "cost_per_case_usd": 0.000029,
+      "sentiment_accuracy": 0.8333333333333334,
+      "risk_misses": 0,
+      "wall_ms": 11227,
+      "failures": [
+        {
+          "case": "grat1",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "mixed1",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "mixed2",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "info2",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "q1",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "sugg1",
+          "notes": [
+            "sentimiento negative ≠ neutral"
+          ]
+        },
+        {
+          "case": "pii1",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "abuse1",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "inject1",
+          "notes": [
+            "sentimiento mixed ≠ negative"
+          ]
+        },
+        {
+          "case": "grat3",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        }
+      ]
+    }
+  ]
+}

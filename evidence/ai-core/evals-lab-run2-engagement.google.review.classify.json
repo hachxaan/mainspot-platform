@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-10-30T20:41:47.331Z",
+  "environment": "lab",
+  "real_providers": true,
+  "report": [
+    {
+      "use_case": "engagement.google.review.classify",
+      "model": "ts:jev-1.14.0",
+      "route_id": "rte_3002be24-8896-4df4-9956-133693703695",
+      "route_version": 2,
+      "suite": "sentimiento-y-riesgo@v1",
+      "run_id": "evr_249e0362-ff08-4f4a-825d-6269f830e466",
+      "status": "failed",
+      "cases": 20,
+      "passed": 12,
+      "pass_rate": 0.6,
+      "latency_p50_ms": 802,
+      "latency_p95_ms": 966,
+      "cost_usd": 0.00073,
+      "cost_per_case_usd": 0.000036,
+      "sentiment_accuracy": 0.8666666666666667,
+      "risk_misses": 0,
+      "wall_ms": 59402,
+      "failures": [
+        {
+          "case": "grat1",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "neg1",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "neg2",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "mixed1",
+          "notes": [
+            "provider_unavailable: TimeoutError"
+          ]
+        },
+        {
+          "case": "sugg1",
+          "notes": [
+            "sentimiento negative ≠ neutral"
+          ]
+        },
+        {
+          "case": "health1",
+          "notes": [
+            "provider_unavailable: JevHttpError"
+          ]
+        },
+        {
+          "case": "pii1",
+          "notes": [
+            "categoría basic_info ≠ question_other"
+          ]
+        },
+        {
+          "case": "inject1",
+          "notes": [
+            "sentimiento mixed ≠ negative"
+          ]
+        }
+      ]
+    }
+  ]
+}

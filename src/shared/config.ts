@@ -24,6 +24,8 @@ const PAYMENT_PROVIDERS = ['simulated', 'stripe'] as const;
 const JEV_MODES = ['disabled', 'shadow', 'primary'] as const;
 const JEV_PROVIDERS = ['typesafe'] as const;
 const JEV_DATA_SCOPES = ['synthetic'] as const;
+const AI_ENVIRONMENTS = ['lab', 'test'] as const;
+export type AiEnvironment = (typeof AI_ENVIRONMENTS)[number];
 
 export type AppEnv = (typeof APP_ENVS)[number];
 export type AuditMode = (typeof AUDIT_MODES)[number];
@@ -139,6 +141,18 @@ export interface AppConfig {
   google: GoogleConnectorConfig;
   /** DEV-E2E-04 §3: correo transaccional para recuperar contraseña (disabled | smtp | resend). */
   mail: MailConfig;
+  /**
+   * AI Core (ARC-0001, OPS-0001). `aiEnvironment` elige el rollout (lab | test). `aiRealProviders`
+   * habilita llamadas a proveedores reales (OpenRouter/TypeSafe) SOLO para negocios clasificados
+   * `synthetic` (BR-0007); sin él las rutas reales responden BLOCKED_EXTERNAL.
+   */
+  aiEnvironment: AiEnvironment;
+  aiRealProviders: boolean;
+  aiJobWorkerEnabled: boolean;
+  aiJobWorkerIntervalMs: number;
+  /** FR-0018: clave (32 bytes base64, fuera de Git) que cifra los secretos TOTP de plataforma. */
+  platformMfaKey: string;
+  platformSessionTtlMinutes: number;
 }
 
 export interface LoadConfigOptions {
@@ -291,6 +305,12 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     connectorTokenKey: process.env.CONNECTOR_TOKEN_KEY ?? '',
     google: loadGoogleConnectorConfig(process.env),
     mail: loadMailConfig(process.env),
+    aiEnvironment: enumValue<AiEnvironment>('AI_ENVIRONMENT', process.env.AI_ENVIRONMENT, AI_ENVIRONMENTS, 'lab'),
+    aiRealProviders: (process.env.AI_REAL_PROVIDERS ?? 'off') === 'on',
+    aiJobWorkerEnabled: (process.env.AI_JOB_WORKER ?? 'on') !== 'off',
+    aiJobWorkerIntervalMs: Math.max(250, Number(process.env.AI_JOB_WORKER_INTERVAL_MS ?? 2_000)),
+    platformMfaKey: process.env.PLATFORM_MFA_KEY ?? '',
+    platformSessionTtlMinutes: Math.min(120, Math.max(5, Number(process.env.PLATFORM_SESSION_TTL_MINUTES ?? 30))),
   };
 
   return { ...config, ...overrides };

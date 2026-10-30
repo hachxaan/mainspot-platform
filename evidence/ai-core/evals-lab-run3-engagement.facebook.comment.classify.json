@@ -1,0 +1,52 @@
+{
+  "generated_at": "2026-10-30T20:46:20.383Z",
+  "environment": "lab",
+  "real_providers": true,
+  "report": [
+    {
+      "use_case": "engagement.facebook.comment.classify",
+      "model": "ts:jev-1.14.0",
+      "route_id": "rte_6f581281-7371-4f4c-b2d1-aa7b2ae65961",
+      "route_version": 2,
+      "suite": "sentimiento-y-riesgo@v1",
+      "run_id": "evr_586acb28-6bbf-4263-a7f4-0ef64e4878d3",
+      "status": "passed",
+      "cases": 20,
+      "passed": 16,
+      "pass_rate": 0.8,
+      "latency_p50_ms": 750,
+      "latency_p95_ms": 919,
+      "cost_usd": 0.000923,
+      "cost_per_case_usd": 0.000046,
+      "sentiment_accuracy": 0.8947368421052632,
+      "risk_misses": 0,
+      "wall_ms": 29893,
+      "failures": [
+        {
+          "case": "mixed1",
+          "notes": [
+            "provider_unavailable: TimeoutError"
+          ]
+        },
+        {
+          "case": "sugg1",
+          "notes": [
+            "sentimiento negative ≠ neutral"
+          ]
+        },
+        {
+          "case": "pii1",
+          "notes": [
+            "categoría basic_info ≠ question_other"
+          ]
+        },
+        {
+          "case": "inject1",
+          "notes": [
+            "sentimiento mixed ≠ negative"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1076 @@
+{
+  "generated_at": "2026-10-30T20:35:08.568Z",
+  "environment": "lab",
+  "real_providers": true,
+  "report": [
+    {
+      "use_case": "business.insights.generate",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_57c25b42-a19d-4fa7-9229-a70789c7d35c",
+      "route_version": 2,
+      "suite": "insights@v1",
+      "run_id": "evr_99767f34-5f63-476b-83f9-b6977965ecfe",
+      "status": "failed",
+      "cases": 2,
+      "passed": 1,
+      "pass_rate": 0.5,
+      "latency_p50_ms": 2734,
+      "latency_p95_ms": 4807,
+      "cost_usd": 0.000421,
+      "cost_per_case_usd": 0.000211,
+      "wall_ms": 7577,
+      "failures": [
+        {
+          "case": "poco",
+          "notes": [
+            "cifra sin fuente: 7"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "business.insights.generate",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_3c0ed7ea-3b66-4ee8-9cf2-ffa507198e14",
+      "route_version": 3,
+      "suite": "insights@v1",
+      "run_id": "evr_7bfbd335-b250-4d87-b66a-17f28607c05e",
+      "status": "failed",
+      "cases": 2,
+      "passed": 1,
+      "pass_rate": 0.5,
+      "latency_p50_ms": 3693,
+      "latency_p95_ms": 9342,
+      "cost_usd": 0.001168,
+      "cost_per_case_usd": 0.000584,
+      "wall_ms": 13062,
+      "failures": [
+        {
+          "case": "poco",
+          "notes": [
+            "cifra sin fuente: 7"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "conversation.intent.classify",
+      "model": "ts:jev-1.14.0",
+      "route_id": "rte_0909c4d8-a5e0-4e3a-8806-bc9e6285b024",
+      "route_version": 2,
+      "suite": "alcance-de-edicion@v1",
+      "run_id": "evr_fbf3bc54-e63d-42f8-8c8b-3213cf1de606",
+      "status": "failed",
+      "cases": 8,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1874,
+      "failures": [
+        {
+          "case": "h",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "t",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "c",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "f",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "l",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "r",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "n",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "p",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "conversation.owner.assistant",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_af05286e-a5e9-481b-963f-a12b558d74a4",
+      "route_version": 2,
+      "suite": "asistente-herramientas@v1",
+      "run_id": "evr_8f0b000b-b4fb-4605-a0ba-b62de34f06ef",
+      "status": "passed",
+      "cases": 3,
+      "passed": 3,
+      "pass_rate": 1,
+      "latency_p50_ms": 3310,
+      "latency_p95_ms": 13186,
+      "cost_usd": 0.001068,
+      "cost_per_case_usd": 0.000356,
+      "wall_ms": 18901,
+      "failures": []
+    },
+    {
+      "use_case": "conversation.owner.assistant",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_21610cf8-69b1-4cec-a565-95f4d37a966f",
+      "route_version": 3,
+      "suite": "asistente-herramientas@v1",
+      "run_id": "evr_1bc581b5-a4c0-44c4-b8cc-6dd93a8b3c76",
+      "status": "passed",
+      "cases": 3,
+      "passed": 3,
+      "pass_rate": 1,
+      "latency_p50_ms": 9888,
+      "latency_p95_ms": 12204,
+      "cost_usd": 0.002319,
+      "cost_per_case_usd": 0.000773,
+      "wall_ms": 30803,
+      "failures": []
+    },
+    {
+      "use_case": "editorial.calendar.suggest",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_cf98504a-a39a-46b9-a7b0-3842c46019b6",
+      "route_version": 2,
+      "suite": "calendario@v1",
+      "run_id": "evr_96fd7ccf-d6fc-4697-8984-e98ad6494b3f",
+      "status": "passed",
+      "cases": 1,
+      "passed": 1,
+      "pass_rate": 1,
+      "latency_p50_ms": 14939,
+      "latency_p95_ms": 14939,
+      "cost_usd": 0.001124,
+      "cost_per_case_usd": 0.001124,
+      "wall_ms": 14965,
+      "failures": []
+    },
+    {
+      "use_case": "editorial.calendar.suggest",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_a1f63a55-73f3-4ba1-8e47-63612e2b2816",
+      "route_version": 3,
+      "suite": "calendario@v1",
+      "run_id": "evr_3243510f-cc05-40ad-9af1-659cf03347be",
+      "status": "failed",
+      "cases": 1,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 18425,
+      "failures": [
+        {
+          "case": "semana",
+          "notes": [
+            "invalid_output: la salida no es JSON"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "engagement.facebook.comment.classify",
+      "model": "ts:jev-1.14.0",
+      "route_id": "rte_6f581281-7371-4f4c-b2d1-aa7b2ae65961",
+      "route_version": 2,
+      "suite": "sentimiento-y-riesgo@v1",
+      "run_id": "evr_a693d55f-405e-4247-a3ae-44d46d2f33db",
+      "status": "failed",
+      "cases": 20,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "risk_misses": 0,
+      "wall_ms": 4394,
+      "failures": [
+        {
+          "case": "grat1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "grat2",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "irony1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "irony2",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "neg1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "neg2",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "mixed1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "mixed2",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "info1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "info2",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "q1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "sugg1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "health1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "legal1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "pii1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "abuse1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "spam1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "inject1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "threat1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "grat3",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "engagement.facebook.comment.reply",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_31db38bc-e9bd-4ebd-a53d-0931bb35c54b",
+      "route_version": 2,
+      "suite": "respuestas@v1",
+      "run_id": "evr_f02c63af-d9c0-4721-a48b-ef392f3e52f3",
+      "status": "passed",
+      "cases": 4,
+      "passed": 4,
+      "pass_rate": 1,
+      "latency_p50_ms": 2483,
+      "latency_p95_ms": 3782,
+      "cost_usd": 0.000626,
+      "cost_per_case_usd": 0.000156,
+      "wall_ms": 11294,
+      "failures": []
+    },
+    {
+      "use_case": "engagement.facebook.comment.reply",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_237d6b5f-ce60-4929-bf09-62a9202eb0fa",
+      "route_version": 3,
+      "suite": "respuestas@v1",
+      "run_id": "evr_ad59015d-304a-4d87-b6d6-3f03e25647bb",
+      "status": "passed",
+      "cases": 4,
+      "passed": 4,
+      "pass_rate": 1,
+      "latency_p50_ms": 1713,
+      "latency_p95_ms": 3198,
+      "cost_usd": 0.000886,
+      "cost_per_case_usd": 0.000222,
+      "wall_ms": 8687,
+      "failures": []
+    },
+    {
+      "use_case": "engagement.google.review.classify",
+      "model": "ts:jev-1.14.0",
+      "route_id": "rte_3002be24-8896-4df4-9956-133693703695",
+      "route_version": 2,
+      "suite": "sentimiento-y-riesgo@v1",
+      "run_id": "evr_d9f45569-8ca9-4b5d-b2da-f127581e1659",
+      "status": "failed",
+      "cases": 20,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "risk_misses": 0,
+      "wall_ms": 4423,
+      "failures": [
+        {
+          "case": "grat1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "grat2",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "irony1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "irony2",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "neg1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "neg2",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "mixed1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "mixed2",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "info1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "info2",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "q1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "sugg1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "health1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "legal1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "pii1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "abuse1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "spam1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "inject1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "threat1",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        },
+        {
+          "case": "grat3",
+          "notes": [
+            "provider_auth: auth"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "engagement.google.review.reply",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_3b16c3d6-92ba-440f-8112-87c2b3ad4912",
+      "route_version": 2,
+      "suite": "respuestas@v1",
+      "run_id": "evr_993568bb-662e-4935-a123-2afebbf6274d",
+      "status": "passed",
+      "cases": 4,
+      "passed": 4,
+      "pass_rate": 1,
+      "latency_p50_ms": 1974,
+      "latency_p95_ms": 3992,
+      "cost_usd": 0.000621,
+      "cost_per_case_usd": 0.000155,
+      "wall_ms": 10922,
+      "failures": []
+    },
+    {
+      "use_case": "engagement.google.review.reply",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_b1c4b43c-f377-4131-8781-5420cf2d4e33",
+      "route_version": 3,
+      "suite": "respuestas@v1",
+      "run_id": "evr_d4285edf-51da-4d06-969a-9f89bfec75ca",
+      "status": "passed",
+      "cases": 4,
+      "passed": 4,
+      "pass_rate": 1,
+      "latency_p50_ms": 1228,
+      "latency_p95_ms": 3543,
+      "cost_usd": 0.000932,
+      "cost_per_case_usd": 0.000233,
+      "wall_ms": 7415,
+      "failures": []
+    },
+    {
+      "use_case": "marketing.campaign.creatives",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_46ece6e1-83c5-44a7-abd5-f05bc7a5c495",
+      "route_version": 2,
+      "suite": "creatividades@v1",
+      "run_id": "evr_05e29e59-a7cc-4a80-a90b-6c1f7ae714a8",
+      "status": "failed",
+      "cases": 2,
+      "passed": 1,
+      "pass_rate": 0.5,
+      "latency_p50_ms": 3897,
+      "latency_p95_ms": 7673,
+      "cost_usd": 0.00106,
+      "cost_per_case_usd": 0.00053,
+      "wall_ms": 11594,
+      "failures": [
+        {
+          "case": "promo_inventada",
+          "notes": [
+            "contiene «30%»"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "marketing.campaign.creatives",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_b5c69305-a2b9-4fbf-b94b-7f092a1c6f8f",
+      "route_version": 3,
+      "suite": "creatividades@v1",
+      "run_id": "evr_2ae4b30e-ebe1-48d0-91c0-422b303d5fcd",
+      "status": "failed",
+      "cases": 2,
+      "passed": 1,
+      "pass_rate": 0.5,
+      "latency_p50_ms": 13829,
+      "latency_p95_ms": 16276,
+      "cost_usd": 0.003444,
+      "cost_per_case_usd": 0.001722,
+      "wall_ms": 30150,
+      "failures": [
+        {
+          "case": "promo_inventada",
+          "notes": [
+            "contiene «30%»"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "marketing.campaign.plan",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_9302f0f4-8a45-4098-a07d-0738f8061935",
+      "route_version": 3,
+      "suite": "campanas@v1",
+      "run_id": "evr_b9b84d5a-3a83-4525-85b5-10486f6bc244",
+      "status": "passed",
+      "cases": 2,
+      "passed": 2,
+      "pass_rate": 1,
+      "latency_p50_ms": 6652,
+      "latency_p95_ms": 9648,
+      "cost_usd": 0.001558,
+      "cost_per_case_usd": 0.000779,
+      "wall_ms": 16332,
+      "failures": []
+    },
+    {
+      "use_case": "marketing.campaign.plan",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_75dc2837-e087-4e87-88b5-648a23e32f62",
+      "route_version": 4,
+      "suite": "campanas@v1",
+      "run_id": "evr_608337c7-b99e-45dd-b7fb-5d18e11d8b35",
+      "status": "failed",
+      "cases": 2,
+      "passed": 1,
+      "pass_rate": 0.5,
+      "latency_p50_ms": 15160,
+      "latency_p95_ms": 15160,
+      "cost_usd": 0.00198,
+      "cost_per_case_usd": 0.00099,
+      "wall_ms": 37166,
+      "failures": [
+        {
+          "case": "monto",
+          "notes": [
+            "invalid_output: $.budget.rationale: longer than 300"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "social.facebook.image.generate",
+      "model": "or:bytedance-seed/seedream-5-0-flash",
+      "route_id": "rte_9a85e164-8b79-4736-abd4-b31cffa4ffde",
+      "route_version": 3,
+      "suite": "imagenes@v1",
+      "run_id": "evr_3f6ee2b1-d8f5-40c4-8010-b9052684d85e",
+      "status": "failed",
+      "cases": 1,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 144,
+      "failures": [
+        {
+          "case": "cafe",
+          "notes": [
+            "blocked_external: provider_account_policy"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "social.facebook.image.generate",
+      "model": "or:google/gemini-3.1-flash-lite-image",
+      "route_id": "rte_8d4a16bd-07d8-461d-98a8-478783668125",
+      "route_version": 4,
+      "suite": "imagenes@v1",
+      "run_id": "evr_994898b9-d099-4e8b-910b-44bff9b224a3",
+      "status": "failed",
+      "cases": 1,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1764,
+      "failures": [
+        {
+          "case": "cafe",
+          "notes": [
+            "blocked_external: provider_account_policy"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "social.facebook.image.generate",
+      "model": "or:microsoft/mai-image-2.6-flash",
+      "route_id": "rte_46652d73-202f-4deb-aabc-79668d89709d",
+      "route_version": 5,
+      "suite": "imagenes@v1",
+      "run_id": "evr_4c011006-a59b-4954-af58-646047c90834",
+      "status": "failed",
+      "cases": 1,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1054,
+      "failures": [
+        {
+          "case": "cafe",
+          "notes": [
+            "blocked_external: provider_account_policy"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "social.facebook.post.compose",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_e104b470-6a98-4d3b-8ce4-fdc4e188c61a",
+      "route_version": 2,
+      "suite": "publicaciones@v1",
+      "run_id": "evr_f1145652-1121-4253-9ded-1302c3ef4766",
+      "status": "failed",
+      "cases": 3,
+      "passed": 2,
+      "pass_rate": 0.6666666666666666,
+      "latency_p50_ms": 7614,
+      "latency_p95_ms": 8781,
+      "cost_usd": 0.002061,
+      "cost_per_case_usd": 0.000687,
+      "wall_ms": 22349,
+      "failures": [
+        {
+          "case": "promo_inventada",
+          "notes": [
+            "contiene «2x1»"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "social.facebook.post.compose",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_65c3d800-a51a-402e-9cc3-5f124f5125da",
+      "route_version": 3,
+      "suite": "publicaciones@v1",
+      "run_id": "evr_f2e3c426-9d1e-4fbf-b594-b342335b0b6f",
+      "status": "failed",
+      "cases": 3,
+      "passed": 1,
+      "pass_rate": 0.3333333333333333,
+      "latency_p50_ms": 15363,
+      "latency_p95_ms": 15363,
+      "cost_usd": 0.001854,
+      "cost_per_case_usd": 0.000618,
+      "wall_ms": 22617,
+      "failures": [
+        {
+          "case": "promo_inventada",
+          "notes": [
+            "provider_unavailable: rate_limited"
+          ]
+        },
+        {
+          "case": "promo_real",
+          "notes": [
+            "provider_unavailable: rate_limited"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.edit.complex",
+      "model": "or:anthropic/claude-sonnet-5.5",
+      "route_id": "rte_e8b6b5d2-62d2-42be-a9b1-0b43b74c6929",
+      "route_version": 3,
+      "suite": "redisenos@v1",
+      "run_id": "evr_0b05698a-2d1e-4e27-8e00-5f7bad509211",
+      "status": "failed",
+      "cases": 2,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 427,
+      "failures": [
+        {
+          "case": "dark",
+          "notes": [
+            "blocked_external: provider_account_policy"
+          ]
+        },
+        {
+          "case": "faq",
+          "notes": [
+            "blocked_external: provider_account_policy"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.edit.complex",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_94eb093b-d75a-480b-ac56-170a3ad5dd7e",
+      "route_version": 4,
+      "suite": "redisenos@v1",
+      "run_id": "evr_4b1debf0-6e1d-463f-90fe-3637bdf34411",
+      "status": "failed",
+      "cases": 2,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1254,
+      "failures": [
+        {
+          "case": "dark",
+          "notes": [
+            "provider_unavailable: bad_request"
+          ]
+        },
+        {
+          "case": "faq",
+          "notes": [
+            "provider_unavailable: bad_request"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.edit.complex",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_61eefc67-926d-4cd3-921b-5b5fad372a98",
+      "route_version": 5,
+      "suite": "redisenos@v1",
+      "run_id": "evr_75cbe9b1-00dc-46c4-9ba6-235c8be5e78a",
+      "status": "passed",
+      "cases": 2,
+      "passed": 2,
+      "pass_rate": 1,
+      "latency_p50_ms": 5157,
+      "latency_p95_ms": 18979,
+      "cost_usd": 0.002085,
+      "cost_per_case_usd": 0.001042,
+      "wall_ms": 24168,
+      "failures": []
+    },
+    {
+      "use_case": "website.edit.simple",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_36f8bdd0-0ba8-4ecc-bd70-3bd103ac8a8b",
+      "route_version": 2,
+      "suite": "ediciones-simples@v1",
+      "run_id": "evr_129f8744-b7ec-4ac6-b7ff-ac9c9a3dc7f7",
+      "status": "passed",
+      "cases": 5,
+      "passed": 5,
+      "pass_rate": 1,
+      "latency_p50_ms": 2857,
+      "latency_p95_ms": 14119,
+      "cost_usd": 0.001083,
+      "cost_per_case_usd": 0.000217,
+      "wall_ms": 25503,
+      "failures": []
+    },
+    {
+      "use_case": "website.edit.simple",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_f329f2d2-b706-4293-a55a-64dde47fb80f",
+      "route_version": 3,
+      "suite": "ediciones-simples@v1",
+      "run_id": "evr_3c856ee7-bed4-4cb0-966f-c4cd12a9a853",
+      "status": "failed",
+      "cases": 5,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 3590,
+      "failures": [
+        {
+          "case": "hours",
+          "notes": [
+            "provider_unavailable: bad_request"
+          ]
+        },
+        {
+          "case": "title",
+          "notes": [
+            "provider_unavailable: bad_request"
+          ]
+        },
+        {
+          "case": "color",
+          "notes": [
+            "provider_unavailable: bad_request"
+          ]
+        },
+        {
+          "case": "item",
+          "notes": [
+            "provider_unavailable: bad_request"
+          ]
+        },
+        {
+          "case": "phone",
+          "notes": [
+            "provider_unavailable: bad_request"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.image.generate",
+      "model": "or:bytedance-seed/seedream-5-0-flash",
+      "route_id": "rte_09c94427-c9ca-4160-a9c6-6a67a3841493",
+      "route_version": 3,
+      "suite": "imagenes@v1",
+      "run_id": "evr_1d411a44-b3ac-4ff4-9e01-5b4ca5a89931",
+      "status": "failed",
+      "cases": 1,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 227,
+      "failures": [
+        {
+          "case": "cafe",
+          "notes": [
+            "blocked_external: provider_account_policy"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.image.generate",
+      "model": "or:google/gemini-3.1-flash-lite-image",
+      "route_id": "rte_9f42d260-b907-4e27-957c-c6bb3e6ddbac",
+      "route_version": 4,
+      "suite": "imagenes@v1",
+      "run_id": "evr_d0017976-0ad1-48f4-bb06-8e0943080f17",
+      "status": "failed",
+      "cases": 1,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 194,
+      "failures": [
+        {
+          "case": "cafe",
+          "notes": [
+            "blocked_external: provider_account_policy"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.image.generate",
+      "model": "or:microsoft/mai-image-2.6-flash",
+      "route_id": "rte_58170955-a4b9-4447-a423-674f621a4772",
+      "route_version": 5,
+      "suite": "imagenes@v1",
+      "run_id": "evr_43917544-278b-40d4-bc7e-9811456e49fa",
+      "status": "failed",
+      "cases": 1,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 213,
+      "failures": [
+        {
+          "case": "cafe",
+          "notes": [
+            "blocked_external: provider_account_policy"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.initial.design",
+      "model": "or:anthropic/claude-sonnet-5.5",
+      "route_id": "rte_f8cebe74-8656-48cc-9552-bf1597b28bc6",
+      "route_version": 3,
+      "suite": "negocios-sinteticos@v1",
+      "run_id": "evr_7c19f671-0e7a-4851-80eb-c7a384450a0f",
+      "status": "failed",
+      "cases": 3,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 672,
+      "failures": [
+        {
+          "case": "cafe",
+          "notes": [
+            "blocked_external: provider_account_policy"
+          ]
+        },
+        {
+          "case": "taller",
+          "notes": [
+            "blocked_external: provider_account_policy"
+          ]
+        },
+        {
+          "case": "lirio",
+          "notes": [
+            "blocked_external: provider_account_policy"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.initial.design",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_3cd665f0-3e77-4827-b894-4206fedaa180",
+      "route_version": 4,
+      "suite": "negocios-sinteticos@v1",
+      "run_id": "evr_8ed58398-df2c-468e-aa58-dc4443fe8f42",
+      "status": "passed",
+      "cases": 3,
+      "passed": 3,
+      "pass_rate": 1,
+      "latency_p50_ms": 17736,
+      "latency_p95_ms": 23250,
+      "cost_usd": 0.005541,
+      "cost_per_case_usd": 0.001847,
+      "distinct_design_signatures": 3,
+      "wall_ms": 52928,
+      "failures": []
+    },
+    {
+      "use_case": "website.initial.design",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_11181bf0-2529-4238-8dea-7901a1dddcb0",
+      "route_version": 5,
+      "suite": "negocios-sinteticos@v1",
+      "run_id": "evr_d802bf70-8cc8-4f33-9c04-ec94febd6381",
+      "status": "passed",
+      "cases": 3,
+      "passed": 3,
+      "pass_rate": 1,
+      "latency_p50_ms": 13415,
+      "latency_p95_ms": 15266,
+      "cost_usd": 0.003339,
+      "cost_per_case_usd": 0.001113,
+      "distinct_design_signatures": 3,
+      "wall_ms": 41994,
+      "failures": []
+    }
+  ]
+}

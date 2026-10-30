@@ -7,7 +7,12 @@
  *
  * SEGURIDAD: todo dato del negocio se escapa (XSS-safe). El render es
  * determinista: misma data ⇒ mismo HTML (ideal para pruebas/evidencia).
+ *
+ * AI Core (FR-0014): si `design` trae un `site-design/v1` válido, el sitio se renderiza con el DSL de
+ * bloques (src/website/design.ts, sin JavaScript); si no, con esta plantilla clásica.
  */
+
+import { normalizeStoredDesign, renderDesignedSite, type StoredDesign } from './design.ts';
 
 export interface WebsiteSection {
   title: string;
@@ -24,6 +29,8 @@ export interface WebsiteData {
   hours: string;
   services: string[];
   sections: WebsiteSection[];
+  /** Diseño generativo validado; null/ausente = plantilla clásica. */
+  design?: StoredDesign | null;
 }
 
 export const EMPTY_WEBSITE: WebsiteData = {
@@ -36,6 +43,7 @@ export const EMPTY_WEBSITE: WebsiteData = {
   hours: '',
   services: [],
   sections: [],
+  design: null,
 };
 
 export function esc(value: unknown): string {
@@ -54,6 +62,11 @@ export interface RenderOptions {
 
 /** Renderiza el sitio estático del tenant (determinista). */
 export function renderSite(data: WebsiteData, opts: RenderOptions = {}): string {
+  if (data.design) {
+    return renderDesignedSite(data.design, {
+      name: data.name || 'Mi negocio', phone: data.phone, email: data.email, address: data.address, hours: data.hours, services: data.services,
+    }, opts);
+  }
   const sections = (data.sections ?? []).map(
     (s) => `<section class="ms-section"><h2>${esc(s.title)}</h2><p>${esc(s.content)}</p></section>`,
   ).join('\n');
@@ -123,5 +136,6 @@ export function normalizeWebsiteData(raw: unknown): WebsiteData {
     hours: str(r.hours),
     services: arr(r.services),
     sections: sectionsRaw.map((s) => ({ title: String(s.title), content: String(s.content) })),
+    design: normalizeStoredDesign(r.design),
   };
 }

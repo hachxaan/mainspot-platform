@@ -1,0 +1,18 @@
+/* Consolas de plataforma: reutiliza los tokens de app.css; solo distribución propia. */
+.pc { max-width: 1200px; margin: 0 auto; padding: 16px 20px 64px; }
+.pc-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0 16px; border-bottom: 1px solid var(--line, #e5e1da); margin-bottom: 20px; }
+.pc-top .grow { flex: 1; }
+.pc-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.pc-tabs a { padding: 8px 12px; border-radius: 999px; text-decoration: none; color: inherit; }
+.pc-tabs a[aria-current="page"] { background: var(--ink, #1f1a17); color: #fff; }
+.pc-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.pc-table th, .pc-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line, #e5e1da); vertical-align: top; }
+.pc-table th { font-weight: 600; background: var(--paper-2, #f6f3ee); position: sticky; top: 0; }
+.pc-scroll { overflow-x: auto; }
+.pc-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.pc-kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 14px; }
+.pc-kv dt { font-weight: 600; }
+.pc-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; word-break: break-all; }
+.pc-pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--paper-2, #f6f3ee); padding: 10px; border-radius: 10px; max-height: 320px; overflow: auto; }
+.pc-env { font-size: 12px; padding: 4px 8px; border-radius: 6px; background: #fff3cd; color: #5c4400; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }

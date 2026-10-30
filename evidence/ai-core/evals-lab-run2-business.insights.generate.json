@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-10-30T20:43:31.718Z",
+  "environment": "lab",
+  "real_providers": true,
+  "report": [
+    {
+      "use_case": "business.insights.generate",
+      "model": "or:openai/gpt-6-luna",
+      "route_id": "rte_57c25b42-a19d-4fa7-9229-a70789c7d35c",
+      "route_version": 2,
+      "suite": "insights@v1",
+      "run_id": "evr_1a3e7d7a-e450-4bee-9ffc-4a207119f63a",
+      "status": "passed",
+      "cases": 2,
+      "passed": 2,
+      "pass_rate": 1,
+      "latency_p50_ms": 3679,
+      "latency_p95_ms": 7922,
+      "cost_usd": 0.000672,
+      "cost_per_case_usd": 0.000336,
+      "wall_ms": 11663,
+      "failures": []
+    },
+    {
+      "use_case": "business.insights.generate",
+      "model": "or:anthropic/claude-haiku-5.5",
+      "route_id": "rte_3c0ed7ea-3b66-4ee8-9cf2-ffa507198e14",
+      "route_version": 3,
+      "suite": "insights@v1",
+      "run_id": "evr_53f03550-2a45-45d8-81ba-c8ceef1bfcc3",
+      "status": "passed",
+      "cases": 2,
+      "passed": 2,
+      "pass_rate": 1,
+      "latency_p50_ms": 1563,
+      "latency_p95_ms": 6454,
+      "cost_usd": 0.00104,
+      "cost_per_case_usd": 0.00052,
+      "wall_ms": 8056,
+      "failures": []
+    }
+  ]
+}
