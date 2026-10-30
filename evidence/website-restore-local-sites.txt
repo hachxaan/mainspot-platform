@@ -1,0 +1,66 @@
+# WEB-RESTORE / WEB-LOCAL — verificación REAL (run 2026-10-30T09:06:01.880Z) · HEAD bb8774d3e96c70a11344b9762325a6a5681b3c83
+# panel: https://app.mainspot.local.io · sitios: https://<slug>.mainspot.local.io · Chrome /usr/bin/google-chrome headless, sin ignoreHTTPSErrors · Node con CA del sistema
+# BD: mainspot_dev (servicio mainspot-local) · sin tokens, contraseñas ni correos en este archivo
+
+-- Alta: negocio «Café Brisa Sol» (tenant client_cafe_brisa_sol_dbabdc) por invitación de un solo uso --
+PASS página creada con slug «cafe-brisa-sol» (sin publicar; versión 0)
+
+-- Provisión del sitio local https://cafe-brisa-sol.mainspot.local.io/ (scripts/client-site-provision.sh cafe-brisa-sol) antes de publicar --
+   negocio: {"tenant_id":"client_cafe_brisa_sol_dbabdc","slug":"cafe-brisa-sol","hostname":"cafe-brisa-sol.mainspot.local.io","published_version":0,"local_site_status":null,"local_site_provisioned_at":null}
+   hosts: agregado 10.209.99.101 cafe-brisa-sol.mainspot.local.io
+   tls: certificado de cafe-brisa-sol.mainspot.local.io emitido por la CA local e instalado en webserver (caduca Jan 30 09:06:03 2029 GMT)
+   nginx: sitio cafe-brisa-sol.mainspot.local.io habilitado y recargado
+   https://cafe-brisa-sol.mainspot.local.io/ → HTTP 404 (TLS verify=0)
+   {"ts":"2026-10-30T09:06:05.413Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"4e94605e-7bb1-4929-8cd9-ccf19791a135","action":"website.local_site.provisioned","decision":"allow","result":"cafe-brisa-sol.mainspot.local.io","actor_id":"operator:cli","tenant_id":"client_cafe_brisa_sol_dbabdc"}
+   {"tenant_id":"client_cafe_brisa_sol_dbabdc","slug":"cafe-brisa-sol","hostname":"cafe-brisa-sol.mainspot.local.io","local_site_status":"provisioned","cert_not_after":"2029-01-30T09:06:03Z"}
+PASS repetir la provisión es idempotente (no duplica hosts/cert/vhost)
+PASS estado «provisioned» registrado en BD por el comando de operación (el proceso web no usa sudo)
+PASS certificado válido para cafe-brisa-sol.mainspot.local.io (emisor: mkcert administrador@administrador-Katana-15-HX-B14WGK; vence Jan 30 09:06:03 2029 GMT; SAN DNS:cafe-brisa-sol.mainspot.local.io)
+PASS Chrome https://cafe-brisa-sol.mainspot.local.io/ sin versión publicada → 404 (ningún borrador llega al sitio)
+
+-- Primera página: vista previa → aprobación (Administración) → v1 --
+PASS versión 1 publicada tras aprobación humana
+
+-- HTTPS real: Chrome y Node con la CA local, sin bypass --
+PASS Node GET https://cafe-brisa-sol.mainspot.local.io/ → 200, contenido y teléfono del canal visibles (versión 1)
+PASS cabeceras de seguridad y no-store en el sitio
+PASS Chrome https://cafe-brisa-sol.mainspot.local.io/ → 200 con TLS (emisor mkcert administrador@administrador-Katana-15-HX-B14WGK, TLS 1.3), contenido y teléfono visibles
+
+-- Cambio B por chat: sección «Promociones» → vista previa → aprobación → v2 --
+PASS Chrome: el sitio muestra la versión 2 (con «Promociones») tras la aprobación
+
+-- Restaurar esta versión (1) desde «Mi página»: confirmación → vista previa actual vs solicitada → aprobación → v3 --
+PASS lista de versiones: 2 (publicada) y 1
+PASS vista previa «actual vs solicitada»: diff con la sección que desaparece y comparador Antes/Después
+PASS antes de aprobar, el sitio sigue en la versión 2 (nada en vivo sin aprobación)
+PASS versión 3 = contenido de la 1 (referencia restored_from_version=1); versiones 1 y 2 intactas
+PASS Chrome: el sitio muestra la versión 3 (contenido de la 1) tras la aprobación
+PASS «Mi página» muestra la versión 3 como restaurada de la 1
+
+-- Persistencia: recarga del navegador y reinicio de mainspot-local --
+PASS recarga: sigue la versión 3
+PASS tras reiniciar el servicio, el sitio sirve la versión 3
+
+-- Negativos --
+   https://no-existe-b9285c.mainspot.local.io/ → sin resolución local (hosts no tiene entrada: no se provisiona nada para un slug desconocido): fetch failed
+   (misma IP del proxy con Host desconocido → HTTP 200; nginx aplica su sitio por defecto, no el de este negocio)
+PASS bajo el host del sitio no existen API ni /health (404)
+   nota: slug desconocido con el vhost del sitio → HTTP 200 (nginx decide por server_name; el 404 de Express se prueba en tests/integration/website-restore-local-site.test.ts)
+
+-- Aislamiento: otro negocio (taqueria-faro-sol); los sitios previos se conservan --
+   negocio: {"tenant_id":"client_taqueria_faro_sol_7a98a8","slug":"taqueria-faro-sol","hostname":"taqueria-faro-sol.mainspot.local.io","published_version":3,"local_site_status":"provisioned","local_site_provisioned_at":"2026-10-30T08:55:10.084Z"}
+   hosts: ya existe 10.209.99.101 taqueria-faro-sol.mainspot.local.io
+   tls: el certificado de taqueria-faro-sol.mainspot.local.io ya existe en webserver:/etc/nginx/ssl (usa --renew para reemitirlo)
+   nginx: el sitio taqueria-faro-sol.mainspot.local.io ya está habilitado con la misma configuración
+   https://taqueria-faro-sol.mainspot.local.io/ → HTTP 200 (TLS verify=0)
+   {"ts":"2026-10-30T09:06:11.337Z","level":"info","event":"audit.written","msg":"audit event persisted","request_id":"495b5767-8b02-4b9c-bdc9-e68601b31e0f","action":"website.local_site.provisioned","decision":"allow","result":"taqueria-faro-sol.mainspot.local.io","actor_id":"operator:cli","tenant_id":"client_taqueria_faro_sol_7a98a8"}
+   {"tenant_id":"client_taqueria_faro_sol_7a98a8","slug":"taqueria-faro-sol","hostname":"taqueria-faro-sol.mainspot.local.io","local_site_status":"provisioned","cert_not_after":"2029-01-30T08:55:08Z"}
+PASS https://taqueria-faro-sol.mainspot.local.io/ muestra «Taquería Faro Sol» y nada de «Café Brisa Sol»
+PASS https://cafe-brisa-sol.mainspot.local.io/ no muestra nada de «Taquería Faro Sol»
+PASS Chrome taqueria-faro-sol.mainspot.local.io → 200 con TLS válido
+PASS el sitio ya provisionado del otro negocio se conserva intacto
+PASS sin errores de JavaScript en el panel
+
+# Sitio real entregado: https://cafe-brisa-sol.mainspot.local.io/ (tenant client_cafe_brisa_sol_dbabdc, versiones 1→2→3, v3 restaurada de v1)
+
+# Resultado: OK

@@ -1,10 +1,10 @@
-# E2E DEV-E2E-02 — transcript (run 2026-10-30T07:45:21.272Z)
-# HEAD: ef9d42ccd27fabfb157abf7593a41ceabfbd8e49
+# E2E DEV-E2E-02 — transcript (run 2026-10-30T09:36:24.910Z)
+# HEAD: c2dd5dfbfee6f5366aa3a5a09af19db6ecd76be8
 # procesos reales: servidor, CLI invite-owner, worker independiente
 # proveedores: simulated (Google, Meta, Telegram); ningún resultado es real
 # DB: mainspot_test (recreada por scripts/test-prep.ts)
 
-servidor real en http://127.0.0.1:38005 (worker en proceso, ciclo 1 s) [simulated]
+servidor real en http://127.0.0.1:34931 (worker en proceso, ciclo 1 s) [simulated]
 
 -- FLOW-01: alta asistida --
 PASS 1. CLI de operación crea negocio + invitación de un solo uso

@@ -1,0 +1,6 @@
+SCHEDULER CLI SMOKE 2026-10-30T09:21:38.399Z
+Programa real + PostgreSQL mainspot_test; proveedor SOCIAL_PROVIDER=simulated explícito; no Facebook real.
+PASS proceso autónomo arranca y se detiene antes del vencimiento; cola aprobada permanece en PostgreSQL
+PASS dos procesos después del reinicio publican automáticamente, sin navegador ni process-due manual, con un solo claim
+PASS un único efecto confirmado y auditado, con referencia externa del simulador
+RESULT=PASS; Meta real=BLOCKED_EXTERNAL

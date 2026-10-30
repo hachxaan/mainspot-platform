@@ -1,0 +1,7 @@
+SECURITY/API SMOKE 2026-10-30T09:23:09.248Z
+API real con PostgreSQL mainspot_test; solo secretos falsos en memoria; ninguna llamada autenticada a proveedor externo.
+PASS servidor SOCIAL_PROVIDER=meta sin clave termina con error, no abre listener ni sustituye por simulador
+PASS Operación y Solo lectura no conectan, verifican ni desconectan Google/Meta (12 denegaciones 403)
+PASS estado de conexión no expone token/ciphertext; otro tenant no ve Page; sin sesión recibe 401
+PASS callbacks inválidos retornan al panel sin intercambiar ni reflejar el código
+RESULT=PASS; no prueba de pentest ni aprobación para producción

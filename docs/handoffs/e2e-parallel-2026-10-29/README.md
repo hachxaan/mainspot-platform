@@ -3,6 +3,8 @@
 **Estado:** AUTORIZADO PARA DESARROLLO · NO es producción.  
 **Repositorio:** `hachxaan/mainspot-platform` · **Rama:** `feat/canonflow-implementation`.
 
+**Resultado actualizado (Handoff 2, 2026-10-30):** [matriz real, evidencia y GO local / NO-GO externo](HANDOFF-2-RESULTS.md). Continuación exclusivamente con GPT-6.1 Sol; el estado de la rama base descrito abajo es histórico.
+
 La instrucción más reciente del propietario reemplaza el modelo de ejecución secuencial de *diseñar → esperar aprobación → programar* **solo para este ciclo de desarrollo**. **SOL MAIN y Claude Design trabajan simultáneamente y finalizan todo su alcance E2E sin crear ni esperar sesiones HDC**. Documentan decisiones de ingeniería en un registro corto; no alteran DEC históricos ni se detienen por revisiones estéticas. Si una API externa requiere credenciales o aprobación de plataforma ausente, cerrar el flujo E2E contra un simulador, sin fingir que la integración real funciona.
 
 ## Leer primero

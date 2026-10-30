@@ -1,0 +1,6 @@
+SCHEDULE BROWSER SMOKE 2026-10-30T09:29:43.384Z
+HTTPS con CA local; PostgreSQL mainspot_test; proveedor simulado explícito; navegador Asia/Tokyo, scheduler America/New_York.
+PASS Chrome en Tokio programa 08:30 Nueva York como 13:30 UTC; UI muestra zona y estado programado
+PASS 01:30 repetida por DST se rechaza en el formulario, sin crear otra fila programada
+PASS sin errores JavaScript durante programación y rechazo de DST
+RESULT=PASS; Facebook real=BLOCKED_EXTERNAL

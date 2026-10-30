@@ -24,13 +24,13 @@ Código: `src/google/{oauth,client,connection,location,reviews,integration,reten
 4. Reseñas: My Business v4 `accounts/{id}/locations/{id}/reviews`, paginación completa, detección de cursor repetido, solapamiento e ingesta por identificador. El cursor solo avanza al persistir todo el lote. No se modifica ni oculta ninguna reseña.
 5. Respuestas: GET previo → PUT `.../reviews/{id}/reply` → GET de confirmación. No se sobreescribe una respuesta externa automáticamente; la aprobación humana es explícita. Un recurso de otra ubicación se rechaza antes de llamar.
 6. 401 renueva una sola vez; revocación exige reconexión. 403, cuota/429, timeout y fallos de lectura no se convierten en éxito.
-7. Retención: purga a los 29 días (margen respecto al máximo oficial de 30), al arranque y cada 15 minutos, además de `RetentionService.run` y antes de exportar datos. Borra texto, autor y borradores copiados a casos/propuestas/conversaciones; mantiene hechos operativos y respuestas propias. No calcula promedios sobre reseñas reales. La baja elimina conexiones, states y cursores. Una copia de respaldo restaurada debe volver a aplicar las políticas antes de volver a servir/exportar datos.
+7. Retención: purga a los 29 días (margen respecto al máximo oficial de 30), al arranque y cada 15 minutos, además de `RetentionService.run` y antes de exportar datos. Borra texto, autor y borradores copiados a casos/propuestas/conversaciones; mantiene hechos operativos y respuestas propias. Una reingesta no rehidrata respuestas externas ya purgadas. No calcula promedios sobre reseñas reales. La baja elimina conexiones, states y cursores. Una copia de respaldo restaurada debe volver a aplicar las políticas antes de volver a servir/exportar datos.
 
 Prueba: `tests/integration/google-connector.test.ts` (HTTP falso; OAuth/state/PKCE, cifrado, renovación, desconexión concurrente, usuario suspendido, ficha parcial/read-back, paginación, respuesta, aislamiento, errores, purga).
 
 Provisionar un token de laboratorio mediante `scripts/google-provision-lab-token.ts` es una alternativa de operación, no un sustituto de consentimiento ni evidencia de OAuth real. El token entra por archivo 0600 del mismo usuario o stdin, nunca por entorno, argumentos o salida.
 
-Fuentes oficiales consultadas:
+Referencias oficiales:
 
 - [OAuth para aplicaciones web](https://developers.google.com/identity/protocols/oauth2/web-server)
 - [Business Information locations.patch](https://developers.google.com/my-business/reference/businessinformation/rest/v1/locations/patch)
