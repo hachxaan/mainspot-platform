@@ -74,6 +74,23 @@ case "$TELEGRAM_MODE" in
 esac
 export MAINSPOT_DEV_TELEGRAM="$TELEGRAM_MODE" CHANNEL_PRIMARY TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET="${TELEGRAM_WEBHOOK_SECRET:-}"
 
+# --- AI Core: archivo protegido (opcional) --------------------------------------------------------
+# OPENROUTER_API_KEY, TYPESAFE_API_KEY, PLATFORM_MFA_KEY, AI_REAL_PROVIDERS, AI_ENVIRONMENT. Sin él,
+# las rutas reales responden BLOCKED_EXTERNAL y la consola de plataforma queda deshabilitada.
+# Los proveedores reales solo atienden negocios clasificados `synthetic` (BR-0007).
+AI_ENV_FILE="${MAINSPOT_AI_ENV_FILE:-${XDG_CONFIG_HOME:-${HOME:-/nonexistent}/.config}/mainspot/ai-core.env}"
+if [ -e "$AI_ENV_FILE" ]; then
+  perm="$(stat -c '%a' "$AI_ENV_FILE")"
+  if [ $(( 8#$perm & 8#077 )) -ne 0 ]; then
+    echo "ERROR: $AI_ENV_FILE debe ser 0600 (actual $perm); no se carga ningún secreto." >&2
+    exit "$EX_CONFIG"
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  . "$AI_ENV_FILE"
+  set +a
+fi
+
 # PostgreSQL del docker-compose del repo, publicado solo en loopback.
 if ! docker exec mainspot-platform-postgres-1 pg_isready -U "${POSTGRES_USER:-mainspot}" >/dev/null 2>&1; then
   POSTGRES_PORT="127.0.0.1:${PG_PORT}" docker compose up -d postgres >/dev/null
@@ -112,8 +129,8 @@ export APP_ENV=development JEV_MODE=disabled REPUTATION_PROVIDER SOCIAL_PROVIDER
 
 case "${1:-serve}" in
   env)
-    env | grep -E '^(DATABASE_URL|TEST_DATABASE_URL|APP_ENV|PORT|PUBLIC_BASE_URL|JEV_MODE|CHANNEL_PRIMARY|MAINSPOT_DEV_TELEGRAM|TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET|REPUTATION_PROVIDER|SOCIAL_PROVIDER|ENGAGEMENT_)=' \
-      | sed -E 's#(://[^:]+:)[^@]+@#\1***@#; s#^(TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET)=.+#\1=***#'
+    env | grep -E '^(DATABASE_URL|TEST_DATABASE_URL|APP_ENV|PORT|PUBLIC_BASE_URL|JEV_MODE|CHANNEL_PRIMARY|MAINSPOT_DEV_TELEGRAM|TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET|REPUTATION_PROVIDER|SOCIAL_PROVIDER|ENGAGEMENT_|AI_|OPENROUTER_API_KEY|TYPESAFE_API_KEY|PLATFORM_MFA_KEY)=' \
+      | sed -E 's#(://[^:]+:)[^@]+@#\1***@#; s#^(TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET|OPENROUTER_API_KEY|TYPESAFE_API_KEY|PLATFORM_MFA_KEY)=.+#\1=***#'
     ;;
   invite)
     shift
@@ -122,7 +139,7 @@ case "${1:-serve}" in
     ;;
   serve)
     node scripts/db-setup.ts >/dev/null
-    echo "MainSpot (desarrollo) en ${PUBLIC_BASE_URL} — BD ${DEV_DB} en 127.0.0.1:${PG_PORT}; Telegram ${TELEGRAM_MODE}, Google ${REPUTATION_PROVIDER}, Facebook ${SOCIAL_PROVIDER}"
+    echo "MainSpot (desarrollo) en ${PUBLIC_BASE_URL} — BD ${DEV_DB} en 127.0.0.1:${PG_PORT}; Telegram ${TELEGRAM_MODE}, Google ${REPUTATION_PROVIDER}, Facebook ${SOCIAL_PROVIDER}; IA ${AI_ENVIRONMENT:-lab} (proveedores reales: ${AI_REAL_PROVIDERS:-off})"
     exec node src/api/server.ts
     ;;
   *)

@@ -102,7 +102,7 @@
       '</div>';
     if (has('platform_admin')) {
       html += '<section class="card stack" style="margin-top:16px"><h2>Acciones de administración</h2><p class="tiny">Cada acción pide motivo y código de verificación, y queda en la auditoría de plataforma y del negocio.</p>' +
-        '<form class="stack" data-form="tenant-admin" data-id="' + esc(t.client_id) + '"><div class="field"><label for="ta-op">Acción</label><select class="select" id="ta-op"><option value="status:suspended">Suspender</option><option value="status:active">Reactivar</option><option value="class:synthetic">Marcar datos como sintéticos (laboratorio)</option><option value="class:real">Marcar datos como reales</option></select></div>' +
+        '<form class="stack" data-form="tenant-admin" data-id="' + esc(t.client_id) + '"><div class="field"><label for="ta-op">Acción</label><select class="select" id="ta-op" required><option value="">Elige una acción</option><option value="status:suspended">Suspender</option><option value="status:active">Reactivar</option><option value="class:synthetic">Marcar datos como sintéticos (laboratorio)</option><option value="class:real">Marcar datos como reales</option></select></div>' +
         '<div class="field"><label for="ta-reason">Motivo</label><input class="input" id="ta-reason" minlength="10" maxlength="500" required></div><div class="btn-row">' + btn('Aplicar', { type: 'submit', id: 'ta-submit', style: 'secondary' }) + '</div></form></section>';
     }
     html += '<section class="card stack" style="margin-top:16px"><h2>Acceso de soporte</h2><p class="tiny">Temporal, con motivo, visible para el negocio en su auditoría. Muestra solo un resumen operativo.</p>' +
@@ -145,7 +145,7 @@
     return html + '<div class="pc-scroll card card-flush"><table class="pc-table"><thead><tr><th>Caso de uso</th><th>Riesgo</th><th>Activa</th><th>Canary</th><th>Llamadas 7 d</th><th>Fallos</th><th>Costo</th><th>p95 ms</th></tr></thead><tbody>' +
       d.use_cases.map(function (u) {
         var st = u.stats || {};
-        return '<tr><td><a href="#/caso/' + encodeURIComponent(u.use_case_id) + '">' + esc(u.title) + '</a><div class="pc-mono muted">' + esc(u.use_case_id) + '</div></td><td>' + esc(u.risk_level) + '</td><td>' + (u.active ? esc(u.active.model.display_name) + ' <span class="tiny">r' + esc(u.active.route.version) + '/p' + esc(u.active.prompt.version) + '</span>' : tag('sin ruta', 'alerta')) + '</td><td>' + (u.canary ? esc(u.canary.model.display_name) + ' ' + esc(u.rollout.canary_percent) + '%' : '—') + '</td><td>' + esc(st.n || 0) + '</td><td>' + esc(st.failed || 0) + '</td><td>' + money(st.cost) + '</td><td>' + esc(st.p95 || '—') + '</td></tr>';
+        return '<tr><td><a href="#/caso/' + encodeURIComponent(u.use_case_id) + '">' + esc(u.title) + '</a><div class="pc-mono muted">' + esc(u.use_case_id) + '</div></td><td>' + esc(u.risk_level) + '</td><td>' + (u.active ? esc(u.active.model.display_name) + ' <span class="tiny">r' + esc(u.active.route.version) + '/p' + esc(u.active.prompt.version) + '</span>' : tag('sin ruta', 'alerta')) + '</td><td>' + (u.canary ? esc(u.canary.model.display_name) + ' ' + esc(u.rollout.canary_percent) + '%' : '—') + '</td><td>' + esc(st.n || 0) + '</td><td>' + esc(st.failed || 0) + '</td><td>' + money(st.cost) + '</td><td>' + (st.p95 != null ? esc(Math.round(Number(st.p95))) : '—') + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
 
@@ -158,7 +158,15 @@
     var ro = d.rollout || {};
     var eng = has('ai_engineer');
     html += '<h1 tabindex="-1" data-focus>' + esc(d.use_case.title) + '</h1><p class="pc-mono">' + esc(d.use_case.use_case_id) + ' · esquema ' + esc(d.use_case.output_schema) + ' · riesgo ' + esc(d.use_case.risk_level) + '</p>';
-    html += '<section class="card stack"><h2>Rollout (' + esc(S.env) + ')</h2><dl class="pc-kv"><dt>Activa</dt><dd class="pc-mono">' + esc(ro.active_route_id || '—') + '</dd><dt>Canary</dt><dd class="pc-mono">' + esc(ro.canary_route_id || '—') + (ro.canary_route_id ? ' (' + esc(ro.canary_percent) + '%)' : '') + '</dd><dt>Versión</dt><dd>' + esc(ro.version || 0) + '</dd></dl>' +
+    var byRoute = {};
+    d.routes.forEach(function (r) { byRoute[r.route_id] = r; });
+    var rl = function (id) { var r = byRoute[id]; return r ? 'v' + r.version + ' · ' + r.model.display_name : (id || '—'); };
+    var metricsText = function (m) {
+      if (!m || m.cases == null) return JSON.stringify(m || {});
+      return m.passed + '/' + m.cases + ' casos · ' + Math.round(Number(m.pass_rate) * 100) + ' %' + (m.latency_p95_ms != null ? ' · p95 ' + Math.round(m.latency_p95_ms) + ' ms' : '') + (m.cost_usd != null ? ' · USD ' + Number(m.cost_usd).toFixed(6) : '') +
+        Object.keys(m).filter(function (k) { return ['cases', 'passed', 'pass_rate', 'latency_p50_ms', 'latency_p95_ms', 'cost_usd', 'cost_per_case_usd'].indexOf(k) < 0; }).map(function (k) { return ' · ' + k + ' ' + (typeof m[k] === 'number' ? Math.round(m[k] * 1000) / 1000 : JSON.stringify(m[k])); }).join('');
+    };
+    html += '<section class="card stack"><h2>Rollout (' + esc(S.env) + ')</h2><dl class="pc-kv"><dt>Activa</dt><dd>' + esc(ro.active_route_id ? rl(ro.active_route_id) : '—') + '</dd><dt>Canary</dt><dd>' + esc(ro.canary_route_id ? rl(ro.canary_route_id) : '—') + (ro.canary_route_id ? ' (' + esc(ro.canary_percent) + '%)' : '') + '</dd><dt>Versión del rollout</dt><dd>' + esc(ro.version || 0) + '</dd></dl>' +
       (eng ? '<form class="stack" data-form="rollout" data-uc="' + esc(uc) + '"><div class="pc-grid"><div class="field"><label for="ro-act">Acción</label><select class="select" id="ro-act"><option value="activate">Activar ruta al 100 %</option><option value="canary">Canary</option><option value="promote">Promover canary</option><option value="clear_canary">Quitar canary</option><option value="rollback">Rollback a la anterior</option></select></div>' +
         '<div class="field"><label for="ro-route">Ruta</label><select class="select" id="ro-route">' + d.routes.filter(function (r) { return r.status === 'APPROVED' || r.status === 'ACTIVE' || r.status === 'CANARY'; }).map(function (r) { return '<option value="' + esc(r.route_id) + '">v' + esc(r.version) + ' · ' + esc(r.model.display_name) + ' · ' + esc(r.status) + '</option>'; }).join('') + '</select></div>' +
         '<div class="field"><label for="ro-pct">Canary %</label><input class="input" id="ro-pct" type="number" min="1" max="99" value="10"></div></div>' +
@@ -179,8 +187,8 @@
     }).join('') +
       (eng && d.prompts[0] ? '<form class="stack" data-form="new-prompt" data-uc="' + esc(uc) + '"><h3>Nueva versión de prompt (inmutable)</h3><div class="field"><label for="np-system">Sistema</label><textarea class="textarea pc-mono" id="np-system" rows="8">' + esc(d.prompts[0].system_text) + '</textarea></div><div class="field"><label for="np-task">Tarea</label><textarea class="textarea pc-mono" id="np-task" rows="4">' + esc(d.prompts[0].task_template) + '</textarea></div><input type="hidden" id="np-vars" value="' + esc(JSON.stringify(d.prompts[0].variables)) + '"><div class="field"><label for="np-note">Nota de cambio</label><input class="input" id="np-note" maxlength="500" required></div><div class="btn-row">' + btn('Guardar versión', { type: 'submit', style: 'secondary' }) + '</div></form>' : '') + '</section>';
     html += '<section class="card stack" style="margin-top:16px"><h2>Evaluaciones</h2><div class="pc-scroll"><table class="pc-table"><thead><tr><th>Cuándo</th><th>Suite</th><th>Ruta</th><th>Estado</th><th>Métricas</th><th>Real</th></tr></thead><tbody>' +
-      d.eval_runs.map(function (e) { return '<tr><td>' + esc(when(e.started_at)) + '</td><td>' + esc(e.suite) + '</td><td class="pc-mono">' + esc(e.route_id) + '</td><td>' + tag(e.status, e.status === 'passed' ? 'nopal' : e.status === 'running' ? 'ocre' : 'alerta') + '</td><td class="pc-mono">' + esc(JSON.stringify(e.metrics)) + '</td><td>' + (e.real_provider ? 'sí' : 'simulado') + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
-    html += '<section class="card stack" style="margin-top:16px"><h2>Historial de rollout</h2><ul>' + d.history.map(function (h) { return '<li>' + esc(when(h.at)) + ' · ' + esc(h.action) + ' · ' + esc(h.actor_id) + ' · <span class="pc-mono">' + esc(h.to_route_id || '') + '</span>' + (h.canary_percent ? ' (' + esc(h.canary_percent) + '%)' : '') + ' · ' + esc(h.reason || '') + '</li>'; }).join('') + '</ul></section>';
+      d.eval_runs.map(function (e) { return '<tr><td>' + esc(when(e.started_at)) + '</td><td>' + esc(e.suite) + '</td><td>' + esc(rl(e.route_id)) + '</td><td>' + tag(e.status, e.status === 'passed' ? 'nopal' : e.status === 'running' ? 'ocre' : 'alerta') + '</td><td>' + esc(metricsText(e.metrics)) + '</td><td>' + (e.real_provider ? 'sí' : 'simulado') + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
+    html += '<section class="card stack" style="margin-top:16px"><h2>Historial de rollout</h2><ul>' + d.history.map(function (h) { return '<li>' + esc(when(h.at)) + ' · ' + esc(h.action) + ' · ' + esc(h.actor_id) + ' · ' + esc(h.to_route_id ? rl(h.to_route_id) : '') + (h.canary_percent ? ' (' + esc(h.canary_percent) + '%)' : '') + ' · ' + esc(h.reason || '') + '</li>'; }).join('') + '</ul></section>';
     return html;
   }
 
@@ -268,7 +276,13 @@
     app.querySelectorAll('input[id], textarea[id], select[id]').forEach(function (el) { if (el.type !== 'hidden') vals[el.id] = el.value; });
     app.innerHTML = S.session ? shell(view()) : loginView();
     document.title = 'MainSpot · ' + (location.pathname === '/ingenieria' ? 'Engineering Console' : 'Administration');
-    if (!changed) Object.keys(vals).forEach(function (id) { var el = document.getElementById(id); if (el && el.tagName !== 'SELECT') el.value = vals[id]; });
+    // Un redibujo (datos que llegan) nunca debe cambiar lo que la persona eligió: también los <select>.
+    if (!changed) Object.keys(vals).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      if (el.tagName === 'SELECT') { if (Array.prototype.some.call(el.options, function (o) { return o.value === vals[id]; })) el.value = vals[id]; }
+      else el.value = vals[id];
+    });
     var t = changed ? app.querySelector('[data-focus]') : (focusId && document.getElementById(focusId));
     if (t) t.focus({ preventScroll: !changed });
   }
@@ -321,6 +335,7 @@
       });
     },
     'tenant-admin': function (form) {
+      if (!val('ta-op')) { toast('Elige una acción'); document.getElementById('ta-op').focus(); return; }
       var op = val('ta-op').split(':');
       var path = '/tenants/' + encodeURIComponent(form.dataset.id) + (op[0] === 'status' ? '/status' : '/data-classification');
       var body = op[0] === 'status' ? { status: op[1], reason: val('ta-reason') } : { classification: op[1], reason: val('ta-reason') };
@@ -358,7 +373,8 @@
   }
   document.addEventListener('DOMContentLoaded', function () {
     app = document.getElementById('app');
-    window.addEventListener('hashchange', render);
+    // Cada pantalla se abre con datos frescos (consumo, rutas y salud cambian mientras se opera).
+    window.addEventListener('hashchange', function () { S.data = {}; S.loading = {}; render(); });
     boot();
   });
 })();

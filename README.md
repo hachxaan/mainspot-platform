@@ -268,6 +268,18 @@ DEC-0001 (Q-CLASSIFIER = `override`, "Debe ser con TypeSave/Jev") abrió la eval
 - **Evidencia** (`jev_classification`, tenant-scoped): ver la migración 0012. No guarda más datos sensibles que `conversation_request.raw_message`; la retención de conversaciones (DEC-0021, §10.1) pone sus cuerpos raw a `NULL` a los 90 días.
 - **Apagado**: con Jev habilitado, `SIGTERM`/`SIGINT` esperan las clasificaciones pendientes de persistir. `npm start` no carga `.env` por sí mismo (usar el entorno del proceso, `docker compose` o `node --env-file=.env`).
 
+### 5.2 AI Core (issue #9) — IA generativa gobernada
+
+Un único despachador (`src/ai/`) con casos de uso, prompts y rutas versionados, rollout por entorno con canary
+y rollback sin redeploy, evaluaciones antes de aprobar, presupuestos con techo duro y trazas con costo del
+proveedor. Sobre él: Mi marca, Biblioteca, página con IA (diseño y edición con vista previa y aprobación),
+publicaciones de Facebook, atención con Jev + ledger único de respuestas, asistente con herramientas de solo
+lectura, campañas sin gasto, calendario editorial y resumen. Consolas de plataforma con MFA y step-up:
+`/plataforma` (Administration) y `/ingenieria` (Engineering Console). Proveedores reales solo con
+`AI_REAL_PROVIDERS=on` y negocios clasificados `synthetic`. Operación, rutas activas, estado GO/NO-GO y
+bloqueos: [`docs/architecture/ai-core.md`](docs/architecture/ai-core.md); resultados E01–E20:
+[`AI-CORE-RESULTS.md`](docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-RESULTS.md).
+
 ## 6. INC-003 — Website administration + dominio subdominio MainSpot (modo simulado)
 
 - **WebsiteService** (`src/website/`): plantilla estática XSS-safe con datos de negocio (nombre, giro, servicios, horarios, contacto); render determinista; **editor asistido por LN** (`edit-mapper.ts`, TENTATIVA/básico): "cambia el teléfono a …", "agrega la sección servicios", "agrega un servicio llamado …", etc. → parche estructurado → propuesta del INC-002.

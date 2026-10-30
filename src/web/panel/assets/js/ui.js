@@ -52,7 +52,7 @@
     if (!changes || !changes.length) return '';
     return '<div class="diff">' + changes.map(function (c) {
       var isAdd = c.field === 'services.add' || c.field === 'section.add', isRem = c.field === 'services.remove';
-      if (c.field === 'generic') return '<div class="diff-item"><div class="what">' + esc(c.label) + '</div><p>' + esc(c.after) + '</p></div>';
+      if (c.field === 'generic') return '<div class="diff-item">' + (c.label ? '<div class="what">' + esc(c.label) + '</div>' : '') + '<p class="diff-note">' + esc(c.after) + '</p></div>';
       var before = isAdd ? 'No aparece' : (c.before || 'Sin dato');
       var after = isRem ? 'Ya no aparece' : c.after;
       var what = isAdd ? c.label + ': ' + c.after : (isRem ? 'Lo que vendes: ' + c.before : c.label);

@@ -403,6 +403,7 @@ button.list-row:hover, a.list-row:hover { background: var(--surface-2); }
 .diff-item .cols > div + div .k { color: var(--rosa-strong); }
 .diff-item .v { font-weight: 700; }
 .diff-item .v.old { text-decoration: line-through; text-decoration-thickness: 1.5px; color: var(--ink-2); font-weight: 400; }
+.diff-item .diff-note { margin: 0; padding: 10px 14px; }
 
 /* Selector segmentado */
 .segmented { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: #E8E4EE; padding: 4px; border-radius: var(--r-pill); }

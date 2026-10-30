@@ -244,16 +244,22 @@ export class AiBusinessService {
       { today: new Date().toISOString().slice(0, 10), business, question: q }, this.tools(a),
       { domainCheck: (out, outs) => untracedNumbers(out.answer, outs).map((n) => `cifra sin fuente: ${n}`) });
     if (!res.ok) throw fail(res);
-    await this.deps.sink.write({ tenant_id: a.tenantId, actor_id: a.userId, actor_role: a.role, action: 'ai.assistant.answered', resource: `ai_invocation/${res.invocationId}`, request_id: a.requestId, decision: 'allow', result: `tools:${res.output.evidence.map((e) => e.tool).join(',')}`.slice(0, 200) });
-    return { answer: res.output.answer, evidence: res.output.evidence, suggested_action: res.output.suggested_action, tools_used: (res.toolOutputs ?? []).map((o) => String((o as { tool?: unknown }).tool ?? '')), model: res.route.model_id, simulated: res.simulated };
+    // La evidencia mostrada sale de las herramientas que REALMENTE se ejecutaron; un nombre que el
+    // modelo inventó no se muestra como fuente.
+    const used = [...new Set((res.toolOutputs ?? []).map((o) => String((o as { tool?: unknown }).tool ?? '')).filter(Boolean))];
+    const named = res.output.evidence.filter((e) => used.includes(e.tool));
+    const evidence = named.length ? named : used.map((tool) => ({ tool, summary: 'Consulta de solo lectura de tu cuenta' }));
+    await this.deps.sink.write({ tenant_id: a.tenantId, actor_id: a.userId, actor_role: a.role, action: 'ai.assistant.answered', resource: `ai_invocation/${res.invocationId}`, request_id: a.requestId, decision: 'allow', result: `tools:${used.join(',')}`.slice(0, 200) });
+    return { answer: res.output.answer, evidence, suggested_action: res.output.suggested_action, tools_used: used, model: res.route.model_id, simulated: res.simulated };
   }
 
   // ------------------------------------------------------------------ métricas e insights
 
   async metrics(tenantId: string, periodDays: number): Promise<Record<string, number | null>> {
     const p = this.deps.pool;
-    const one = async (sql: string): Promise<number | null> => {
-      const r = await p.query<{ v: string | null }>(sql, [tenantId, periodDays]);
+    // Cada consulta recibe solo los parámetros que declara (PostgreSQL rechaza parámetros sobrantes).
+    const one = async (sql: string, withPeriod = true): Promise<number | null> => {
+      const r = await p.query<{ v: string | null }>(sql, withPeriod ? [tenantId, periodDays] : [tenantId]);
       const v = r.rows[0]?.v;
       return v === null || v === undefined ? null : Number(v);
     };
@@ -263,7 +269,7 @@ export class AiBusinessService {
       posts_published: await one(`SELECT count(*) AS v FROM social_post WHERE tenant_id = $1 AND status = 'published' AND published_at > now() - make_interval(days => $2)`),
       posts_scheduled: await one(`SELECT count(*) AS v FROM social_post WHERE tenant_id = $1 AND status IN ('scheduled','awaiting_approval') AND created_at > now() - make_interval(days => $2)`),
       cases_total: await one(`SELECT count(*) AS v FROM engagement_case WHERE tenant_id = $1 AND created_at > now() - make_interval(days => $2)`),
-      cases_pending: await one(`SELECT count(*) AS v FROM engagement_case WHERE tenant_id = $1 AND state IN ('needs_human','failed')`),
+      cases_pending: await one(`SELECT count(*) AS v FROM engagement_case WHERE tenant_id = $1 AND state IN ('needs_human','failed')`, false),
       auto_replies: await one(`SELECT count(*) AS v FROM engagement_case WHERE tenant_id = $1 AND decision = 'auto_reply' AND created_at > now() - make_interval(days => $2)`),
       negative_cases: await one(`SELECT count(*) AS v FROM engagement_case WHERE tenant_id = $1 AND sentiment IN ('negative','mixed') AND created_at > now() - make_interval(days => $2)`),
       avg_rating: await one(`SELECT round(avg(star_rating)::numeric, 1) AS v FROM review WHERE tenant_id = $1 AND created_at > now() - make_interval(days => $2)`),

@@ -32,9 +32,13 @@
     rate_limited: 'Se alcanzó el máximo de respuestas automáticas por hora.',
     provider_failed: 'No se pudo publicar tras varios intentos. No se publicó nada.',
     delivery_uncertain: 'No sabemos si la respuesta llegó; revísala antes de reenviar.',
-    answered_in_reviews: 'Ya se respondió desde Reseñas.'
+    answered_in_reviews: 'Ya se respondió desde Reseñas.',
+    answered_elsewhere: 'Ya se respondió por otro camino; no se publica una segunda respuesta.',
+    semantic_unavailable: 'MainSpot no pudo leer el mensaje con su IA en este momento. Prefiere que lo revises.',
+    semantic_blocked_external: 'La lectura con IA está pausada por una autorización pendiente. Lo revisas tú.',
+    reply_needs_human: 'La respuesta propuesta pide tu revisión antes de publicarse.'
   };
-  var RISK = { legal: 'temas legales', compensation: 'compensaciones u ofertas', safety: 'salud o seguridad', threat: 'amenazas', accusation: 'acusaciones', private_data: 'datos privados' };
+  var RISK = { legal: 'temas legales', compensation: 'compensaciones u ofertas', safety: 'salud o seguridad', threat: 'amenazas o insultos', accusation: 'acusaciones', private_data: 'datos privados', urgent: 'algo urgente' };
   function reasonText(code) {
     if (!code) return '';
     if (code.indexOf('risk:') === 0) return 'Menciona ' + code.slice(5).split(',').map(function (f) { return RISK[f] || f; }).join(', ') + '. Necesita tu criterio.';
@@ -87,6 +91,7 @@
     return {
       id: c.case_id, ext: c.external_ref, source: c.origin, author: c.author_label, rating: c.rating, text: c.body, post: c.post_id,
       category: c.category, riskFlags: c.risk_flags || [], confidence: c.confidence == null ? null : Number(c.confidence),
+      sentiment: c.sentiment || null, semanticSource: c.semantic_source || null,
       status: status, rawState: c.state, at: at, updatedAt: MS.ts(c.updated_at), reasonCode: c.reason, reason: reasonText(c.reason),
       drafts: (c.drafts || []).map(function (t) { return { tone: '', text: t }; }),
       response: c.state === 'responded' ? { text: c.response_text, auto: auto, by: auto ? 'MainSpot' : MS.who(c.resolved_by), via: c.resolution_channel === 'telegram' ? 'tg' : 'panel', at: MS.ts(c.responded_at), policyVersion: c.policy_version, delivery: c.delivery_mode } : null,

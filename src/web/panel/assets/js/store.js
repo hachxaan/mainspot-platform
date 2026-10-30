@@ -193,7 +193,7 @@
   function changesOf(p) {
     var patches = (p.detail && Array.isArray(p.detail.patches)) ? p.detail.patches : [];
     if (!patches.length && p.detail && p.detail.ai && Array.isArray(p.detail.diff_sentences)) {
-      return p.detail.diff_sentences.slice(1).map(function (s) { return { field: 'generic', label: 'Cambio', before: '', after: String(s), sentence: String(s) }; });
+      return p.detail.diff_sentences.slice(1).map(function (s) { return { field: 'generic', label: '', before: '', after: String(s), sentence: String(s) }; });
     }
     return patches.map(function (x) {
       var f = PATCH_FIELD[x.field] || 'generic';

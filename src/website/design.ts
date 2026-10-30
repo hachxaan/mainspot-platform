@@ -35,6 +35,7 @@ export const IMAGE_SLOTS = ['hero', 'about', 'gallery_1', 'gallery_2', 'gallery_
 export const CTA_ACTIONS = ['call', 'whatsapp', 'directions', 'contact_section', 'services_section'] as const;
 export const ICONS = ['coffee', 'utensils', 'clock', 'map', 'phone', 'star', 'heart', 'leaf', 'sparkles', 'scissors', 'gift', 'truck', 'calendar', 'shield', 'users', 'check'] as const;
 export const MOODS = ['calido', 'moderno', 'elegante', 'fresco', 'artesanal', 'vibrante', 'minimalista'] as const;
+export const MOOD_LABEL: Record<(typeof MOODS)[number], string> = { calido: 'cálido', moderno: 'moderno', elegante: 'elegante', fresco: 'fresco', artesanal: 'artesanal', vibrante: 'vibrante', minimalista: 'minimalista' };
 
 export type BlockType = (typeof BLOCK_TYPES)[number];
 export type ImageSlot = (typeof IMAGE_SLOTS)[number];
@@ -334,6 +335,10 @@ function imageTag(asset: DesignImageAsset | undefined, sizes: string, eager: boo
 
 const SECTION_ID: Partial<Record<BlockType, string>> = { services: 'servicios', contact: 'contacto', hours: 'horario', about: 'nosotros', gallery: 'galeria', faq: 'preguntas' };
 
+function galleryAssets(stored: StoredDesign): DesignImageAsset[] {
+  return (['gallery_1', 'gallery_2', 'gallery_3'] as const).map((s) => stored.assets[s]).filter(Boolean) as DesignImageAsset[];
+}
+
 function renderBlock(b: DesignBlock, i: number, stored: StoredDesign, facts: SiteFacts): string {
   const cls = `blk blk-${b.type} v-${b.variant} t-${b.tone}`;
   const id = SECTION_ID[b.type] ? ` id="${SECTION_ID[b.type]}"` : '';
@@ -348,13 +353,15 @@ function renderBlock(b: DesignBlock, i: number, stored: StoredDesign, facts: Sit
     : '';
   switch (b.type) {
     case 'hero':
-      return `<section class="${cls}" aria-labelledby="b${i}h"><div class="wrap hero-grid">${asset ? `<figure class="hero-media">${imageTag(asset, '(min-width: 960px) 50vw, 100vw', true)}</figure>` : ''}<div class="hero-copy">${heading.replace('<h1>', `<h1 id="b${i}h">`)}${sub}${body}${cta}</div></div></section>`;
+      return `<section class="${cls}" aria-labelledby="b${i}h"><div class="wrap hero-grid${asset ? '' : ' no-media'}">${asset ? `<figure class="hero-media">${imageTag(asset, '(min-width: 960px) 50vw, 100vw', true)}</figure>` : ''}<div class="hero-copy">${heading.replace('<h1>', `<h1 id="b${i}h">`)}${sub}${body}${cta}</div></div></section>`;
     case 'gallery': {
-      const imgs = (['gallery_1', 'gallery_2', 'gallery_3'] as const).map((s) => stored.assets[s]).filter(Boolean) as DesignImageAsset[];
-      return `<section class="${cls}"${id}><div class="wrap">${heading}${sub}<div class="gallery">${imgs.map((a) => `<figure>${imageTag(a, '(min-width: 960px) 33vw, 100vw', false)}</figure>`).join('')}</div>${body}</div></section>`;
+      const imgs = galleryAssets(stored);
+      // Sin fotos ni texto no hay sección: un título sobre un hueco se ve roto.
+      if (!imgs.length && !body) return '';
+      return `<section class="${cls}"${id}><div class="wrap">${heading}${sub}${imgs.length ? `<div class="gallery">${imgs.map((a) => `<figure>${imageTag(a, '(min-width: 960px) 33vw, 100vw', false)}</figure>`).join('')}</div>` : ''}${body}</div></section>`;
     }
     case 'hours':
-      return `<section class="${cls}"${id}><div class="wrap narrow">${icon('clock')}${heading || '<h2>Horario</h2>'}${sub}<p class="fact">${esc(facts.hours || 'Pregúntanos por nuestro horario.')}</p>${cta}</div></section>`;
+      return `<section class="${cls}"${id}><div class="wrap">${icon('clock')}${heading || '<h2>Horario</h2>'}${sub}<p class="fact">${esc(facts.hours || 'Pregúntanos por nuestro horario.')}</p>${cta}</div></section>`;
     case 'contact': {
       const rows = [
         facts.phone ? `<li>${icon('phone')}<span>Teléfono</span><a href="tel:${esc(digitsOnly(facts.phone))}">${esc(facts.phone)}</a></li>` : '',
@@ -392,14 +399,15 @@ p{margin:0 0 1em}.lead{font-size:1.2em;color:var(--mu)}
 .blk-hero.v-overlay .hero-copy{position:absolute;inset:auto 0 0 0;padding:2rem 1.25rem 3rem;color:#fff}.blk-hero.v-overlay .hero-copy h1,.blk-hero.v-overlay .hero-copy .lead{color:#fff}
 .items{list-style:none;padding:0;margin:1.5rem 0 0;display:grid;gap:1.25rem}.item{background:var(--sf);border-radius:var(--r);padding:1.4rem;color:var(--tx)}.item h3,.item p{color:var(--tx)}
 .v-list .items{gap:.75rem}.v-list .item{display:grid;grid-template-columns:auto 1fr;column-gap:1rem}.v-list .item .ic{grid-row:span 2}
+.blk-faq .items{grid-template-columns:1fr!important;max-width:48rem}.blk-faq .item{display:block}.blk-faq .item h3{margin-bottom:.35rem}.items+.cta-row{margin-top:1.5rem}
 .ic{width:28px;height:28px;fill:none;stroke:var(--p);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;margin-bottom:.6rem}.t-inverted .ic{stroke:var(--op)}.t-accent .ic{stroke:var(--oa)}
 .with-media{display:grid;gap:2.5rem;align-items:center}.gallery{display:grid;gap:1rem;grid-template-columns:1fr}
 .contact-list{list-style:none;padding:0;margin:1rem 0;display:grid;gap:.85rem}.contact-list li{display:grid;grid-template-columns:28px 7rem 1fr;align-items:center;gap:.75rem;background:var(--sf);padding:1rem;border-radius:var(--r);color:var(--tx)}.contact-list li a{color:var(--p);word-break:break-word}.contact-list span{color:var(--tx)}
 .t-inverted .contact-list li,.t-accent .contact-list li{color:var(--tx)}.fact{font-size:1.2rem;font-weight:600}
 footer{padding:2.5rem 0 3rem;border-top:1px solid color-mix(in srgb,var(--tx) 12%,transparent);color:var(--mu);font-size:.9rem}footer p{margin:.25rem 0}
 .preview-banner{background:#1d5c2e;color:#fff;text-align:center;padding:.6rem;font-weight:600}
-@media (min-width:760px){.items{grid-template-columns:repeat(2,1fr)}.v-grid .items,.v-cards .items{grid-template-columns:repeat(3,1fr)}.gallery{grid-template-columns:repeat(3,1fr)}}
-@media (min-width:960px){.blk-hero.v-split .hero-grid{grid-template-columns:1.05fr .95fr}.blk-hero.v-split .hero-media{order:2}.with-media{grid-template-columns:.9fr 1.1fr}.v-stacked .with-media{grid-template-columns:1fr}.blk-hero.v-overlay .hero-copy{padding:3rem 4rem 4rem;max-width:60rem}}
+@media (min-width:760px){.items{grid-template-columns:repeat(2,1fr)}.v-grid .items,.v-cards .items{grid-template-columns:repeat(3,1fr)}.v-grid .items:has(>li:nth-child(4):last-child),.v-cards .items:has(>li:nth-child(4):last-child){grid-template-columns:repeat(2,1fr)}.gallery{grid-template-columns:repeat(3,1fr)}}
+@media (min-width:960px){.blk-hero.v-split .hero-grid{grid-template-columns:1.05fr .95fr}.blk-hero.v-split .hero-grid.no-media{grid-template-columns:1fr}.hero-grid.no-media .hero-copy{max-width:52rem}.blk-hero.v-split .hero-media{order:2}.with-media{grid-template-columns:.9fr 1.1fr}.v-stacked .with-media{grid-template-columns:1fr}.blk-hero.v-overlay .hero-copy{padding:3rem 4rem 4rem;max-width:60rem}}
 @media (max-width:520px){.contact-list li{grid-template-columns:28px 1fr}.contact-list li>span:first-of-type{display:none}.top nav{display:none}}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}`;
 }
@@ -410,10 +418,13 @@ export interface DesignRenderOptions { previewBanner?: string | null; version?: 
 export function renderDesignedSite(stored: StoredDesign, facts: SiteFacts, opts: DesignRenderOptions = {}): string {
   const { palette } = accessiblePalette(stored.design.theme.palette);
   const blocks = stored.design.blocks.map((b, i) => renderBlock(b, i, stored, facts)).join('\n');
-  const nav = stored.design.blocks
-    .filter((b) => SECTION_ID[b.type])
+  const linked = stored.design.blocks.filter((b) => SECTION_ID[b.type] && !(b.type === 'gallery' && !galleryAssets(stored).length && !b.body));
+  // Máximo 5 enlaces; «Contacto» siempre queda si existe.
+  const contact = linked.find((b) => b.type === 'contact');
+  const shown = linked.length > 5 && contact ? [...linked.filter((b) => b !== contact).slice(0, 4), contact] : linked.slice(0, 5);
+  const nav = shown
     .map((b) => `<li><a href="#${SECTION_ID[b.type]}">${esc(b.heading && b.heading.length <= 24 ? b.heading : ({ services: 'Servicios', contact: 'Contacto', hours: 'Horario', about: 'Nosotros', gallery: 'Galería', faq: 'Preguntas' } as Record<string, string>)[b.type] ?? '')}</a></li>`)
-    .slice(0, 5).join('');
+    .join('');
   const illustrated = Object.values(stored.assets).some((a) => a?.is_illustration);
   const banner = opts.previewBanner ? `<div class="preview-banner">${esc(opts.previewBanner)}</div>` : '';
   return `<!doctype html>
@@ -421,6 +432,7 @@ export function renderDesignedSite(stored: StoredDesign, facts: SiteFacts, opts:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>${esc(stored.design.seo.title)}</title>
 <meta name="description" content="${esc(stored.design.seo.description)}">
 <meta name="theme-color" content="${palette.primary}">

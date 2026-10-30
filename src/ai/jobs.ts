@@ -16,6 +16,9 @@ import type { AiRegistry } from './registry.ts';
 
 export const JOB_LEASE_SECONDS = 600;
 export const JOB_MAX_ATTEMPTS = 3;
+/** Mucho más que el deadline máximo de una llamada (timeout + reparación): si sigue `running`, su proceso cayó. */
+const ABANDONED_AFTER_MINUTES = 15;
+const RECONCILE_EVERY_MS = 5 * 60_000;
 
 export interface AiJobRow {
   job_id: string; tenant_id: string; kind: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -148,14 +151,32 @@ export class AiJobs {
 
   start(intervalMs: number): void {
     if (this.timer) return;
+    let lastReconcile = 0;
     const run = () => {
       if (this.running) return;
       this.running = true;
-      this.tick().catch((err: unknown) => log.error('ai.jobs.tick_failed', 'ai job tick failed', { error_name: err instanceof Error ? err.name : 'unknown' }))
+      const reconcile = Date.now() - lastReconcile > RECONCILE_EVERY_MS;
+      if (reconcile) lastReconcile = Date.now();
+      (reconcile ? this.reconcileAbandoned().then(() => this.tick()) : this.tick())
+        .catch((err: unknown) => log.error('ai.jobs.tick_failed', 'ai job tick failed', { error_name: err instanceof Error ? err.name : 'unknown' }))
         .finally(() => { this.running = false; });
     };
     this.timer = setInterval(run, intervalMs);
     this.timer.unref();
+  }
+
+  /**
+   * Invocaciones que siguen `running` mucho después de cualquier deadline (el proceso cayó a mitad
+   * de la llamada): resultado incierto. Se cierran como fallidas SIN costo informado, de modo que
+   * el gasto sigue contando la reserva completa (el proveedor pudo haber cobrado). El job dueño se
+   * recupera por su lease y reintenta con una clave de intento nueva.
+   */
+  async reconcileAbandoned(olderThanMinutes = ABANDONED_AFTER_MINUTES): Promise<number> {
+    const r = await this.pool.query(
+      `UPDATE ai_invocation SET status = 'failed', error_code = 'uncertain_abandoned', finished_at = now()
+        WHERE status = 'running' AND created_at < now() - make_interval(mins => $1)`, [olderThanMinutes]);
+    if (r.rowCount) log.warn('ai.invocation.abandoned', 'closed invocations left running by a crashed process', { count: r.rowCount });
+    return r.rowCount ?? 0;
   }
 
   stop(): void {

@@ -54,6 +54,21 @@ const OPEN_PROPOSAL_STATES = ['drafted', 'awaiting_confirmation', 'confirmed', '
  * `exportSkip`: columnas que nunca salen en la exportación (credenciales derivadas).
  */
 const TENANT_TABLES: ReadonlyArray<{ table: string; key: string; exportSkip?: readonly string[] }> = [
+  // AI Core (issue #9): acceso de soporte, ledger de respuestas, marketing, jobs, biblioteca y
+  // marca (antes de social_post por editorial_suggestion). Los bytes de imágenes no van en el
+  // JSON de exportación (se exporta su metadata y sha256). ai_invocation NO se borra: se
+  // re-etiqueta en la anonimización para conservar el costo de IA (presupuestos).
+  { table: 'platform_support_access', key: 'tenant_id' },
+  { table: 'response_ledger', key: 'tenant_id' },
+  { table: 'editorial_suggestion', key: 'tenant_id' },
+  { table: 'marketing_campaign', key: 'tenant_id' },
+  { table: 'ai_insight', key: 'tenant_id' },
+  { table: 'ai_job', key: 'tenant_id', exportSkip: ['claim_token'] },
+  { table: 'media_variant', key: 'tenant_id', exportSkip: ['bytes'] },
+  { table: 'media_asset', key: 'tenant_id', exportSkip: ['bytes'] },
+  { table: 'brand_fact', key: 'tenant_id' },
+  { table: 'brand_profile', key: 'tenant_id' },
+  { table: 'ai_budget', key: 'tenant_id' },
   // DEV-E2E-04: conexiones con proveedores reales (tokens cifrados nunca se exportan) y cursor
   // de reseñas de Google. Sin estas filas la baja (DELETE client) fallaría por FK.
   { table: 'provider_oauth_state', key: 'tenant_id', exportSkip: ['state_hash', 'verifier_box'] },
@@ -329,6 +344,20 @@ export class RetentionService {
            FROM actors, requests
           WHERE e.tenant_id = $1 AND actors.actor_id = e.actor_id AND requests.request_id = e.request_id`,
         [tenantId, anonymousId]);
+      // AI Core: el costo y el uso de IA se conservan bajo el id anónimo (los presupuestos globales
+      // los suman); se quitan contenido, actores, claves y trazas que lo identificarían.
+      const aiRekeyed = await client.query(
+        `UPDATE ai_invocation SET tenant_id = $2, actor_id = 'anon_actor', request_id = 'anon_req_' || gen_random_uuid(),
+            idempotency_key = 'anon_' || invocation_id, trace_id = 'anon', consent_ref = NULL, job_id = NULL,
+            input_sha256 = NULL, output = NULL, validation = '{}'
+          WHERE tenant_id = $1`, [tenantId, anonymousId]);
+      // Auditoría de plataforma: append-only salvo este re-etiquetado (migración 0027).
+      await client.query(`SELECT set_config('mainspot.anonymizing_tenant', $1, true)`, [tenantId]);
+      const platformRekeyed = await client.query(
+        `UPDATE platform_audit_event SET tenant_id = $2, reason = NULL, request_id = NULL,
+            resource = CASE WHEN resource IS NULL THEN NULL ELSE regexp_replace(resource, '[/:].*$', '') END
+          WHERE tenant_id = $1`, [tenantId, anonymousId]);
+      await client.query(`SELECT set_config('mainspot.anonymizing_tenant', '', true)`);
       const deleted: Record<string, number> = {};
       for (const { table, key } of TENANT_TABLES) {
         const res = await client.query(`DELETE FROM ${table} WHERE ${key} = $1`, [tenantId]);
@@ -347,7 +376,7 @@ export class RetentionService {
       await this.deps.sink.write({
         tenant_id: anonymousId, actor_id: RETENTION_ACTOR, actor_role: null, action: 'tenant.anonymized',
         resource: 'tenant', request_id: runId, decision: 'allow',
-        result: `rows_deleted:${removed},audit_rekeyed:${audit.rowCount ?? 0},aggregates_rekeyed:${analytics.rowCount ?? 0}`,
+        result: `rows_deleted:${removed},audit_rekeyed:${audit.rowCount ?? 0},aggregates_rekeyed:${analytics.rowCount ?? 0},ai_rekeyed:${aiRekeyed.rowCount ?? 0},platform_audit_rekeyed:${platformRekeyed.rowCount ?? 0}`,
       }, client);
       await this.assertNoTraces(client, ids, anonymousId);
       return { anonymousId };

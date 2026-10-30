@@ -18,7 +18,7 @@ import type { Answer, ChoiceAnswer } from '../jev/types.ts';
 import type { BrandService, FactKey } from '../brand/service.ts';
 import type { MediaService, MediaAssetRow } from '../media/service.ts';
 import { AppError } from '../shared/errors.ts';
-import { accessiblePalette, DESIGN_SCHEMA_VERSION, validateDesign, type DesignImageAsset, type ImageSlot, type SiteDesign, type StoredDesign } from './design.ts';
+import { accessiblePalette, DESIGN_SCHEMA_VERSION, MOOD_LABEL, validateDesign, type DesignImageAsset, type ImageSlot, type SiteDesign, type StoredDesign } from './design.ts';
 import { applyEdit } from './design-edit.ts';
 import { normalizeWebsiteData, type WebsiteData } from './template.ts';
 import { AI_DESIGN_PROPOSAL_TYPE, AI_EDIT_PROPOSAL_TYPE, prepareAiSiteChange, type SiteProposalDeps } from './site-proposals.ts';
@@ -158,8 +158,8 @@ export class AiSiteService {
     };
     const after: WebsiteData = normalizeWebsiteData({ ...current, design: stored });
     const summary = Number(site.published_version) > 0 ? 'Nuevo diseño de tu página, hecho a la medida de tu negocio.' : 'Primera versión de tu página con un diseño hecho a la medida de tu negocio.';
-    const sentences = [summary, `Estilo ${design.theme.mood} con ${design.blocks.length} secciones.`,
-      ...(Object.keys(assets).length ? [`Usa ${Object.keys(assets).length} imagen(es) de tu biblioteca.`] : ['Sin imágenes por ahora (puedes subir fotos a tu biblioteca).'])];
+    const sentences = [summary, `Estilo ${MOOD_LABEL[design.theme.mood] ?? design.theme.mood} con ${design.blocks.length} secciones.`,
+      ...(Object.keys(assets).length ? [`Usa ${Object.keys(assets).length === 1 ? '1 imagen' : `${Object.keys(assets).length} imágenes`} de tu biblioteca.`] : ['Sin imágenes por ahora (puedes subir fotos a tu biblioteca).'])];
     await jc.progress({ step: 'proposal' });
     const out = await prepareAiSiteChange(this.deps.site, { tenantId: job.tenant_id, actorId: job.created_by, actorRole: actor.role, requestId: `job:${job.job_id}` }, {
       type: AI_DESIGN_PROPOSAL_TYPE, after, summary, sentences,

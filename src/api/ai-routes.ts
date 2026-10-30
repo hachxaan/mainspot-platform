@@ -99,7 +99,17 @@ export function aiRouter(deps: AiRouteDeps): Router {
   // ------------------------------------------------------------------ Brand Studio
   router.get('/ai/brand', perm('brand.read'), ah(async (req, res) => {
     const a = actorOf(req);
-    const cur = await deps.brand.current(a.tenantId);
+    let cur = await deps.brand.current(a.tenantId);
+    if (cur.version === 0) {
+      // Inicialización perezosa: lo que el dueño escribió al crear su página es dato propio (confirmado).
+      const site = await deps.websiteRepo.websiteForTenant(a.tenantId);
+      if (site) {
+        const d = deps.websiteRepo.dataOf(site);
+        const imported = await deps.brand.importFromWebsite({ tenantId: a.tenantId, userId: 'system:brand-import', role: null, requestId: a.requestId },
+          { name: d.name || site.site_name, line: d.line, about: d.about, address: d.address, hours: d.hours, services: d.services });
+        if (imported) cur = await deps.brand.current(a.tenantId);
+      }
+    }
     res.json({
       version: cur.version,
       facts: FACT_KEYS.map((k) => {

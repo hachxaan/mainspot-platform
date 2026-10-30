@@ -215,10 +215,21 @@ export async function prepareAiSiteChange(deps: SiteProposalDeps, input: SitePro
   if (change.type === AI_EDIT_PROPOSAL_TYPE && base === 0) {
     throw new AppError(409, 'validation_error', 'Tu página todavía no está publicada: primero publica su primera versión.');
   }
-  return openOrCreate(deps, input, change.type, {
+  const out = await openOrCreate(deps, input, change.type, {
     summary: change.summary.slice(0, 240),
     detail: { after: change.after, diff_sentences: change.sentences.slice(0, 20), patches: [], base_version: base, ai: change.ai },
   }, (open) => (open.detail as { ai?: { job_id?: unknown } }).ai?.job_id !== change.ai.job_id);
+  // Página sin publicar: el diseño reemplaza a la «primera versión» clásica pendiente (una sola
+  // primera publicación). Se descarta sin publicar nada.
+  if (change.type === AI_DESIGN_PROPOSAL_TYPE && base === 0 && out.created) {
+    const open = await deps.pool.query<{ proposal_id: string }>(
+      'SELECT proposal_id FROM action_proposal WHERE tenant_id = $1 AND proposal_type = $2 AND status = ANY($3::text[])',
+      [input.tenantId, INITIAL_PROPOSAL_TYPE, ['awaiting_confirmation', 'confirmed', 'preview_ready']]);
+    for (const row of open.rows) {
+      await rejectProposal(deps.machine, { tenantId: input.tenantId, proposalId: row.proposal_id, actorId: input.actorId, requestId: input.requestId }).catch(() => undefined);
+    }
+  }
+  return out;
 }
 
 export interface RestoreInput {

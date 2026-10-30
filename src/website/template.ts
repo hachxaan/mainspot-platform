@@ -82,6 +82,7 @@ export function renderSite(data: WebsiteData, opts: RenderOptions = {}): string 
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>${esc(data.name || 'Mi negocio')}</title>
 <style>
   :root { color-scheme: light; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }

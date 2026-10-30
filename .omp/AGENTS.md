@@ -41,3 +41,11 @@ MainSpot recibe los webhooks reales de Telegram mediante `https://tg.mainspot.io
 - Fuente protegida de Telegram: `~/.config/mainspot/telegram-webhook.env` (0600); secreto obligatorio para el webhook incluso en desarrollo. `MAINSPOT_DEV_TELEGRAM=real` requiere bot y secreto explícitos en ese archivo. Por defecto las respuestas siguen simuladas; Google y Meta no se activan.
 - Configuración de WireGuard, proxy y certificados persistente: **no reinstalar ni inspeccionar preventivamente al abrir una sesión**. Utilizar directamente los servicios; investigar solo ante un fallo observable o para ejecutar una verificación pendiente expresamente encargada. No tocar el bootstrap independiente de `app.mainspot.local.io`.
 - Documentación y estados de aceptación: `docs/architecture/telegram-webhook-starlink.md`. `~/wireguard-telegram/README.md` conserva el procedimiento local y las referencias privadas; no subir ese directorio. No sustituir una prueba HTTP local por KVM → Express ni una simulación por un update auténtico.
+
+## AI Core (issue #9) — laboratorio con proveedores reales
+
+- Operación y estado: `docs/architecture/ai-core.md`; resultados E01–E20: `docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-RESULTS.md`.
+- `~/.config/mainspot/ai-core.env` (0600, lo carga `scripts/dev-panel.sh`): `AI_ENVIRONMENT=lab`, `AI_REAL_PROVIDERS=on`, `OPENROUTER_API_KEY`, `TYPESAFE_API_KEY` vigente (la de `.env` del repo da 403), `PLATFORM_MFA_KEY`. No imprimir ni copiar valores.
+- Consolas: `https://app.mainspot.local.io/plataforma` (Administration) y `/ingenieria` (Engineering Console). Credenciales de laboratorio (contraseña + secreto TOTP) en `~/.config/mainspot/platform-{lab-admin,lab-ingenieria,carlos}.txt` (0600). Crear más con `scripts/platform-user.ts`.
+- Proveedores reales SOLO para negocios marcados `synthetic` por platform_admin; techo de laboratorio USD 25 (decisión del propietario). Preferir modelos de Anthropic (Haiku 5.5) donde pasen la suite; cuidar el consumo.
+- E2E real: `bash -c 'set -a; . ./.env; set +a; node scripts/ai-core-lab-e2e.ts'` (≈ 2–3 min, ≈ USD 0.01; crea un negocio sintético nuevo por corrida).

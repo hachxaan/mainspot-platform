@@ -63,7 +63,7 @@
         A.jobs[id] = r.data.job;
         if (before !== r.data.job.status) {
           if (r.data.job.kind.indexOf('website.') === 0) MS.refresh(['proposals', 'requests', 'website'], true);
-          if (r.data.job.status === 'succeeded') A.need('media', true);
+          if (r.data.job.status === 'succeeded') { A.need('media', true); A.need('status', true); }
         }
         emit();
       });
@@ -141,12 +141,15 @@
     html += '</div>';
     return Object.assign({ title: 'IA de tu negocio', html: html }, { tab: 'ia', screen: 'AI' });
   }
+  var TOOL_LABEL = { account_status: 'Tu cuenta y plan', website_status: 'Tu página', social_posts: 'Publicaciones', attention_cases: 'Atención a clientes', activity_metrics: 'Métricas de actividad', connections_status: 'Conexiones con Google y Facebook', brand_facts: 'Mi marca' };
+  var NEXT_STEP = { open_page: ['Ver tu página', '#/pagina'], review_pending: ['Revisar cambios pendientes', '#/cambios'], review_cases: ['Ir a Atención', '#/atencion'], create_post: ['Crear una publicación', '#/ia/publicar'], plan_campaign: ['Planear una campaña', '#/ia/campanas'], edit_brand: ['Revisar Mi marca', '#/ia/marca'] };
   function answerHtml(a) {
     if (!a) return '';
     if (a.error) return '<div class="banner banner-alerta" role="alert">' + icon('triangle-alert') + '<span>' + esc(a.error) + '</span></div>';
+    var next = NEXT_STEP[a.suggested_action];
     return '<div class="card stack" style="margin-top:12px"><div class="row" style="justify-content:space-between"><strong>Respuesta</strong>' + simTag(a.simulated) + '</div><p>' + esc(a.answer) + '</p>' +
-      (a.evidence && a.evidence.length ? '<details><summary>De dónde sale</summary><ul>' + a.evidence.map(function (e) { return '<li><strong>' + esc(e.tool) + ':</strong> ' + esc(e.summary) + '</li>'; }).join('') + '</ul></details>' : '') +
-      (a.suggested_action ? '<p class="tiny">' + icon('info', 'ic-sm') + ' ' + esc(a.suggested_action) + '</p>' : '') + '</div>';
+      (a.evidence && a.evidence.length ? '<details><summary>De dónde sale</summary><ul>' + a.evidence.map(function (e) { return '<li><strong>' + esc(TOOL_LABEL[e.tool] || e.tool) + ':</strong> ' + esc(e.summary) + '</li>'; }).join('') + '</ul></details>' : '') +
+      (next ? '<a class="btn btn-secondary btn-block" href="' + next[1] + '">' + esc(next[0]) + '</a>' : '') + '</div>';
   }
 
   /* ======================================================== página */
@@ -344,7 +347,7 @@
       return '<section class="card stack" style="margin-top:12px"><div class="row" style="justify-content:space-between"><h2 style="font-size:var(--fs-lg)">' + esc(p.name || c.objective) + '</h2>' + UI.tag({ proposed: 'Propuesta', plan_approved: 'Plan aprobado (sin gasto)', rejected: 'Descartada' }[c.status] || c.status, c.status === 'plan_approved' ? 'nopal' : 'neutral') + '</div>' +
         '<p>' + esc(p.objective || '') + '</p>' +
         (p.audience ? '<p class="tiny"><strong>Público:</strong> ' + esc(p.audience.description) + ' · ' + esc(p.audience.location) + '</p>' : '') +
-        '<p class="tiny"><strong>Duración:</strong> ' + esc(p.duration_days) + ' días · <strong>Canales:</strong> ' + esc((p.channels || []).join(', ')) + '</p>' +
+        '<p class="tiny"><strong>Duración:</strong> ' + esc(p.duration_days) + ' días · <strong>Canales:</strong> ' + esc((p.channels || []).map(function (c) { return { facebook_post: 'Publicaciones en Facebook', facebook_ads: 'Anuncios de Facebook (requieren autorización)' }[c] || c; }).join(', ')) + '</p>' +
         '<p class="tiny"><strong>Presupuesto propuesto:</strong> ' + (budget.proposed_total_mxn != null ? '$' + esc(budget.proposed_total_mxn) + ' MXN' : 'sin monto (no lo diste)') + (budget.rationale ? ' — ' + esc(budget.rationale) : '') + '</p>' +
         ((p.creatives || []).length ? '<details><summary>Textos propuestos (' + p.creatives.length + ')</summary><ul>' + p.creatives.map(function (v) { return '<li style="white-space:pre-wrap">' + esc(v.text) + '</li>'; }).join('') + '</ul></details>' : '') +
         ((p.requires_authorization || []).length ? '<p class="tiny"><strong>Para activarla haría falta:</strong> ' + esc(p.requires_authorization.join('; ')) + '</p>' : '') +
@@ -394,6 +397,7 @@
       API.post('/ai/assistant', { question: q }, { idempotencyKey: newKey() }).then(function (r) {
         busy(btn, false);
         mem().answer = r.ok ? r.data : { error: r.error.message };
+        if (r.ok) A.need('status', true);
         emit();
         var a = document.getElementById('ai-answer');
         if (a) a.focus && a.focus();

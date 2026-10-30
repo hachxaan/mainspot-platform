@@ -351,7 +351,10 @@
     if (c.category) {
       var risks = (c.riskFlags || []).length ? 'Delicado' : (c.category === 'other' ? 'Requiere criterio' : 'Seguro');
       html += '<section class="why"><h2>' + (c.response && c.response.auto ? 'Por qué respondió MainSpot solo' : (c.reason ? 'Por qué te lo paso' : 'Qué entendió MainSpot')) + '</h2><p>' + esc(c.reason) + '</p>' +
-        '<dl class="why-grid"><div><dt>Qué es</dt><dd>' + esc(MS.agent.CAT_LABEL[c.category] || 'Otro tema') + '</dd></div><div><dt>Riesgo</dt><dd>' + esc(risks) + '</dd></div><div><dt>Seguridad</dt><dd>' + (c.confidence != null ? Math.round(c.confidence * 100) + '%' : '—') + '</dd></div></dl></section>';
+        '<dl class="why-grid"><div><dt>Qué es</dt><dd>' + esc(MS.agent.CAT_LABEL[c.category] || 'Otro tema') + '</dd></div><div><dt>Riesgo</dt><dd>' + esc(risks) + '</dd></div>' +
+        (c.sentiment ? '<div><dt>Tono</dt><dd>' + esc({ positive: 'Positivo', neutral: 'Neutral', negative: 'Negativo', mixed: 'Mixto' }[c.sentiment] || c.sentiment) + '</dd></div>' : '') +
+        '<div><dt>Seguridad</dt><dd>' + (c.confidence != null ? Math.round(c.confidence * 100) + '%' : '—') + '</dd></div></dl>' +
+        (c.semanticSource === 'jev' ? '<p class="tiny">Leído con la IA de MainSpot (Jev). La decisión de publicar sigue tus reglas.</p>' : '') + '</section>';
     }
     if (c.response) {
       html += '<section class="answer" aria-labelledby="ans-t" id="case-answer"><h2 id="ans-t">' + (c.response.auto ? 'Respuesta de MainSpot' : 'Respuesta publicada') + '</h2><p>' + esc(c.response.text) + '</p><p class="tiny">' + (c.response.auto ? 'Atendido por MainSpot con tu regla versión ' + esc(c.response.policyVersion) : 'Aprobó ' + esc(c.response.by) + (c.response.via === 'tg' ? ' desde Telegram' : ' desde el panel')) + ', ' + esc(MS.when(c.response.at)) + '. ' + (c.response.delivery === 'real' ? 'Enviada al proveedor.' : 'Publicación simulada.') + '</p></section>';

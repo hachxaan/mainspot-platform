@@ -13,10 +13,15 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { bootApi, authHeaders, api, login, type TestApi } from '../helpers/testdb.ts';
 import { createTenantWithPlan, countRows } from '../helpers/tenants.ts';
 import { AiDispatcher } from '../../src/ai/dispatcher.ts';
+import { AuditSink } from '../../src/audit/sink.ts';
 import { currentStep, totpAt } from '../../src/platform/auth.ts';
+import { RetentionService } from '../../src/retention/service.ts';
 
 const DOMAIN = 'mainspot.test';
 const ENV = 'test';
@@ -111,6 +116,43 @@ test('E05/E07/E13: diseño IA → vista previa → aprobación → HTML sin scri
   assert.equal(archive.status, 409, 'una imagen usada por la página publicada no se archiva');
 });
 
+test('DEC-0024/0027: un negocio que usó la IA se exporta y se anonimiza sin rastros; el costo de IA queda re-etiquetado', async () => {
+  const a = await siteWithDesign('client_aix');
+  const site = (await t.pool.query<{ slug: string }>('SELECT slug FROM client_website WHERE tenant_id = $1', [a.tenant])).rows[0]!;
+  // Rastro de plataforma sobre el negocio: acceso de soporte y su evento de auditoría.
+  const staff = await t.handle.platformAuth.createUser({ login: `sop-${randomUUID().slice(0, 6)}`, displayName: 'Soporte', password: 'Plataforma-Soporte-2026', roles: ['platform_support'], grantedBy: 'test' });
+  await t.pool.query(`INSERT INTO platform_support_access (access_id, tenant_id, platform_user_id, reason, expires_at) VALUES ($1,$2,$3,'Revisión del diseño pedida por el dueño', now() + interval '1 hour')`,
+    [`psa_${randomUUID()}`, a.tenant, staff.platform_user_id]);
+  await t.pool.query(`INSERT INTO platform_audit_event (event_id, actor_id, actor_roles, action, resource, tenant_id, decision, result, reason, request_id)
+    VALUES ($1,$2,'{platform_support}','platform.support.grant',$3,$4,'allow','minutes:60',$5,$6)`,
+    [`pae_${randomUUID()}`, `platform:${staff.platform_user_id}`, `client/${a.tenant}`, a.tenant, `Pedido del negocio ${site.slug}`, `req_${randomUUID()}`]);
+  await assert.rejects(t.pool.query(`UPDATE platform_audit_event SET reason = NULL WHERE tenant_id = $1`, [a.tenant]), 'fuera de la anonimización sigue siendo append-only');
+  const spentBefore = (await t.pool.query<{ n: string; usd: string }>(`SELECT count(*) AS n, COALESCE(sum(COALESCE(cost_usd, reserved_usd)), 0) AS usd FROM ai_invocation WHERE tenant_id = $1`, [a.tenant])).rows[0]!;
+  assert.ok(Number(spentBefore.n) > 0);
+
+  const retention = new RetentionService({ pool: t.pool, sink: new AuditSink(t.pool) });
+  const exportDir = await mkdtemp(path.join(os.tmpdir(), 'mainspot-ai-exit-'));
+  try {
+    const exit = await retention.confirmExit({ tenantId: a.tenant, confirmedBy: 'operador@mainspot', exportDir });
+    const exported = JSON.parse(await readFile(exit.exportPath, 'utf8')) as Record<string, Array<Record<string, unknown>>>;
+    assert.ok(exported['brand_fact']!.length > 0 && exported['ai_job']!.length > 0 && exported['media_asset']!.length > 0, 'la exportación incluye marca, jobs y biblioteca');
+    assert.ok([...exported['media_asset']!, ...exported['media_variant']!].every((m) => !('bytes' in m)), 'sin bytes de imágenes en el JSON');
+    await t.pool.query(`UPDATE tenant_exit SET confirmed_at = now() - interval '31 days', anonymize_after = now() - interval '1 day' WHERE tenant_id = $1`, [a.tenant]);
+    const report = await retention.run({ trigger: 'manual', dryRun: false });
+    assert.deepEqual([report.status, report.totals.tenantsAnonymized], ['completed', 1], JSON.stringify(report));
+  } finally {
+    await rm(exportDir, { recursive: true, force: true });
+  }
+  const anonId = (await t.pool.query<{ tenant_id: string }>(`SELECT tenant_id FROM audit_event WHERE action = 'tenant.anonymized' ORDER BY ts DESC LIMIT 1`)).rows[0]!.tenant_id;
+  const spentAfter = (await t.pool.query<{ n: string; usd: string }>(`SELECT count(*) AS n, COALESCE(sum(COALESCE(cost_usd, reserved_usd)), 0) AS usd FROM ai_invocation WHERE tenant_id = $1 AND output IS NULL AND actor_id = 'anon_actor'`, [anonId])).rows[0]!;
+  assert.deepEqual(spentAfter, spentBefore, 'el gasto de IA sigue contando para los presupuestos, sin contenido ni actores');
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM platform_audit_event WHERE tenant_id = $1 AND resource = 'client' AND reason IS NULL AND request_id IS NULL AND action = 'platform.support.grant'`, [anonId]), 1,
+    'la auditoría de plataforma conserva quién/qué/cuándo bajo el id anónimo');
+  for (const table of ['brand_fact', 'media_asset', 'ai_job', 'platform_support_access', 'response_ledger']) {
+    assert.equal(await countRows(t, `SELECT count(*) AS n FROM ${table} WHERE tenant_id = $1`, [a.tenant]), 0, `${table} borrada`);
+  }
+});
+
 test('E06/E18: la edición usa la ruta fijada al crear el job aunque cambie el rollout; base_version protege publicaciones', async () => {
   const a = await siteWithDesign('client_aif');
   assert.equal((await call(a.token, `/conversation/proposals/${a.result.proposal_id}/approve`, 'POST')).body.status, 'published');
@@ -177,6 +219,24 @@ test('E14: un job que cae a mitad se reintenta con su lease y reutiliza el paso 
   assert.equal(done?.status, 'succeeded', JSON.stringify(done));
   assert.equal(await countRows(t, `SELECT count(*) AS n FROM ai_invocation WHERE job_id = $1 AND use_case_id = 'website.initial.design' AND status = 'succeeded'`, [job.job_id]), 1, 'el diseño se generó una sola vez');
   assert.equal(await countRows(t, `SELECT count(*) AS n FROM action_proposal WHERE tenant_id = $1 AND proposal_type = 'website.ai_design'`, [a.tenant]), 1, 'una sola propuesta');
+
+  // Proceso caído A MITAD de la llamada al proveedor: la invocación queda `running` (resultado incierto).
+  // La reconciliación la cierra como fallida sin costo informado (cuenta la reserva completa).
+  const paid = (await t.pool.query<{ invocation_id: string }>(`SELECT invocation_id FROM ai_invocation WHERE job_id = $1 AND status = 'succeeded' LIMIT 1`, [job.job_id])).rows[0]!;
+  const orphan = `inv_${randomUUID()}`;
+  await t.pool.query(
+    `INSERT INTO ai_invocation SELECT (jsonb_populate_record(NULL::ai_invocation, to_jsonb(i) || jsonb_build_object('invocation_id', $2::text, 'idempotency_key', $2::text,
+       'status', 'running', 'created_at', now() - interval '20 minutes', 'finished_at', NULL, 'cost_usd', NULL, 'reserved_usd', 0.02))).* FROM ai_invocation i WHERE i.invocation_id = $1`, [paid.invocation_id, orphan]);
+  const fresh = `inv_${randomUUID()}`;
+  await t.pool.query(
+    `INSERT INTO ai_invocation SELECT (jsonb_populate_record(NULL::ai_invocation, to_jsonb(i) || jsonb_build_object('invocation_id', $2::text, 'idempotency_key', $2::text,
+       'status', 'running', 'created_at', now(), 'finished_at', NULL, 'cost_usd', NULL))).* FROM ai_invocation i WHERE i.invocation_id = $1`, [paid.invocation_id, fresh]);
+  assert.ok(await t.handle.aiJobs.reconcileAbandoned() >= 1);
+  const rows = (await t.pool.query<{ invocation_id: string; status: string; error_code: string | null; cost_usd: string | null }>(
+    'SELECT invocation_id, status, error_code, cost_usd FROM ai_invocation WHERE invocation_id = ANY($1)', [[orphan, fresh]])).rows;
+  assert.deepEqual(rows.find((r) => r.invocation_id === orphan), { invocation_id: orphan, status: 'failed', error_code: 'uncertain_abandoned', cost_usd: null });
+  assert.equal(rows.find((r) => r.invocation_id === fresh)?.status, 'running', 'una llamada en curso dentro de su deadline no se toca');
+  await t.pool.query(`UPDATE ai_invocation SET status = 'failed', error_code = 'test_cleanup', finished_at = now() WHERE invocation_id = $1`, [fresh]);
 });
 
 test('E15/BR-0007: proveedor real solo con negocio sintético; techo duro con reservas concurrentes', async () => {
@@ -276,6 +336,12 @@ test('E03/E17: consola de plataforma con MFA, anti-replay, step-up y roles separ
   assert.equal(promote.body.rollout.active_route_id, candidate.route_id);
   const rollback = await platform(engToken, `/ai/use-cases/${uc}/rollout`, 'POST', { action: 'rollback', reason: 'volver a la ruta anterior' });
   assert.equal(rollback.body.rollout.active_route_id, original, 'rollback sin redeploy');
+  // Prompt Studio: una versión nueva no reescribe la anterior (inmutable en BD) y queda auditada.
+  const np = await platform(engToken, `/ai/use-cases/${uc}/prompts`, 'POST', { content: { system_text: `${bundle.prompt.system_text}\n- Sé breve.`, task_template: bundle.prompt.task_template, variables: bundle.prompt.variables }, change_note: 'E04: variante más breve' });
+  assert.equal(np.status, 201, JSON.stringify(np.body));
+  assert.ok(np.body.prompt.version > bundle.prompt.version && np.body.prompt.sha256 !== bundle.prompt.sha256);
+  await assert.rejects(t.pool.query('UPDATE ai_prompt_revision SET system_text = $1 WHERE revision_id = $2', ['reescrito', bundle.prompt.revision_id]), 'las versiones de prompt no se reescriben');
+  assert.equal((await platform(adminToken, `/ai/use-cases/${uc}/prompts`, 'POST', { content: { system_text: 'x', task_template: 'y', variables: [] }, change_note: 'sin rol' })).status, 403, 'platform_admin no versiona prompts');
   assert.ok(await countRows(t, `SELECT count(*) AS n FROM platform_audit_event WHERE actor_id = $1 AND decision = 'deny' AND result = 'step_up_required'`, [eng.platform_user_id]) >= 1);
   assert.ok(await countRows(t, `SELECT count(*) AS n FROM ai_rollout_event WHERE use_case_id = $1 AND action IN ('canary','promote','rollback') AND actor_id = $2`, [uc, `platform:${eng.platform_user_id}`]) >= 3);
 
@@ -343,6 +409,32 @@ test('E11/E12: asistente con datos SOLO del propio negocio; campaña aprobada si
   await assert.rejects(t.pool.query('UPDATE marketing_campaign SET spend_authorized = true WHERE campaign_id = $1', [id]), /check/i, 'la BD impide autorizar gasto');
   assert.equal((await call(b.token, `/ai/campaigns/${id}/decision`, 'POST', { decision: 'reject' })).status, 404, 'otro negocio = 404');
 
+  // Resumen: con poca actividad se abstiene sin gastar IA; las cifras salen de métricas calculadas.
+  const ins = await call(a.token, '/ai/insights', 'POST', { period_days: 7 });
+  assert.equal(ins.status, 200, JSON.stringify(ins.body));
+  assert.equal(ins.body.status, 'abstained');
+  assert.equal(ins.body.metrics.cases_pending, 1, 'métrica sin periodo calculada sobre el propio negocio');
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1 AND use_case_id = 'business.insights.generate'`, [a.tenant]), 0);
+  assert.equal((await call(a.token, '/ai/insights', 'POST', { period_days: 3 })).status, 400);
+  const ideas = await call(a.token, '/ai/editorial', 'POST', { start_date: '2026-11-02', frequency: '3 por semana' });
+  assert.equal(ideas.status, 201, JSON.stringify(ideas.body));
+  assert.ok(ideas.body.ideas.length >= 3 && ideas.body.ideas.every((i: { suggested_for: string }) => i.suggested_for >= '2026-11-02'));
+  assert.equal((await call(b.token, `/ai/editorial/${ideas.body.ideas[0].suggestion_id}/decision`, 'POST', { decision: 'accept' })).status, 404, 'otro negocio = 404');
+  assert.equal((await call(a.token, `/ai/editorial/${ideas.body.ideas[0].suggestion_id}/decision`, 'POST', { decision: 'accept' })).status, 200);
+  // Facebook: variantes por job → borrador normal (cuota + aprobación); el texto editado sigue las reglas de hechos.
+  const comp = await call(a.token, '/ai/social/compose', 'POST', { request: 'Anuncia que ya tenemos pan de muerto' });
+  assert.equal(comp.status, 202, JSON.stringify(comp.body));
+  await t.handle.aiJobs.drain(a.tenant);
+  const ready = (await call(a.token, `/ai/jobs/${comp.body.job.job_id}`)).body.job;
+  assert.equal(ready.status, 'succeeded', JSON.stringify(ready));
+  assert.ok(ready.result.variants.length >= 2);
+  const badEdit = await call(a.token, `/ai/social/compose/${ready.job_id}/draft`, 'POST', { variant: 0, text: 'Pan de muerto a solo $99 hoy' });
+  assert.equal(badEdit.status, 400, 'un precio no confirmado no entra ni editado a mano');
+  const draft = await call(a.token, `/ai/social/compose/${ready.job_id}/draft`, 'POST', { variant: 0 });
+  assert.equal(draft.status, 201, JSON.stringify(draft.body));
+  const row = (await t.pool.query<{ status: string; generation: { job_id: string } }>('SELECT status, generation FROM social_post WHERE post_id = $1', [draft.body.post.post_id])).rows[0];
+  assert.deepEqual([row?.status, row?.generation.job_id], ['draft', ready.job_id], 'borrador trazado a su generación; nada publicado');
+  assert.equal((await call(b.token, `/ai/social/compose/${ready.job_id}/draft`, 'POST', { variant: 0 })).status, 404);
   const userId = `user_ro_${a.tenant}`;
   await t.pool.query(`INSERT INTO internal_user (user_id, display_name, login, status, tenant_id, password_hash) VALUES ($1,'Lectura',$2,'active',$3,crypt('Fixture-Read-2026!', gen_salt('bf', 4)))`, [userId, `ro@${a.tenant}.example.com`, a.tenant]);
   await t.pool.query('INSERT INTO user_role (user_id, role_id, tenant_id) VALUES ($1,$2,$3)', [userId, 'read_only', a.tenant]);

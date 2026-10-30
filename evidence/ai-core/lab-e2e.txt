@@ -1,0 +1,76 @@
+# AI Core — E2E de laboratorio con proveedores reales (2026-10-30T22:15:31.994Z)
+# HEAD 878f7dead5a4dfd280a6727786c723069b54b30f · origen https://app.mainspot.local.io · Chrome /usr/bin/google-chrome (TLS verificado, sin ignoreHTTPSErrors)
+# negocio sintético «Café Brisa Lab 2e397c»; costos y rutas leídos de ai_invocation (procedencia: proveedor)
+
+-- E17/BR-0007: Administration marca el negocio como sintético (motivo + step-up) --
+PASS solo un platform_admin con step-up clasifica el negocio como sintético (sigue activo)
+
+-- E20: alta móvil → Mi marca → página con IA --
+PASS E01 Brand Studio: datos del alta + marca confirmados con versión
+
+-- E13: biblioteca — foto del dueño con ALT y derechos; EXIF/GPS eliminados --
+PASS la foto de prueba trae EXIF (incluido GPS) antes de subirla
+PASS la biblioteca sirve WebP 1280×960 sin EXIF/GPS
+   diseño: or:anthropic/claude-haiku-5.5 r4/p1 · 16474 ms · USD 0.002224 · imágenes 1 · bloqueadas ["hero:no_active_route","about:no_active_route"]
+PASS E05 diseño generado por un modelo real (no simulado) con su ruta y costo trazados
+PASS E07 la versión 1 publicada lleva el diseño aprobado
+
+-- E07: sitio local HTTPS por negocio (CA local, sin -k) --
+PASS sitio 360px: HTTP 200 TLS verificado, lang=es-MX, h1=1, 1 imágenes (0 sin ALT, 0 rotas), scripts=0, desborde=false
+PASS sitio 768px: HTTP 200 TLS verificado, lang=es-MX, h1=1, 1 imágenes (0 sin ALT, 0 rotas), scripts=0, desborde=false
+PASS sitio 1440px: HTTP 200 TLS verificado, lang=es-MX, h1=1, 1 imágenes (0 sin ALT, 0 rotas), scripts=0, desborde=false
+
+-- E06: edición compleja con tus palabras --
+   edición: succeeded  alcance=layout_complex fuente=jev caso=website.edit.complex modelo=or:openai/gpt-6-luna operaciones=2
+PASS E02/E06 Jev real clasifica el alcance y la ruta de edición propone un parche tipado
+PASS E07 la versión 2 publicada incluye la sección pedida
+
+-- E07: restaurar el diseño de la versión 1 como versión 3 (vista previa + aprobación) --
+PASS E07 v3 = diseño de la v1 (restored_from_version=1); v1 y v2 intactas
+PASS E07 el sitio HTTPS sirve la v3 restaurada (TLS verificado por Node con la CA local)
+
+-- E08: publicación de Facebook generada (Meta simulado) --
+   variantes 3 · modelo or:anthropic/claude-haiku-5.5 · emojis máx 1
+     · Este fin de semana te esperamos en Café Brisa Lab con café de altura de Chiapas y pan dulce del día ☕. Ven a platicar con nosotros: el sábado atendemos de 8:00 a 20:00 y el domingo de 8:00 a 14:00. No #CafeDeOlla #ChetumalCentro #CafeBrisaLab
+     · En Café Brisa Lab tenemos café de olla a $35 y espresso doble a $45. Para acompañar, puedes elegir nuestro pan dulce del día. Estamos en Av. Héroes 45, Centro, Chetumal. #Chetumal #CafeDeOlla #CafeBrisaLab
+     · Un buen fin de semana empieza con algo caliente 🍞. Pásate a Café Brisa Lab y prueba nuestro café de olla con pan dulce del día. Te esperamos el sábado y el domingo. #ChetumalCentro #CafeBrisaLab
+PASS E08 2-3 variantes con emojis moderados, CTA y hashtags
+PASS E08 publicación aprobada por el dueño, trazada a la generación (Meta: simulado, BLOCKED_EXTERNAL para real)
+
+-- E09: comentarios — Jev real lee sentimiento e ironía; respuesta con hechos verificados --
+   agradecimiento: sentimiento=positive fuente=jev decisión=auto_reply estado=responded
+   ironía: sentimiento=negative fuente=jev decisión=human_review estado=needs_human
+PASS E09 agradecimiento: Jev real positivo → respuesta automática consentida
+PASS E09 ironía: Jev real negativo → caso humano con borrador, sin publicar
+
+-- E11: asistente con el estado real de la cuenta --
+   respuesta (panel): Respuesta IA Hay 1 comentario de Facebook que necesita tu respuesta: un cliente se queja de una espera de 40 minutos por un café frío, con tono sarcástico y sentimiento negativo. Esta semana (últimos 7 días) hiciste 1 publicación, ya publicada: "Este fin de semana te esperamos en Café Brisa Lab con 
+   respuesta (API): modelo or:anthropic/claude-haiku-5.5 · herramientas attention_cases · evidencia attention_cases
+PASS E11 responde con cifras trazables a herramientas de solo lectura del propio negocio
+
+-- E12/FR-0017: resumen, campaña sin gasto y calendario --
+PASS resumen: con menos de 7 días de actividad se abstiene en lugar de inventar
+PASS E12 plan con el monto dado por el dueño; aprobado sin autorizar gasto
+PASS calendario editorial: ideas fechadas guardadas para el negocio
+
+-- E17: Administration ve consumo y salud sin contenido de conversaciones --
+PASS consumo de IA por caso de uso visible; sin texto de clientes
+
+-- E04: canary y rollback desde la Engineering Console --
+PASS E04 canary del 20 % y retiro auditados con motivo (sin redeploy)
+
+-- E15: costo y latencia de este recorrido (procedencia: respuesta del proveedor) --
+   conversation.intent.classify           ts:jev-1.14.0                      n=1 USD 0.000034 p50 308 ms p95 308 ms
+   conversation.owner.assistant           or:anthropic/claude-haiku-5.5      n=2 USD 0.001257 p50 3181 ms p95 11954 ms
+   editorial.calendar.suggest             or:openai/gpt-6-luna               n=1 USD 0.000497 p50 7135 ms p95 7135 ms
+   engagement.facebook.comment.classify   ts:jev-1.14.0                      n=2 USD 0.000098 p50 213 ms p95 356 ms
+   engagement.facebook.comment.reply      or:anthropic/claude-haiku-5.5      n=2 USD 0.000533 p50 1698 ms p95 2816 ms
+   marketing.campaign.creatives           or:anthropic/claude-haiku-5.5      n=1 USD 0.002106 p50 19199 ms p95 19199 ms
+   marketing.campaign.plan                or:openai/gpt-6-luna               n=1 USD 0.000684 p50 8467 ms p95 8467 ms
+   social.facebook.post.compose           or:anthropic/claude-haiku-5.5      n=1 USD 0.001111 p50 10122 ms p95 10122 ms
+   website.edit.complex                   or:openai/gpt-6-luna               n=1 USD 0.000542 p50 8588 ms p95 8588 ms
+   website.initial.design                 or:anthropic/claude-haiku-5.5      n=1 USD 0.002224 p50 16474 ms p95 16474 ms
+   OpenRouter este recorrido: USD 0.008954 · laboratorio acumulado: USD 0.096726 de 25
+PASS sin errores de JavaScript en el panel
+
+# Resultado: OK
