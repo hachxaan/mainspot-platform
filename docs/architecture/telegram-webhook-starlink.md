@@ -8,6 +8,25 @@
 
 La instalación no es prueba de entrega real. Una petición local, un update sintético o el 403 público esperado no cierran los niveles C/D.
 
+### Handoff 2 (30-oct-2026, SOL MAIN) — estado comprobado y desbloqueo exacto
+
+| Verificación | Estado | Evidencia / qué falta |
+|---|---|---|
+| Trabajo local `498e1a8` en GitHub | Hecho | Fusionado sin reescribir historia (`26489d1`, merge con los 4 commits remotos de documentación) y publicado sin force. `npm test` en `26489d1`: 117 unitarias, 120 integración, 5 smoke, 4 E2E (incluido el navegador por `https://app.mainspot.local.io`), todo PASS. |
+| HTTP KVM → `10.77.0.2:8080` → Express | `BLOCKED_EXTERNAL` | Un único intento no interactivo por el alias configurado `work.canonflow.dev` (89.116.170.99), 2026-10-30T08:1xZ: `Permission denied (publickey,password)`. No se probaron otras cuentas ni claves. **Falta:** que el titular del KVM autorice en una cuenta con permiso para `lxc exec wireguard-telegram` la clave pública de esta estación (`ED25519 SHA256:2/MJPtTFrUPkZbcVCUFmFNW3Pf8VjBOUwMqhfxsNhIQ`, `~/.ssh/id_ed25519.pub`), o que ejecute él mismo desde la consola del proveedor la sonda de [§ Cerrar la prueba HTTP del KVM](#cerrar-la-prueba-http-del-kvm-sin-exponer-el-secreto) (secreto por stdin; esperado 200 `ignored` con secreto y 401 sin él). |
+| Reinicio completo del host + autoarranque | `NOT_VERIFIED` | Sin ventana autorizada; el host ejecuta sesiones y trabajos activos (incluido este agente). **Falta:** ventana explícita del propietario. Prueba exacta tras el arranque, sin intervención manual: `systemctl is-active wg-quick@wg-telegram mainspot-telegram-proxy mainspot-local docker`, `sudo wg show wg-telegram latest-handshakes` reciente, `ip route get 10.77.0.1` por `wg-telegram` y `ip route get 1.1.1.1` sin cambiar, `curl -fsS https://app.mainspot.local.io/health`, y la sonda KVM → Express anterior. |
+| Bot autorizado (`getMe`/`getWebhookInfo`/`setWebhook`) | `BLOCKED_EXTERNAL` | `~/.config/mainspot/telegram-webhook.env` (0600) tiene `TELEGRAM_WEBHOOK_SECRET` pero `TELEGRAM_BOT_TOKEN` vacío. El material de respaldos contiene `~/.config/mainspot/backup/telegram-alert.env` (de otro sistema): **no se abrió ni se usó**. `node scripts/telegram-webhook.ts status` → `BLOCKED_EXTERNAL: falta bot autorizado`, sin llamada de red. **Falta:** el propietario crea/autoriza un bot de prueba en @BotFather y guarda su token en ese archivo (editor local, nunca chat/issue). |
+| Entrega Telegram auténtica, aviso real, decisión persistida | `BLOCKED_EXTERNAL` | Depende de las tres filas anteriores. |
+
+Registro del webhook cuando todo lo anterior esté cerrado (sin long polling ni `deleteWebhook`):
+
+```bash
+node scripts/telegram-webhook.ts status          # solo lectura: identidad del bot y webhook actual
+node scripts/telegram-webhook.ts register --confirm-bot <username> --ready-for-webhook-registration
+```
+
+`register` exige que `--confirm-bot` coincida con `getMe`, se niega a sobrescribir otro webhook (salvo `--replace-webhook-from <url exacta>` tras coordinarlo con su dueño), envía `url=https://tg.mainspot.io/telegram/webhook`, `secret_token` (leído del archivo 0600), `allowed_updates=["message"]` (lo único que procesa `TelegramLinkService`), `drop_pending_updates=false` y `max_connections=1`, y confirma con `getWebhookInfo`. Nunca imprime token ni secreto. Salvaguardas probadas contra un Bot API falso: `tests/unit/telegram-webhook-register.test.ts` (SIMULATED_REGRESSION, 8/8). Después: `MAINSPOT_DEV_TELEGRAM=real` en el archivo protegido, `sudo systemctl restart mainspot-local`, `/start <código>` desde un chat real y la secuencia de §8 REAL-T-01/02 del handoff.
+
 ## Recorrido y límites
 
 ```text
