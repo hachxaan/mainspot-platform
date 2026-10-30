@@ -355,19 +355,23 @@ npm test                  # typecheck + unit + integration + smoke + e2e
 npm run db:up && npm run db:setup && npm run test:e2e
 # Escribe evidence/e2e-inc002-inc003.txt, evidence/e2e-inc004-006.txt, evidence/e2e-dev-e2e-02.txt
 # (servidor real, CLI de alta y worker independiente) y evidence/e2e-dev-e2e-03.txt
-# (interfaz de Claude en Chrome headless vía playwright-core contra servidor + PostgreSQL reales;
-#  usa /usr/bin/google-chrome o CHROME_PATH; EVIDENCE_SCREENSHOTS=1 guarda capturas en evidence/dev-e2e-03/)
+# (interfaz de Claude en Chrome headless vía playwright-core por https://app.mainspot.local.io contra
+#  servidor + PostgreSQL reales; usa /usr/bin/google-chrome o CHROME_PATH; EVIDENCE_SCREENSHOTS=1
+#  guarda capturas en evidence/dev-e2e-03/). E2E_BASE_URL cambia el origen; la prueba arranca su
+#  servidor como upstream del proxy (E2E_UPSTREAM_PORT=3100): detén scripts/dev-panel.sh mientras corre.
 ```
 
 ### DEV-E2E-03 — interfaz de Claude Design conectada al backend (desarrollo)
 
+Origen oficial de desarrollo: **https://app.mainspot.local.io** (panel `/panel`, invitaciones `/invitacion#<TOKEN>`). Lo sirve el nginx del LXC `webserver` (10.209.99.101) con certificado de la CA local, como proxy al proceso de MainSpot en el puerto interno 3100 del host. La instalación de hosts/proxy/TLS se hizo una sola vez con `scripts/dev-domain-bootstrap.sh` (evidencia `evidence/dev-domain-bootstrap.txt`); el arranque diario no la toca.
+
 ```bash
-scripts/dev-panel.sh                                              # PostgreSQL del compose en 127.0.0.1:55432, BD mainspot_dev,
-                                                                  # servidor + worker en http://localhost:3100 (proveedores simulados)
-scripts/dev-panel.sh invite "Panadería Lupita" lupita@example.com # imprime el enlace /invitacion#… (un solo uso, 72 h)
+scripts/dev-panel.sh                                              # PostgreSQL del compose en 127.0.0.1:55432 (BD mainspot_dev),
+                                                                  # servidor + worker detrás de https://app.mainspot.local.io
+scripts/dev-panel.sh invite "Panadería Lupita" lupita@example.com # imprime https://app.mainspot.local.io/invitacion#… (un solo uso, 72 h)
 ```
 
-Abre el enlace: invitación → contraseña → datos del negocio (crea la página y su primera versión con vista previa) → Telegram simulado → panel. Después se entra en `http://localhost:3100/` con correo + contraseña (sin id de cliente). La interfaz es la del prototipo `docs/ux/claude-design/deliverables` (referencia intacta) adaptada en `src/web/panel` para leer y escribir solo por la API (`/api/auth/*`, `/api/backoffice/*`); localStorage solo guarda qué avisos se leyeron. En desarrollo aparecen el simulador de reseñas/comentarios (Atención) y un chat de Telegram simulado que usa el mismo webhook que el bot real; ambos responden 404 en producción. Google, Meta y Telegram funcionan solo en modo **simulado**; los adaptadores reales no están certificados (`not_verified`).
+Abre el enlace: invitación → contraseña → datos del negocio (crea la página y su primera versión con vista previa) → Telegram simulado → panel. Después se entra en `https://app.mainspot.local.io/` con correo + contraseña (sin id de cliente). La interfaz es la del prototipo `docs/ux/claude-design/deliverables` (referencia intacta) adaptada en `src/web/panel` para leer y escribir solo por la API (`/api/auth/*`, `/api/backoffice/*`); localStorage solo guarda qué avisos se leyeron. En desarrollo aparecen el simulador de reseñas/comentarios (Atención) y un chat de Telegram simulado que usa el mismo webhook que el bot real; ambos responden 404 en producción. Google, Meta y Telegram funcionan solo en modo **simulado**; los adaptadores reales no están certificados (`not_verified`).
 
 Otros modos: `node scripts/invite-owner.ts …` con `npm start` (puerto 3000), y `ENGAGEMENT_WORKER=off npm start & node scripts/engagement-worker.ts` para el worker como proceso propio. Decisiones y shape de API: `docs/handoffs/e2e-parallel-2026-10-29/DECISION-LOG.md`.
 

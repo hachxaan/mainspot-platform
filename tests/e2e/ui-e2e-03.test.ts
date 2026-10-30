@@ -1,7 +1,13 @@
 /**
  * E2E DEV-E2E-03 — interfaz de Claude Design integrada, recorrida en un NAVEGADOR REAL (Chrome vía
- * playwright-core) contra el servidor real (`node src/api/server.ts`, worker en proceso), la CLI de
- * alta y PostgreSQL de pruebas (recreada por test-prep). No usa el prototipo file:// ni fixtures.
+ * playwright-core) por el dominio oficial de desarrollo https://app.mainspot.local.io (proxy HTTPS
+ * del LXC webserver, certificado de la CA local) contra el servidor real (`node src/api/server.ts`,
+ * worker en proceso), la CLI de alta y PostgreSQL de pruebas (recreada por test-prep).
+ * No usa el prototipo file://, ni fixtures, ni el puerto interno como atajo, ni ignora errores TLS.
+ *
+ * La prueba es dueña del upstream del proxy: arranca el servidor en E2E_UPSTREAM_PORT (3100) y
+ * falla de inmediato si ese puerto ya está ocupado (p. ej. scripts/dev-panel.sh en marcha).
+ * E2E_BASE_URL permite otro origen HTTPS; por defecto https://app.mainspot.local.io.
  *
  * Recorrido: invitación → contraseña → datos del negocio → primera página (vista previa →
  * aprobación → publicación sin 502) → Telegram simulado vinculado → recarga → tres teléfonos
@@ -19,12 +25,18 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, execSync, type ChildProcess } from 'node:child_process';
-import { createServer, type AddressInfo } from 'node:net';
+import { createServer } from 'node:net';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import tls from 'node:tls';
 import pg from 'pg';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { TEST_URL, SEED } from '../helpers/testdb.ts';
+
+const BASE = (process.env.E2E_BASE_URL ?? 'https://app.mainspot.local.io').replace(/\/$/, '');
+const UPSTREAM_PORT = Number(process.env.E2E_UPSTREAM_PORT ?? 3100);
+// Node confía en la misma CA local que el navegador (almacén del sistema), sin desactivar TLS.
+tls.setDefaultCACertificates([...tls.getCACertificates('default'), ...tls.getCACertificates('system')]);
 
 const transcript: string[] = [];
 function say(line: string): void {
@@ -70,31 +82,32 @@ function childEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   };
 }
 
-async function freePort(): Promise<number> {
-  return new Promise((resolve) => {
+/** El servidor de la prueba debe ser el único upstream del dominio: nunca se comparte ni se reemplaza otro. */
+async function assertUpstreamFree(port: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
     const s = createServer();
-    s.listen(0, '127.0.0.1', () => {
-      const port = (s.address() as AddressInfo).port;
-      s.close(() => resolve(port));
-    });
+    s.once('error', (err: NodeJS.ErrnoException) => reject(err.code === 'EADDRINUSE'
+      ? new Error(`El upstream de ${BASE} (puerto ${port}) está ocupado, probablemente por scripts/dev-panel.sh. Detenlo antes del E2E de navegador (no se usa otro puerto ni localhost como atajo).`)
+      : err));
+    s.listen(port, () => s.close(() => resolve()));
   });
 }
 
-async function startServer(port: number): Promise<ChildProcess> {
+async function startServer(): Promise<ChildProcess> {
   const proc = spawn(process.execPath, ['src/api/server.ts'], {
-    env: childEnv({ PORT: String(port), ENGAGEMENT_WORKER: 'on', PUBLIC_BASE_URL: `http://127.0.0.1:${port}` }), stdio: ['ignore', 'ignore', 'inherit'],
+    env: childEnv({ PORT: String(UPSTREAM_PORT), ENGAGEMENT_WORKER: 'on', PUBLIC_BASE_URL: BASE }), stdio: ['ignore', 'ignore', 'inherit'],
   });
   children.add(proc);
   proc.once('exit', () => children.delete(proc));
-  for (let i = 0; i < 100; i += 1) {
+  for (let i = 0; i < 150; i += 1) {
     try {
-      if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return proc;
+      if ((await fetch(`${BASE}/health`)).ok) return proc; // a través del proxy HTTPS, con TLS verificado
     } catch {
       // aún arrancando
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error('el servidor no arrancó');
+  throw new Error(`el servidor no respondió por ${BASE}`);
 }
 
 async function kill(proc: ChildProcess, signal: NodeJS.Signals): Promise<void> {
@@ -119,7 +132,7 @@ async function one<T extends pg.QueryResultRow>(sql: string, params: unknown[] =
   return (await pool.query<T>(sql, params)).rows[0];
 }
 
-let base = '';
+const base = BASE;
 async function newPage(width = 390, height = 844): Promise<{ ctx: BrowserContext; page: Page }> {
   const ctx = await browser!.newContext({ viewport: { width, height }, locale: 'es-MX' });
   const page = await ctx.newPage();
@@ -174,12 +187,14 @@ after(async () => {
   await pool.end();
   // El worker real recorre también los negocios semilla: se recrea la BD para los demás E2E.
   execFileSync(process.execPath, ['scripts/test-prep.ts'], { stdio: 'ignore' });
+  if (step === 0) return; // no arrancó (p. ej. upstream ocupado): no se sobrescribe la evidencia anterior
   try {
     mkdirSync('evidence', { recursive: true });
     const head = execSync('git rev-parse HEAD').toString().trim();
     const dirty = execSync('git status --porcelain -- src tests scripts').toString().trim() ? ' (+ cambios sin commit en src/tests/scripts)' : '';
     writeFileSync('evidence/e2e-dev-e2e-03.txt',
       `# E2E DEV-E2E-03 — navegador real + servidor real + PostgreSQL (run ${new Date().toISOString()})\n# HEAD: ${head}${dirty}\n` +
+      `# origen: ${BASE} (proxy HTTPS LXC webserver → upstream :${UPSTREAM_PORT}; TLS verificado, sin ignoreHTTPSErrors)\n` +
       `# navegador: ${chromePath()} (headless) · servidor: node src/api/server.ts (worker en proceso, ciclo 1 s)\n` +
       `# proveedores: simulated (Google, Meta, Telegram); ningún resultado es real\n# DB: mainspot_test (recreada por scripts/test-prep.ts)\n\n${transcript.join('\n')}\n\n# Fin de transcript\n`);
     console.log(`EVIDENCE_SAVED evidence/e2e-dev-e2e-03.txt (HEAD ${head})`);
@@ -189,11 +204,10 @@ after(async () => {
 });
 
 test('E2E DEV-E2E-03: interfaz de Claude Design en navegador contra servidor, worker y PostgreSQL reales', { timeout: 240_000 }, async () => {
-  const port = await freePort();
-  let server = await startServer(port);
-  base = `http://127.0.0.1:${port}`;
+  await assertUpstreamFree(UPSTREAM_PORT);
+  let server = await startServer();
   browser = await chromium.launch({ executablePath: chromePath(), headless: true });
-  say(`servidor real en ${base} · Chrome headless · worker en proceso [proveedores simulated]`);
+  say(`servidor real detrás de ${base} (upstream :${UPSTREAM_PORT}) · Chrome headless · worker en proceso [proveedores simulated]`);
 
   // ---------- Alta: invitación → contraseña → datos del negocio ----------
   say('\n-- FLOW-01: invitación de un solo uso y alta en la interfaz de Claude --');
@@ -419,7 +433,7 @@ test('E2E DEV-E2E-03: interfaz de Claude Design en navegador contra servidor, wo
   // ---------- Reinicio ----------
   say('\n-- Reinicio del servidor: estado persistente, sin duplicados --');
   await kill(server, 'SIGKILL');
-  server = await startServer(port);
+  server = await startServer();
   await page.reload();
   await go(page, '#/atencion');
   await page.locator('#case-list').waitFor();

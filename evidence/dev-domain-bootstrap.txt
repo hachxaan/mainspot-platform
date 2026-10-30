@@ -1,0 +1,91 @@
+# Bootstrap único del dominio de desarrollo https://app.mainspot.local.io — 2026-10-30 (UTC)
+# Sin secretos: no contiene claves privadas, contraseñas ni tokens de invitación activos.
+# Reinstalación: scripts/dev-domain-bootstrap.sh (comando aparte; scripts/dev-panel.sh no lo llama).
+
+## 1. Resolución local (host)
+/etc/hosts:53  10.209.99.101 app.mainspot.local.io      (copia previa: /etc/hosts.bak-mainspot-domain-*)
+getent hosts app.mainspot.local.io → 10.209.99.101
+
+## 2. Upstream alcanzable desde el LXC webserver (10.209.99.101)
+host lxdbr0: 10.209.99.1/24
+lxc exec webserver -- curl http://10.209.99.1:3100/health → 200   (IP del host en el bridge: upstream elegido)
+lxc exec webserver -- curl http://127.0.0.1:3100/health   → 000   (loopback del LXC NO es el host)
+
+## 3. TLS con la CA local (mkcert, ya instalada en el host)
+CA raíz: O=mkcert development CA, CN=mkcert administrador@administrador-Katana-15-HX-B14WGK
+         SHA-256 44:48:75:46:EA:EC:99:99:9D:2A:23:F1:81:67:F9:9D:E5:DD:E0:3C:66:95:FE:B9:D0:1E:E8:CB:E1:2F:4E:0F · vence 2036-07-14
+         almacén del sistema: /usr/local/share/ca-certificates/mkcert_development_CA_315829273420644881519584402164485963595.crt
+         NSS (Chrome/Playwright): ~/.pki/nssdb «mkcert development CA 315829273420644881519584402164485963595» C,,
+Certificado del dominio: SAN DNS:app.mainspot.local.io · emisor mkcert development CA · vence 2029-01-30
+         SHA-256 71:9E:74:EB:C5:C9:8D:79:C3:AC:A9:87:4A:0F:B9:32:B5:40:F9:9A:DC:5C:32:36:6D:D6:27:EE:BD:0D:D3:0E
+         webserver:/etc/nginx/ssl/app.mainspot.local.io.pem (0644) + app.mainspot.local.io-key.pem (0600 root)
+         clave y certificado coinciden (hash de clave pública 65bba1f6…); copia local de la clave destruida (shred)
+
+## 4. Reverse proxy (nginx 1.18 del LXC webserver; solo se agregó este sitio)
+/etc/nginx/sites-available/app.mainspot.local.io.conf → enlazado en sites-enabled
+sha256 desplegado = scripts/deploy/app.mainspot.local.io.conf = ffc09408e85d7798ca2499c8556dabbf043e486b4dbb2cf9129bedaf2491eb4c
+nginx -t → syntax is ok / test is successful · systemctl reload nginx → active
+80 → 301 https · 443 ssl (TLS 1.2/1.3, HTTP/1.1) · allow 10.209.99.1/127.0.0.1/::1, deny all · proxy_pass http://10.209.99.1:3100
+Nota: la primera versión llevaba `http2`; en nginx 1.18 eso activa HTTP/2 en todo el socket *:443 (todos
+los sitios). Se retiró a los ~14 min; mainspot.hdc.com vuelve a responder HTTP/1.1 como antes.
+
+## 5. Validación única
+curl https://app.mainspot.local.io/health → 200 · TLS verify=0 · HTTP/1.1
+    {"ok":true,"app":"mainspot-platform","increments":["INC-001",…,"INC-007"]}
+curl https://app.mainspot.local.io/panel → 200 (CSP script-src 'self'; HSTS)
+curl http://app.mainspot.local.io/panel  → 301 https://app.mainspot.local.io/panel
+openssl s_client -servername app.mainspot.local.io → Verify return code: 0 (ok)
+node (sin CA del sistema)        → UNABLE_TO_VERIFY_LEAF_SIGNATURE   (se esperaba: Node no lee el almacén del sistema)
+node --use-system-ca             → 200
+Chrome headless (playwright-core, sin ignoreHTTPSErrors) /panel → 200 · TLS 1.3 · emisor mkcert · «Entrar | MainSpot»
+Funcional (servidor de desarrollo, BD mainspot_dev):
+    scripts/dev-panel.sh invite … → https://app.mainspot.local.io/invitacion#<TOKEN>
+    navegador: invitación → contraseña → sesión → https://app.mainspot.local.io/panel#/inicio «Hola, Bootstrap»
+    recarga → misma sesión; sin errores de JavaScript
+
+## 6. Estabilidad del navegador en el dominio (diagnóstico y acción autorizada)
+Síntoma: E2E intermitente por el dominio (2 de 4 corridas con HTTP/2; aprox. 1 de 6 con HTTP/1.1):
+    POST con 499 en nginx (login, alta de equipo) y scripts del panel sin cargar tras recargar.
+Causa (NetLog de Chrome + ip monitor): HTTP2_SESSION_CLOSE / HTTP2_STREAM_ERROR net_error=ERR_NETWORK_CHANGED,
+    repetido cada pocos segundos. ip monitor: interfaces veth con IPv6 fe80:: que se crean y borran.
+    Origen: 16 contenedores Docker ajenos de multikrd-network en bucle de reinicio (salida 1/3).
+Acción (autorizada por el usuario): docker stop de esos 16 contenedores; conservan su política restart=unless-stopped.
+    Reanudar: docker start <nombre>
+    backend-platform-microservice-authorization-1          unless-stopped
+    backend-platform-microservice-badges-1                 unless-stopped
+    backend-platform-microservice-cashadvance-1            unless-stopped
+    backend-platform-microservice-cashback-1               unless-stopped
+    backend-platform-microservice-chat-assistant-1         unless-stopped
+    backend-platform-microservice-companies-1              unless-stopped
+    backend-platform-microservice-etl-1                    unless-stopped
+    backend-platform-microservice-levels-1                 unless-stopped
+    backend-platform-microservice-offers-1                 unless-stopped
+    backend-platform-microservice-products-1               unless-stopped
+    backend-platform-microservice-providers-1              unless-stopped
+    backend-platform-microservice-recommendation-engine-1  unless-stopped
+    backend-platform-microservice-sections-1               unless-stopped
+    backend-platform-microservice-tips-1                   unless-stopped
+    backend-platform-microservice-users-1                  unless-stopped
+    companies-onboarding-backend                           unless-stopped
+Después: ip monitor 20 s → solo la renovación normal de IPv6 de wlo1; 0 contenedores en «Restarting».
+Prueba con HTTP/1.1 aún con la red cambiando: 1120/1120 fetch correctos durante 10 eventos ERR_NETWORK_CHANGED.
+
+## 7. Pruebas por el dominio (sin atajos)
+tests/e2e/ui-e2e-03.test.ts: E2E_BASE_URL=https://app.mainspot.local.io (por defecto), upstream :3100 propio.
+    Upstream ocupado (dev-panel en marcha) → falla al instante: «El upstream de https://app.mainspot.local.io
+    (puerto 3100) está ocupado, probablemente por scripts/dev-panel.sh…»; la evidencia anterior no se toca.
+    Tras detener los contenedores: 5 corridas seguidas, 5/5 aprobadas, 42/42 comprobaciones cada una.
+npm test completo (typecheck + unit 117 + integración 118 + smoke 5 + e2e 4) → 244/244, exit 0
+    evidence/e2e-dev-e2e-03.txt: «# origen: https://app.mainspot.local.io (… TLS verificado, sin ignoreHTTPSErrors)»
+
+## 8. Memoria OMP persistente (backend de memoria: off → reglas en archivos)
+Repo:    .omp/RULES.md, .omp/AGENTS.md (traídos con git pull; AGENTS.md ampliado con el estado instalado)
+Perfil:  ~/.omp/agent/RULES.md (nuevo, bloque MainSpot) + sección «MainSpot: entorno de desarrollo HTTPS» en
+         ~/.omp/agent/AGENTS.md (contenido previo intacto)
+Comprobación con sesiones nuevas (omp -p --no-session), sin herramientas:
+  cwd ~/codeart (fuera del repo):
+    «URL oficial de desarrollo: https://app.mainspot.local.io (panel en /panel). No se verifica ni reconfigura
+     hosts, LXC, proxy ni certificados al iniciar sesión…» — fuente: reglas del perfil + ~/.omp/agent/AGENTS.md
+  cwd mainspot-platform:
+    «La URL oficial de desarrollo es https://app.mainspot.local.io (escrito mainspot, nunca mainpot). No: no debes
+     verificar ni reconfigurar hosts, LXC, proxy ni certificados…» — fuente: .omp/RULES.md, .omp/AGENTS.md + perfil

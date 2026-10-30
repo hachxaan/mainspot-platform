@@ -10,6 +10,15 @@
 - `PUBLIC_BASE_URL=https://app.mainspot.local.io`; cualquier invitación/enlace generado debe respetar ese origen, sin guardar tokens activos en repositorios o issues.
 - Google, Meta y Telegram son simulados en desarrollo hasta verificar sus adaptadores e integraciones reales.
 
+## Estado instalado (bootstrap único del 2026-10-30)
+
+- Upstream: nginx del LXC `webserver` → `http://10.209.99.1:3100` (IP del host en `lxdbr0`; `127.0.0.1` dentro del LXC NO es el host). Vhost versionado en `scripts/deploy/app.mainspot.local.io.conf`; acceso limitado al host. Se sirve en HTTP/1.1 a propósito: no activar `http2` (en nginx 1.18 afecta a todos los sitios del socket `*:443`).
+- Solo ante fallo real: si Chrome falla de forma intermitente en el dominio (`net::ERR_NETWORK_CHANGED`, POST con 499 en nginx, scripts del panel sin cargar), la causa conocida son contenedores Docker en bucle de reinicio que crean y borran interfaces veth (`docker ps -a | grep Restarting`). Son servicios ajenos: pedir autorización antes de detenerlos.
+- TLS: certificado emitido por la CA local mkcert del host (ya confiable en el almacén del sistema y en NSS de Chrome/Playwright); la clave solo vive en el LXC. Node confía con `--use-system-ca` o `tls.setDefaultCACertificates` (lo hace el E2E).
+- Reinstalación en una máquina nueva: `scripts/dev-domain-bootstrap.sh` (comando aparte, nunca desde `scripts/dev-panel.sh`). Evidencia: `evidence/dev-domain-bootstrap.txt`.
+- Arranque diario: `scripts/dev-panel.sh` (servidor + worker en el puerto 3100, `PUBLIC_BASE_URL=https://app.mainspot.local.io`).
+- E2E de navegador (`tests/e2e/ui-e2e-03.test.ts`): `E2E_BASE_URL` (por defecto `https://app.mainspot.local.io`) y `E2E_UPSTREAM_PORT` (3100). La prueba arranca su propio servidor como upstream del proxy, así que necesita el puerto 3100 libre: detener `scripts/dev-panel.sh` mientras corre y volver a arrancarlo después. Si el puerto está ocupado falla con mensaje explícito, sin atajos.
+
 ## Política de ejecución
 
 **Configuración del dominio/proxy/certificados = trabajo único.** Hacer bootstrap y validación inicial una sola vez cuando se encargue. En sesiones siguientes de OMP **asumir esta infraestructura preparada y no hacer auditorías, reconfiguraciones ni comprobaciones preventivas de que esté configurada**. Iniciar y probar MainSpot directamente mediante `https://app.mainspot.local.io`; solo depurar proxy/CA/hosts ante fallo comprobado del dominio.

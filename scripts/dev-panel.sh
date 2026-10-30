@@ -3,11 +3,16 @@
 # Express + PostgreSQL real + worker del agente en el mismo proceso. Google, Meta y Telegram
 # quedan SIMULADOS (sin credenciales); nada toca producción.
 #
-#   scripts/dev-panel.sh            # prepara la BD mainspot_dev y arranca en http://localhost:3100
+# Origen oficial: https://app.mainspot.local.io (proxy HTTPS del LXC webserver → este proceso en el
+# puerto interno 3100). Este script NO configura ni verifica hosts, proxy ni certificados: eso es
+# el bootstrap único de scripts/dev-domain-bootstrap.sh.
+#
+#   scripts/dev-panel.sh            # prepara la BD mainspot_dev y arranca (https://app.mainspot.local.io)
 #   scripts/dev-panel.sh invite "Panadería Lupita" lupita@example.com   # alta + enlace de invitación
 #   scripts/dev-panel.sh env        # imprime las variables (para tests o scripts propios)
 #
-# Variables: MAINSPOT_DEV_PORT (3100), MAINSPOT_DEV_PG_PORT (55432), MAINSPOT_DEV_DB (mainspot_dev).
+# Variables: MAINSPOT_DEV_PORT (3100, upstream del proxy), MAINSPOT_DEV_PG_PORT (55432), MAINSPOT_DEV_DB
+# (mainspot_dev), PUBLIC_BASE_URL (https://app.mainspot.local.io).
 # Requiere .env con POSTGRES_USER/POSTGRES_PASSWORD, DATABASE_URL y JWT_SECRET (ver .env.example).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -39,7 +44,7 @@ export APP_ENV=development JEV_MODE=disabled CHANNEL_PRIMARY=simulated TELEGRAM_
   REPUTATION_PROVIDER=simulated GOOGLE_GBP_TOKEN= SOCIAL_PROVIDER=simulated META_GRAPH_TOKEN= \
   DOMAIN_PROVIDER=simulated PAYMENT_PROVIDER=simulated \
   ENGAGEMENT_WORKER=on ENGAGEMENT_WORKER_INTERVAL_MS="${ENGAGEMENT_WORKER_INTERVAL_MS:-3000}" ENGAGEMENT_POLL_INTERVAL_MS=0 \
-  PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://localhost:${PORT}}"
+  PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://app.mainspot.local.io}"
 
 case "${1:-serve}" in
   env)

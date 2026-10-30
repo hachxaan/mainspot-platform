@@ -1,5 +1,5 @@
-# E2E INC-004 + INC-005 + INC-006 — transcript (run 2026-10-30T05:20:10.164Z)
-# HEAD: ed2f72b69868f2cb55468486e17b9d49b7922095
+# E2E INC-004 + INC-005 + INC-006 — transcript (run 2026-10-30T06:21:36.012Z)
+# HEAD: 291d6be806282573a6b3320adeabf39bded73d7d
 # proveedores: simulated (DEC-026) — sin credenciales reales Meta/Google
 # DB: mainspot_test (recreada por scripts/test-prep.ts)
 
@@ -31,8 +31,8 @@ PASS 18. base=1 post E2E previo + límite 3 ⇒ 2 creaciones OK y la 3ra excede 
 PASS 19. exceso auditado como deny/limit_exceeded
 
 === Resumen E2E INC-004/005/006 ===
-review escalada y publicada: rev_0df68eaf-977f-4c71-b9a0-721b41652527 (proposal prop_90c7795a-ac0e-47c9-96cc-88e62f84d363)
-post publicado: post_d4bfb1cd-c3df-41a3-80e2-d8a2e01621e0 (proposal prop_2b3b95ed-116e-42cd-8f05-36022c6037ee)
+review escalada y publicada: rev_1999a1ce-6cd0-4d4b-aaa7-2c9f05efe0dc (proposal prop_21b09ba1-6615-4576-9ae9-03e4d435ea8d)
+post publicado: post_3508c5f0-e693-4063-bf06-97adafa21b73 (proposal prop_77d99011-fdb5-4e1c-87a7-c18bccb6ec99)
 plan asignado y límite verificado: plan_basico (social_posts=3)
 === Fin E2E INC-004/005/006 ===
 
