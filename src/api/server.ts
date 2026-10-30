@@ -34,7 +34,7 @@ import { StubPublisher } from '../publishing/stub.ts';
 import { WebsitePublisher } from '../publishing/website.ts';
 import { createChannelAdapter } from '../channels/registry.ts';
 // INC-004 reputation (CAP-002/CAP-004, DEC-011/023/026)
-import { createReputationProvider } from '../reputation/google.ts';
+import { SimulatedReviews } from '../reputation/simulated.ts';
 import { ReputationEngine } from '../reputation/engine.ts';
 import { ReputationPublisher } from '../reputation/publisher.ts';
 import { reputationRouter } from './reputation-routes.ts';
@@ -42,7 +42,10 @@ import { reputationRouter } from './reputation-routes.ts';
 import { createSocialProvider } from '../social/meta.ts';
 import { SocialService } from '../social/service.ts';
 import { SocialPublisher } from '../social/publisher.ts';
+import { SocialScheduler } from '../social/scheduler.ts';
 import { socialRouter } from './social-routes.ts';
+import { MetaPagesAdapter } from '../social/meta-graph.ts';
+import { metaConnectionRouter, metaOAuthCallbackRouter } from './meta-connection-routes.ts';
 // INC-006 subscriptions (CAP-012, DEC-024)
 import { EntitlementService, SubscriptionRepository } from '../subscriptions/entitlements.ts';
 import { QuotaLedger } from '../subscriptions/quota.ts';
@@ -60,13 +63,23 @@ import { contactRouter } from './contact-routes.ts';
 import { EngagementService } from '../engagement/service.ts';
 import { EngagementWorker } from '../engagement/worker.ts';
 import { TelegramLinkService } from '../engagement/telegram.ts';
-import { NotVerifiedCommentSource, RealReplier, SimulatedCommentSource, SimulatedReplier } from '../engagement/providers.ts';
+import { SimulatedCommentSource, SimulatedReplier } from '../engagement/providers.ts';
+import { MetaCommentSource, MetaCommentReplier, RoutedReplier } from '../social/meta-engagement.ts';
 import { GbpProfileService } from '../google/profile.ts';
 import { engagementRouter, telegramWebhookRouter } from './engagement-routes.ts';
 import type { ChannelAdapter } from '../channels/types.ts';
 // DEV-E2E-04: conexión real por negocio con Google/Meta (tokens cifrados, OAuth state).
 import { ProviderConnectionRepository } from '../connectors/repository.ts';
 import { SecretBox } from '../connectors/secret-box.ts';
+// DEV-E2E-04 (P1 Google): OAuth por negocio, ficha/reseñas reales y retención de contenido de Google.
+import { createGoogleIntegration, type GoogleIntegration } from '../google/integration.ts';
+import { googleConnectionRouter, googleOAuthCallbackRouter } from './google-connection-routes.ts';
+// DEV-E2E-04 (P3): sitio local real por negocio (Host <slug>.<LOCAL_SITE_DOMAIN> → versión publicada).
+import { localSiteMiddleware } from '../website/local-site.ts';
+// DEV-E2E-04 (P2): recuperación de contraseña por correo (transporte real por configuración).
+import { createMailer, type Mailer } from '../mail/mailer.ts';
+import { PasswordResetService } from '../identity/password-reset.ts';
+import { passwordResetRouter } from './password-reset-routes.ts';
 
 export interface AppHandle {
   app: express.Express;
@@ -91,6 +104,13 @@ export interface AppHandle {
   channel: ChannelAdapter;
   /** DEV-E2E-04: conexiones por negocio con proveedores reales (tokens solo cifrados). */
   connections: ProviderConnectionRepository;
+  /** DEV-E2E-04 (P4): scheduler automático de publicaciones aprobadas (arranca en main). */
+  socialScheduler: SocialScheduler;
+  /** DEV-E2E-04 (P2): transporte de correo (disabled por defecto) y recuperación de contraseña. */
+  mailer: Mailer;
+  passwordReset: PasswordResetService;
+  /** DEV-E2E-04 (P1 Google): conector real (conexión OAuth, cliente, retención de contenido 30 días). */
+  google: GoogleIntegration;
 }
 
 /**
@@ -111,7 +131,7 @@ export function securityHeaders(): (req: Request, res: Response, next: NextFunct
   };
 }
 
-export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): AppHandle {
+export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?: Mailer } = {}): AppHandle {
   const config = overrides.config ?? loadConfig();
   const pool = overrides.pool ?? getPool({ connectionString: config.databaseUrl });
   const sink = new AuditSink(pool);
@@ -122,6 +142,11 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   const loginRateLimiter = new LoginRateLimiter(config.rateLimitMax, config.rateLimitWindowMs, config.rateLimitLockMs);
   // DEV-E2E-04: una clave mal formada falla al arrancar; sin clave no se guardan tokens.
   const connections = new ProviderConnectionRepository(pool, config.connectorTokenKey ? SecretBox.fromBase64(config.connectorTokenKey) : null);
+  // DEV-E2E-04 (P1 Google): rutas de conexión siempre presentes; modo real solo con OAuth + clave.
+  const google = createGoogleIntegration({ pool, sink, connections, config });
+  // DEV-E2E-04 (P2): configuración incompleta del correo falla al arrancar; sin transporte no se envía nada.
+  const mailer = overrides.mailer ?? createMailer(config.mail);
+  const passwordReset = new PasswordResetService({ pool, sink, mailer, publicBaseUrl: config.publicBaseUrl });
 
   // INC-002/INC-003 wiring (DEC-016, DEC-019, DEC-026).
   const hooks = buildInc001Hooks({ pool, jwtSecret: config.jwtSecret, sink });
@@ -133,17 +158,21 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   const phones = new ContactPhoneService({
     pool, sink,
     providerModes: {
-      google_business_profile: config.reputationProvider === 'google_business_profile' && config.googleGbpToken ? 'real' : 'simulated',
-      facebook: config.socialProvider === 'meta' && config.metaGraphToken ? 'real' : 'simulated',
+      google_business_profile: config.reputationProvider === 'google_business_profile' ? 'real' : 'simulated',
+      facebook: config.socialProvider === 'meta' ? 'real' : 'simulated',
     },
   });
   publishers.register(new WebsitePublisher(pool, domainService, phones));
   publishers.register(new StubPublisher());
   // INC-004/005: publishers de reputación y social (solo tras aprobación humana).
-  const reputationProvider = createReputationProvider(config, pool);
+  const reputationProvider = config.reputationProvider === 'google_business_profile' ? google.reputationProvider : new SimulatedReviews(pool);
   publishers.register(new ReputationPublisher(pool, reputationProvider, sink));
-  const socialProvider = createSocialProvider(config);
+  // DEV-E2E-04 §2B: el proveedor real publica con la Page y el token cifrado de CADA negocio.
+  const socialProvider = createSocialProvider(config, connections);
   publishers.register(new SocialPublisher(pool, socialProvider, sink));
+  // DEV-E2E-04 P4: scheduler automático de publicaciones aprobadas (arranca en main; el
+  // tick manual /social/process-due usa su mismo reclamo acotado al tenant de la sesión).
+  const socialScheduler = new SocialScheduler({ pool, sink, provider: socialProvider, timezone: config.socialSchedulerTimezone });
   // INC-006: entitlements (límites por plan configurable, DEC-024); DEC-0005:
   // consumo atómico de cuota por tenant con auditoría conjunta (NFR-0001).
   const entitlements = new EntitlementService({ pool, sink });
@@ -152,24 +181,27 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   // INC-004: reputación (engine)
   const reputationEngine = new ReputationEngine({ pool, config, sink, provider: reputationProvider, conversationRepo, quota });
   // INC-005: social (service + cola de programación)
-  const socialService = new SocialService({ pool, config, sink, provider: socialProvider, conversationRepo, quota });
+  const socialService = new SocialService({ pool, config, sink, provider: socialProvider, conversationRepo, quota, scheduler: socialScheduler });
   // INC-007: analítica mínima (export/summary); QS-0006: retención global automática.
   const exporter = new ExportService(pool);
   const retention = new RetentionService({ pool, sink });
   const analyticsService = new AnalyticsService({ pool });
-  // DEV-E2E-02: proveedores simulados (deterministas, sin red) salvo credenciales; con
-  // credenciales los adaptadores reales quedan NO certificados (nunca se afirma éxito real).
-  const realGoogle = config.reputationProvider === 'google_business_profile' && Boolean(config.googleGbpToken);
-  const realMeta = config.socialProvider === 'meta' && Boolean(config.metaGraphToken);
-  const replier = realGoogle || realMeta ? new RealReplier(reputationProvider) : new SimulatedReplier(pool);
+  // Un modo real explícito nunca cae al simulador por carecer de credenciales.
+  const realGoogle = config.reputationProvider === 'google_business_profile';
+  const realMeta = socialProvider instanceof MetaPagesAdapter;
+  const simulatedReplier = new SimulatedReplier(pool);
+  const replier = new RoutedReplier({
+    google_review: realGoogle ? google.replier : simulatedReplier,
+    facebook_comment: realMeta ? new MetaCommentReplier(pool, socialProvider) : simulatedReplier,
+  });
   const engagement = new EngagementService({ pool, sink, replier, phones, channel, panelUrl: `${config.publicBaseUrl}/panel` });
   const engagementWorker = new EngagementWorker({
     pool, service: engagement, reputationEngine,
-    comments: realMeta ? new NotVerifiedCommentSource() : new SimulatedCommentSource(pool),
+    comments: realMeta ? new MetaCommentSource(pool, socialProvider) : new SimulatedCommentSource(pool),
     pollIntervalMs: config.engagementPollIntervalMs,
   });
   const telegram = new TelegramLinkService({ pool, sink, channel, engagement });
-  const gbp = new GbpProfileService({ pool, sink, phones, mode: realGoogle ? 'not_verified' : 'simulated' });
+  const gbp = new GbpProfileService({ pool, sink, phones, mode: realGoogle ? 'real' : 'simulated', google: google.location, connections });
   const machine: StateMachineDeps = {
     pool,
     sink,
@@ -222,11 +254,23 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   // Correlation + structured access logs for every request.
   app.use(requestContext());
 
+  // DEV-E2E-04 (P3): peticiones con Host de sitio de cliente (<slug>.<LOCAL_SITE_DOMAIN>) se atienden
+  // aquí y nunca llegan al panel ni a la API; el host del panel (PUBLIC_BASE_URL) queda excluido.
+  app.use(localSiteMiddleware({ pool, domain: config.localSiteDomain, excludeHosts: [new URL(config.publicBaseUrl).hostname] }));
+
   // Auth (public endpoints: login/logout).
   app.use('/api/auth', authRouter(deps));
+  app.use('/api/auth/password', passwordResetRouter({ service: passwordReset }));
 
   // Webhook de Telegram (público; secreto obligatorio en todo entorno).
   app.use(telegramWebhookRouter({ config, telegram }));
+
+  // Callback público de OAuth de Google (autenticado solo por el state de un solo uso).
+  app.use(googleOAuthCallbackRouter({ service: google.connection, publicBaseUrl: config.publicBaseUrl }));
+
+  // DEV-E2E-04 §2B: callback público de Facebook Login (autenticado solo por el state de un solo uso).
+  const metaRouteDeps = { pool, config, sink, connections, meta: socialProvider instanceof MetaPagesAdapter ? socialProvider : null };
+  app.use(metaOAuthCallbackRouter(metaRouteDeps));
 
   // Preview/sandbox público (INC-002, CAP-008): enlace seguro con token.
   app.use(previewRouter({ config, sink, repo: conversationRepo, machine, approvalRateLimiter, phones }));
@@ -239,17 +283,19 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   app.use('/api/backoffice', conversationRouter(conversationDeps));
   app.use('/api/backoffice', reputationRouter({ pool, config, sink, engine: reputationEngine, approvalRateLimiter }));
   app.use('/api/backoffice', socialRouter({ pool, config, sink, service: socialService, approvalRateLimiter }));
+  app.use('/api/backoffice', metaConnectionRouter(metaRouteDeps));
   app.use('/api/backoffice', subscriptionRouter({ pool, config, sink, entitlements, subscriptionRepo }));
   app.use('/api/backoffice', analyticsRouter({ pool, config, sink, exporter, retention, analytics: analyticsService }));
   app.use('/api/backoffice', contactRouter({ pool, sink, phones }));
   app.use('/api/backoffice', engagementRouter({ pool, config, sink, engagement, telegram, worker: engagementWorker, gbp, channel }));
+  app.use('/api/backoffice', googleConnectionRouter({ pool, sink, service: google.connection, publicBaseUrl: config.publicBaseUrl }));
 
   // DEV-E2E-03: interfaz de Claude Design integrada (src/web/panel, adaptada del prototipo
   // docs/ux/claude-design/deliverables). Un solo shell para entrar, invitación y panel; las
   // rutas internas van en el fragmento (#/…), así el token de invitación nunca llega al servidor.
   app.use('/assets', express.static(fileURLToPath(new URL('../web/panel/assets/', import.meta.url)), { index: false, maxAge: 0 }));
   const panelShell = fileURLToPath(new URL('../web/panel/index.html', import.meta.url));
-  app.get(['/', '/panel', '/invitacion'], (_req, res) => {
+  app.get(['/', '/panel', '/invitacion', '/restablecer'], (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.sendFile(panelShell);
   });
@@ -278,7 +324,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     }
   });
 
-  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones, engagement, engagementWorker, telegram, channel, connections };
+  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones, engagement, engagementWorker, telegram, channel, connections, socialScheduler, mailer, passwordReset, google };
 }
 
 /** DEC-0005: cada cuánto se cierran las reservas de cuota vencidas (caídas a mitad). */
@@ -287,7 +333,7 @@ export const QUOTA_RECONCILE_INTERVAL_MS = 60_000;
 export const RETENTION_CHECK_INTERVAL_MS = 15 * 60_000;
 
 async function main(): Promise<void> {
-  const { app, config, jev, quota, retention, engagementWorker } = createApp();
+  const { app, config, jev, quota, retention, engagementWorker, socialScheduler, google } = createApp();
   app.listen(config.port, () => {
     log.info('server.started', `mainspot-platform listening on :${config.port}`, { port: config.port });
   });
@@ -300,6 +346,10 @@ async function main(): Promise<void> {
   const reconcileTimer = setInterval(reconcile, QUOTA_RECONCILE_INTERVAL_MS);
   reconcileTimer.unref();
   const retain = () => {
+    // Se purga con un día de margen frente al máximo de 30 días, también al arrancar.
+    google.retention.purge().catch((err: unknown) => {
+      log.error('google.retention.failed', 'google content purge failed', { error_name: err instanceof Error ? err.name : 'unknown' });
+    });
     retention.runScheduledIfDue().catch((err: unknown) => {
       log.error('retention.scheduled.failed', 'scheduled retention run failed', { error_name: err instanceof Error ? err.name : 'unknown' });
     });
@@ -311,6 +361,13 @@ async function main(): Promise<void> {
   if (config.engagementWorkerEnabled) {
     engagementWorker.start(config.engagementWorkerIntervalMs);
     log.info('engagement.worker.started', 'engagement worker running in server process', { interval_ms: config.engagementWorkerIntervalMs });
+  }
+  // DEV-E2E-04 (P4): publicaciones aprobadas se publican solas a su hora (restart-safe).
+  if (config.socialSchedulerEnabled) {
+    socialScheduler.start(config.socialSchedulerIntervalMs);
+    log.info('social.scheduler.started', 'social scheduler running in server process', {
+      interval_ms: config.socialSchedulerIntervalMs, timezone: config.socialSchedulerTimezone, provider: socialScheduler.provider.provider,
+    });
   }
   if (jev) {
     // Apagado ordenado: espera las clasificaciones Jev pendientes de persistir

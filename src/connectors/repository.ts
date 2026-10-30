@@ -120,7 +120,9 @@ export class ProviderConnectionRepository {
     const r = await this.pool.query<ConnectionRow>(
       `INSERT INTO provider_connection (connection_id, tenant_id, provider, status, external_account_id, external_resource_id,
          external_resource_name, scopes, token_box, token_key_id, token_expires_at, last_verified_at, last_error_code, connected_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, CASE WHEN $12 THEN now() END, $13, $14)
+       VALUES ($1,$2,$3,$4,$5,
+         COALESCE($6,(SELECT external_resource_id FROM provider_connection WHERE tenant_id=$2 AND provider=$3)),
+         $7,$8,$9,$10,$11, CASE WHEN $12 THEN now() END, $13, $14)
        ON CONFLICT (tenant_id, provider) DO UPDATE SET
          status = EXCLUDED.status,
          external_account_id = COALESCE(EXCLUDED.external_account_id, provider_connection.external_account_id),
@@ -151,12 +153,28 @@ export class ProviderConnectionRepository {
     return this.requireBox().openJson<T>(box, { tenantId, provider, purpose: 'tokens' });
   }
 
+  /** Renovación con compare-and-swap: no resucita tokens revocados ni pisa otra renovación. */
+  async replaceTokens<T>(tenantId: string, provider: ProviderName, previous: T, next: T, expiresAt: Date): Promise<boolean> {
+    const row = await this.pool.query<{ token_box: Buffer | null }>(
+      `SELECT token_box FROM provider_connection WHERE tenant_id=$1 AND provider=$2 AND status <> 'disconnected'`, [tenantId, provider]);
+    const oldBox = row.rows[0]?.token_box;
+    if (!oldBox) return false;
+    const context = { tenantId, provider, purpose: 'tokens' };
+    const box = this.requireBox();
+    if (JSON.stringify(box.openJson<T>(oldBox, context)) !== JSON.stringify(previous)) return false;
+    const changed = await this.pool.query(
+      `UPDATE provider_connection SET token_box=$3, token_key_id=$4, token_expires_at=$5, updated_at=now()
+       WHERE tenant_id=$1 AND provider=$2 AND status <> 'disconnected' AND token_box=$6`,
+      [tenantId, provider, box.sealJson(next, context), box.keyId, expiresAt, oldBox]);
+    return changed.rowCount === 1;
+  }
+
   /** Estado tras una comprobación/llamada (sin tocar tokens). */
   async markStatus(tenantId: string, provider: ProviderName, status: ConnectionStatus, errorCode: string | null, verified = false): Promise<void> {
     await this.pool.query(
       `UPDATE provider_connection SET status = $3, last_error_code = $4,
          last_verified_at = CASE WHEN $5 THEN now() ELSE last_verified_at END, updated_at = now()
-       WHERE tenant_id = $1 AND provider = $2`, [tenantId, provider, status, errorCode, verified]);
+       WHERE tenant_id = $1 AND provider = $2 AND status <> 'disconnected' AND token_box IS NOT NULL`, [tenantId, provider, status, errorCode, verified]);
   }
 
   /** Desconexión local: borra el sobre cifrado (la revocación ante el proveedor la hace el adaptador). */
@@ -164,6 +182,7 @@ export class ProviderConnectionRepository {
     await this.pool.query(
       `UPDATE provider_connection SET status = 'disconnected', token_box = NULL, token_key_id = NULL, token_expires_at = NULL,
          last_error_code = NULL, updated_at = now() WHERE tenant_id = $1 AND provider = $2`, [tenantId, provider]);
+    await this.pool.query('UPDATE provider_oauth_state SET used_at=now() WHERE tenant_id=$1 AND provider=$2 AND used_at IS NULL', [tenantId, provider]);
   }
 
   /** Crea un `state` OAuth de un solo uso (devuelve el valor en claro solo a quien redirige). */
@@ -180,8 +199,13 @@ export class ProviderConnectionRepository {
   /** Consume el `state` (una sola vez, sin caducar, mismo proveedor). null si no vale. */
   async consumeOAuthState(state: string, provider: ProviderName): Promise<ConsumedOAuthState | null> {
     const r = await this.pool.query<{ tenant_id: string; user_id: string; redirect_uri: string; verifier_box: Buffer | null }>(
-      `UPDATE provider_oauth_state SET used_at = now()
+      `UPDATE provider_oauth_state s SET used_at = now()
        WHERE state_hash = $1 AND provider = $2 AND used_at IS NULL AND expires_at > now()
+         AND EXISTS (
+           SELECT 1 FROM internal_user u JOIN client c ON c.client_id=u.tenant_id
+           JOIN user_role ur ON ur.user_id=u.user_id AND ur.tenant_id=u.tenant_id
+           WHERE u.user_id=s.user_id AND u.tenant_id=s.tenant_id AND u.status='active'
+             AND c.status='active' AND ur.role_id='administration')
        RETURNING tenant_id, user_id, redirect_uri, verifier_box`, [sha256Hex(state), provider]);
     const row = r.rows[0];
     if (!row) return null;

@@ -161,7 +161,7 @@ export function authRouter(deps: RouteDeps): Router {
       issued_at: issuedAt.toISOString(),
       expires_at: expiresAt.toISOString(),
       revoked_at: null,
-    });
+    }, deps.pool, user.password_hash);
 
     const token = signSessionToken({ sid: sessionId, uid: user.user_id, tid: tenant_id, rol: role }, deps.config.jwtSecret, deps.config.jwtTtlMinutes);
 

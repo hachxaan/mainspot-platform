@@ -16,9 +16,10 @@ import type { Pool } from 'pg';
 import type { AuditSink } from '../audit/sink.ts';
 import { runAtomic } from '../conversation/state-machine.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
+import { assertPasswordPolicy } from './password-policy.ts';
 
 export const INVITATION_TTL_HOURS = 72;
-export const MIN_PASSWORD_LENGTH = 10;
+export { MIN_PASSWORD_LENGTH } from './password-policy.ts';
 const NEUTRAL = 'Este enlace de invitación no es válido o ya no está disponible. Pide uno nuevo a MainSpot.';
 
 function hashToken(token: string): string {
@@ -86,11 +87,8 @@ export class OnboardingService {
   async accept(input: { token: unknown; displayName: unknown; password: unknown }): Promise<{ tenant_id: string; user_id: string; login: string }> {
     const token = typeof input.token === 'string' ? input.token : '';
     const displayName = typeof input.displayName === 'string' ? input.displayName.trim() : '';
-    const password = typeof input.password === 'string' ? input.password : '';
     if (!displayName || displayName.length > 80) throw new AppError(400, 'validation_error', 'Escribe tu nombre (máximo 80 caracteres).');
-    if (password.length < MIN_PASSWORD_LENGTH || password.length > 128 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-      throw new AppError(400, 'validation_error', `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres, con letras y números.`);
-    }
+    const password = assertPasswordPolicy(input.password);
     return runAtomic(this.pool, async (client) => {
       const res = await client.query<{ invitation_id: string; tenant_id: string; email: string }>(
         `UPDATE owner_invitation SET status = 'used', used_at = now()

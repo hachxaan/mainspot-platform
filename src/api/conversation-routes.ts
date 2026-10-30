@@ -27,7 +27,8 @@ import { denyAndRespond, type LooseRequest } from '../boundary/middleware.ts';
 import { requirePermission } from '../boundary/middleware.ts';
 import type { ProposalStatus, RequestStatus } from '../conversation/intents.ts';
 import { resolveIdempotencyKey, resourceIdOf, type QuotaLedger } from '../subscriptions/quota.ts';
-import { initialWebsiteData, prepareFirstPage, preparePhoneUpdate, type SiteProposalDeps } from '../website/site-proposals.ts';
+import { initialWebsiteData, prepareFirstPage, preparePhoneUpdate, prepareRestore, type SiteProposalDeps } from '../website/site-proposals.ts';
+import { localSiteInfo } from '../website/local-site.ts';
 import type { ContactPhoneService } from '../contact/phones.ts';
 
 export interface ConversationRouteDeps {
@@ -373,10 +374,13 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
     const site = await deps.websiteRepo.websiteForTenant(session.tenant_id);
     const domain = await deps.domainService.findByTenant(session.tenant_id);
     // DEV-E2E-03: versiones publicadas (sin HTML) para «Mi página → Versiones publicadas».
+    // DEV-E2E-04 (P3): `restorable` (guarda sus datos) y `restored_from_version` (si vino de una restauración).
     const versions = site
-      ? (await deps.pool.query<{ version: number; diff_summary: string; proposal_id: string | null; created_at: string }>(
-        `SELECT version, diff_summary, proposal_id, created_at FROM website_content
-          WHERE tenant_id = $1 AND website_id = $2 ORDER BY version DESC LIMIT 20`, [session.tenant_id, site.website_id])).rows
+      ? (await deps.pool.query<{ version: number; diff_summary: string; proposal_id: string | null; created_at: string; restored_from_version: number | null; restorable: boolean }>(
+        `SELECT wc.version, wc.diff_summary, wc.proposal_id, wc.created_at, wc.restored_from_version,
+                (wc.data IS NOT NULL OR jsonb_typeof(ap.detail->'after') = 'object') AS restorable
+           FROM website_content wc LEFT JOIN action_proposal ap ON ap.proposal_id = wc.proposal_id AND ap.tenant_id = wc.tenant_id
+          WHERE wc.tenant_id = $1 AND wc.website_id = $2 ORDER BY wc.version DESC LIMIT 20`, [session.tenant_id, site.website_id])).rows
       : [];
     await deps.sink.write({
       tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
@@ -394,6 +398,8 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
         data: site.data,
       } : null,
       domain: domain ?? null,
+      // P3: sitio local real (https://<slug>.<LOCAL_SITE_DOMAIN>); `provisioned` lo escribe solo el comando de operación.
+      local_site: site ? localSiteInfo(site, deps.config.localSiteDomain) : null,
       versions,
     });
   }));
@@ -416,6 +422,32 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
     siteProposal(prepareFirstPage, 'Tu primera página está lista para revisar. Nada se publica hasta que la apruebes.'));
   router.post('/website/phone-publication', confirmPerm,
     siteProposal(preparePhoneUpdate, 'Preparamos la vista previa con el número nuevo. Tu página no cambia hasta que la apruebes.'));
+
+  // --- DEV-E2E-04 (P3): «Restaurar esta versión» = propuesta 'website.restore' con vista previa
+  // «actual vs solicitada»; la publicación (versión NUEVA, historial intacto) exige aprobación de
+  // Administración por /conversation/proposals/:id/approve. Body: { expected_current_version }
+  // (guard optimista ⇒ 409 stale_version). Idempotency-Key: repetir devuelve la misma propuesta.
+  router.post('/website/versions/:version/restore', confirmPerm, ah(async (req, res) => {
+    const lreq = req as LooseRequest;
+    const rc = rcOf(lreq);
+    const session = sessionOf(lreq);
+    const version = Number(req.params['version']);
+    const body: unknown = req.body;
+    const expected = body && typeof body === 'object' && 'expected_current_version' in body ? body.expected_current_version : undefined;
+    if (!Number.isInteger(version) || version < 1 || typeof expected !== 'number' || !Number.isInteger(expected)) {
+      return res.status(400).json({ error: { code: 'validation_error', message: 'Indica la versión a restaurar y la versión que ves publicada hoy.' } });
+    }
+    const idempotencyKey = resolveIdempotencyKey(req.get('idempotency-key'), rc.request_id);
+    const out = await prepareRestore(siteDeps,
+      { tenantId: session.tenant_id, actorId: session.user_id, actorRole: session.role_name, requestId: rc.request_id },
+      { version, expectedCurrentVersion: expected, idempotencyKey });
+    return res.status(out.created ? 201 : 200).json({
+      proposal: out.proposal, status: out.proposal.status, preview: out.preview, replayed: out.replayed,
+      message: out.replayed
+        ? 'Esta solicitud ya se había procesado: no se preparó otra restauración.'
+        : `Preparamos la vista previa para volver a la versión ${version}. Tu página no cambia hasta que Administración la apruebe.`,
+    });
+  }));
 
   router.post('/website/provision', requirePermission('website.provision', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;

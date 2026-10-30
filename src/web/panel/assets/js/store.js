@@ -44,7 +44,7 @@
       plan: null,
       biz: emptySite(),
       website: null,
-      site: { published: null, versions: [], pub: null, initial: null },
+      site: { published: null, versions: [], pub: null, initial: null, local: null },
       requests: [],
       convo: { panel: [], tg: [] },
       notices: [],
@@ -70,7 +70,7 @@
   function freshMem() {
     return {
       timers: {}, typing: { panel: false, tg: false }, busy: {}, local: { panel: [], tg: [] }, tgCode: null,
-      phDraft: {}, caseDraft: {}, fbDraft: null, polDraft: null, bizDraft: null, gbpEdit: false
+      phDraft: {}, caseDraft: {}, fbDraft: null, polDraft: null, bizDraft: null, gbpEdit: false, gbpLocations: null, metaPages: null
     };
   }
   MS.mem = freshMem();
@@ -198,6 +198,7 @@
   function kindOf(p) {
     if (p.proposal_type === 'website.initial') return 'first';
     if (p.proposal_type === 'website.phone') return 'phone';
+    if (p.proposal_type === 'website.restore') return 'restore';
     if (p.capability_target === 'website') return 'change';
     if (p.capability_target === 'social') return 'social';
     return 'sensitive';
@@ -205,6 +206,7 @@
   function titleOf(p, kind, changes) {
     if (kind === 'first') return 'Tu primera página';
     if (kind === 'phone') return 'Teléfono de tu página';
+    if (kind === 'restore') return 'Volver a la versión ' + ((p.detail && p.detail.restore && p.detail.restore.source_version) || '');
     if (kind === 'sensitive') return 'Decisión que requiere aprobación';
     if (changes.length === 1 && changes[0].field !== 'generic') {
       var c = changes[0];
@@ -220,6 +222,7 @@
     var push = function (iso, text, who) { var t = MS.ts(iso); if (t) ev.push({ at: t, text: text, who: who }); };
     if (kind === 'first') push(p.created_at, 'Preparamos la primera página con los datos de tu negocio', 'MainSpot');
     else if (kind === 'phone') push(p.created_at, '[Cambiaste|Cambió] el teléfono de la página web', MS.who(p.created_by));
+    else if (kind === 'restore') push(p.created_at, '[Pediste|Pidió] volver a la versión ' + ((p.detail && p.detail.restore && p.detail.restore.source_version) || ''), MS.who(p.created_by));
     else push(p.created_at, '[Pediste|Pidió] el cambio', MS.who(p.created_by));
     if (p.confirmed_at) push(p.confirmed_at, 'Preparamos la vista previa', 'MainSpot');
     if (p.rejected_at) push(p.rejected_at, '[Descartaste|Descartó] el cambio', MS.who(p.rejected_by));
@@ -315,7 +318,9 @@
     var w = R.website ? R.website.website : null;
     S.website = w;
     S.domain = R.website ? R.website.domain : null;
-    MS.DATA.address = S.domain && S.domain.subdomain ? S.domain.subdomain : '';
+    // DEV-E2E-04 (P3): sitio local real (https://<slug>.mainspot.local.io) si Operación lo provisionó.
+    S.site.local = R.website && R.website.local_site ? R.website.local_site : null;
+    MS.DATA.address = S.site.local && S.site.local.provisioned ? S.site.local.url : (S.domain && S.domain.subdomain ? S.domain.subdomain : '');
     S.biz = siteData(w ? w.data : {});
     if (!S.biz.name) S.biz.name = (w && w.site_name) || MS.DATA.business;
     S.site.published = w && Number(w.published_version) > 0 ? siteData(w.data) : null;
@@ -330,7 +335,8 @@
     S.site.initial = S.requests.filter(function (r) { return r.kind === 'first' && ['awaiting_confirm', 'preparing', 'preview_ready', 'approved', 'failed', 'published'].indexOf(r.status) >= 0; })[0] || null;
     S.site.versions = ((R.website && R.website.versions) || []).map(function (v) {
       var r = byId[v.proposal_id];
-      return { n: v.version, at: MS.ts(v.created_at), by: r && r.approvedBy ? r.approvedBy : 'Alguien de tu equipo', title: r ? r.title : v.diff_summary, reqId: v.proposal_id };
+      return { n: v.version, at: MS.ts(v.created_at), by: r && r.approvedBy ? r.approvedBy : 'Alguien de tu equipo', title: r ? r.title : v.diff_summary, reqId: v.proposal_id,
+        restorable: v.restorable !== false, from: v.restored_from_version || null };
     });
     var lastPub = MS.webRequests().filter(function (r) { return r.target === 'website' && ['approved', 'published', 'failed'].indexOf(r.status) >= 0; })
       .sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); })[0];
@@ -348,9 +354,18 @@
     // Google / Facebook (simulados mientras no haya conexión real verificada)
     var g = R.gbp;
     S.gbp = g ? g.profile : null;
+    S.googleLocation = g && g.google ? g.google.location : null;
     S.prov.google = { connected: !!(g && g.profile), down: false, perm: true, connectedAt: g && g.profile ? MS.ts(g.profile.updated_at) : null, mode: g ? g.provider_mode : 'simulated' };
+    // DEV-E2E-04: conexión OAuth real con Google (estado de provider_connection; nunca tokens).
+    var gc = R.googleConn;
+    S.googleConn = gc || null;
+    if (gc) { S.prov.google.status = gc.status; S.prov.google.down = gc.status === 'provider_unavailable'; S.prov.google.perm = gc.status !== 'permission_missing'; if (gc.status === 'connected' && g && g.provider_mode === 'real') S.prov.google.connected = true; }
     var fbSync = R.phones && R.phones.integration_phones && R.phones.integration_phones.facebook ? R.phones.integration_phones.facebook.sync.mode : 'simulated';
     S.prov.facebook = { connected: true, down: false, perm: true, connectedAt: null, mode: fbSync };
+    var mc = R.metaConn, mcc = mc && mc.connection;
+    S.metaConn = mc || null;
+    if (mc && mc.enabled) S.prov.facebook = { connected: !!(mcc && mcc.status === 'connected'), status: mcc ? mcc.status : 'disconnected',
+      down: !!(mcc && mcc.status === 'provider_unavailable'), perm: !(mcc && mcc.status === 'permission_missing'), mode: 'real' };
     S.posts = (R.posts || []).map(function (p) {
       return {
         id: p.post_id, text: p.text, status: p.status, contentType: p.content_type, proposalId: p.proposal_id,
@@ -418,9 +433,11 @@
         if (r.ok) MS.R.tgChat = r.data.messages;
         return r;
       });
-    }
+    },
+    googleConn: function () { return API.get('/connections/google').then(function (r) { if (r.ok) MS.R.googleConn = r.data; return r; }); },
+    metaConn: function () { return API.get('/connections/meta').then(function (r) { if (r.ok) MS.R.metaConn = r.data; return r; }); }
   };
-  var ALL = ['ent', 'website', 'proposals', 'requests', 'phones', 'gbp', 'posts', 'cases', 'policies', 'telegram', 'devsim', 'tgChat', 'users'];
+  var ALL = ['ent', 'website', 'proposals', 'requests', 'phones', 'gbp', 'googleConn', 'metaConn', 'posts', 'cases', 'policies', 'telegram', 'devsim', 'tgChat', 'users'];
 
   function snapshot() {
     try { return JSON.stringify([MS.R, MS.mem.tgCode]); } catch (e) { return String(Math.random()); }
@@ -477,6 +494,6 @@
   MS.poll = function () {
     if (!MS.S.session || document.visibilityState !== 'visible') return;
     MS.mem.lastPoll = Date.now();
-    MS.refresh(['proposals', 'requests', 'website', 'cases', 'posts', 'telegram', 'policies', 'phones', 'gbp']);
+    MS.refresh(['proposals', 'requests', 'website', 'cases', 'posts', 'telegram', 'policies', 'phones', 'gbp', 'googleConn', 'metaConn']);
   };
 })();

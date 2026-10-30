@@ -4,13 +4,12 @@
  * - Simulador determinista respaldado por PostgreSQL (sim_provider_*): funciona entre procesos
  *   (servidor, worker, tests), sobrevive a reinicios y permite inyectar fallos. Respuestas
  *   idempotentes por `idempotency_key`: repetir no duplica una respuesta pública.
- * - Adaptadores reales: interfaz lista, SIN certificar. Con credenciales nunca se afirma
- *   éxito real (las respuestas de Meta a comentarios devuelven `not_verified`).
+ * - Adaptadores reales por negocio en google/reviews.ts y social/meta-engagement.ts.
+ *   Los fallos reales nunca se convierten en respuestas simuladas.
  */
 
 import { createHash } from 'node:crypto';
 import type { Pool } from 'pg';
-import type { ReputationProvider } from '../reputation/provider.ts';
 import type { EngagementOrigin } from './classifier.ts';
 
 export interface ReplyInput {
@@ -41,7 +40,8 @@ export interface InboundComment {
 }
 
 export interface CommentSource {
-  readonly mode: 'simulated' | 'not_verified';
+  /** 'real' = lectura autenticada del proveedor (DEV-E2E-04: MetaCommentSource). */
+  readonly mode: 'simulated' | 'not_verified' | 'real';
   listSince(tenantId: string, cursor: string | null): Promise<{ items: InboundComment[]; cursor: string | null }>;
 }
 
@@ -84,27 +84,6 @@ export class SimulatedReplier implements EngagementReplier {
   }
 }
 
-/**
- * Adaptador real (NO certificado): Google usa el adaptador GBP existente; la respuesta a
- * comentarios de Meta no está implementada y nunca se reporta como enviada.
- */
-export class RealReplier implements EngagementReplier {
-  readonly mode = 'real' as const;
-  readonly idempotent = false;
-  private readonly google: ReputationProvider;
-
-  constructor(google: ReputationProvider) {
-    this.google = google;
-  }
-
-  async reply(input: ReplyInput): Promise<ReplyResult> {
-    if (input.origin === 'facebook_comment') {
-      return { ok: false, error: 'meta_comment_reply_not_verified', retryable: false };
-    }
-    const res = await this.google.postPublicResponse(input.tenantId, input.targetRef, input.text);
-    return res.ok ? { ok: true, external_ref: res.external_ref } : { ok: false, error: res.error ?? 'gbp_reply_failed', retryable: false };
-  }
-}
 
 export class SimulatedCommentSource implements CommentSource {
   readonly mode = 'simulated' as const;
@@ -131,11 +110,3 @@ export class SimulatedCommentSource implements CommentSource {
   }
 }
 
-/** Con Meta configurado la lectura de comentarios aún no está certificada: no se inventan datos. */
-export class NotVerifiedCommentSource implements CommentSource {
-  readonly mode = 'not_verified' as const;
-
-  async listSince(_tenantId: string, cursor: string | null): Promise<{ items: InboundComment[]; cursor: string | null }> {
-    return { items: [], cursor };
-  }
-}

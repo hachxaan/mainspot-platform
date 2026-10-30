@@ -9,6 +9,10 @@
  * clear message (IR-02). Test code passes an explicit test-only secret.
  */
 
+import { loadGoogleConnectorConfig, type GoogleConnectorConfig } from '../google/config.ts';
+import { loadMailConfig, type MailConfig } from '../mail/config.ts';
+import { assertTimeZone, DEFAULT_SCHEDULER_TIMEZONE } from '../social/timezone.ts';
+
 const APP_ENVS = ['development', 'production', 'test'] as const;
 const AUDIT_MODES = ['fail_closed', 'fail_open'] as const;
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
@@ -91,12 +95,24 @@ export interface AppConfig {
   // INC-004 reputation/reviews (DEC-023 umbral configurable; DEC-026 simulado)
   reviewThreshold: number;
   reputationProvider: ReputationProviderName;
-  googleGbpToken: string;
-  googleGbpBaseUrl: string;
   // INC-005 social (Meta/Facebook, DEC-017/026)
   socialProvider: SocialProviderName;
-  metaGraphToken: string;
   metaGraphBaseUrl: string;
+  /**
+   * DEV-E2E-04 §2B: Meta Pages REAL por conexión de cada negocio (OAuth Facebook Login,
+   * page token cifrado). Versión de Graph API fijada por configuración (META_GRAPH_VERSION;
+   * vigente según el changelog oficial, nunca implícita). App ID/secret solo para OAuth y
+   * debug_token; vacíos ⇒ no hay «Conectar Facebook» (el aprovisionamiento de laboratorio
+   * sigue disponible). META_ADS_CHECK=on habilita SOLO la lectura de cuentas publicitarias.
+   */
+  metaGraphVersion: string;
+  metaAppId: string;
+  metaAppSecret: string;
+  metaAdsCheckEnabled: boolean;
+  /** Scheduler de publicaciones aprobadas (SOCIAL_SCHEDULER=on|off, intervalo, zona del negocio). */
+  socialSchedulerEnabled: boolean;
+  socialSchedulerIntervalMs: number;
+  socialSchedulerTimezone: string;
   // INC-006 subscriptions (DEC-024 catálogo configurable, sin cobro real)
   paymentProvider: PaymentProviderName;
   // APR-0002: Jev como clasificador semántico (disabled | shadow | primary).
@@ -109,10 +125,20 @@ export interface AppConfig {
   /** DEV-E2E-02: URL pública del panel para enlaces en avisos e invitaciones. */
   publicBaseUrl: string;
   /**
+   * DEV-E2E-04 (P3): dominio base de los sitios locales REALES de cada negocio
+   * (https://<slug>.<LOCAL_SITE_DOMAIN>, resueltos por /etc/hosts y servidos por el LXC webserver).
+   * Solo red de desarrollo; nunca DNS público.
+   */
+  localSiteDomain: string;
+  /**
    * DEV-E2E-04: clave AES-256-GCM (32 bytes en base64, CONNECTOR_TOKEN_KEY, fuera de Git) para
    * cifrar tokens de proveedores por negocio. Vacía ⇒ no se guardan ni leen tokens (fail closed).
    */
   connectorTokenKey: string;
+  /** DEV-E2E-04 §2A: conector REAL de Google Business Profile (OAuth por negocio, hosts por API). */
+  google: GoogleConnectorConfig;
+  /** DEV-E2E-04 §3: correo transaccional para recuperar contraseña (disabled | smtp | resend). */
+  mail: MailConfig;
 }
 
 export interface LoadConfigOptions {
@@ -238,12 +264,17 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     reviewThreshold: Number(process.env.REVIEW_THRESHOLD ?? 4),
     // INC-004: Google Business Profile — simulado salvo GOOGLE_GBP_TOKEN (DEC-026).
     reputationProvider: enumValue<ReputationProviderName>('REPUTATION_PROVIDER', process.env.REPUTATION_PROVIDER, REPUTATION_PROVIDERS, 'simulated'),
-    googleGbpToken: process.env.GOOGLE_GBP_TOKEN ?? '',
-    googleGbpBaseUrl: process.env.GOOGLE_GBP_BASE_URL ?? 'https://mybusinessbusinessinformation.googleapis.com',
-    // INC-005: Meta/Facebook — simulado salvo META_GRAPH_TOKEN (DEC-017/026).
+    // INC-005: Meta/Facebook; las credenciales pertenecen a la conexión cifrada de cada tenant.
     socialProvider: enumValue<SocialProviderName>('SOCIAL_PROVIDER', process.env.SOCIAL_PROVIDER, SOCIAL_PROVIDERS, 'simulated'),
-    metaGraphToken: process.env.META_GRAPH_TOKEN ?? '',
     metaGraphBaseUrl: process.env.META_GRAPH_BASE_URL ?? 'https://graph.facebook.com',
+    // DEV-E2E-04 §2B: versión vigente de Graph API (changelog oficial) y app de Meta para OAuth.
+    metaGraphVersion: (process.env.META_GRAPH_VERSION ?? 'v26.0').trim(),
+    metaAppId: process.env.META_APP_ID ?? '',
+    metaAppSecret: process.env.META_APP_SECRET ?? '',
+    metaAdsCheckEnabled: (process.env.META_ADS_CHECK ?? 'off') === 'on',
+    socialSchedulerEnabled: (process.env.SOCIAL_SCHEDULER ?? 'on') !== 'off',
+    socialSchedulerIntervalMs: Math.max(1000, Number(process.env.SOCIAL_SCHEDULER_INTERVAL_MS ?? 15_000)),
+    socialSchedulerTimezone: assertTimeZone((process.env.SOCIAL_SCHEDULER_TIMEZONE ?? DEFAULT_SCHEDULER_TIMEZONE).trim()),
     // INC-006: proveedor de pago — SOLO esqueleto simulado en piloto (DEC-024,
     // sin cobro ni procesador real). 'stripe' es TENTATIVA y requiere token.
     paymentProvider: enumValue<PaymentProviderName>('PAYMENT_PROVIDER', process.env.PAYMENT_PROVIDER, PAYMENT_PROVIDERS, 'simulated'),
@@ -256,7 +287,10 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     engagementPollIntervalMs: Math.max(0, Number(process.env.ENGAGEMENT_POLL_INTERVAL_MS ?? 60_000)),
     telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
     publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? `http://localhost:${Number(process.env.PORT ?? 3000)}`).replace(/\/$/, ''),
+    localSiteDomain: (process.env.LOCAL_SITE_DOMAIN ?? 'mainspot.local.io').trim().toLowerCase(),
     connectorTokenKey: process.env.CONNECTOR_TOKEN_KEY ?? '',
+    google: loadGoogleConnectorConfig(process.env),
+    mail: loadMailConfig(process.env),
   };
 
   return { ...config, ...overrides };

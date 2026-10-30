@@ -36,6 +36,8 @@
         if (p[1] === 'telegram') return V.onbTelegram();
         return redirect('#/inicio');
       case 'entrar': return S.session ? redirect('#/inicio') : V.login();
+      case 'recuperar': return S.session ? redirect('#/inicio') : V.forgot();
+      case 'restablecer': return V.reset();
       case 'inicio': return V.home();
       case 'negocio': return p[1] === 'plan' ? V.plan() : V.biz();
       case 'telegram': return V.telegram(q);
@@ -50,11 +52,11 @@
       case 'pagina': return p[1] === 'crear' ? V.business({ shell: true }) : V.page();
       case 'sitio': return V.site();
       case 'avisos': return V.notices(q);
-      case 'google': return V.google();
+      case 'google': return V.google(q);
       case 'facebook':
         if (p[1] === 'nueva') return V.fbNew();
         if (p[1] === 'post') return V.fbPost(p[2]);
-        return V.facebook();
+        return V.facebook(q);
       case 'atencion': return p[1] === 'reglas' ? V.rules() : V.attention(q);
       case 'caso': return V.caseView(p[1]);
       default:
@@ -145,6 +147,12 @@
     busy(el, true, label);
     return p.then(function (r) { if (document.body.contains(el)) busy(el, false); return r; });
   }
+  function connectionRequest(el, provider, action, body) {
+    return withBusy(el, 'Conectando…', API.post('/connections/' + provider + '/' + action, body)).then(function (r) {
+      if (!r.ok) { toast(r.error.message, 'info'); return r; }
+      return MS.refresh([provider === 'google' ? 'googleConn' : 'metaConn', 'gbp', 'phones'], true).then(function () { return r; });
+    });
+  }
   function val(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
   function showBanner(id, msg) {
     var b = document.getElementById(id), t = document.getElementById(id + '-text');
@@ -201,9 +209,8 @@
     },
     'onb-skip': function () { go('#/inicio'); toast('Puedes conectar Telegram cuando quieras desde tu panel', 'info'); },
     'onb-finish': function () { go('#/inicio'); },
-    forgot: function () {
-      UI.sheet({ title: 'Recupera tu acceso', html: '<p>Pide ayuda al equipo de MainSpot y te ayudarán a crear una contraseña nueva.</p>', actions: [{ label: 'Entendido', style: 'primary' }] });
-    },
+    /* DS-05a: volver a pedir el enlace (el anterior deja de valer en el servidor). */
+    'forgot-again': function () { MS.mem.forgotDone = null; MS.emit(); },
     'dash-retry': function (el) { withBusy(el, 'Cargando…', MS.boot()); },
     'ask-chip': function (el) { var t = document.getElementById('home-ask'); if (t) { t.value = el.dataset.arg; t.focus(); } },
     renew: function (el) {
@@ -315,7 +322,65 @@
         if (r.id) go('#/vista-previa/' + r.id);
       });
     },
-    /* --- Google (ficha simulada) --- */
+    /* --- Restaurar una versión de la página (DEV-E2E-04 P3): confirmación → vista previa «actual vs
+       solicitada» → aprobación de Administración. Nada cambia en la página hasta aprobar. --- */
+    'restore-ask': function (el) {
+      var n = Number(el.dataset.arg), S = MS.S;
+      var cur = S.website ? Number(S.website.published_version) : 0;
+      if (!n || !cur) return;
+      var v = S.site.versions.filter(function (x) { return x.n === n; })[0];
+      UI.sheet({
+        title: '¿Restaurar la versión ' + n + '?',
+        html: '<p>Prepararemos una vista previa para comparar tu página de hoy (versión ' + cur + ') con la versión ' + n + (v ? ' («' + MS.esc(v.title) + '»)' : '') + '.</p>' +
+          '<p>Se publicará como una versión nueva solo cuando ' + (MS.can('approve') ? 'tú la apruebes' : 'Administración la apruebe') + '. El historial no se borra ni se reescribe.</p>',
+        actions: [
+          { label: 'Sí, preparar la vista previa', style: 'primary', fn: function () {
+            MS.restoreVersion(n, cur).then(function (r) {
+              if (!r.ok) { toast(r.message, 'info'); if (r.code === 'stale_version') MS.refresh(['website', 'proposals', 'requests'], true); return; }
+              toast('Vista previa lista: compara la versión actual con la solicitada', 'eye');
+              if (r.id) go('#/vista-previa/' + r.id);
+            });
+          } },
+          { label: 'Cancelar', style: 'secondary' }]
+      });
+    },
+    /* --- Conexiones reales por negocio (OAuth, sin tokens en el navegador) --- */
+    'gbp-connect': function (el) {
+      connectionRequest(el, 'google', 'start').then(function (r) { if (r.ok) location.assign(r.data.authorization_url); });
+    },
+    'gbp-locations': function (el) {
+      withBusy(el, 'Consultando…', API.get('/connections/google/locations')).then(function (r) {
+        if (!r.ok) { toast(r.error.message, 'info'); return; }
+        MS.mem.gbpLocations = r.data; MS.emit();
+      });
+    },
+    'gbp-pick-location': function (el) {
+      var parts = el.dataset.arg.split('|');
+      connectionRequest(el, 'google', 'location', { account: parts[0], location: parts[1] });
+    },
+    'gbp-verify-conn': function (el) { connectionRequest(el, 'google', 'verify'); },
+    'gbp-disconnect': function (el) {
+      UI.sheet({ title: '¿Desconectar Google?', body: 'MainSpot dejará de leer y responder reseñas y borrará las credenciales de este negocio.', actions: [
+        { label: 'Desconectar', style: 'danger', fn: function () { connectionRequest(el, 'google', 'disconnect'); } },
+        { label: 'Cancelar', style: 'secondary' }] });
+    },
+    'meta-connect': function (el) {
+      connectionRequest(el, 'meta', 'start').then(function (r) { if (r.ok) location.assign(r.data.url); });
+    },
+    'meta-pages': function (el) {
+      withBusy(el, 'Consultando…', API.get('/connections/meta/pages')).then(function (r) {
+        if (!r.ok) { toast(r.error.message, 'info'); return; }
+        MS.mem.metaPages = r.data.pages; MS.emit();
+      });
+    },
+    'meta-pick-page': function (el) { connectionRequest(el, 'meta', 'select', { page_id: el.dataset.arg }); },
+    'meta-verify': function (el) { connectionRequest(el, 'meta', 'verify'); },
+    'meta-disconnect': function (el) {
+      UI.sheet({ title: '¿Desconectar Facebook?', body: 'MainSpot dejará de publicar y responder en esta página y borrará las credenciales del negocio.', actions: [
+        { label: 'Desconectar', style: 'danger', fn: function () { connectionRequest(el, 'meta', 'disconnect'); } },
+        { label: 'Cancelar', style: 'secondary' }] });
+    },
+    /* --- Ficha Google (estado de sincronización suministrado por la API) --- */
     'gbp-edit': function () { MS.mem.gbpEdit = true; MS.emit(); },
     'gbp-cancel': function () { MS.mem.gbpEdit = false; MS.emit(); },
     'gbp-verify': function (el) {
@@ -329,11 +394,11 @@
     'fb-back': function () { if (MS.mem.fbDraft) MS.mem.fbDraft.step = 'write'; MS.emit(); },
     'fb-approve': function (el) {
       var p = MS.fb.get(el.dataset.arg);
-      UI.sheet({ title: p.scheduledFor ? '¿Programar esta publicación?' : '¿Publicar en Facebook?', body: 'Quedará registrado que tú la aprobaste. (simulado: no se publica nada en Facebook)', actions: [
+      UI.sheet({ title: p.scheduledFor ? '¿Programar esta publicación?' : '¿Publicar en Facebook?', body: 'Quedará registrado que tú la aprobaste.' + (MS.S.prov.facebook.mode === 'simulated' ? ' (simulado: no se publica nada en Facebook)' : ' El servidor confirmará el resultado con Facebook.'), actions: [
         { label: p.scheduledFor ? 'Sí, programar' : 'Sí, publicar', style: 'primary', fn: function () {
           publishPost(p.id).then(function (res) {
             MS.refresh(['posts', 'proposals', 'requests'], true);
-            toast(res.ok ? (p.scheduledFor ? 'Publicación programada (simulado)' : 'Publicada en Facebook (simulado)') : res.error.message, res.ok ? 'circle-check' : 'info');
+            toast(res.ok ? (MS.S.prov.facebook.mode === 'simulated' ? (p.scheduledFor ? 'Publicación programada (simulado)' : 'Publicada en Facebook (simulado)') : 'Aprobación guardada: el servidor confirmará la publicación') : res.error.message, res.ok ? 'circle-check' : 'info');
           });
         } },
         { label: 'Todavía no', style: 'secondary' }] });
@@ -349,7 +414,7 @@
       var p = MS.fb.get(el.dataset.arg);
       withBusy(el, 'Publicando…', API.post('/conversation/proposals/' + p.proposalId + '/approve')).then(function (res) {
         MS.refresh(['posts', 'proposals'], true);
-        toast(res.ok ? 'Publicada en Facebook (simulado)' : res.error.message, res.ok ? 'circle-check' : 'info');
+        toast(res.ok ? 'Solicitud procesada; consulta el estado confirmado de la publicación' : res.error.message, res.ok ? 'circle-check' : 'info');
       });
     },
     /* --- Simulador de desarrollo --- */
@@ -403,7 +468,7 @@
         }).join('') + '</ul>' +
           '<p>Nunca responderá quejas, descuentos, acusaciones ni temas delicados sin ti. Puedes apagarlo cuando quieras y verás cada respuesta en tu historial.</p>' +
           '<label class="check" style="margin-top:12px"><input type="checkbox" id="pol-consent"><span>Lo autorizo para ' + MS.esc(MS.DATA.business) + '</span></label>' +
-          '<p class="field-error" id="pol-consent-err" hidden>' + MS.icon('circle-alert') + '<span>Marca la casilla para autorizarlo.</span></p>' + UI.note('Las respuestas automáticas van al simulador: nada se publica en Google ni en Facebook.'),
+          '<p class="field-error" id="pol-consent-err" hidden>' + MS.icon('circle-alert') + '<span>Marca la casilla para autorizarlo.</span></p>' + UI.note('En los canales conectados, las respuestas autorizadas serán públicas. Los canales en modo simulado no publican fuera de MainSpot.'),
         actions: [
           { label: 'Autorizar y guardar', style: 'primary', keepOpen: true, fn: function () {
             var cb = document.getElementById('pol-consent');
@@ -454,14 +519,14 @@
       if (d.when === 'later') {
         var dd = document.getElementById('fb-date').value, tt = document.getElementById('fb-time').value;
         d.date = dd; d.time = tt;
-        at = new Date(dd + 'T' + tt).getTime();
-        if (!dd || !tt || isNaN(at) || at < Date.now() + 60000) { d.error = 'Elige un día y una hora en el futuro.'; MS.emit(); return; }
+        if (!dd || !tt) { d.error = 'Elige un día y una hora; el servidor comprobará la zona horaria configurada.'; MS.emit(); return; }
+        at = dd + 'T' + tt; // No interpretar en la zona del navegador.
       }
       d.error = '';
       function create() {
         return API.post('/social/posts', { text: text }, { idempotencyKey: API.key() }).then(function (res) {
           if (!res.ok || !at) return res;
-          return API.post('/social/posts/' + res.data.post.post_id + '/schedule', { publish_at: new Date(at).toISOString() }).then(function (s) { return s.ok ? res : s; });
+          return API.post('/social/posts/' + res.data.post.post_id + '/schedule', { publish_local: dd + 'T' + tt }).then(function (s) { return s.ok ? res : s; });
         });
       }
       if (!MS.can('social.approve')) {
@@ -472,7 +537,7 @@
         });
         return;
       }
-      UI.sheet({ title: at ? '¿Programar esta publicación?' : '¿Publicar en Facebook?', body: (at ? 'Se publicará el ' + MS.date(at) + ' a las ' + MS.time(at) + '. ' : '') + 'Quedará registrado que tú la aprobaste. (simulado: no se publica nada en Facebook)', actions: [
+      UI.sheet({ title: at ? '¿Programar esta publicación?' : '¿Publicar en Facebook?', body: (at ? 'Se publicará según la zona horaria configurada del negocio. ' : '') + 'Quedará registrado que tú la aprobaste.' + (MS.S.prov.facebook.mode === 'simulated' ? ' (simulado: no se publica nada en Facebook)' : ' El servidor comprobará la publicación antes de marcarla como publicada.'), actions: [
         { label: at ? 'Sí, programar' : 'Sí, publicar', style: 'primary', fn: function () {
           create().then(function (res) {
             if (!res.ok) { d.error = res.error.message; MS.emit(); return null; }
@@ -481,7 +546,7 @@
               MS.mem.fbDraft = null;
               return MS.refresh(['posts', 'proposals', 'requests'], true).then(function () {
                 go('#/facebook/post/' + postId);
-                toast(pub.ok ? (at ? 'Publicación programada (simulado)' : 'Publicada en Facebook (simulado)') : pub.error.message, pub.ok ? 'circle-check' : 'info');
+                toast(pub.ok ? (MS.S.prov.facebook.mode === 'simulated' ? (at ? 'Publicación programada (simulado)' : 'Publicada en Facebook (simulado)') : 'Aprobación guardada: publicación pendiente de confirmar') : pub.error.message, pub.ok ? 'circle-check' : 'info');
               });
             });
           });
@@ -502,7 +567,7 @@
         withBusy(btn, 'Publicando…', MS.agent.approve(id, text)).then(function (r) {
           delete MS.mem.caseDraft[id];
           MS.notices_markRoute('#/caso/' + id);
-          toast(r.ok ? (r.message || 'Respuesta publicada (simulado)') : r.message, r.ok ? 'circle-check' : 'info');
+          toast(r.ok ? (r.message || 'Respuesta procesada; consulta su estado de entrega') : r.message, r.ok ? 'circle-check' : 'info');
         });
       }
       if (/(descuento|\d+\s*%|gratis|reembolso|te regalamos)/i.test(text)) {
@@ -510,7 +575,7 @@
           { label: 'Publicar así', style: 'primary', fn: send }, { label: 'Volver a editar', style: 'secondary', fn: function () { t.focus(); } }] });
         return;
       }
-      UI.sheet({ title: '¿Publicar esta respuesta?', html: '<p>«' + MS.esc(text) + '»</p><p>Se publicará en ' + MS.esc(c ? MS.agent.SRC[c.source].short : 'el canal') + ' a tu nombre. (simulado)</p>', actions: [
+      UI.sheet({ title: '¿Publicar esta respuesta?', html: '<p>«' + MS.esc(text) + '»</p><p>Se publicará en ' + MS.esc(c ? MS.agent.SRC[c.source].short : 'el canal') + ' a tu nombre. El modo de cada canal indica si es real o simulado.</p>', actions: [
         { label: 'Sí, publicar', style: 'primary', fn: send }, { label: 'Todavía no', style: 'secondary' }] });
     },
     gbp: function (form) {
@@ -530,7 +595,7 @@
       withBusy(document.getElementById('gbp-submit'), 'Guardando…', API.put('/google/profile', body)).then(function (res) {
         if (!res.ok) { showBanner('gbp-error', res.error.message); return; }
         MS.mem.gbpEdit = false;
-        MS.refresh(['gbp', 'phones'], true).then(function () { toast('Guardamos tu ficha (simulado)'); });
+        MS.refresh(['gbp', 'phones'], true).then(function () { toast('Solicitud guardada. Consulta qué campos confirmó el proveedor.'); });
       });
     },
     'team-add': function (form) {
@@ -670,6 +735,48 @@
       // Escribir solo el código equivale a /start CÓDIGO (como en el bot).
       if (t.status !== 'linked' && t.code && text.replace(/\s+/g, '').toUpperCase() === t.code) { MS.tg.start(t.code); return; }
       MS.tg.send(text);
+    },
+    /* DS-05a: la respuesta es la misma exista o no el correo; solo se muestra lo que dice el servidor. */
+    forgot: function (form) {
+      var email = val('fg-email').toLowerCase();
+      document.getElementById('forgot-error').hidden = true;
+      setError('fg-email', /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ? '' : 'Escribe el correo con el que entras a MainSpot.');
+      var bad = form.querySelector('[aria-invalid="true"]');
+      if (bad) { bad.focus(); return; }
+      var btn = document.getElementById('forgot-submit');
+      busy(btn, true, 'Enviando…');
+      API.auth('/password/forgot', { login: email }).then(function (res) {
+        if (!res.ok) { busy(btn, false); showBanner('forgot-error', res.error.message); return; }
+        MS.mem.loginEmail = email;
+        MS.mem.forgotDone = { message: res.data && res.data.message ? res.data.message : 'Si ese correo tiene una cuenta en MainSpot, recibirás un mensaje con un enlace para crear una contraseña nueva.' };
+        MS.emit();
+      });
+    },
+    /* DS-05b: contraseña nueva con el token en memoria (nunca en sessionStorage ni localStorage). */
+    reset: function (form) {
+      var v = document.getElementById('p-pass').value, v2 = document.getElementById('p-pass2').value;
+      var rq = MS.passReqs(v);
+      document.getElementById('reset-error').hidden = true;
+      setError('p-pass', !v ? 'Escribe una contraseña.' : (!(rq.len && rq.num && rq.let) ? 'Tu contraseña todavía no cumple lo de la lista.' : ''));
+      var okRules = v && rq.len && rq.num && rq.let;
+      setError('p-pass2', !okRules ? '' : (!v2 ? 'Escribe la contraseña otra vez.' : (v2 !== v ? 'Las contraseñas no coinciden. Escríbela igual en los dos campos.' : '')));
+      var bad = form.querySelector('[aria-invalid="true"]');
+      if (bad) { bad.focus(); return; }
+      var btn = document.getElementById('reset-submit');
+      busy(btn, true, 'Guardando…');
+      API.auth('/password/reset', { token: MS.mem.resetToken, password: v }).then(function (res) {
+        if (!res.ok) {
+          busy(btn, false);
+          if (res.status === 404) { MS.mem.resetToken = null; MS.mem.resetInvalid = res.error.message; MS.emit(); return; }
+          showBanner('reset-error', res.error.message);
+          return;
+        }
+        MS.mem.resetToken = null;
+        MS.mem.resetInvalid = null;
+        MS.mem.forgotDone = null;
+        go('#/entrar');
+        toast(res.data && res.data.message ? res.data.message : 'Tu contraseña cambió. Entra con tu correo y tu contraseña nueva.', 'circle-check');
+      });
     }
   };
 
@@ -756,6 +863,12 @@
       var h = location.hash.replace(/^#/, '');
       if (h && h.charAt(0) !== '/') MS.mem.invToken = h;
       history.replaceState(null, '', '/panel#/invitacion');
+    }
+    // Enlace de contraseña nueva (/restablecer#TOKEN): igual que la invitación, solo en memoria.
+    if (location.pathname === '/restablecer') {
+      var rh = location.hash.replace(/^#/, '');
+      if (rh && rh.charAt(0) !== '/') MS.mem.resetToken = rh;
+      history.replaceState(null, '', '/panel#/restablecer');
     }
     MS.on(function () { render(false); });
     window.addEventListener('hashchange', function () { UI.closeSheet(true); render(true); });

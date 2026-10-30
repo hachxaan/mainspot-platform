@@ -159,8 +159,69 @@
           return '<label class="radio-row' + (i === 0 ? ' is-on' : '') + '"><input type="radio" name="l-tenant" value="' + esc(t.tenant_id) + '"' + (i === 0 ? ' checked' : '') + '><span><span class="rr-t">' + esc(t.business_name) + '</span></span></label>';
         }).join('') + '</fieldset>' : '') +
         '<div class="ob-actions" style="margin-top:8px">' + UI.btn('Entrar', { type: 'submit', block: true, id: 'login-submit' }) +
-          '<button type="button" class="link-btn" style="align-self:center" data-action="forgot">¿Olvidaste tu contraseña?</button></div>' +
+          '<a class="link-btn" style="align-self:center" href="#/recuperar">¿Olvidaste tu contraseña?</a></div>' +
       '</form></main></div></div>';
     return { title: 'Entrar', html: html, shell: false };
+  };
+
+  /* ---------- DS-05a · ¿Olvidaste tu contraseña? (POST /api/auth/password/forgot) ----------
+     La respuesta del servidor es la misma exista o no el correo; aquí solo se muestra. */
+  V.forgot = function () {
+    var done = MS.mem.forgotDone;
+    var html = '<div class="ob" data-screen="DS-05">' + UI.planes('ob-art') +
+      '<div class="ob-wrap"><main class="ob-body" id="main">';
+    if (done) {
+      html += '<span class="spot spot-none" style="margin-bottom:20px">' + icon('mail') + '</span>' +
+        '<h1 tabindex="-1" data-focus>Revisa tu correo</h1>' +
+        '<p class="ob-lead">' + esc(done.message) + '</p>' +
+        '<div style="margin-top:24px">' + UI.facts([['clock', 'El enlace vence', 'En 30 minutos.'], ['lock', 'Sirve una sola vez', 'Si pides otro, el anterior deja de funcionar.']]) + '</div>' +
+        '<div class="ob-actions">' + UI.btn('Volver a entrar', { href: '#/entrar', block: true }) +
+          '<button type="button" class="link-btn" style="align-self:center" data-action="forgot-again">¿No te llegó? Pedir otro enlace</button></div>';
+    } else {
+      html += '<h1 tabindex="-1" data-focus>Crea una contraseña nueva</h1>' +
+        '<p class="ob-lead">Escribe el correo con el que entras a MainSpot y te enviaremos un enlace para elegir una contraseña nueva.</p>' +
+        '<form class="stack" style="margin-top:24px" data-form="forgot" novalidate>' +
+          '<div class="banner banner-alerta" id="forgot-error" role="alert" hidden>' + icon('circle-alert') + '<span id="forgot-error-text"></span></div>' +
+          field('fg-email', 'Correo', MS.mem.loginEmail || '', 'email', 'username') +
+          '<div class="ob-actions" style="margin-top:8px">' + UI.btn('Enviarme el enlace', { type: 'submit', block: true, id: 'forgot-submit' }) +
+            '<a class="link-btn" style="align-self:center" href="#/entrar">Volver a entrar</a></div>' +
+        '</form>';
+    }
+    html += '</main></div></div>';
+    return { title: 'Crea una contraseña nueva', html: html, shell: false };
+  };
+
+  /* ---------- DS-05b · Contraseña nueva desde el enlace (POST /api/auth/password/reset) ----------
+     El token llega en el fragmento (/restablecer#TOKEN), vive solo en memoria y nunca se guarda. */
+  V.reset = function () {
+    var invalid = MS.mem.resetInvalid;
+    if (!MS.mem.resetToken) {
+      var h = '<div class="ob" data-screen="DS-05">' + UI.planes('ob-art') +
+        '<div class="ob-wrap"><main class="ob-body" id="main">' +
+        '<span class="spot spot-none" style="margin-bottom:20px">' + icon('link') + '</span>' +
+        '<h1 tabindex="-1" data-focus>' + esc(invalid ? 'Este enlace ya no sirve' : 'Abre de nuevo tu enlace') + '</h1>' +
+        '<p class="ob-lead">' + esc(invalid || 'Por seguridad, el enlace no se guarda. Ábrelo otra vez desde el correo que te enviamos o pide uno nuevo.') + '</p>' +
+        '<div class="ob-actions">' + UI.btn('Pedir un enlace nuevo', { href: '#/recuperar', block: true }) + UI.btn('Entrar a MainSpot', { href: '#/entrar', block: true, style: 'secondary' }) + '</div>' +
+        '</main></div></div>';
+      return { title: 'Crea una contraseña nueva', html: h, shell: false };
+    }
+    var html = '<div class="ob" data-screen="DS-05">' + UI.planes('ob-art') +
+      '<div class="ob-wrap"><main class="ob-body" id="main">' +
+      '<h1 tabindex="-1" data-focus>Elige tu contraseña nueva</h1>' +
+      '<p class="ob-lead">La usarás con tu correo para entrar. Tus otras sesiones abiertas se cerrarán.</p>' +
+      '<form class="stack" style="margin-top:24px" data-form="reset" novalidate>' +
+        '<div class="banner banner-alerta" id="reset-error" role="alert" hidden>' + icon('circle-alert') + '<span id="reset-error-text"></span></div>' +
+        '<div class="field" id="f-p-pass"><label for="p-pass">Contraseña nueva</label>' +
+          '<div class="input-wrap"><input class="input" id="p-pass" name="pass" type="password" autocomplete="new-password" aria-describedby="p-reqs" data-live="pass-reqs"><button type="button" class="icon-btn" data-action="toggle-pass" data-arg="p-pass" aria-label="Mostrar contraseña" aria-pressed="false">' + icon('eye') + '</button></div>' +
+          '<ul class="req-list" id="p-reqs" aria-label="Tu contraseña necesita">' +
+            '<li data-req="len"><span class="dot">' + icon('check') + '</span>Al menos 10 caracteres</li>' +
+            '<li data-req="num"><span class="dot">' + icon('check') + '</span>Al menos un número</li>' +
+            '<li data-req="let"><span class="dot">' + icon('check') + '</span>Al menos una letra</li>' +
+          '</ul>' +
+        '</div>' +
+        '<div class="field" id="f-p-pass2"><label for="p-pass2">Escríbela otra vez</label><input class="input" id="p-pass2" name="pass2" type="password" autocomplete="new-password"></div>' +
+        '<div class="ob-actions" style="margin-top:8px">' + UI.btn('Guardar contraseña nueva', { type: 'submit', block: true, id: 'reset-submit' }) + '</div>' +
+      '</form></main></div></div>';
+    return { title: 'Elige tu contraseña nueva', html: html, shell: false };
   };
 })();

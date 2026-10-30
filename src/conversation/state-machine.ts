@@ -18,6 +18,7 @@ import type { AuditSink } from '../audit/sink.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
 import { PublisherRegistry, type PublisherContext } from '../publishing/publisher.ts';
+import { restoreRefOf } from '../publishing/website.ts';
 import {
   ConversationRepository,
   newConversationIds,
@@ -192,6 +193,20 @@ export async function approveAndPublish(
         request_id: input.requestId, decision: 'deny', result: 'website_missing',
       });
       throw new AppError(409, 'website_missing', 'Todavía no tienes página web. Créala primero en «Mi página» y después publica tus cambios.');
+    }
+  }
+  // DEV-E2E-04 (P3): una restauración se aprobó mirando «actual (vN) vs solicitada»; si la versión
+  // en vivo ya cambió, no se publica a ciegas: 409 recuperable (descartar y pedirla de nuevo).
+  if (proposal.proposal_type === 'website.restore') {
+    const restore = restoreRefOf(proposal.detail['restore']);
+    const live = await deps.pool.query<{ v: number }>('SELECT published_version AS v FROM client_website WHERE tenant_id = $1', [input.tenantId]);
+    if (restore && Number(live.rows[0]?.v) !== restore.current_version) {
+      await deps.sink.write({
+        tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole ?? null,
+        action: 'conversation.approved', resource: `action_proposal/${input.proposalId}`,
+        request_id: input.requestId, decision: 'deny', result: 'stale_version',
+      });
+      throw new AppError(409, 'stale_version', `Tu página cambió desde que se preparó esta restauración (ahora está en la versión ${live.rows[0]?.v ?? '?'}). Descártala y vuelve a elegir la versión que quieres restaurar.`);
     }
   }
 

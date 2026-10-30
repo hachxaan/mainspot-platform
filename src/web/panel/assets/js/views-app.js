@@ -463,7 +463,9 @@
     var acts = bandActions(st, false);
     if (live) acts += UI.btn('Ver mi página', { href: '#/sitio', icon: 'external-link', style: 'primary' }) + (MS.DATA.address ? UI.btn('Copiar dirección', { action: 'copy', arg: MS.DATA.address, style: 'secondary', icon: 'copy' }) : '');
     html += (acts ? '<div class="actions">' + acts + '</div>' : '') + '</section>';
-    if (live) html += UI.note('Publicación de desarrollo: la dirección y el certificado son simulados; la página no está en internet de verdad.');
+    var loc = S.site.local;
+    if (live && loc && loc.provisioned) html += UI.note('Sitio local real: ' + loc.url + ' (solo en esta red de desarrollo, certificado de la CA local; no está en internet).');
+    else if (live) html += UI.note('Publicación de desarrollo: la dirección y el certificado son simulados; la página no está en internet de verdad.' + (loc ? ' Sitio local ' + loc.hostname + ': pendiente de provisión por Operación.' : ''));
 
     if (p && (p.state !== 'done' || Date.now() - (p.doneAt || 0) < 60000)) {
       html += '<section class="card" aria-labelledby="tr-t" aria-live="polite"><div class="section-title"><h2 id="tr-t">' + (p.state === 'done' ? 'Publicación terminada' : 'Cómo va la publicación') + '</h2></div>' + UI.track(p);
@@ -481,14 +483,20 @@
     }
     html += MS.ph.card('website');
 
-    // Versiones (website_content real)
+    // Versiones (website_content real). «Restaurar esta versión» prepara una vista previa «actual vs
+    // solicitada»; se publica como versión NUEVA solo cuando Administración la aprueba.
+    var canRestore = MS.can('confirm') && !MS.expired() && S.website && Number(S.website.published_version) > 0;
+    var openRestore = MS.webRequests().filter(function (r) { return r.kind === 'restore' && PENDING.indexOf(r.status) >= 0; })[0] || null;
     html += '<section aria-labelledby="ver-t"><div class="section-title"><h2 id="ver-t">Versiones publicadas</h2></div>';
     if (!S.site.versions.length) html += '<p class="card muted">Cuando publiques tu página, aquí guardaremos cada versión.</p>';
     else html += '<div class="card card-flush"><ul class="list" id="versions">' + S.site.versions.map(function (v, i) {
       var cur = i === 0;
-      return '<li><div class="list-row static"><span class="lead">' + icon(cur ? 'globe' : 'history') + '</span><span class="grow"><span class="title" style="display:block">Versión ' + v.n + '</span><span class="sub">' + esc(v.title) + '. Aprobó ' + esc(v.by) + ', ' + esc(MS.when(v.at)) + '</span>' +
-        (cur ? '<span style="display:block;margin-top:6px">' + UI.tag('Publicada', 'nopal') + '</span>' : '') + '</span></div></li>';
+      return '<li><div class="list-row static" data-version="' + v.n + '"><span class="lead">' + icon(cur ? 'globe' : 'history') + '</span><span class="grow"><span class="title" style="display:block">Versión ' + v.n + (v.from ? ' <span class="tiny muted">(restaurada de la versión ' + v.from + ')</span>' : '') + '</span><span class="sub">' + esc(v.title) + '. Aprobó ' + esc(v.by) + ', ' + esc(MS.when(v.at)) + '</span>' +
+        (cur ? '<span style="display:block;margin-top:6px">' + UI.tag('Publicada', 'nopal') + '</span>' : '') +
+        (!cur && canRestore && v.restorable ? '<span style="display:block;margin-top:8px">' + UI.btn('Restaurar esta versión', { action: 'restore-ask', arg: String(v.n), style: 'secondary', sm: true, icon: 'history' }) + '</span>' : '') +
+        '</span></div></li>';
     }).join('') + '</ul></div>';
+    if (openRestore) html += '<p class="tiny" style="margin-top:8px">Hay una restauración en camino: <a href="#/vista-previa/' + openRestore.id + '">' + esc(openRestore.title) + '</a>.</p>';
     html += '</section></div>';
     return { tab: 'pagina', screen: 'DS-11', title: 'Mi página', html: html };
   };
@@ -497,7 +505,9 @@
     var S = MS.S;
     if (!S.site.published) return { tab: 'pagina', screen: 'DS-11', title: 'Mi página', back: '#/pagina', backLabel: 'Mi página', html: UI.empty('Tu página todavía no está publicada', 'Cuando apruebes tu primera versión y termine la publicación, la verás aquí.', UI.btn('Ir a Mi página', { href: '#/pagina' })) };
     var v = S.site.versions[0];
-    var html = '<div class="page-head"><h1 tabindex="-1" data-focus>Tu página publicada</h1><p>Así la ven tus clientes' + (v ? '. Versión ' + v.n + ', publicada ' + esc(MS.when(v.at)) : '') + '.</p></div>' + UI.browser(UI.site(S.site.published), { label: 'Tu página publicada' }) + UI.note('Publicación de desarrollo: la página no está realmente en internet.');
+    var loc = S.site.local && S.site.local.provisioned ? S.site.local : null;
+    var html = '<div class="page-head"><h1 tabindex="-1" data-focus>Tu página publicada</h1><p>Así la ven tus clientes' + (v ? '. Versión ' + v.n + ', publicada ' + esc(MS.when(v.at)) : '') + '.</p></div>' + UI.browser(UI.site(S.site.published), { label: 'Tu página publicada' }) +
+      (loc ? '<p class="tiny" style="margin-top:8px"><a href="' + esc(loc.url) + '" target="_blank" rel="noopener">' + esc(loc.url) + '</a> — sitio local real en esta red de desarrollo (no está en internet).</p>' : UI.note('Publicación de desarrollo: la página no está realmente en internet.'));
     return { tab: 'pagina', screen: 'DS-11', title: 'Tu página', html: html, back: '#/pagina', backLabel: 'Mi página' };
   };
 

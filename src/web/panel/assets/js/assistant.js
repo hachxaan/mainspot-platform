@@ -30,7 +30,7 @@
   };
 
   /* ---------- Conversación del panel, reconstruida del backend ---------- */
-  var SYSTEM_INTENTS = /^(website\.initial|website\.phone|social\.)/;
+  var SYSTEM_INTENTS = /^(website\.initial|website\.phone|website\.restore|social\.)/;
   MS.buildConvo = function (requests, reqById) {
     var meId = S().me ? S().me.user_id : null;
     var list = requests.filter(function (r) { return r.channel === 'simulated' && !SYSTEM_INTENTS.test(r.intent || ''); })
@@ -188,6 +188,16 @@
   /** El número nuevo de la Página web se publica con vista previa y aprobación. */
   MS.prepareWebPhone = function () {
     return API.post('/website/phone-publication').then(function (res) {
+      return after(res).then(function (out) {
+        if (out.ok && res.data && res.data.proposal) out.id = res.data.proposal.proposal_id;
+        return out;
+      });
+    });
+  };
+
+  /** «Restaurar esta versión»: propuesta con vista previa «actual vs solicitada»; publica solo tras aprobación. */
+  MS.restoreVersion = function (n, expectedCurrent) {
+    return API.post('/website/versions/' + encodeURIComponent(n) + '/restore', { expected_current_version: expectedCurrent }, { idempotencyKey: API.key() }).then(function (res) {
       return after(res).then(function (out) {
         if (out.ok && res.data && res.data.proposal) out.id = res.data.proposal.proposal_id;
         return out;

@@ -1,0 +1,48 @@
+# MainSpot — sitio LOCAL de un negocio (DEV-E2E-04 P3): https://__HOST__ en el LXC webserver
+# (10.209.99.101). Lo instala scripts/client-site-provision.sh <slug> a partir de esta plantilla
+# (__HOST__ = <slug>.<LOCAL_SITE_DOMAIN>); un archivo por sitio, nunca se tocan otros sitios.
+# Upstream: Express de MainSpot en el HOST (10.209.99.1:3100); el proceso sirve la versión
+# PUBLICADA del negocio según la cabecera Host (src/website/local-site.ts).
+# Certificado: CA local mkcert del host, emitido para este hostname exacto; la clave vive solo aquí.
+# Sin `http2` (nginx 1.18 lo aplicaría a todo el socket *:443, ver app.mainspot.local.io.conf).
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __HOST__;
+    return 301 https://__HOST__$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name __HOST__;
+
+    ssl_certificate     /etc/nginx/ssl/__HOST__.pem;
+    ssl_certificate_key /etc/nginx/ssl/__HOST__-key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Solo el host de desarrollo (bridge lxdbr0) y loopback: nunca Internet.
+    allow 10.209.99.1;
+    allow 127.0.0.1;
+    allow ::1;
+    deny all;
+
+    server_tokens off;
+    client_max_body_size 64k;
+    access_log /var/log/nginx/__HOST__.access.log;
+    error_log  /var/log/nginx/__HOST__.error.log;
+
+    location / {
+        proxy_pass http://10.209.99.1:3100;
+        proxy_http_version 1.1;
+        proxy_set_header Host __HOST__;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host __HOST__;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Connection "";
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+}

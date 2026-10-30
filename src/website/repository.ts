@@ -20,6 +20,11 @@ export interface ClientWebsiteRow {
   published_at: string | null;
   created_at: string;
   updated_at: string;
+  /** DEV-E2E-04 (P3): estado del sitio local real; lo escribe solo scripts/client-site-provision.sh. */
+  local_site_status?: 'provisioned' | 'removed' | null;
+  local_site_hostname?: string | null;
+  local_site_provisioned_at?: string | null;
+  local_site_cert_not_after?: string | null;
 }
 
 export interface ClientDomainRow {
@@ -44,6 +49,10 @@ export interface WebsiteContentRow {
   published_by: string;
   proposal_id: string | null;
   created_at: string;
+  /** DEV-E2E-04 (P3): datos de la versión (restaurable) y referencia a la versión origen si fue restauración. */
+  data: Record<string, unknown> | null;
+  restored_from_version: number | null;
+  restored_from_content_id: string | null;
 }
 
 export class WebsiteRepository {

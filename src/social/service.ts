@@ -5,14 +5,16 @@
  * Flujo: draft → awaiting_approval (con fecha programada SI se agenda) →
  * proposal de preview (FLOW-002, INC-002) → aprobación humana → SocialPublisher
  * publica y SOLO entonces crea la fila de cola scheduled_post (status
- * 'scheduled', PR-01). El tick (worker simple) publica en el simulador al
- * llegar la fecha y SOLO si existe evidencia de aprobación (proposal publicada
- * + fila de publication).
+ * 'scheduled', PR-01). El SocialScheduler (src/social/scheduler.ts) publica
+ * automáticamente al llegar la fecha, sin tick manual, y SOLO si existe
+ * evidencia de aprobación (proposal publicada + fila de publication). Las
+ * fechas se guardan en UTC; la hora que escribe la persona se interpreta en la
+ * zona horaria del negocio (SOCIAL_SCHEDULER_TIMEZONE).
  *
  * PR-01 (Reviewer): ninguna ruta puede llegar a 'published' sin aprobación:
  *  - schedule() NO crea scheduled_post (solo registra la intención).
- *  - processDueScheduled() verifica aprobación por fila; sin aprobación marca
- *    'blocked' + audit deny, NUNCA publica.
+ *  - processDueScheduled() (tick manual de compatibilidad) usa el MISMO reclamo
+ *    del scheduler: aprobación por fila; sin ella 'blocked' + audit deny.
  *  - updateStatus() con destino 'published' exige estado previo 'scheduled'
  *    (creada tras aprobación).
  *
@@ -24,15 +26,16 @@ import type { Pool, PoolClient } from 'pg';
 import type { AppConfig } from '../shared/config.ts';
 import type { AuditSink } from '../audit/sink.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
-import { log } from '../shared/logger.ts';
 import type { SocialContentType, SocialProvider } from './provider.ts';
+import type { SocialScheduler } from './scheduler.ts';
+import { wallTimeToUtc } from './timezone.ts';
 import { ConversationRepository, newConversationIds } from '../conversation/repositories.ts';
 import { runAtomic } from '../conversation/state-machine.ts';
 import type { TenantBoundaryResult } from '../conversation/repositories.ts';
 import { resourceIdOf, type QuotaLedger } from '../subscriptions/quota.ts';
 
 export type SocialPostStatus = 'draft' | 'awaiting_approval' | 'scheduled' | 'published' | 'rejected' | 'failed';
-export type ScheduledStatus = 'pending' | 'scheduled' | 'published' | 'skipped' | 'blocked';
+export type ScheduledStatus = 'pending' | 'scheduled' | 'publishing' | 'uncertain' | 'published' | 'skipped' | 'blocked' | 'failed';
 
 export interface SocialPostRow {
   post_id: string;
@@ -61,6 +64,15 @@ export interface ScheduledPostRow {
   external_ref: string | null;
   processed_at: string | null;
   created_at: string;
+  /** DEV-E2E-04 (migración 0023): reclamo con lease, reintentos y reconciliación. */
+  claim_token: string | null;
+  lease_until: string | null;
+  attempts: number;
+  next_attempt_at: string | null;
+  last_error: string | null;
+  uncertain_since: string | null;
+  publish_key: string | null;
+  updated_at: string;
 }
 
 export interface SocialServiceDeps {
@@ -70,6 +82,8 @@ export interface SocialServiceDeps {
   provider: SocialProvider;
   conversationRepo: ConversationRepository;
   quota: QuotaLedger;
+  /** Scheduler automático; el tick manual (process-due) usa su mismo reclamo por tenant. */
+  scheduler: SocialScheduler;
 }
 
 export class SocialRepository {
@@ -180,18 +194,6 @@ export class SocialRepository {
     return res.rows[0] ?? null;
   }
 
-  /** Due aprobadas del tenant (worker/tick manual, scope por tenant).
-   *  PR-01: SOLO procesa filas 'scheduled' (creadas tras aprobación). */
-  async dueScheduled(tenantId: string, now: string): Promise<ScheduledPostRow[]> {
-    const t = this.assertTenant(tenantId);
-    const res = await this.pool.query<ScheduledPostRow>(
-      `SELECT * FROM scheduled_post WHERE tenant_id = $1 AND status = 'scheduled' AND publish_at <= $2
-       ORDER BY publish_at LIMIT 100`,
-      [t, now],
-    );
-    return res.rows;
-  }
-
   /** Marca la cola (publicada/saltada/bloqueada). Transición con guard: solo
    *  filas 'scheduled' o legacy 'pending' pasan por aquí (idempotente). */
   async markScheduled(
@@ -278,10 +280,13 @@ export class SocialService {
   }
 
   /** Programa una publicación DRAFT (PR-01).
-   *  SOLO registra la intención (scheduled_at) y pasa a 'awaiting_approval';
+   *  SOLO registra la intención (scheduled_at, UTC) y pasa a 'awaiting_approval';
    *  NO crea la fila de cola scheduled_post: la cola se materializa cuando la
-   *  aprobación humana genera la publicación (SocialPublisher). */
-  async schedule(tenantId: string, actorId: string, requestId: string, postId: string, publishAt: string): Promise<SocialPostRow> {
+   *  aprobación humana genera la publicación (SocialPublisher).
+   *  `publishAt` acepta un instante ISO (con zona/offset) o `{ local }`: hora de
+   *  pared `YYYY-MM-DDTHH:mm` en la zona horaria del negocio, convertida con las
+   *  reglas de horario de verano vigentes (nunca se guarda hora local). */
+  async schedule(tenantId: string, actorId: string, requestId: string, postId: string, publishAt: string | { local: string }): Promise<SocialPostRow> {
     const found = await this.repo.findScoped(tenantId, postId);
     if (!found.found || !found.in_tenant) {
       throw new AppError(404, DENY_CODES.NOT_FOUND, 'No se encontró la publicación solicitada.');
@@ -291,8 +296,10 @@ export class SocialService {
     if (post.status !== 'draft') {
       throw new AppError(409, 'validation_error', 'La publicación ya no puede programarse en su estado actual.');
     }
-    const at = new Date(publishAt);
-    if (Number.isNaN(at.getTime())) {
+    const at = typeof publishAt === 'string'
+      ? new Date(publishAt)
+      : wallTimeToUtc(publishAt.local ?? '', this.deps.config.socialSchedulerTimezone);
+    if (!at || Number.isNaN(at.getTime())) {
       throw new AppError(400, 'validation_error', 'La fecha de programación no es válida.');
     }
     return runAtomic(this.deps.pool, async (client) => {
@@ -379,9 +386,13 @@ export class SocialService {
     if (post.status === 'published') {
       throw new AppError(409, DENY_CODES.PROHIBITED, 'La publicación ya fue publicada y no puede rechazarse.');
     }
-    const scheduled = await this.repo.scheduledForPost(tenantId, postId);
     return runAtomic(this.deps.pool, async (client) => {
-      if (scheduled && scheduled.status === 'pending') {
+      const scheduled = (await client.query<ScheduledPostRow>(
+        'SELECT * FROM scheduled_post WHERE tenant_id=$1 AND post_id=$2 FOR UPDATE', [tenantId, postId])).rows[0];
+      if (scheduled && ['publishing', 'uncertain', 'published'].includes(scheduled.status)) {
+        throw new AppError(409, DENY_CODES.PROHIBITED, 'La publicación ya está en curso o su resultado es incierto. Revisa el canal antes de cancelarla.');
+      }
+      if (scheduled && (scheduled.status === 'pending' || scheduled.status === 'scheduled')) {
         await this.repo.markScheduled(tenantId, scheduled.scheduled_post_id, 'skipped', null, client);
       }
       const updated = await this.repo.updateStatus(tenantId, postId, 'rejected', {}, ['draft', 'awaiting_approval', 'scheduled'], client);
@@ -400,75 +411,15 @@ export class SocialService {
   }
 
   /**
-   * Procesa la cola de programación VENCIDA del tenant (tick manual del worker
-   * simple). PR-01: SOLO publica filas con evidencia de aprobación (proposal
-   * publicada/aprobada + fila de publication); si no hay aprobación marca la
-   * fila 'blocked' con auditoría deny y NUNCA publica. Idempotente.
+   * Tick manual de compatibilidad (`POST /social/process-due`): ejecuta UN ciclo del
+   * scheduler acotado al tenant de la sesión, con el mismo reclamo con lease, la misma
+   * verificación de aprobación por fila (PR-01: sin evidencia ⇒ 'blocked' + audit deny,
+   * NUNCA publica) y la misma idempotencia que el bucle automático.
    */
-  async processDueScheduled(tenantId: string, requestId: string, now = new Date().toISOString()): Promise<{ processed: number; published: SocialPostRow[]; blocked: number }> {
-    const due = await this.repo.dueScheduled(tenantId, now);
-    const published: SocialPostRow[] = [];
-    let blocked = 0;
-    for (const s of due) {
-      const post = (await this.repo.findScoped(tenantId, s.post_id)).row as SocialPostRow | null;
-      if (!post) {
-        continue;
-      }
-
-      // Gate de aprobación (PR-01): sin propuesta aprobada/publicación ⇒ deny.
-      const approved = await this.repo.approvalEvidence(tenantId, post);
-      if (!approved) {
-        const marked = await runAtomic(this.deps.pool, async (client) => {
-          const ok = await this.repo.markScheduled(tenantId, s.scheduled_post_id, 'blocked', null, client);
-          if (ok) {
-            await this.deps.sink.write({
-              tenant_id: tenantId, actor_id: 'social_scheduler', actor_role: null,
-              action: 'social.published', resource: `social_post/${post.post_id}`,
-              request_id: requestId, decision: 'deny', result: 'not_approved',
-              evidence_ref: s.scheduled_post_id,
-            }, client);
-          }
-          return ok;
-        });
-        if (marked) {
-          blocked += 1;
-          log.warn('social.scheduler.blocked', 'scheduled row without approval evidence blocked', {
-            tenant_id: tenantId, post_id: post.post_id, scheduled_post_id: s.scheduled_post_id,
-          });
-        }
-        continue;
-      }
-
-      const result = await this.deps.provider.publishPost({
-        tenantId,
-        text: post.text,
-        imageUrl: post.image_url,
-        contentType: post.content_type,
-      });
-      if (!result.ok) continue;
-      const updated = await runAtomic(this.deps.pool, async (client) => {
-        const marked = await this.repo.markScheduled(tenantId, s.scheduled_post_id, 'published', result.external_ref, client);
-        if (!marked) return null; // otro tick ganó la carrera (idempotencia)
-        const u = await this.repo.updateStatus(tenantId, post.post_id, 'published', {
-          publishedAt: new Date().toISOString(), externalRef: result.external_ref,
-        }, ['scheduled'], client);
-        if (u.found && u.in_tenant) {
-          await this.deps.sink.write({
-            tenant_id: tenantId, actor_id: 'social_scheduler', actor_role: null,
-            action: 'social.published', resource: `social_post/${post.post_id}`,
-            request_id: requestId, decision: 'allow', result: 'scheduled_published', evidence_ref: result.external_ref,
-          }, client);
-        }
-        return u;
-      });
-      if (updated?.found && updated.in_tenant) published.push(updated.row as SocialPostRow);
-    }
-    if (published.length || blocked) {
-      log.info('social.scheduler', 'scheduled ticks processed', {
-        tenant_id: tenantId, published: published.length, blocked,
-      });
-    }
-    return { processed: published.length, published, blocked };
+  async processDueScheduled(tenantId: string, requestId: string): Promise<{ processed: number; published: SocialPostRow[]; blocked: number }> {
+    if (!tenantId) throw new Error('FAIL-CLOSED: process-due requires a tenant context');
+    const report = await this.deps.scheduler.tick({ tenantId, requestId });
+    return { processed: report.published, published: report.publishedPosts, blocked: report.blocked };
   }
 
   /**

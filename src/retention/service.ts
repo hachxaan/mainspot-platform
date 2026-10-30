@@ -29,6 +29,7 @@ import type { AuditSink } from '../audit/sink.ts';
 import { runAtomic } from '../conversation/state-machine.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
+import { GoogleContentRetention } from '../google/retention.ts';
 
 /** Plazos aprobados, como intervalos de PostgreSQL. */
 export const RETENTION_POLICY = {
@@ -53,6 +54,12 @@ const OPEN_PROPOSAL_STATES = ['drafted', 'awaiting_confirmation', 'confirmed', '
  * `exportSkip`: columnas que nunca salen en la exportación (credenciales derivadas).
  */
 const TENANT_TABLES: ReadonlyArray<{ table: string; key: string; exportSkip?: readonly string[] }> = [
+  // DEV-E2E-04: conexiones con proveedores reales (tokens cifrados nunca se exportan) y cursor
+  // de reseñas de Google. Sin estas filas la baja (DELETE client) fallaría por FK.
+  { table: 'provider_oauth_state', key: 'tenant_id', exportSkip: ['state_hash', 'verifier_box'] },
+  { table: 'provider_connection', key: 'tenant_id', exportSkip: ['token_box', 'token_key_id'] },
+  { table: 'google_review_cursor', key: 'tenant_id' },
+  { table: 'provider_reply_ledger', key: 'tenant_id' },
   // DEV-E2E-02: agente de atención, Telegram, ficha de Google y simulador (antes de review,
   // social_post e internal_user por sus FK).
   { table: 'engagement_notification', key: 'tenant_id' },
@@ -172,6 +179,9 @@ export class RetentionService {
       ...ZERO, tenants: 0, tenantsWithChanges: 0, tenantsAnonymized: 0, exitsDue: 0, registryPruned: 0, failures: 0,
     };
     try {
+      const google = await new GoogleContentRetention(this.deps).purge({ dryRun: opts.dryRun });
+      totals.failures += google.failures;
+      if (!opts.dryRun) await this.deps.pool.query("DELETE FROM password_reset_token WHERE expires_at < now() - interval '1 day'");
       const tenants = await this.deps.pool.query<{ client_id: string }>(
         `SELECT client_id FROM client WHERE status <> 'anonymized' ORDER BY client_id`);
       for (const { client_id: tenantId } of tenants.rows) {
@@ -300,6 +310,7 @@ export class RetentionService {
   async anonymizeTenant(tenantId: string, runId: string): Promise<{ anonymousId: string }> {
     return runAtomic(this.deps.pool, async (client) => {
       const ids = await this.identifiers(client, tenantId);
+      const logins = (await client.query<{ login: string }>('SELECT login FROM internal_user WHERE tenant_id=$1', [tenantId])).rows.map((r) => r.login);
       const anonymousId = `anon_${randomUUID()}`;
       await client.query(
         `INSERT INTO client (client_id, business_name, status, contact_email, metadata)
@@ -323,6 +334,10 @@ export class RetentionService {
         const res = await client.query(`DELETE FROM ${table} WHERE ${key} = $1`, [tenantId]);
         deleted[table] = res.rowCount ?? 0;
       }
+      // Un correo compartido conserva su recuperación para los otros negocios.
+      await client.query(
+        `DELETE FROM password_reset_token p WHERE login=ANY($1::text[])
+         AND NOT EXISTS (SELECT 1 FROM internal_user u WHERE u.login=p.login)`, [logins]);
       await client.query('DELETE FROM client WHERE client_id = $1', [tenantId]);
       await client.query(
         `INSERT INTO anonymized_tenant (tenant_sha256, anonymized_at, run_id) VALUES ($1, now(), $2)
@@ -418,6 +433,8 @@ export class RetentionService {
 
   /** Datos del tenant para entregarlos antes de la baja (sin credenciales derivadas). */
   private async exportTenant(tenantId: string): Promise<Record<string, unknown>> {
+    const google = await new GoogleContentRetention(this.deps).purge({ tenantId });
+    if (google.failures) throw new AppError(503, DENY_CODES.INTERNAL, 'No se pudo aplicar la retención de Google antes de exportar.');
     const out: Record<string, unknown> = {
       format: 'mainspot-tenant-export/v1', tenant_id: tenantId, exported_at: new Date().toISOString(),
     };

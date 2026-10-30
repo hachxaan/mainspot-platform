@@ -14,6 +14,7 @@ import { getRequestContext, type SessionSummary } from '../shared/context.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import type { AuditSink } from '../audit/sink.ts';
 import type { SocialService, SocialPostStatus } from '../social/service.ts';
+import { formatInZone } from '../social/timezone.ts';
 import { resolveIdempotencyKey } from '../subscriptions/quota.ts';
 import type { ActionRateLimiter } from '../boundary/action-ratelimit.ts';
 import { denyAndRespond, type LooseRequest } from '../boundary/middleware.ts';
@@ -99,15 +100,24 @@ export function socialRouter(deps: SocialRouteDeps): Router {
   }));
 
   // Programar borrador (social.schedule). La aprobación llega después.
+  // `publish_at` = instante ISO (con offset) o `publish_local` = hora de pared
+  // `YYYY-MM-DDTHH:mm` en la zona horaria del negocio (SOCIAL_SCHEDULER_TIMEZONE); se
+  // guarda siempre en UTC y la respuesta incluye la hora local equivalente.
   router.post('/social/posts/:id/schedule', requirePermission('social.schedule', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
     const id = req.params.id as string;
-    const { publish_at } = (req.body ?? {}) as { publish_at?: string };
+    const { publish_at, publish_local } = (req.body ?? {}) as { publish_at?: string; publish_local?: string };
     try {
-      const post = await deps.service.schedule(session.tenant_id, session.user_id, rc.request_id, id, publish_at ?? '');
-      return res.json({ post, status: post.status, message: 'Publicación programada. Requiere aprobación antes de publicarse.' });
+      const when = typeof publish_local === 'string' && publish_local ? { local: publish_local } : (publish_at ?? '');
+      const post = await deps.service.schedule(session.tenant_id, session.user_id, rc.request_id, id, when);
+      const tz = deps.config.socialSchedulerTimezone;
+      return res.json({
+        post, status: post.status, timezone: tz,
+        scheduled_local: post.scheduled_at ? formatInZone(new Date(post.scheduled_at), tz) : null,
+        message: 'Publicación programada. Requiere aprobación antes de publicarse.',
+      });
     } catch (err) {
       if (err instanceof AppError && err.code === DENY_CODES.NOT_FOUND) {
         await deps.sink.write({

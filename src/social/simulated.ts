@@ -24,6 +24,8 @@ const DEFAULT_PAGE: SocialPage = {
 
 export class SimulatedMeta implements SocialProvider {
   readonly provider = 'simulated' as const;
+  /** Mismo contenido ⇒ mismo external_ref: reintentar tras una caída nunca duplica. */
+  readonly idempotentPublish = true;
 
   async getPage(tenantId: string): Promise<SocialPage> {
     return { ...(PAGES[tenantId] ?? DEFAULT_PAGE) };

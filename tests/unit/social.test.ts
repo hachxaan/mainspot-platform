@@ -6,7 +6,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SimulatedMeta } from '../../src/social/simulated.ts';
-import { MetaAdapter } from '../../src/social/meta.ts';
 import { BLOCKED_ACTIONS, MATRIX } from '../../src/rbac/matrix.ts';
 import { authorize } from '../../src/rbac/engine.ts';
 import { ROLE_NAMES, type RoleName } from '../../src/identity/entities.ts';
@@ -34,9 +33,6 @@ test('social: publishPost determinista e idempotente por contenido (AC-007 patr�
   assert.notEqual(r1.external_ref, r3.external_ref, 'contenido distinto ⇒ ref distinto');
 });
 
-test('social: MetaAdapter real NO se instancia sin token (DEC-026 fail-safe)', () => {
-  assert.throws(() => new MetaAdapter(''), /META_GRAPH_TOKEN/);
-});
 
 test('social: campaña avanzada BLOQUEADA para todos los roles (fail-closed)', () => {
   assert.ok(BLOCKED_ACTIONS.includes('social.campaign_advanced'));

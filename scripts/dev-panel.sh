@@ -89,10 +89,25 @@ url_for() { node -e 'const u=new URL(process.env.DATABASE_URL);u.hostname="127.0
 DATABASE_URL="$(url_for "$DEV_DB")"
 TEST_DATABASE_URL="$(url_for mainspot_test)"
 export DATABASE_URL TEST_DATABASE_URL
-export APP_ENV=development JEV_MODE=disabled \
-  REPUTATION_PROVIDER=simulated GOOGLE_GBP_TOKEN= SOCIAL_PROVIDER=simulated META_GRAPH_TOKEN= \
+case "${MAINSPOT_DEV_GOOGLE:-simulated}" in
+  simulated) REPUTATION_PROVIDER=simulated ;;
+  real) REPUTATION_PROVIDER=google_business_profile ;;
+  *) echo "MAINSPOT_DEV_GOOGLE debe ser simulated o real" >&2; exit 2 ;;
+esac
+case "${MAINSPOT_DEV_META:-simulated}" in
+  simulated) SOCIAL_PROVIDER=simulated ;;
+  real) SOCIAL_PROVIDER=meta ;;
+  *) echo "MAINSPOT_DEV_META debe ser simulated o real" >&2; exit 2 ;;
+esac
+POLL_INTERVAL=0
+if [[ "$REPUTATION_PROVIDER" != simulated || "$SOCIAL_PROVIDER" != simulated ]]; then
+  : "${CONNECTOR_TOKEN_KEY:?Los conectores reales requieren CONNECTOR_TOKEN_KEY}"
+  POLL_INTERVAL=60000
+fi
+export APP_ENV=development JEV_MODE=disabled REPUTATION_PROVIDER SOCIAL_PROVIDER \
   DOMAIN_PROVIDER=simulated PAYMENT_PROVIDER=simulated \
-  ENGAGEMENT_WORKER=on ENGAGEMENT_WORKER_INTERVAL_MS="${ENGAGEMENT_WORKER_INTERVAL_MS:-3000}" ENGAGEMENT_POLL_INTERVAL_MS=0 \
+  ENGAGEMENT_WORKER=on ENGAGEMENT_WORKER_INTERVAL_MS="${ENGAGEMENT_WORKER_INTERVAL_MS:-3000}" \
+  ENGAGEMENT_POLL_INTERVAL_MS="${ENGAGEMENT_POLL_INTERVAL_MS:-$POLL_INTERVAL}" \
   PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://app.mainspot.local.io}"
 
 case "${1:-serve}" in
@@ -107,7 +122,7 @@ case "${1:-serve}" in
     ;;
   serve)
     node scripts/db-setup.ts >/dev/null
-    echo "MainSpot (desarrollo) en ${PUBLIC_BASE_URL} — BD ${DEV_DB} en 127.0.0.1:${PG_PORT}; Telegram ${TELEGRAM_MODE}, resto de proveedores simulados"
+    echo "MainSpot (desarrollo) en ${PUBLIC_BASE_URL} — BD ${DEV_DB} en 127.0.0.1:${PG_PORT}; Telegram ${TELEGRAM_MODE}, Google ${REPUTATION_PROVIDER}, Facebook ${SOCIAL_PROVIDER}"
     exec node src/api/server.ts
     ;;
   *)

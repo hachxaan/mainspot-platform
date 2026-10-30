@@ -11,6 +11,7 @@ import type { Pool, PoolClient } from 'pg';
 import type { SessionSummary } from '../shared/context.ts';
 import type { InternalUser, SessionContext } from './entities.ts';
 import { ROLE_NAMES, type RoleName } from './entities.ts';
+import { AppError } from '../shared/errors.ts';
 
 export interface TenantBoundaryResult<T> {
   found: boolean;
@@ -80,19 +81,30 @@ export class IdentityRepository {
     return res.rows[0]?.ok === true;
   }
 
-  async createSession(session: SessionContext, db: Pool | PoolClient = this.pool): Promise<void> {
-    await db.query(
-      `INSERT INTO session_context
-        (session_id, user_id, tenant_id, role_id, permissions, source, issued_at, expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+  async createSession(session: SessionContext, db: Pool | PoolClient = this.pool, expectedPasswordHash?: string): Promise<void> {
+    // La verificación previa y el INSERT no deben permitir iniciar una sesión con la contraseña
+    // antigua mientras un reset se confirma. El candado comparte el orden con UPDATE internal_user.
+    const inserted = await db.query(
+      `WITH authenticated AS MATERIALIZED (
+         SELECT user_id FROM internal_user WHERE user_id = $2
+           AND ($9::text IS NULL OR password_hash = $9) FOR SHARE
+       )
+       INSERT INTO session_context
+         (session_id, user_id, tenant_id, role_id, permissions, source, issued_at, expires_at)
+       SELECT $1,$2,$3,$4,$5,$6,$7,$8 FROM authenticated`,
       [session.session_id, session.user_id, session.tenant_id, session.role_id,
-        JSON.stringify(session.permissions), session.source, session.issued_at, session.expires_at],
+        JSON.stringify(session.permissions), session.source, session.issued_at, session.expires_at, expectedPasswordHash ?? null],
     );
+    if (!inserted.rowCount) throw new AppError(401, 'invalid_credentials', 'El correo o la contraseña no coinciden.');
   }
 
-  /** Load session and validate it is still usable (fail-closed on any doubt). */
+  /** Load session and validate it is still usable (fail-closed on any doubt).
+   *  DEV-E2E-04 §3: una sesión emitida ANTES del último cambio de contraseña ya no vale. */
   async resolveSession(sessionId: string): Promise<SessionContext | null> {
-    const res = await this.pool.query<SessionContext>('SELECT * FROM session_context WHERE session_id = $1', [sessionId]);
+    const res = await this.pool.query<SessionContext>(
+      `SELECT s.* FROM session_context s JOIN internal_user u ON u.user_id = s.user_id
+        WHERE s.session_id = $1 AND (u.password_changed_at IS NULL OR s.issued_at >= u.password_changed_at)`,
+      [sessionId]);
     const row = res.rows[0] ?? null;
     if (!row) return null;
     const now = new Date();

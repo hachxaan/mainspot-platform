@@ -24,6 +24,9 @@ export const DENY_CODES = {
   // DEV-E2E-03: primera página — conflictos recuperables (no son fallos de publicación).
   WEBSITE_MISSING: 'website_missing',
   ALREADY_PUBLISHED: 'already_published',
+  // DEV-E2E-04 (P3): restaurar versión — guard optimista y versión sin datos (conflictos recuperables).
+  STALE_VERSION: 'stale_version',
+  VERSION_NOT_RESTORABLE: 'version_not_restorable',
 } as const;
 
 export type DenyCode = (typeof DENY_CODES)[keyof typeof DENY_CODES];
