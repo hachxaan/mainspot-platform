@@ -1,6 +1,6 @@
 # MAINSPOT — DEV-E2E-04: cinco prioridades integradas, proveedores REALES y dominios SOLO locales
 
-**Mandato:** ejecutar código, pruebas, depuración, evidencia y push; no quedarse en diseño.
+**Mandato:** ejecutar código, pruebas, depuración, evidencia y push; no quedarse en diseño. **Actualización 30-oct-2026: Telegram por webhook real/KVM-WireGuard, NO long polling.**
 **Producto:** MainSpot · **Rama de integración:** feat/canonflow-implementation
 **Alcance:** DESARROLLO/PILOTO CONTROLADO; nada de puesta pública en producción.
 **Autoridad de ingeniería:** el propietario delegó decisiones de implementación y UX, sin HDC ni aprobaciones de desarrollo intermedias. Documentar decisiones brevemente en DECISION-LOG.md. Mantener las autorizaciones de los titulares de cuentas externas y las protecciones del producto.
@@ -73,22 +73,27 @@ Referencia de Meta: https://www.postman.com/meta/facebook/documentation/r56bjfd/
 
 **META READY requiere:** una Page administrada autorizada, permisos reales, post publicado desde MainSpot y comprobado en Meta, un comentario real recibido y respuesta enviada/comprobada, scheduler reiniciado y sin duplicados. Ads básicos, si dentro del alcance habilitado, con estado de validación propio; nunca ejecutar gasto real sin consentimiento específico.
 
-### 2C. Telegram Bot REAL en entorno PRIVADO
+### 2C. Telegram Bot REAL — webhook público mediante KVM y WireGuard PRIVADO a Starlink
 
-Estado inicial: TelegramLinkService/handler y SimulatedChannel ya existen; el webhook de Telegram no llegará a un dominio app.mainspot.local.io resoluble solo por hosts de la máquina.
+**Decisión actual (30-oct-2026): WEBHOOK REAL; queda anulada la propuesta anterior de getUpdates/long polling.** No crear ni ejecutar un poller mientras exista webhook.
 
-**Decisión de arquitectura:** en desarrollo LOCAL usar Bot API REAL mediante **getUpdates (long polling)**, no webhook público. Conectar por HTTPS saliente a api.telegram.org. No pedir túnel público.
+**Infraestructura instalada en KVM según el reporte del propietario (NO reinstalarla):** HTTPS POST **https://tg.mainspot.io/telegram/webhook** → webserver público del KVM **89.116.170.99** (TLS Let's Encrypt, allowlist IP Telegram, solo POST) → LXC wireguard-telegram **10.13.247.77** → nginx privado / wg0 **10.77.0.1:8080** → túnel WireGuard UDP/51820 → peer Linux Starlink **10.77.0.2** → receptor HTTP **10.77.0.2:8080** → MainSpot Express **POST /api/telegram/webhook**. **Hay dos rutas diferentes**: el receptor Starlink debe reescribir /telegram/webhook a /api/telegram/webhook y preservar JSON, método POST y X-Telegram-Bot-Api-Secret-Token.
 
-- Token real de bot proporcionado por mecanismo seguro; verificar getMe. Un bot por entorno o identificar un bot de prueba exclusivo, sin conflicto con bots usados en producción.
-- Procesador getUpdates único (lease/lock) con offset/update_id persistido en PostgreSQL, backoff, reconexión y recovery sin perder ni aplicar dos veces decisiones. getUpdates y setWebhook son mutuamente excluyentes: nunca activar los dos a la vez. Antes de usar polling en bot de prueba, comprobar su modo; no borrar un webhook productivo de un bot ajeno.
-- Reusar TelegramLinkService.handleUpdate para /start CODE, /aprobar, /rechazar y una segunda confirmación de decisiones sensibles; enlazar por chat_id/tenant/usuario. Validar permisos y vínculos en cada mensaje. Privacidad: no usar número de teléfono público del negocio como identidad del chat.
-- Envío REAL de mensajes/alertas usando sendMessage (u otros métodos necesarios) y lectura de actualización real de respuesta; pruebas de token invalidado, conexión, bloqueo de bot, chat sin vínculo, reintentos, avisos duplicados y restart.
-- Mantener webhook para futura etapa pública, con seguridad del secret; **NO** exigir webhook en esta etapa para declarar Telegram real.
-- Sustituir chat simulado como evidencia de aceptación; conservar solo en pruebas offline, oculto en modo real.
+**Dependencia previa obligatoria:** completar y verificar el [handoff Starlink](STARLINK-WIREGUARD-TELEGRAM-CLIENT.md), [issue #8](https://github.com/hachxaan/mainspot-platform/issues/8). El 502 público actual se atribuye al peer Starlink ausente, NO prueba entrega real. Pendientes: handshake Starlink-KVM, túnel, recepción HTTP, persistencia systemd sin OMP, registro webhook, entrega real y getWebhookInfo. El KVM README operativo reside en ~/wireguard-telegram/README.md **del KVM**. Las pruebas del peer temporal no sustituyen la prueba Starlink. No volver a provisionar KVM ni dominio principal del panel.
 
-Referencia oficial https://core.telegram.org/bots/api y https://core.telegram.org/bots/faq .
+**Fronteras:** el panel sigue en **https://app.mainspot.local.io**, solo local. El dominio público **tg.mainspot.io** es una excepción autorizada ÚNICAMENTE como entrada HTTPS de Telegram, NO para publicar sitios de clientes ni abrir panel/API en Internet.
 
-**TELEGRAM READY requiere:** getMe real + recepción por polling de /start del usuario de prueba + vínculo de chat + alerta recibida por el Telegram real + decisión real aplicada exactamente una vez al caso en PostgreSQL y visible en panel.
+**Implementar en MainSpot:**
+- Token real de bot en secret store/archivo local protegido. Verificar identidad del bot con getMe. Mantener TELEGRAM_WEBHOOK_SECRET no vacío y secreto en modo real incluso si APP_ENV=development; actualmente src/api/engagement-routes.ts permite omitir secret fuera de producción, y eso se debe endurecer. La comparación actual timingSafeEqual es apropiada. Secret incorrecto → rechazo (el backend actual usa 401), sin procesar ni filtrar información. Limitación de métodos/rutas, payload, TLS y origen mediante proxy/túnel.
+- Persistir inbox por identificador real del bot y **update_id único**, con claim/transacción para aceptar y deduplicar updates tras reintentos, reinicios o concurrencia. La construcción de requestId desde update_id NO es suficiente. Responder HTTP 2xx únicamente tras aceptación/encolado durable (y control de dedupe), NO cuando se perdió el update. Si app/DB fallan antes de persistir, responder 5xx; Telegram puede reintentar. Consumidor y outbox de avisos/respuestas idempotentes; si el proveedor carece de semántica exactly-once, reconciliar estados o declarar entrega incierta, no emitir duplicados ciegamente.
+- Reutilizar TelegramLinkService.handleUpdate y RBAC: /start con código, /aprobar, /rechazar, doble confirmación cuando corresponda; vincular chat_id a user/tenant. No usar teléfono público como destino de Telegram. sendMessage y llegada del comando deben ser de Telegram auténtico; la decisión debe verse en panel/PostgreSQL una sola vez.
+- **Solo tras READY_FOR_WEBHOOK_REGISTRATION del cliente Starlink**, comprobar getWebhookInfo actual, bot autorizado/dedicado y registrar setWebhook URL exacta **https://tg.mainspot.io/telegram/webhook**, secret_token válido, allowed_updates limitados a tipos utilizados, drop_pending_updates=false, inicialmente max_connections=1 para diagnóstico y protección de carreras. No sobrescribir un webhook de un bot de producción o ajeno; no ejecutar deleteWebhook ni purgar actualizaciones pendientes por defecto. getUpdates queda deshabilitado con webhook.
+- Probar getWebhookInfo REAL (URL, pending_update_count, last_error_message y timestamp), /start enviado realmente desde Telegram, chat vinculado, alerta real, respuesta/decisión real en la bandeja y confirmación tras reinicio; comprobar comportamiento ante fallo WG (502), backend caído (5xx), token inválido, webhook secret inválido, duplicados/retries y bot bloqueado. Si getWebhookInfo revela errores, corregirlos antes del cierre.
+- Mantener simulador únicamente para regresión offline. **No llamar REAL_VERIFIED a una entrega de prueba dentro del túnel ni a una simulación de Telegram.**
+
+**Telegram READY / REAL_VERIFIED exige simultáneamente:** (1) handshake persistente Starlink-KVM y receptor :8080, (2) getMe/setWebhook/getWebhookInfo auténticos, (3) actualización auténtica que atraviese la URL pública hacia la aplicación, (4) aviso real sendMessage recibido y (5) decisión real persistida y visible en panel, sin duplicados tras retries/restart.
+
+Referencias oficiales: https://core.telegram.org/bots/api y https://core.telegram.org/bots/webhooks .
 
 ## 3. Prioridad P2 — recuperación de contraseña REAL
 
@@ -144,7 +149,7 @@ Crear lista de prerequisitos con nombres de variables (no valores), estatus y pa
 
 - Google: proyecto Google Cloud con acceso Business Profile aprobado, OAuth Client ID/Secret, consent screen/scopes, refresh, cuenta/ubicación verificada autorizada. Google puede requerir sitio público legítimo para otorgar acceso; NO crear uno bajo la excepción de dominios locales.
 - Meta: App ID/Secret, Page ID y Page token accesible con tasks/permisos apropiados, App Review cuando aplique, y cuenta publicitaria autorizada para Ads básicos. OAuth redirect puede requerir dominio públicamente validado; en laboratorio local se permite prueba con credenciales de cuentas controladas o mecanismo oficialmente permitido, sin saltarse requisitos del proveedor.
-- Telegram: BOT_TOKEN de un bot de prueba, sin webhook ajeno activo; chat de prueba real. Este proveedor SÍ puede verificarse de punta a punta en local mediante long polling.
+- Telegram: BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET protegidos, peer/receptor Starlink persistentes, registro setWebhook sobre tg.mainspot.io y pruebas de mensaje/decisión reales; NO polling.
 - Email reset: SMTP/API transaccional y buzón de prueba controlados.
 - Local LXC: el bootstrap app.mainspot.local.io ocurre en otra tarea; para sitios de clientes usar el LXC existente, con privilegios mínimos para provisionar cada hostname y CA local.
 
@@ -155,7 +160,7 @@ Crear lista de prerequisitos con nombres de variables (no valores), estatus y pa
 1. Sync rama/HEAD actual con cuidado a otras tareas, leer .omp/RULES.md y fuentes del repo. Configuración del dominio principal es trabajo ajeno EN CURSO: NO modificarla ni esperar si ya está utilizable. Desarrollar proveedor/worker/tests de manera independiente mientras termina.
 2. Inventariar contratos, migraciones y tests reales; hacer cambios incrementales aditivos. Implementar conexión por tenant, secretos seguros, credenciales y status providers con feature flags no disruptivas.
 3. Construir Google y Facebook sobre código existente: adapter real, permisos, refresh, read/write y case pipeline. Añadir scheduler Facebook automático con seguridad de publicación.
-4. Implementar Telegram real mediante long polling en desarrollo; integrar chat vinculado, alertas y resoluciones.
+4. Completar primero cliente persistente Starlink (issue #8), luego Telegram real por webhook HTTPS tg.mainspot.io vía WireGuard; inbox/outbox deduplicados, setWebhook/getWebhookInfo y pruebas auténticas de chat/decisión.
 5. Implementar correo/reset de contraseñas con proveedor real y pruebas de entrega.
 6. Restauración de versiones; publicación real local de sitios con URL individual por cliente mediante LXC.
 7. Integrar pantallas existentes con estados reales y estados de error (connected / needs_authorization / permission_missing / disconnected / failed / provider_unavailable), sin rediseñar.
@@ -174,8 +179,8 @@ Crear lista de prerequisitos con nombres de variables (no valores), estatus y pa
 | REAL-M-02 | Detectar comentario y responder bajo política | Comentario real, respuesta confirmada, sin duplicado |
 | REAL-M-03 | Programar publicación aprobada y cerrar navegador | Se publica automáticamente a su hora sin tick manual, restart-safe |
 | REAL-M-04 | Ads básicos autorizados (si hay acceso) | API real y lectura de resultado sin gasto no consentido; o blocked_external |
-| REAL-T-01 | Bot getMe, long polling y /start código | Chat y bot reales vinculados por usuario/tenant |
-| REAL-T-02 | Alerta y aprobación en Telegram real | Mensaje real, decisión sincronizada con panel, sin duplicados |
+| REAL-T-01 | Peer Starlink persistente, getMe/setWebhook/getWebhookInfo y /start REAL vía URL pública | Bot real, update persistido una vez y chat vinculado al usuario/tenant |
+| REAL-T-02 | Alerta y aprobación Telegram real por webhook | sendMessage recibido, decisión en PostgreSQL/panel, sin duplicados tras reintentos/reinicio |
 | AUTH-RESET | Solicitar email, abrir link, cambiar contraseña | Correo realmente recibido, token single-use, revocación de sesión |
 | WEB-RESTORE | Volver versión anterior con preview/aprobación | Nueva versión publicada, historial intacto, tenant-safe |
 | WEB-LOCAL | Abrir cliente en hostname HTTPS local | vhost/CA/datos reales, sin DNS público y sin TLS bypass |
