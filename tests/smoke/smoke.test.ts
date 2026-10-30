@@ -55,41 +55,23 @@ test('AC-009 smoke: health + all three roles can log in and see their context', 
   }
 });
 
-test('AC-008 smoke: UI pages are plain-language and minimally accessible', async () => {
-  const loginPage = await fetch(`${t.baseUrl}/`);
-  assert.equal(loginPage.status, 200);
-  const html = await loginPage.text();
-  const checks: Array<[string, boolean]> = [
-    ['lang="es"', html.includes('lang="es"')],
-    ['title MainSpot', html.includes('<title>MainSpot — Ingreso</title>')],
-    ['plain welcome', html.includes('Bienvenido a MainSpot')],
-    ['labeled login field', html.includes('<label for="login">')],
-    ['labeled password field', html.includes('<label for="password">')],
-    ['labeled tenant field', html.includes('<label for="tenant_id">')],
-    ['clear submit button', html.includes('>Ingresar</button>')],
-    ['alert region for errors', html.includes('role="alert"')],
-    ['no tech jargon (password_hash absent)', !html.includes('password_hash')],
-  ];
-  for (const [name, ok] of checks) {
-    assert.equal(ok, true, `login page check failed: ${name}`);
+test('AC-008 smoke: la interfaz integrada carga completa (shell + recursos) con CSP sin scripts en línea', async () => {
+  for (const path of ['/', '/panel', '/invitacion']) {
+    const res = await fetch(`${t.baseUrl}${path}`);
+    assert.equal(res.status, 200, `${path} sirve la interfaz`);
+    const csp = res.headers.get('content-security-policy') ?? '';
+    assert.match(csp, /script-src 'self'(;|$)/, `${path}: solo scripts propios`);
+    const html = await res.text();
+    const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1] as string);
+    assert.ok(assets.length >= 10, `${path}: referencia hoja de estilos y módulos`);
+    assert.ok(!/<script>(?!<\/script>)/.test(html), `${path}: sin scripts en línea`);
+    for (const a of assets) {
+      const r = await fetch(`${t.baseUrl}${a}`);
+      assert.equal(r.status, 200, `recurso ${a}`);
+      assert.match(r.headers.get('content-type') ?? '', a.endsWith('.css') ? /text\/css/ : /javascript/, `tipo de ${a}`);
+    }
   }
-
-  const panel = await fetch(`${t.baseUrl}/panel`);
-  const panelHtml = await panel.text();
-  assert.ok(panelHtml.includes('Panel de MainSpot'));
-  assert.ok(panelHtml.includes('Salir del panel'));
-  // AC-008: full panel sections (per-role profile, modules, data, audit).
-  assert.ok(panelHtml.includes('id="roleCard"'), 'role card section present');
-  assert.ok(panelHtml.includes('id="websiteCard"'), 'website module section present');
-  assert.ok(panelHtml.includes('id="socialCard"'), 'social module section present');
-  assert.ok(panelHtml.includes('id="reputationCard"'), 'reputation module section present');
-  assert.ok(panelHtml.includes('id="subscriptionCard"'), 'subscription module section present');
-  assert.ok(panelHtml.includes('id="dataCard"'), 'data card section present');
-  assert.ok(panelHtml.includes('id="auditCard"'), 'audit card section present');
-  assert.ok(panelHtml.includes('role="alert"'), 'visible alert region for errors');
-  assert.ok(panelHtml.includes('role="status"'), 'status region for confirmations');
-  assert.ok(!panelHtml.includes('password_hash'));
-  console.log('TEST_PASS AC-008 UI plain language + label/role/alert accessibility basics');
+  console.log('TEST_PASS AC-008 interfaz integrada: shell, recursos y CSP');
 });
 
 test('AC-009 smoke: real evidence path works (API export mirrors DB audit rows)', async () => {
@@ -122,7 +104,7 @@ test('AC-009 smoke: logout revokes the session (rollback of access path enabled)
 
 test('IR-04 smoke: UI logout path (/api/auth/logout) revokes the session in DB', async () => {
   const { token } = await login(t.baseUrl, SEED.a.ops.login, SEED.a.ops.password, SEED.a.tenant);
-  // Exact request the panel UI performs on "Salir" (see src/api/ui.ts).
+  // Same request the panel performs on «Cerrar sesión» (src/web/panel/assets/js/main.js, action logout).
   const logout = await fetch(`${t.baseUrl}/api/auth/logout`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

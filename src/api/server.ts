@@ -3,6 +3,7 @@
  * Exposes createApp() so integration tests can boot the app in-process.
  */
 
+import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { Pool } from 'pg';
 import { loadConfig, type AppConfig } from '../shared/config.ts';
@@ -17,7 +18,7 @@ import { ActionRateLimiter } from '../boundary/action-ratelimit.ts';
 import { authRouter, backofficeRouter } from './routes.ts';
 import { conversationRouter, type ConversationRouteDeps } from './conversation-routes.ts';
 import { previewRouter } from './preview-routes.ts';
-import { loginPageHtml, panelPageHtml, errorPageHtml, invitationPage } from './ui.ts';
+import { errorPageHtml } from './ui.ts';
 import { log } from '../shared/logger.ts';
 import { AppError } from '../shared/errors.ts';
 import { buildInc001Hooks } from '../hooks/contracts.ts';
@@ -87,12 +88,16 @@ export interface AppHandle {
   channel: ChannelAdapter;
 }
 
-/** IR-13: basic security headers (CSP baseline, HSTS, nosniff, frame guard). */
+/**
+ * IR-13: security headers. DEV-E2E-03: la interfaz carga solo scripts propios (sin scripts en
+ * línea); los estilos en línea siguen permitidos por los atributos style del diseño y la vista
+ * previa pública. Misma procedencia para fuentes, conexiones y formularios.
+ */
+export const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+
 export function securityHeaders(): (req: Request, res: Response, next: NextFunction) => void {
   return (_req, res, next) => {
-    // The pilot UI is a single page with inline styles/scripts; CSP baseline
-    // keeps inline allowed but restricts origins to self + data: images.
-    res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'");
+    res.setHeader('Content-Security-Policy', CSP);
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
@@ -199,6 +204,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     domainService,
     channel,
     quota,
+    phones,
   };
 
   const app = express();
@@ -229,12 +235,17 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   app.use('/api/backoffice', subscriptionRouter({ pool, config, sink, entitlements, subscriptionRepo }));
   app.use('/api/backoffice', analyticsRouter({ pool, config, sink, exporter, retention, analytics: analyticsService }));
   app.use('/api/backoffice', contactRouter({ pool, sink, phones }));
-  app.use('/api/backoffice', engagementRouter({ pool, config, sink, engagement, telegram, worker: engagementWorker, gbp }));
+  app.use('/api/backoffice', engagementRouter({ pool, config, sink, engagement, telegram, worker: engagementWorker, gbp, channel }));
 
-  // Minimal UX pages (AC-008).
-  app.get('/', (req, res) => res.type('html').send(loginPageHtml()));
-  app.get('/panel', (req, res) => res.type('html').send(panelPageHtml()));
-  app.get('/invitacion', (req, res) => res.type('html').send(invitationPage()));
+  // DEV-E2E-03: interfaz de Claude Design integrada (src/web/panel, adaptada del prototipo
+  // docs/ux/claude-design/deliverables). Un solo shell para entrar, invitación y panel; las
+  // rutas internas van en el fragmento (#/…), así el token de invitación nunca llega al servidor.
+  app.use('/assets', express.static(fileURLToPath(new URL('../web/panel/assets/', import.meta.url)), { index: false, maxAge: 0 }));
+  const panelShell = fileURLToPath(new URL('../web/panel/index.html', import.meta.url));
+  app.get(['/', '/panel', '/invitacion'], (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(panelShell);
+  });
   app.get('/health', (req, res) => res.json({ ok: true, app: 'mainspot-platform', increments: ['INC-001', 'INC-002', 'INC-003', 'INC-004', 'INC-005', 'INC-006', 'INC-007'] }));
 
   // Central error handling: controlled + plain language (AC-008), structured log.

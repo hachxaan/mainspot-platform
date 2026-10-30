@@ -38,15 +38,16 @@ mainspot-platform/
 │   ├── analytics/   INC-007 base ExportService (JSON/CSV paginado), AnalyticsService (agregados diarios)
 │   ├── retention/   QS-0006 RetentionService: purga diaria por plazo, baja con exportación, anonimización verificada y re-aplicación tras restaurar (DEC-0021..0027)
 │   ├── jev/         núcleo cliente Jev/TypeSafe (vendorizado de hyper-jev; lo usan el clasificador Jev y su evaluación, APR-0002)
-│   ├── api/         API HTTP mínima + UX + rutas conversacionales/preview + reputation/social/subscriptions/analytics
+│   ├── api/         API HTTP + rutas conversacionales/preview + reputation/social/subscriptions/analytics/contact/engagement
+│   ├── web/panel/   interfaz de Claude Design integrada (DEV-E2E-03): shell + assets servidos por Express en /, /panel, /invitacion
 │   ├── db/          pool PostgreSQL
 │   └── shared/      config, logger estructurado, contexto por request (ALS), JWT propio, errores
 ├── migrations/      0001_schema + 0002_seed + 0003_login_unique + 0004_conversation_preview
 │                    0005_website_domain + 0006_permissions + 0007_reputation_reviews
 │                    0008_social_posts + 0009_subscriptions_plans + 0010_analytics_summary
 │                    0011_social_approval_gate + 0012_jev_classification
-├── scripts/         migrate / seed / db-setup / test-prep / matrix / export-audit / rollback / evidence / jev-evaluate
-├── tests/           unit (sin DB) · integration (con DB + 2 tenants) · smoke · e2e (canal simulado + INC-004/005/006)
+├── scripts/         migrate / seed / db-setup / test-prep / matrix / export-audit / rollback / evidence / jev-evaluate / dev-panel.sh
+├── tests/           unit (sin DB) · integration (con DB + 2 tenants) · smoke · e2e (servidor real; ui-e2e-03 con navegador real)
 ├── evidence/        evidencia real capturada (AC-009)
 └── docker-compose.yml
 ```
@@ -113,7 +114,7 @@ Rutas principales (INC-001):
 
 | Ruta | Protegida | Acción |
 |---|---|---|
-| `GET /` | — | Página de ingreso (lenguaje claro, AC-008) |
+| `GET /`, `/panel`, `/invitacion` | — (la sesión la pide la propia interfaz) | Interfaz de MainSpot (Claude Design integrada; rutas internas `#/…`) |
 | `POST /api/auth/login` | — | Inicia sesión → JWT de sesión (propio, HS256) |
 | `POST /api/auth/logout` | sesión | Revoca la sesión |
 | `GET /api/backoffice/me` | `data.read` | Contexto actual (cliente, perfil, permisos) |
@@ -352,19 +353,23 @@ npm test                  # typecheck + unit + integration + smoke + e2e
 
 ```bash
 npm run db:up && npm run db:setup && npm run test:e2e
-# Escribe evidence/e2e-inc002-inc003.txt, evidence/e2e-inc004-006.txt y evidence/e2e-dev-e2e-02.txt
-# (este último arranca el servidor real, el CLI de alta y el worker independiente)
+# Escribe evidence/e2e-inc002-inc003.txt, evidence/e2e-inc004-006.txt, evidence/e2e-dev-e2e-02.txt
+# (servidor real, CLI de alta y worker independiente) y evidence/e2e-dev-e2e-03.txt
+# (interfaz de Claude en Chrome headless vía playwright-core contra servidor + PostgreSQL reales;
+#  usa /usr/bin/google-chrome o CHROME_PATH; EVIDENCE_SCREENSHOTS=1 guarda capturas en evidence/dev-e2e-03/)
 ```
 
-### DEV-E2E-02 — alta asistida, teléfonos por integración y agente de atención (simulado)
+### DEV-E2E-03 — interfaz de Claude Design conectada al backend (desarrollo)
 
 ```bash
-node scripts/invite-owner.ts --business "Mi Negocio" --email duena@example.com   # imprime el enlace /invitacion#… (un solo uso, 72 h)
-npm start                                   # el observador corre dentro del servidor (ENGAGEMENT_WORKER=on, cada 15 s)
-ENGAGEMENT_WORKER=off npm start & node scripts/engagement-worker.ts   # o como proceso propio
+scripts/dev-panel.sh                                              # PostgreSQL del compose en 127.0.0.1:55432, BD mainspot_dev,
+                                                                  # servidor + worker en http://localhost:3100 (proveedores simulados)
+scripts/dev-panel.sh invite "Panadería Lupita" lupita@example.com # imprime el enlace /invitacion#… (un solo uso, 72 h)
 ```
 
-El dueño entra en `/` con correo + contraseña (sin id de cliente). Decisiones y shape de API: `docs/handoffs/e2e-parallel-2026-10-29/DECISION-LOG.md`. Google, Meta y Telegram funcionan solo en modo **simulado**; los adaptadores reales no están certificados (`not_verified`).
+Abre el enlace: invitación → contraseña → datos del negocio (crea la página y su primera versión con vista previa) → Telegram simulado → panel. Después se entra en `http://localhost:3100/` con correo + contraseña (sin id de cliente). La interfaz es la del prototipo `docs/ux/claude-design/deliverables` (referencia intacta) adaptada en `src/web/panel` para leer y escribir solo por la API (`/api/auth/*`, `/api/backoffice/*`); localStorage solo guarda qué avisos se leyeron. En desarrollo aparecen el simulador de reseñas/comentarios (Atención) y un chat de Telegram simulado que usa el mismo webhook que el bot real; ambos responden 404 en producción. Google, Meta y Telegram funcionan solo en modo **simulado**; los adaptadores reales no están certificados (`not_verified`).
+
+Otros modos: `node scripts/invite-owner.ts …` con `npm start` (puerto 3000), y `ENGAGEMENT_WORKER=off npm start & node scripts/engagement-worker.ts` para el worker como proceso propio. Decisiones y shape de API: `docs/handoffs/e2e-parallel-2026-10-29/DECISION-LOG.md`.
 
 ## 12. Evidencia reproducible (AC-009)
 
@@ -439,4 +444,4 @@ La salida real queda en `evidence/` (00-14): environment, typecheck, permission 
 
 ## 17. Out of scope (recordatorio)
 
-No pagos/precios/planes aprobados (DEC-024: solo infraestructura sin cobro; `invoice` PROHIBITED); no campañas avanzadas de redes ni Instagram (DEC-017); no Google Business Profile real sin credenciales (simulado determinista); no API Meta real sin token (simulado); no dashboards completos/research de analítica (INC-007 fase 2); no webhook real de Telegram (solo envío con token); no Hostinger real sin credenciales; la UI sigue mínima (sustituible por frontend real en incrementos posteriores).
+No pagos/precios/planes aprobados (DEC-024: solo infraestructura sin cobro; `invoice` PROHIBITED); no campañas avanzadas de redes ni Instagram (DEC-017); no Google Business Profile real sin credenciales (simulado determinista); no API Meta real sin token (simulado); no dashboards completos/research de analítica (INC-007 fase 2); no webhook real de Telegram verificado (el chat del panel es simulado); no Hostinger real sin credenciales; sin recuperación de contraseña ni restauración de versiones anteriores de la página en la interfaz.

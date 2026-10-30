@@ -152,8 +152,6 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   const link = String(cli.invitation_link);
   check(link.startsWith(`${base}/invitacion#`), 'CLI de operación crea negocio + invitación de un solo uso');
   const invToken = link.split('#')[1] ?? '';
-  const invPage = await page('/invitacion');
-  check(invPage.status === 200 && invPage.html.includes('Activa tu cuenta'), 'página pública de invitación');
   const desc = await call('/api/auth/invitation', { method: 'POST', body: { token: invToken } });
   check(desc.status === 200 && desc.body.business_name === 'Cocina Doña Mary', 'invitación válida muestra solo el nombre del negocio');
   const accept = await call('/api/auth/invitation/accept', { method: 'POST', body: { token: invToken, display_name: 'Mary', password: 'Mole-Poblano-2026' } });
@@ -163,8 +161,6 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   const loginRes = await call('/api/auth/login', { method: 'POST', body: { login: email, password: 'Mole-Poblano-2026' } });
   check(loginRes.status === 200 && loginRes.body.session.tenant_id === cli.tenant_id, 'acceso con correo + contraseña, SIN tenant_id');
   const token = String(loginRes.body.token);
-  const panel = await page('/panel');
-  check(panel.html.includes('Teléfonos de contacto') && panel.html.includes('Agente de atención'), 'panel integrado con teléfonos y agente');
 
   // ---------- FLOW-02: teléfonos ----------
   say('\n-- FLOW-02: teléfono principal + «Otro número» por integración --');

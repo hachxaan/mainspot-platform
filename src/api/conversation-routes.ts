@@ -27,6 +27,8 @@ import { denyAndRespond, type LooseRequest } from '../boundary/middleware.ts';
 import { requirePermission } from '../boundary/middleware.ts';
 import type { ProposalStatus, RequestStatus } from '../conversation/intents.ts';
 import { resolveIdempotencyKey, resourceIdOf, type QuotaLedger } from '../subscriptions/quota.ts';
+import { initialWebsiteData, prepareFirstPage, preparePhoneUpdate, type SiteProposalDeps } from '../website/site-proposals.ts';
+import type { ContactPhoneService } from '../contact/phones.ts';
 
 export interface ConversationRouteDeps {
   pool: Pool;
@@ -40,6 +42,8 @@ export interface ConversationRouteDeps {
   domainService: DomainService;
   channel: ChannelAdapter;
   quota: QuotaLedger;
+  /** DEV-E2E-03: teléfono efectivo de la Página web para la propuesta de número nuevo. */
+  phones: ContactPhoneService;
 }
 
 function rcOf(lreq: LooseRequest): { request_id: string; session: SessionSummary | null } {
@@ -319,17 +323,19 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
-    const { slug, site_name } = (req.body ?? {}) as { slug?: string; site_name?: string };
+    const { slug, site_name, data } = (req.body ?? {}) as { slug?: string; site_name?: string; data?: unknown };
     if (!slug?.trim() || !site_name?.trim()) {
       return res.status(400).json({ error: { code: 'validation_error', message: 'Escribe el nombre del sitio y un subdominio para crearlo.' } });
     }
+    // DEV-E2E-03: datos del alta opcionales (frase, dirección, horario, lo que vende).
+    const initial = initialWebsiteData(site_name.trim(), data);
     const idempotencyKey = resolveIdempotencyKey(req.get('idempotency-key'), rc.request_id);
     try {
       const out = await runAtomic(deps.pool, (client) => deps.quota.consumeInTx(client, {
         tenantId: session.tenant_id, capability: 'website', units: 1, idempotencyKey,
         requestId: rc.request_id, actorId: session.user_id, actorRole: session.role_name,
       }, async () => {
-        const site = await deps.websiteRepo.createSite(session.tenant_id, slug.trim().toLowerCase(), site_name.trim(), client);
+        const site = await deps.websiteRepo.createSite(session.tenant_id, slug.trim().toLowerCase(), site_name.trim(), client, initial);
         await deps.sink.write({
           tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
           action: 'website.created', resource: `client_website/${site.website_id}`, request_id: rc.request_id,
@@ -366,6 +372,12 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
     const session = sessionOf(lreq);
     const site = await deps.websiteRepo.websiteForTenant(session.tenant_id);
     const domain = await deps.domainService.findByTenant(session.tenant_id);
+    // DEV-E2E-03: versiones publicadas (sin HTML) para «Mi página → Versiones publicadas».
+    const versions = site
+      ? (await deps.pool.query<{ version: number; diff_summary: string; proposal_id: string | null; created_at: string }>(
+        `SELECT version, diff_summary, proposal_id, created_at FROM website_content
+          WHERE tenant_id = $1 AND website_id = $2 ORDER BY version DESC LIMIT 20`, [session.tenant_id, site.website_id])).rows
+      : [];
     await deps.sink.write({
       tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
       action: 'data.read', resource: 'website', request_id: rc.request_id,
@@ -378,11 +390,32 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
         site_name: site.site_name,
         status: site.status,
         published_version: site.published_version,
+        published_at: site.published_at,
         data: site.data,
       } : null,
       domain: domain ?? null,
+      versions,
     });
   }));
+
+  // --- Propuestas de página que prepara MainSpot (DEV-E2E-03), siempre con vista previa lista y
+  // publicación SOLO tras aprobación: primera versión con los datos del alta ('website.initial') y
+  // nueva versión con el número efectivo de «Teléfonos → Página web» ('website.phone').
+  const siteDeps: SiteProposalDeps = {
+    pool: deps.pool, sink: deps.sink, repo: deps.repo, machine: deps.machine, websiteRepo: deps.websiteRepo, phones: deps.phones,
+  };
+  const siteProposal = (prepare: typeof prepareFirstPage, message: string) => ah(async (req, res) => {
+    const lreq = req as LooseRequest;
+    const rc = rcOf(lreq);
+    const session = sessionOf(lreq);
+    const out = await prepare(siteDeps, { tenantId: session.tenant_id, actorId: session.user_id, actorRole: session.role_name, requestId: rc.request_id });
+    return res.status(out.created ? 201 : 200).json({ proposal: out.proposal, status: out.proposal.status, preview: out.preview, message });
+  });
+  const confirmPerm = requirePermission('conversation.confirm', deps.sink, deps.pool);
+  router.post('/website/first-publication', confirmPerm,
+    siteProposal(prepareFirstPage, 'Tu primera página está lista para revisar. Nada se publica hasta que la apruebes.'));
+  router.post('/website/phone-publication', confirmPerm,
+    siteProposal(preparePhoneUpdate, 'Preparamos la vista previa con el número nuevo. Tu página no cambia hasta que la apruebes.'));
 
   router.post('/website/provision', requirePermission('website.provision', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;

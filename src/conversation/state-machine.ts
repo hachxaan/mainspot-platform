@@ -81,7 +81,12 @@ export async function confirmAndPreparePreview(
   const ids = newConversationIds();
 
   const proposalOut = await runAtomic(deps.pool, async (client) => {
-    await deps.repo.updateProposalStatus(input.tenantId, input.proposalId, 'confirmed', { confirmedBy: input.actorId }, 'awaiting_confirmation', client);
+    // Guard antiraza: dos confirmaciones simultáneas (panel + otra sesión) → solo una prepara
+    // la vista previa; la otra recibe 409 y se revierte sin crear un segundo preview.
+    const confirmed = await deps.repo.updateProposalStatus(input.tenantId, input.proposalId, 'confirmed', { confirmedBy: input.actorId }, 'awaiting_confirmation', client);
+    if (!confirmed.found) {
+      throw new AppError(409, 'validation_error', 'La propuesta no está esperando confirmación. No se puede preparar la vista previa en su estado actual.');
+    }
     await deps.repo.createPreview({
       previewId: ids.previewId, proposalId: input.proposalId, tenantId: input.tenantId,
       tokenHash, expiresAt, createdBy: input.actorId,
@@ -174,6 +179,20 @@ export async function approveAndPublish(
   const validStates = [proposal.action_class === 'human_approval_required' ? 'drafted' : 'preview_ready', 'failed'] as const;
   if (!(validStates as readonly string[]).includes(proposal.status)) {
     throw new AppError(409, 'validation_error', 'La propuesta no está lista para aprobarse en su estado actual. Para cambios visibles primero se prepara la vista previa.');
+  }
+
+  // DEV-E2E-03: un cambio web sin página creada no se aprueba ni se marca fallido (antes: 502
+  // client_website_not_found). Error recuperable: crear la página y volver a pedir el cambio.
+  if (proposal.capability_target === 'website') {
+    const site = await deps.pool.query('SELECT 1 FROM client_website WHERE tenant_id = $1', [input.tenantId]);
+    if (!site.rowCount) {
+      await deps.sink.write({
+        tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole ?? null,
+        action: 'conversation.approved', resource: `action_proposal/${input.proposalId}`,
+        request_id: input.requestId, decision: 'deny', result: 'website_missing',
+      });
+      throw new AppError(409, 'website_missing', 'Todavía no tienes página web. Créala primero en «Mi página» y después publica tus cambios.');
+    }
   }
 
   const publisher = deps.publishers.get(publisherNameFor(proposal.capability_target));

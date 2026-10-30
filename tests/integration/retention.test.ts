@@ -93,6 +93,9 @@ async function tracesOf(values: string[]): Promise<string[]> {
 
 test('DEC-0021..0023: each kind of data is purged at its own term; structure and fresher data stay', async () => {
   const { tenant, token } = await createTenantWithPlan(t, { conversations: 10 }, 'client_r');
+  // Un cambio web solo produce propuesta si el negocio ya tiene página (DEV-E2E-03).
+  await t.pool.query(`INSERT INTO client_website (website_id, tenant_id, slug, site_name, status, data, published_version)
+    VALUES ($1, $2, $3, 'Negocio', 'draft', '{}', 0)`, [`site_${tenant}`, tenant, tenant.replaceAll('_', '-')]);
   const old = await send(token, 'cambia el teléfono a 555-0199');
   const edge = await send(token, '¿cuál es el horario de atención?');
   assert.deepEqual([old.status, edge.status], [201, 201]);

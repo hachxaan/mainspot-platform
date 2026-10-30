@@ -166,7 +166,7 @@ test('AG-02: reseña delicada → caso humano con 3 alternativas, aviso Telegram
   const sent = transcript().filter((m) => m.to === String(chat) && m.text.includes(c.case_id));
   assert.equal(sent.length, 1, 'un solo aviso por caso');
   assert.match(sent[0]!.text, /1\) .+\n2\) .+\n3\) /);
-  assert.ok(sent[0]!.text.includes(`/panel#caso-${c.case_id}`) && /Panel: https?:\/\//.test(sent[0]!.text), 'enlace absoluto al caso (exige sesión)');
+  assert.ok(sent[0]!.text.includes(`/panel#/caso/${c.case_id}`) && /Panel: https?:\/\//.test(sent[0]!.text), 'enlace absoluto al caso (exige sesión)');
   await run(a.token);
   assert.equal(transcript().filter((m) => m.to === String(chat) && m.text.includes(c.case_id)).length, 1, 'sin alertas duplicadas');
 

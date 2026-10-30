@@ -7,7 +7,7 @@
  * «publicadas» en simulación. Nunca llama a Google/Meta.
  */
 
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import type { Pool } from 'pg';
 import type { AuditSink } from '../audit/sink.ts';
@@ -19,6 +19,8 @@ import type { TelegramLinkService } from '../engagement/telegram.ts';
 import type { EngagementWorker } from '../engagement/worker.ts';
 import type { GbpProfileService } from '../google/profile.ts';
 import { actorOf } from './contact-routes.ts';
+import type { ChannelAdapter } from '../channels/types.ts';
+import { SimulatedChannel } from '../channels/simulated.ts';
 
 export interface EngagementRouteDeps {
   pool: Pool;
@@ -28,6 +30,19 @@ export interface EngagementRouteDeps {
   telegram: TelegramLinkService;
   worker: EngagementWorker;
   gbp: GbpProfileService;
+  /** DEV-E2E-03: canal de avisos; el chat simulado del panel solo existe con SimulatedChannel. */
+  channel: ChannelAdapter;
+}
+
+/**
+ * Chat de Telegram SIMULADO del panel de desarrollo: un chat id estable por persona (nunca el
+ * teléfono público). Lo que la persona escribe se guarda solo en memoria del proceso, igual que el
+ * outbox del SimulatedChannel (NFR-004: mensajes no persistidos); se pierde al reiniciar.
+ */
+const SIM_INBOX_MAX = 200;
+const simInbox = new Map<string, Array<{ text: string; at: string }>>();
+function simChatId(tenantId: string, userId: string): string {
+  return `sim-${createHash('sha256').update(`${tenantId}:${userId}`).digest('hex').slice(0, 12)}`;
 }
 
 function ah(fn: (req: Request, res: Response) => Promise<unknown>) {
@@ -217,6 +232,39 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
     const rows = await deps.pool.query(
       `SELECT origin, target_ref, text, external_ref, created_at FROM sim_provider_reply WHERE tenant_id = $1 ORDER BY created_at`, [actor.tenantId]);
     return res.json({ provider_mode: 'simulated', replies: rows.rows });
+  }));
+
+  // ---- Chat de Telegram simulado del panel (DEV-E2E-03): mismo webhook/servicio que el bot real,
+  // con un chat id propio de la persona en sesión. Solo fuera de producción y con canal simulado.
+  const simTelegram = (req: Request, res: Response, next: () => void) => {
+    if (!(deps.channel instanceof SimulatedChannel)) {
+      res.status(404).json({ error: { code: 'not_found', message: 'No disponible.' } });
+      return;
+    }
+    next();
+  };
+  const tgPerm = requirePermission('telegram.link', deps.sink, deps.pool);
+
+  router.get('/dev/simulator/telegram', devOnly, simTelegram, tgPerm, ah(async (req, res) => {
+    const actor = actorOf(req);
+    const chatId = simChatId(actor.tenantId, actor.userId);
+    const outbox = (deps.channel as SimulatedChannel).transcript()
+      .filter((m) => m.to === chatId).map((m) => ({ from: 'bot' as const, text: m.text, at: m.at }));
+    const inbox = (simInbox.get(chatId) ?? []).map((m) => ({ from: 'me' as const, text: m.text, at: m.at }));
+    const messages = [...inbox, ...outbox].sort((a, b) => a.at.localeCompare(b.at) || (a.from === 'me' ? -1 : 1));
+    return res.json({ channel_mode: 'simulated', chat_hint: `…${chatId.slice(-3)}`, messages });
+  }));
+
+  router.post('/dev/simulator/telegram', devOnly, simTelegram, tgPerm, ah(async (req, res) => {
+    const actor = actorOf(req);
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+    if (!text || text.length > 500) throw new AppError(400, 'validation_error', 'Escribe un mensaje de hasta 500 caracteres.');
+    const chatId = simChatId(actor.tenantId, actor.userId);
+    const inbox = simInbox.get(chatId) ?? [];
+    inbox.push({ text, at: new Date().toISOString() });
+    simInbox.set(chatId, inbox.slice(-SIM_INBOX_MAX));
+    const result = await deps.telegram.handleUpdate({ update_id: Date.now(), message: { chat: { id: chatId }, text } });
+    return res.json({ channel_mode: 'simulated', ...result });
   }));
 
   return router;
