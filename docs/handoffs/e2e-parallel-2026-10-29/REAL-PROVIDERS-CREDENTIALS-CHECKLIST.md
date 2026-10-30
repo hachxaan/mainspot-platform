@@ -8,7 +8,7 @@ Esta checklist NO contiene secretos y NO demuestra que estén disponibles. El ag
 | Google GBP | OAuth client, consent screen, scope business.manage, cuenta/ubicación verificada y autorización del titular | Google Cloud y Google Business Profile | BLOCKED_EXTERNAL_GBP_OAUTH / NO_LOCATION |
 | Meta Pages | Meta App, usuario autorizado, Page ID/token, tasks y permisos de lectura/gestión de posts/comentarios | Meta for Developers / Page | BLOCKED_EXTERNAL_META_PERMISSIONS |
 | Meta Ads básicos | Cuenta publicitaria y autorización explícita; no ejecutar gasto sin permiso adicional del titular | Meta Business/Ads | BLOCKED_EXTERNAL_AD_ACCOUNT |
-| Telegram | Bot real de prueba con token seguro, chat del usuario de prueba, modo getUpdates sin webhook incompatible | Telegram @BotFather | BLOCKED_EXTERNAL_TELEGRAM_TOKEN / BLOCKED_STARLINK_TUNNEL / WEBHOOK_NOT_VERIFIED |
+| Telegram | BOT_TOKEN y TELEGRAM_WEBHOOK_SECRET seguros, bot de prueba autorizado, peer/receptor Starlink persistente, URL tg.mainspot.io y chat REAL (solo setWebhook; sin getUpdates) | Telegram @BotFather | BLOCKED_EXTERNAL_TELEGRAM_TOKEN / BLOCKED_STARLINK_TUNNEL / WEBHOOK_NOT_VERIFIED |
 | Email reset | SMTP o API transaccional con dominio/identidad remitente verificados y buzón de prueba | Proveedor de correo autorizado | BLOCKED_EXTERNAL_EMAIL_PROVIDER |
 | Dominios locales | LXC webserver existente, CA local confiable y permiso acotado de provisión por hostname de cliente | Host de desarrollo / LXC | BLOCKED_LOCAL_INFRA |
 
