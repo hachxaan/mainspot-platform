@@ -1,21 +1,23 @@
-# MainSpot · contexto persistente de entorno de desarrollo
+# MainSpot — contexto persistente del agente OMP
 
-## Convención de acceso
+## Entorno local oficial
 
-La URL de desarrollo para **la aplicación y las pruebas E2E en navegador** es **`https://app.mainspot.local.io`**. Usar la grafía literal `mainspot`. El hostname anterior `app.mainpot.local.io` fue un error tipográfico: no utilizarlo.
+- Producto: MainSpot (`hachxaan/mainspot-platform`).
+- URL local HTTPS (para todas las pruebas de interfaz, enlaces y reportes): **https://app.mainspot.local.io**.
+- Hostname correcto: **app.mainspot.local.io**. Cualquier indicación previa `app.mainpot.local.io` fue un error tipográfico y queda sustituida.
+- Resolución local en el host: `10.209.99.101 app.mainspot.local.io` en `/etc/hosts`.
+- Reverse proxy HTTPS en LXC `webserver` IP `10.209.99.101`; certificado de CA local confiable para el dominio; upstream hacia Express de MainSpot en el host (puerto interno 3100 en el entorno actual, dirección de host accesible desde el LXC definida en el bootstrap).
+- `PUBLIC_BASE_URL=https://app.mainspot.local.io`; cualquier invitación/enlace generado debe respetar ese origen, sin guardar tokens activos en repositorios o issues.
+- Google, Meta y Telegram son simulados en desarrollo hasta verificar sus adaptadores e integraciones reales.
 
-Topología: resolución local mediante `/etc/hosts` del host → `10.209.99.101` (LXC `webserver`) → proxy inverso HTTPS con CA de confianza local → proceso MainSpot Express en el host (puerto interno inicialmente 3100) → PostgreSQL y worker existentes.
+## Política de ejecución
 
-## Instalación inicial: una vez, fuera del arranque normal
+**Configuración del dominio/proxy/certificados = trabajo único.** Hacer bootstrap y validación inicial una sola vez cuando se encargue. En sesiones siguientes de OMP **asumir esta infraestructura preparada y no hacer auditorías, reconfiguraciones ni comprobaciones preventivas de que esté configurada**. Iniciar y probar MainSpot directamente mediante `https://app.mainspot.local.io`; solo depurar proxy/CA/hosts ante fallo comprobado del dominio.
 
-La **primera** configuración del host comprende, solo si aún no fue ejecutada: añadir una entrada `/etc/hosts`, crear virtual host en el servidor proxy existente del LXC sin alterar otros sitios, certificado con SAN `app.mainspot.local.io` firmado por una CA local confiada por el navegador, proxy al host realmente accesible desde el LXC, configurar `PUBLIC_BASE_URL` y actualizar pruebas de navegador a HTTPS. Durante esa única instalación se valida HTTPS, proxy, invitaciones, panel, APIs y tests E2E. La guía de instalación puede vivir en `docs/development/` y el comando one-shot independiente; **no se debe integrar el aprovisionamiento a `scripts/dev-panel.sh`**.
+Los scripts de arranque normales NO deben hacer bootstrap de hosts/proxy/TLS ni verificar sus archivos; pueden verificar que **la aplicación** está operando cuando sea relevante para el test funcional.
 
-**Una vez completada:** no revisar si el proxy, certificado o `/etc/hosts` «ya estaban configurados» en cada arranque o sesión. La infraestructura se considera persistente y lista; iniciar MainSpot normalmente y probar el producto contra el dominio. Solo diagnosticar/reparar si ocurre un error real. El arranque del servidor no requiere renovación ni instalación de certificados, ni intervención de infraestructura.
+Para pruebas E2E, la URL base local será `https://app.mainspot.local.io` y nunca el puerto interno como vía principal. La seguridad TLS debe validarse normalmente, sin ignorar los errores de certificados.
 
-## Enlaces y pruebas
+Usar este archivo y `.omp/RULES.md` como memoria persistente de proyecto en todas las sesiones OMP iniciadas dentro del repositorio. Si OMP se lanza desde un directorio padre distinto, el agente local debe asegurar que también se cargue esta regla en el perfil OMP activo (por ejemplo, una referencia acotada a MainSpot en el archivo de reglas del perfil); preservar cualquier regla previa.
 
-El usuario recibe `https://app.mainspot.local.io/`, `https://app.mainspot.local.io/panel` o enlaces de invitación a través de ese dominio; en documentación pública se usa `/invitacion#<TOKEN>` como ejemplo, **nunca** un token real.
-
-El navegador y Playwright deben probar a través del HTTPS canónico con verificación de CA activa. Pruebas unitarias o HTTP internas pueden usar loopback cuando eso sea parte de su naturaleza, pero no reemplazan los recorridos E2E oficiales a través del proxy.
-
-Conservar la plataforma en desarrollo, sin introducir acciones de producción ni alterar servicios ajenos. Google, Meta y Telegram permanecen simulados hasta disponer de evidencia de integración externa real. 
+Trabajo de software en desarrollo autónomo y E2E, sin HDC intermedio, manteniendo los controles del producto y sin realizar cambios de producción. No editar ni regenerar certificados de otros dominios.
