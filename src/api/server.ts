@@ -64,6 +64,9 @@ import { NotVerifiedCommentSource, RealReplier, SimulatedCommentSource, Simulate
 import { GbpProfileService } from '../google/profile.ts';
 import { engagementRouter, telegramWebhookRouter } from './engagement-routes.ts';
 import type { ChannelAdapter } from '../channels/types.ts';
+// DEV-E2E-04: conexión real por negocio con Google/Meta (tokens cifrados, OAuth state).
+import { ProviderConnectionRepository } from '../connectors/repository.ts';
+import { SecretBox } from '../connectors/secret-box.ts';
 
 export interface AppHandle {
   app: express.Express;
@@ -86,6 +89,8 @@ export interface AppHandle {
   engagementWorker: EngagementWorker;
   telegram: TelegramLinkService;
   channel: ChannelAdapter;
+  /** DEV-E2E-04: conexiones por negocio con proveedores reales (tokens solo cifrados). */
+  connections: ProviderConnectionRepository;
 }
 
 /**
@@ -115,6 +120,8 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   const dataRepo = new TenantDataRepository(pool);
   const actionRepo = new DemoActionRepository(pool);
   const loginRateLimiter = new LoginRateLimiter(config.rateLimitMax, config.rateLimitWindowMs, config.rateLimitLockMs);
+  // DEV-E2E-04: una clave mal formada falla al arrancar; sin clave no se guardan tokens.
+  const connections = new ProviderConnectionRepository(pool, config.connectorTokenKey ? SecretBox.fromBase64(config.connectorTokenKey) : null);
 
   // INC-002/INC-003 wiring (DEC-016, DEC-019, DEC-026).
   const hooks = buildInc001Hooks({ pool, jwtSecret: config.jwtSecret, sink });
@@ -271,7 +278,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
     }
   });
 
-  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones, engagement, engagementWorker, telegram, channel };
+  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones, engagement, engagementWorker, telegram, channel, connections };
 }
 
 /** DEC-0005: cada cuánto se cierran las reservas de cuota vencidas (caídas a mitad). */

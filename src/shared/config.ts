@@ -108,6 +108,11 @@ export interface AppConfig {
   telegramWebhookSecret: string;
   /** DEV-E2E-02: URL pública del panel para enlaces en avisos e invitaciones. */
   publicBaseUrl: string;
+  /**
+   * DEV-E2E-04: clave AES-256-GCM (32 bytes en base64, CONNECTOR_TOKEN_KEY, fuera de Git) para
+   * cifrar tokens de proveedores por negocio. Vacía ⇒ no se guardan ni leen tokens (fail closed).
+   */
+  connectorTokenKey: string;
 }
 
 export interface LoadConfigOptions {
@@ -251,6 +256,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     engagementPollIntervalMs: Math.max(0, Number(process.env.ENGAGEMENT_POLL_INTERVAL_MS ?? 60_000)),
     telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
     publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? `http://localhost:${Number(process.env.PORT ?? 3000)}`).replace(/\/$/, ''),
+    connectorTokenKey: process.env.CONNECTOR_TOKEN_KEY ?? '',
   };
 
   return { ...config, ...overrides };
