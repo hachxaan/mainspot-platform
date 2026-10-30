@@ -1,0 +1,9 @@
+# MainSpot · reglas persistentes de desarrollo local (OMP)
+
+- **Origen canónico único de desarrollo y pruebas E2E:** `https://app.mainspot.local.io`. El nombre exacto es **mainspot**, nunca **mainpot**. No reportar `http://localhost:3100` como URL de usuario, invitación o prueba funcional.
+- **Entorno local predefinido:** `app.mainspot.local.io` resuelve por `/etc/hosts` a `10.209.99.101` (LXC `webserver`), que termina HTTPS con certificado local de confianza y reenvía mediante reverse proxy a MainSpot en el host/puerto interno correspondiente (actualmente :3100).
+- **Infraestructura: instalar UNA SOLA VEZ.** Cuando la configuración inicial esté concluida, **NO volver a comprobar, regenerar, instalar, modificar ni reaprovisionar** `/etc/hosts`, proxy, CA o certificados en cada nueva sesión OMP ni en cada arranque de `scripts/dev-panel.sh`. Nunca incrustar la instalación en scripts rutinarios. Presumir que la infraestructura configurada persiste; investigar únicamente ante un fallo real y concreto.
+- Para trabajo cotidiano, levantar la aplicación y ejecutar pruebas directamente con el dominio HTTPS. Configurar `PUBLIC_BASE_URL=https://app.mainspot.local.io` en desarrollo. Los tests E2E de navegador deben usar este origen y **validar TLS normalmente**; no utilizar `ignoreHTTPSErrors`, `--insecure` ni un fallback silencioso a localhost.
+- `localhost:3100` es únicamente **upstream interno/diagnóstico**; el LXC debe reenviar a una dirección realmente accesible del host, no asumir que `127.0.0.1` del LXC corresponde al host.
+- No exponer tokens activos de invitación, claves TLS privadas ni secretos en GitHub, logs o reportes.
+- Esta regla es **específica del proyecto MainSpot** y debe seguir vigente al iniciar nuevas sesiones OMP desde este repositorio. Si cambian estas condiciones, documentar el nuevo estándar en el repositorio antes de sustituirlas.
