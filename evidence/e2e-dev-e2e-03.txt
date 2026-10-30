@@ -1,0 +1,83 @@
+# E2E DEV-E2E-03 — navegador real + servidor real + PostgreSQL (run 2026-10-30T05:20:36.171Z)
+# HEAD: ed2f72b69868f2cb55468486e17b9d49b7922095
+# navegador: /usr/bin/google-chrome (headless) · servidor: node src/api/server.ts (worker en proceso, ciclo 1 s)
+# proveedores: simulated (Google, Meta, Telegram); ningún resultado es real
+# DB: mainspot_test (recreada por scripts/test-prep.ts)
+
+servidor real en http://127.0.0.1:33879 · Chrome headless · worker en proceso [proveedores simulated]
+
+-- FLOW-01: invitación de un solo uso y alta en la interfaz de Claude --
+PASS 1. invitación DS-02 muestra el negocio y retira el token de la barra
+PASS 2. contraseña débil: error en el campo, sin llamar a la API
+PASS 3. invitación usada = misma respuesta neutra que una inventada
+PASS 4. la contraseña no queda en sessionStorage ni localStorage
+PASS 5. datos del alta → página creada (cuota website) y primera versión con vista previa, sin publicar
+
+-- Telegram simulado: mismo webhook que el bot real --
+PASS 6. chat vinculado con código de un solo uso (el chat no es el teléfono público)
+
+-- Primera página: vista previa → aprobación → publicación (sin 502) --
+PASS 7. primera página publicada una vez (versión 1), en el entorno de desarrollo
+PASS 8. recarga: la sesión y el estado vienen del backend (sin volver a entrar)
+
+-- TEL-01..04: tres «Otro número» independientes --
+   Mi negocio → web=+52 983 111 1111 google=+52 983 222 2222 facebook=+52 983 333 3333
+PASS 9. TEL-01 tres números distintos guardados y mostrados por canal
+PASS 10. TEL-02 cambiar solo Facebook no toca Página web ni Google
+PASS 11. TEL-03 el principal cambia solo los canales en «Usar mi número»
+PASS 12. TEL-04 other→own→other recupera el número propio de la web
+PASS 13. TEL-04 número inválido para el país → 400 con error por campo
+
+-- Página web: el número nuevo se publica con vista previa --
+PASS 14. versión 2 publicada con el teléfono propio de la Página web
+
+-- Chat: una sola fuente del teléfono; cambio de horario con vista previa --
+PASS 15. «cambia el teléfono» por chat dirige a «Teléfonos de contacto» sin crear propuesta
+PASS 16. chat → confirmación → vista previa → aprobación → publicado una vez; repetir no duplica
+
+-- Google (ficha simulada) y Facebook (publicación simulada) --
+PASS 17. ficha de Google persistida; muestra el teléfono propio de Google
+PASS 18. borrador de Facebook incluye el teléfono propio de Facebook
+PASS 19. publicación de Facebook aprobada y publicada en el simulador
+
+-- Agente: reglas opt-in con consentimiento explícito --
+PASS 20. API: respuesta automática sin consentimiento → 400
+PASS 21. UI: «Autorizar» sin marcar la casilla no guarda
+PASS 22. reglas guardadas como versiones con consentimiento (Google y Facebook, agradecimientos y datos)
+
+-- AG-01..03: el worker atiende con el navegador CERRADO --
+   navegador del dueño cerrado; solo el servidor sigue
+PASS 23. AG-01 agradecimiento y pregunta simple respondidos solos (regla v1, simulated)
+PASS 24. AG-03 la pregunta en Facebook se responde con el número de Facebook
+PASS 25. AG-02 queja y amenaza → casos humanos con un aviso por Telegram cada uno (simulado)
+
+-- Telegram y panel deciden el MISMO caso; otra sesión lo ve --
+PASS 26. caso aprobado desde Telegram (opción 1, con segundo toque)
+PASS 27. la otra sesión abierta muestra la misma resolución sin recargar
+PASS 28. caso delicado descartado desde el panel (sin respuesta pública)
+
+-- Reinicio del servidor: estado persistente, sin duplicados --
+PASS 29. tras SIGKILL y reinicio: misma sesión, 4 casos, 3 respuestas simuladas y 2 avisos (sin duplicados)
+
+-- Roles: Administración crea Operación y Solo lectura; RBAC en UI y API --
+PASS 30. equipo creado desde «Mi negocio» con su perfil
+PASS 31. Operación prepara la vista previa pero no puede aprobar (UI sin botón; API 403)
+PASS 32. Solo lectura ve la vista previa sin controles; enviar por API → 403
+PASS 33. Administración descarta la propuesta de Operación (nada se publica)
+
+-- Aislamiento entre negocios --
+PASS 34. otro negocio: la UI no encuentra el caso y la API responde el mismo 404 que uno inexistente
+
+-- Cuenta nueva sin página: crearla antes de editar o publicar --
+PASS 35. sin página: el chat orienta a crearla (sin propuesta) y la API responde 409 website_missing, no 502
+PASS 36. cuenta nueva: «Crear mi página» → vista previa → publicada (versión 1) con su teléfono
+
+-- Errores 401/404/429 y contenido escapado --
+PASS 37. 404: enlace de vista previa inexistente → mensaje claro
+PASS 38. texto de clientes con HTML se muestra escapado (sin ejecutar)
+PASS 39. CSP del panel: solo scripts propios (sin inline)
+PASS 40. 429: demasiados intentos de acceso → mensaje con espera, sin revelar cuentas
+PASS 41. 401: sesión inválida → vuelve a «Entrar»
+PASS 42. sin errores de JavaScript en el navegador
+
+# Fin de transcript

@@ -1,59 +1,57 @@
-# E2E DEV-E2E-02 — transcript (run 2026-10-29T11:15:36.443Z)
-# HEAD: e978f089abe3cd448de3c5360bf052f1b322da0a
+# E2E DEV-E2E-02 — transcript (run 2026-10-30T05:20:09.244Z)
+# HEAD: ed2f72b69868f2cb55468486e17b9d49b7922095
 # procesos reales: servidor, CLI invite-owner, worker independiente
 # proveedores: simulated (Google, Meta, Telegram); ningún resultado es real
 # DB: mainspot_test (recreada por scripts/test-prep.ts)
 
-servidor real en http://127.0.0.1:39031 (worker en proceso, ciclo 1 s) [simulated]
+servidor real en http://127.0.0.1:33759 (worker en proceso, ciclo 1 s) [simulated]
 
 -- FLOW-01: alta asistida --
 PASS 1. CLI de operación crea negocio + invitación de un solo uso
-PASS 2. página pública de invitación
-PASS 3. invitación válida muestra solo el nombre del negocio
-PASS 4. dueña elige contraseña; cuenta Administración creada
-PASS 5. la invitación no se puede reutilizar
-PASS 6. acceso con correo + contraseña, SIN tenant_id
-PASS 7. panel integrado con teléfonos y agente
+PASS 2. invitación válida muestra solo el nombre del negocio
+PASS 3. dueña elige contraseña; cuenta Administración creada
+PASS 4. la invitación no se puede reutilizar
+PASS 5. acceso con correo + contraseña, SIN tenant_id
 
 -- FLOW-02: teléfono principal + «Otro número» por integración --
-PASS 8. número inválido para el país → error por campo
+PASS 6. número inválido para el país → error por campo
    efectivos: web=+529831111111 google=+529832222222 facebook=+12125550123
-PASS 9. tres integraciones con número propio e independiente
-PASS 10. ficha de Google simulada usa el número de Google
+PASS 7. tres integraciones con número propio e independiente
+PASS 8. ficha de Google simulada usa el número de Google
 
 -- FLOW-02: Página Web --
-PASS 11. el negocio crea su página web (cuota website del plan piloto)
-PASS 12. solicitud de cambio web → propuesta (website.edit)
-PASS 13. vista previa con el teléfono efectivo de la Página Web
-PASS 14. aprobación → publicado una sola vez (desarrollo)
+PASS 9. el negocio crea su página web (cuota website del plan piloto)
+PASS 10. solicitud de cambio web → propuesta (website.edit)
+PASS 11. vista previa con el teléfono efectivo de la Página Web
+PASS 12. aprobación → publicado una sola vez (desarrollo)
 
 -- Agente: políticas opt-in, Telegram y post de Facebook --
-PASS 15. opt-in explícito por origen y categoría (versión 1)
-PASS 16. Telegram vinculado con código de un solo uso (simulado)
-PASS 17. publicación de Facebook aprobada y publicada (simulado)
+PASS 13. opt-in explícito por origen y categoría (versión 1)
+PASS 14. Telegram vinculado con código de un solo uso (simulado)
+PASS 15. publicación de Facebook aprobada y publicada (simulado)
 
 -- AG-01..03: el worker atiende sin navegador --
-PASS 18. AG-01 reseña simple respondida sola (política v1, simulated)
-PASS 19. AG-03 pregunta en Facebook respondida con el número de Facebook
-PASS 20. AG-02/03 casos delicados esperan decisión humana
-PASS 21. un aviso de Telegram por caso delicado (simulado)
-PASS 22. la publicación previa no cambia
-PASS 23. aprobación desde Telegram (alternativa 1)
-PASS 24. rechazo desde el panel (mismo caso)
-PASS 25. panel refleja la decisión tomada en Telegram
+PASS 16. AG-01 reseña simple respondida sola (política v1, simulated)
+PASS 17. AG-03 pregunta en Facebook respondida con el número de Facebook
+PASS 18. AG-02/03 casos delicados esperan decisión humana
+PASS 19. un aviso de Telegram por caso delicado (simulado)
+PASS 20. la publicación previa no cambia
+PASS 21. aprobación desde Telegram (alternativa 1)
+PASS 22. rechazo desde el panel (mismo caso)
+PASS 23. panel refleja la decisión tomada en Telegram
 
 -- AG-04: caída del servidor y worker independiente --
    servidor terminado con SIGKILL
    estado de g-crash al morir el servidor: aún no ingerido
    envíos interrumpidos a recuperar: 0 (lease vencida forzada)
-PASS 26. worker independiente (proceso propio) ejecuta un ciclo
-PASS 27. caso recibido antes de la caída queda respondido
+PASS 24. worker independiente (proceso propio) ejecuta un ciclo
+PASS 25. caso recibido antes de la caída queda respondido
    respuestas públicas simuladas: fb-q, g-crash, g-risk, g-simple
-PASS 28. reinicio sin dobles respuestas (una por caso, rechazado sin respuesta)
-PASS 29. sin avisos duplicados tras el reinicio
+PASS 26. reinicio sin dobles respuestas (una por caso, rechazado sin respuesta)
+PASS 27. sin avisos duplicados tras el reinicio
 
 -- Aislamiento multi-tenant --
-PASS 30. otro negocio recibe el mismo 404 que un caso inexistente
-PASS 31. chat no vinculado no puede decidir
+PASS 28. otro negocio recibe el mismo 404 que un caso inexistente
+PASS 29. chat no vinculado no puede decidir
 
 # Fin de transcript
