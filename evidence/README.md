@@ -26,3 +26,13 @@ npm run evidence    # scripts/capture-evidence.sh
 | `09-audit-export-client-a.json`, `10-audit-export-client-b.json` | AC-003 (eventos + correlación) |
 | `11-rollback-simulate.txt` / `rollback-report.md` | AC-009 (rollback simulado) |
 | `12-summary.txt` | resumen PASS/FAIL |
+
+## Telegram — Starlink persistente
+
+`telegram-webhook-starlink.txt` contiene salidas sanitizadas de servicios, rutas,
+HTTP, recuperación y pruebas de esta instalación. Runbook y bloqueos:
+[`docs/architecture/telegram-webhook-starlink.md`](../docs/architecture/telegram-webhook-starlink.md).
+No acredita entrega KVM → Express ni Telegram real; ambos requieren la evidencia externa pendiente.
+`e2e-dev-e2e-02.txt` registra el E2E simulado actualizado, incluida la reentrega tras reiniciar.
+Nunca guardar tokens, encabezados secretos, cuerpos de mensajes o archivos WireGuard aquí.
+Las pruebas usan `mainspot_test` en PostgreSQL de desarrollo (`127.0.0.1:55432`), no la BD activa `mainspot_dev`.

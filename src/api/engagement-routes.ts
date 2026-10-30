@@ -263,7 +263,8 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
     const inbox = simInbox.get(chatId) ?? [];
     inbox.push({ text, at: new Date().toISOString() });
     simInbox.set(chatId, inbox.slice(-SIM_INBOX_MAX));
-    const result = await deps.telegram.handleUpdate({ update_id: Date.now(), message: { chat: { id: chatId }, text } });
+    // Sin update_id: el chat simulado no tiene reentregas, así que no pasa por el dedupe del webhook.
+    const result = await deps.telegram.handleUpdate({ message: { chat: { id: chatId }, text } });
     return res.json({ channel_mode: 'simulated', ...result });
   }));
 
@@ -271,23 +272,27 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
 }
 
 /**
- * Webhook público de Telegram (forma de Update). Con TELEGRAM_WEBHOOK_SECRET exige la cabecera
- * `X-Telegram-Bot-Api-Secret-Token`; sin secreto solo se acepta fuera de producción (simulación).
+ * Webhook público de Telegram (forma de Update). Exige SIEMPRE la cabecera
+ * `X-Telegram-Bot-Api-Secret-Token` igual a TELEGRAM_WEBHOOK_SECRET, también en desarrollo: sin
+ * secreto configurado responde 503 y no procesa nada; cabecera ausente o distinta → 401. El chat
+ * simulado del panel no pasa por aquí (`/dev/simulator/telegram`).
  */
 export function telegramWebhookRouter(deps: { config: AppConfig; telegram: TelegramLinkService }): Router {
   const router = Router();
   router.post('/api/telegram/webhook', ah(async (req, res) => {
     const secret = deps.config.telegramWebhookSecret;
-    if (secret) {
-      const got = Buffer.from(String(req.headers['x-telegram-bot-api-secret-token'] ?? ''));
-      const want = Buffer.from(secret);
-      if (got.length !== want.length || !timingSafeEqual(got, want)) {
-        return res.status(401).json({ error: { code: 'unauthorized', message: 'Solicitud no autorizada.' } });
-      }
-    } else if (deps.config.appEnv === 'production') {
+    if (!secret) {
       return res.status(503).json({ error: { code: 'not_configured', message: 'Webhook no configurado.' } });
     }
+    const got = Buffer.from(String(req.headers['x-telegram-bot-api-secret-token'] ?? ''));
+    const want = Buffer.from(secret);
+    if (got.length !== want.length || !timingSafeEqual(got, want)) {
+      return res.status(401).json({ error: { code: 'unauthorized', message: 'Solicitud no autorizada.' } });
+    }
     const result = await deps.telegram.handleUpdate(req.body ?? {});
+    // Misma entrega aún en curso en otro intento: sin 2xx Telegram la reintenta más tarde y
+    // entonces será `duplicate` (o se reprocesa si el primer intento falló).
+    if (result.handled === 'in_progress') return res.status(409).json({ ok: false, ...result });
     return res.json({ ok: true, ...result });
   }));
   return router;

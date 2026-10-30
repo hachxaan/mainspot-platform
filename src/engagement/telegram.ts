@@ -7,6 +7,8 @@
  * - Decisiones: `/aprobar <case_id> <1-3>` y `/rechazar <case_id>` llaman al MISMO servicio que el
  *   panel (mismo caso, misma resolución, mismos permisos RBAC). Un chat no vinculado no cambia
  *   nada. El webhook acepta la forma de un Update de Telegram (real o simulado).
+ * - Reentregas: un Update con `update_id` se reclama en `telegram_update` antes de actuar, así la
+ *   misma entrega repetida o concurrente no responde ni decide dos veces (ver handleUpdate).
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -19,6 +21,8 @@ import { AppError } from '../shared/errors.ts';
 import type { EngagementService } from './service.ts';
 
 export const LINK_CODE_TTL_MINUTES = 10;
+/** Segundos tras los que un update «en curso» se da por abandonado (proceso caído) y puede reclamarse de nuevo. */
+export const UPDATE_LEASE_SECONDS = 120;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 function hashCode(code: string): string {
@@ -28,6 +32,11 @@ function hashCode(code: string): string {
 export interface TelegramUpdateLike {
   update_id?: number;
   message?: { chat?: { id?: number | string }; text?: string };
+}
+
+export interface TelegramUpdateResult {
+  /** Código del resultado (nunca texto del chat ni identificadores personales). */
+  handled: string;
 }
 
 export interface TelegramLinkView {
@@ -93,13 +102,65 @@ export class TelegramLinkService {
     await this.channel.sendMessage(chatId, text).catch(() => undefined);
   }
 
-  /** Procesa un Update. Devuelve un resumen para la respuesta HTTP (sin datos personales). */
-  async handleUpdate(update: TelegramUpdateLike): Promise<{ handled: string }> {
+  /**
+   * Procesa un Update. Devuelve un resumen para la respuesta HTTP (sin datos personales).
+   *
+   * - Un update sin chat o sin texto se ignora SIN escribir nada (sondas `{}` / `{update_id:0}`).
+   * - Con `update_id` entero (webhook real) el update se reclama en `telegram_update` antes de
+   *   actuar: la misma entrega repetida devuelve `duplicate` (ya procesada) o `in_progress`
+   *   (otro intento la tiene; el webhook responde sin 2xx para que Telegram la reintente luego).
+   *   Si el procesamiento falla con error, el reclamo se libera y el reintento lo reprocesa;
+   *   decidir y publicar ya son idempotentes por caso (approve/reject/respondCase, código de un
+   *   solo uso), así que un reintento nunca decide ni publica dos veces. NO se garantiza que la
+   *   respuesta al chat (Bot API) salga exactamente una vez: si el proceso cae entre enviarla y
+   *   marcar el update como procesado, el reintento vuelve a responder.
+   * - Sin `update_id` (chat simulado del panel) no hay reentregas ni dedupe.
+   */
+  async handleUpdate(update: TelegramUpdateLike): Promise<TelegramUpdateResult> {
     const chatRaw = update.message?.chat?.id;
     const text = (update.message?.text ?? '').trim();
     if ((typeof chatRaw !== 'number' && typeof chatRaw !== 'string') || !text) return { handled: 'ignored' };
     const chatId = String(chatRaw);
-    const requestId = `tg_${update.update_id ?? randomUUID()}`;
+    const updateId = typeof update.update_id === 'number' && Number.isSafeInteger(update.update_id) && update.update_id >= 0
+      ? update.update_id : null;
+    if (updateId === null) return this.dispatch(chatId, text, `tg_${randomUUID()}`);
+
+    const claimToken = randomUUID();
+    const claim = await this.claimUpdate(updateId, claimToken);
+    if (claim !== 'claimed') return { handled: claim };
+    let result: TelegramUpdateResult;
+    try {
+      result = await this.dispatch(chatId, text, `tg_${updateId}`);
+    } catch (err) {
+      await this.pool.query(
+        `DELETE FROM telegram_update WHERE update_id = $1 AND claim_token = $2 AND status = 'processing'`,
+        [updateId, claimToken]).catch(() => undefined);
+      throw err;
+    }
+    await this.pool.query(
+      `UPDATE telegram_update SET status = 'done', handled = $3, done_at = now() WHERE update_id = $1 AND claim_token = $2`,
+      [updateId, claimToken, result.handled]);
+    return result;
+  }
+
+  /**
+   * Reclama el update para este intento. Inserta la fila o, si otro intento la dejó «en curso»
+   * más tiempo que la lease (proceso caído), la toma con un claim_token nuevo; ese token
+   * condiciona el cierre y la liberación, así un intento viejo no borra el reclamo de otro.
+   */
+  private async claimUpdate(updateId: number, claimToken: string): Promise<'claimed' | 'duplicate' | 'in_progress'> {
+    const res = await this.pool.query(
+      `INSERT INTO telegram_update (update_id, claim_token, status, received_at) VALUES ($1, $2, 'processing', now())
+       ON CONFLICT (update_id) DO UPDATE SET claim_token = EXCLUDED.claim_token, received_at = now()
+         WHERE telegram_update.status = 'processing' AND telegram_update.received_at < now() - make_interval(secs => $3)
+       RETURNING update_id`, [updateId, claimToken, UPDATE_LEASE_SECONDS]);
+    if (res.rowCount) return 'claimed';
+    const row = await this.pool.query<{ status: string }>('SELECT status FROM telegram_update WHERE update_id = $1', [updateId]);
+    return row.rows[0]?.status === 'done' ? 'duplicate' : 'in_progress';
+  }
+
+  /** Ejecuta el comando del chat (vínculo, ayuda o decisión) y responde por el canal. */
+  private async dispatch(chatId: string, text: string, requestId: string): Promise<TelegramUpdateResult> {
     const [command, ...args] = text.split(/\s+/);
 
     if (command === '/start' && args[0]) return this.linkChat(chatId, args[0], requestId);
@@ -157,7 +218,7 @@ export class TelegramLinkService {
     }
   }
 
-  private async linkChat(chatId: string, code: string, requestId: string): Promise<{ handled: string }> {
+  private async linkChat(chatId: string, code: string, requestId: string): Promise<TelegramUpdateResult> {
     const res = await this.pool.query<{ tenant_id: string; user_id: string }>(
       `UPDATE telegram_link_code SET used_at = now()
         WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now() RETURNING tenant_id, user_id`, [hashCode(code)]);

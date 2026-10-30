@@ -7,3 +7,12 @@
 - El upstream puede seguir en `localhost:3100` **solo como detalle interno del host**; no presentarlo como URL pública de desarrollo, no utilizarlo en el navegador E2E como bypass. Evitar fallback silencioso y nunca usar `ignoreHTTPSErrors` para esconder errores TLS.
 - El certificado de confianza local se genera/instala solo inicialmente y no va al repositorio junto con claves privadas. Ninguna modificación productiva; proveedores Google/Meta/Telegram mantienen su simulación hasta su verificación real.
 - Persistencia: este archivo `.omp/RULES.md` es la **regla sticky del proyecto OMP**; vale para sesiones nuevas. Mantenerlo en el repo y conservar estas reglas en futuras modificaciones. No confiar solo en resumen de chat o en memory backend opcional.
+
+## Webhook Telegram por KVM y WireGuard
+
+- MainSpot recibe los webhooks reales de Telegram mediante `https://tg.mainspot.io/telegram/webhook`, transportados por el KVM y WireGuard hasta el cliente persistente Starlink `10.77.0.2`, donde un proxy local los entrega al backend Express (`POST /api/telegram/webhook`, puerto interno 3100).
+- La configuración de WireGuard, proxy y certificados es persistente y no se reinstala ni inspecciona preventivamente en cada nueva sesión OMP. No regenerar claves ni descargar de nuevo `~/wireguard-telegram`; contiene material criptográfico y nunca se copia a Git.
+- Servicios locales: `wg-quick@wg-telegram`, `mainspot-telegram-proxy`, `mainspot-local` (Express y un único worker integrado); PostgreSQL reutiliza el contenedor existente con recuperación automática. No arrancar otro `scripts/dev-panel.sh` mientras `mainspot-local` esté activo.
+- El proxy escucha exclusivamente en `10.77.0.2:8080`, autoriza únicamente `10.77.0.1` y `POST /telegram/webhook`; el túnel solo enruta `10.77.0.1/32`, nunca Internet general.
+- Credenciales locales fuera de Git: `~/.config/mainspot/telegram-webhook.env` (0600). Webhook siempre autenticado, también en desarrollo; Telegram real solo con bot autorizado y activación explícita. Nunca combinar long polling y webhook ni cambiar el webhook de otro entorno.
+- La arquitectura instalada no equivale a entrega real verificada. Estado y evidencia en `docs/architecture/telegram-webhook-starlink.md`; conservar los bloqueos explícitos hasta completar KVM → Express, entrega auténtica de Telegram y recuperación pendiente. No marcar `INFRASTRUCTURE_READY` ni `TELEGRAM_WEBHOOK_REAL_VERIFIED` sin sus pruebas.

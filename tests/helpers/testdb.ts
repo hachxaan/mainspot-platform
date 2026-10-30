@@ -36,8 +36,8 @@ export interface TestApi {
   close: () => Promise<void>;
 }
 
-export async function bootApi(configOverrides: Partial<AppConfig> = {}): Promise<TestApi> {
-  const pool = new Pool({ connectionString: TEST_URL, max: 5 });
+export async function bootApi(configOverrides: Partial<AppConfig> = {}, poolMax = 5): Promise<TestApi> {
+  const pool = new Pool({ connectionString: TEST_URL, max: poolMax });
   const handle = createApp({ config: { ...TEST_CONFIG, engagementPollIntervalMs: 0, ...configOverrides }, pool });
   const { app, jev } = handle;
   const server: Server = await new Promise((resolve) => {

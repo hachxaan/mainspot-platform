@@ -1,0 +1,198 @@
+MAINSPOT TELEGRAM / STARLINK — sanitized execution evidence
+UTC 2026-10-30T07:50:54.605457+00:00
+
+STATES
+INFRASTRUCTURE_READY: NOT ACCREDITED (authorized KVM HTTP + full host recovery pending)
+TELEGRAM_WEBHOOK_REAL_VERIFIED: BLOCKED_EXTERNAL (no authorized bot credential or authentic delivery)
+No KVM service/configuration, keys, app.mainspot.local.io bootstrap, unrelated VPN or other containers changed.
+
+FINAL RUNTIME COMMAND OUTPUTS
+$ systemctl is-enabled wg-quick@wg-telegram mainspot-telegram-proxy mainspot-local docker
+enabled
+enabled
+enabled
+enabled
+exit=0
+$ systemctl is-active wg-quick@wg-telegram mainspot-telegram-proxy mainspot-local docker
+active
+active
+active
+active
+exit=0
+$ sudo -n wg show wg-telegram latest-handshakes
+HjRjcIL58lFqR5tvwhG98RI/D58HeJ8Rx3g75vkw6Ro=	1793346364
+exit=0
+$ sudo -n wg show wg-telegram transfer
+HjRjcIL58lFqR5tvwhG98RI/D58HeJ8Rx3g75vkw6Ro=	936	2392
+exit=0
+$ ip route get 10.77.0.1
+10.77.0.1 dev wg-telegram src 10.77.0.2 uid 1000 
+    cache 
+exit=0
+$ ip route get 1.1.1.1
+1.1.1.1 via 192.168.239.1 dev tun0 src 192.168.239.6 uid 1000 
+    cache 
+exit=0
+$ ss -ltn ( sport = :8080 or sport = :3100 )
+State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
+LISTEN 0      511        10.77.0.2:8080      0.0.0.0:*          
+LISTEN 0      511                *:3100            *:*          
+exit=0
+$ docker inspect mainspot-platform-postgres-1 --format {{.Name}} restart={{.HostConfig.RestartPolicy.Name}} state={{.State.Status}} health={{.State.Health.Status}}
+/mainspot-platform-postgres-1 restart=unless-stopped state=running health=healthy
+exit=0
+$ sudo -n stat -c %a %U:%G %n /etc/wireguard/wg-telegram.conf
+600 root:root /etc/wireguard/wg-telegram.conf
+exit=0
+Live repository server PIDs=[2250914]; systemd MainPID=2250914; standalone worker PIDs=[]
+PostgreSQL after container restart: {"update_rows":0}; exit=0
+
+LIVE HTTP AND ISOLATED FORWARDING OUTPUTS
+Live missing secret: HTTP 401; {'error': {'code': 'unauthorized', 'message': 'Solicitud no autorizada.'}}
+Live incorrect secret: HTTP 401; {'error': {'code': 'unauthorized', 'message': 'Solicitud no autorizada.'}}
+Live correct protected secret: HTTP 200; {'ok': True, 'handled': 'ignored'}
+Temporary proxy correct secret to live Express: HTTP 200; {'ok': True, 'handled': 'ignored'}
+Temporary proxy missing secret: HTTP 401; {'error': {'code': 'unauthorized', 'message': 'Solicitud no autorizada.'}}
+Temporary proxy wrong secret: HTTP 401; {'error': {'code': 'unauthorized', 'message': 'Solicitud no autorizada.'}}
+Temporary proxy GET: HTTP 405; <non-JSON response>
+Temporary proxy wrong path: HTTP 404; <non-JSON response>
+Temporary proxy body limit: HTTP 413; <non-JSON response>
+Temporary proxy upstream stopped: HTTP 502; <non-JSON response>
+Temporary proxy upstream recovered: HTTP 200; {'ok': True, 'handled': 'ignored'}
+After recovery correct secret: HTTP 200; {'ok': True, 'handled': 'ignored'}
+After recovery missing secret: HTTP 401; {'error': {'code': 'unauthorized', 'message': 'Solicitud no autorizada.'}}
+
+Forwarding positives above labelled Temporary proxy ran through a separate loopback nginx instance with listener/ACL/PID/log overrides, into live Express; live peer ACL unchanged. They are NOT KVM HTTP evidence. Temporary configuration and instance removed.
+
+EARLIER CONTROLLED RECOVERY — OBSERVED SESSION EXCERPTS
+$ systemctl restart wg-quick@wg-telegram; ping -c 3 -W 3 10.77.0.1
+3 packets transmitted, 3 received, 0% packet loss
+Proxy MainPID changed 2230226 -> 2232253; both units active.
+$ systemctl stop wg-quick@wg-telegram
+Proxy ActiveState=inactive, SubState=dead; no :8080 listener.
+$ systemctl start wg-quick@wg-telegram
+Ping 3/3; proxy active automatically.
+$ systemctl kill --kill-whom=main --signal=SIGKILL mainspot-telegram-proxy; wait 5s
+NRestarts=1; ActiveState=active; listener=10.77.0.2:8080.
+$ nft temporary table mainspot_wg_recovery: drop only UDP daddr89.116.170.99 dport51820
+Ping: 3 transmitted, 0 received, 100% loss; rule counter packets3 bytes468.
+$ nft delete table inet mainspot_wg_recovery
+Ping: 3 transmitted, 3 received, 0% loss; Internet route remained tun0.
+$ systemctl restart mainspot-local; GET https://app.mainspot.local.io/health
+HTTP200; MainPID=2248337.
+$ systemctl kill --kill-whom=main --signal=SIGKILL mainspot-local; wait13s
+HTTP200; MainPID=2248772; NRestarts=1; active/running.
+$ docker restart mainspot-platform-postgres-1; wait13s
+pg_isready: accepting connections; HTTP200 health; MainPID=2250914; NRestarts=1; postgres healthy.
+Note: /health alone does not prove DB recovery; final SQL count above confirms database connectivity after restart.
+
+SECURITY OBSERVATIONS
+Before fix: unauthenticated POST https://app.mainspot.local.io/api/telegram/webhook {update_id:0} -> HTTP200 ignored.
+After fix: live missing/wrong secret ->401; protected correct secret ->200 ignored; ledger rows remain0.
+Live deployed receiver: unauthorized local POST403; GET405; wrong path404; 127.0.0.1:8080 connection refused.
+Public non-Telegram POST https://tg.mainspot.io/telegram/webhook ->403; TLS ssl_verify_result=0 (expected source filter).
+Mode=real without token/secret ->startup exit78; credential file0644 ->exit78.
+Secret: generated256bits, file0600 directory0700; .env0600. Exact protected value loaded by systemd Node process; value never emitted.
+Secret not found in inspected MainSpot journal or dedicated proxy access log.
+Active WireGuard config byte-identical to local source (cmp exit0). No keys regenerated or temporary private-key copies created. Recovery source preserved.
+
+TEST COMMAND OUTPUTS — SANITIZED SUMMARIES
+$ npm run typecheck
+> tsc --noEmit
+exit=0
+
+$ npm run test:unit
+ℹ tests 117
+ℹ suites 0
+ℹ pass 117
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1301.02628
+exit=0
+
+$ npm run test:integration
+✔ Webhook Telegram: exige secreto en TODO entorno (503 sin configurar, 401 incorrecto); sondas vacías sin efectos (44.815267ms)
+TEST_PASS Webhook Telegram secreto/dedupe/concurrencia/durabilidad/recuperación [simulated]
+✔ Webhook Telegram: entregas repetidas/concurrentes del mismo update no duplican respuestas ni decisiones; dedupe durable; fallo → reintento reprocesa (233.253375ms)
+ℹ tests 120
+ℹ suites 0
+ℹ pass 120
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 19077.485417
+exit=0
+
+E2E initial launcher without dev database environment: test-prep exited 1, PostgreSQL 28P01; no E2E tests ran. Corrected launcher below uses verified dev/test environment, no database credential changes.
+
+$ node scripts/test-prep.ts
+exit=0
+
+$ node --test --test-concurrency=1 tests/e2e/dev-e2e-02.test.ts
+PASS 1. CLI de operación crea negocio + invitación de un solo uso
+PASS 2. invitación válida muestra solo el nombre del negocio
+PASS 3. dueña elige contraseña; cuenta Administración creada
+PASS 4. la invitación no se puede reutilizar
+PASS 5. acceso con correo + contraseña, SIN tenant_id
+PASS 6. número inválido para el país → error por campo
+PASS 7. tres integraciones con número propio e independiente
+PASS 8. ficha de Google simulada usa el número de Google
+PASS 9. el negocio crea su página web (cuota website del plan piloto)
+PASS 10. solicitud de cambio web → propuesta (website.edit)
+PASS 11. vista previa con el teléfono efectivo de la Página Web
+PASS 12. aprobación → publicado una sola vez (desarrollo)
+PASS 13. opt-in explícito por origen y categoría (versión 1)
+PASS 14. webhook sin la cabecera del secreto: 401 (también en desarrollo)
+PASS 15. Telegram vinculado con código de un solo uso (simulado)
+PASS 16. publicación de Facebook aprobada y publicada (simulado)
+PASS 17. AG-01 reseña simple respondida sola (política v1, simulated)
+PASS 18. AG-03 pregunta en Facebook respondida con el número de Facebook
+PASS 19. AG-02/03 casos delicados esperan decisión humana
+PASS 20. un aviso de Telegram por caso delicado (simulado)
+PASS 21. la publicación previa no cambia
+PASS 22. aprobación desde Telegram (alternativa 1)
+PASS 23. rechazo desde el panel (mismo caso)
+PASS 24. panel refleja la decisión tomada en Telegram
+PASS 25. worker independiente (proceso propio) ejecuta un ciclo
+PASS 26. caso recibido antes de la caída queda respondido
+PASS 27. reentrega del mismo update_id tras reiniciar: duplicate (sin actuar)
+PASS 28. reinicio sin dobles respuestas (una por caso, rechazado sin respuesta)
+PASS 29. sin avisos duplicados tras el reinicio
+PASS 30. otro negocio recibe el mismo 404 que un caso inexistente
+PASS 31. chat no vinculado no puede decidir
+✔ E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram → caída/reinicio → aislamiento (3169.140066ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4306.658788
+exit=0
+
+$ node scripts/test-prep.ts
+exit=0
+
+$ node --test --test-concurrency=1 tests/integration/engagement-agent.test.ts
+✔ Webhook Telegram: exige secreto en TODO entorno (503 sin configurar, 401 incorrecto); sondas vacías sin efectos (51.969014ms)
+TEST_PASS Webhook Telegram secreto/dedupe/concurrencia/durabilidad/recuperación [simulated]
+✔ Webhook Telegram: entregas repetidas/concurrentes del mismo update no duplican respuestas ni decisiones; dedupe durable; fallo → reintento reprocesa (258.792323ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2044.895851
+exit=0
+
+EXTERNAL BLOCKERS
+SSH BatchMode/StrictHostKeyChecking as administrador@89.116.170.99 and root@89.116.170.99: Permission denied (publickey,password). No authorized KVM HTTP test executed.
+No bot token in MainSpot .env, process/session environment, or protected MainSpot files inspected. No Bot API configuration or long polling performed.
+Active graphical login and unrelated workloads: no full host reboot or general physical Starlink outage performed; controlled tunnel UDP outage is not equivalent.
+Bot API replies are not exactly-once across send/completion-record crash window; normal duplicate/concurrent update suppression is tested, existing case decision/publication invariants retained.

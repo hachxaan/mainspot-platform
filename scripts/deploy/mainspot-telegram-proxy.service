@@ -1,0 +1,30 @@
+[Unit]
+Description=MainSpot Telegram webhook proxy (WireGuard only)
+BindsTo=wg-quick@wg-telegram.service
+After=wg-quick@wg-telegram.service
+PartOf=wg-quick@wg-telegram.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+RuntimeDirectory=mainspot-telegram-proxy
+RuntimeDirectoryMode=0750
+LogsDirectory=mainspot-telegram-proxy
+LogsDirectoryMode=0750
+ExecStartPre=/usr/sbin/nginx -t -q -c /etc/mainspot/telegram-proxy/nginx.conf
+ExecStart=/usr/sbin/nginx -c /etc/mainspot/telegram-proxy/nginx.conf -g 'daemon off;'
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGQUIT
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/run/mainspot-telegram-proxy /var/log/mainspot-telegram-proxy
+RestrictAddressFamilies=AF_INET AF_UNIX
+
+[Install]
+WantedBy=multi-user.target wg-quick@wg-telegram.service

@@ -218,7 +218,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool } = {}): 
   // Auth (public endpoints: login/logout).
   app.use('/api/auth', authRouter(deps));
 
-  // Webhook de Telegram (público; secreto obligatorio en producción).
+  // Webhook de Telegram (público; secreto obligatorio en todo entorno).
   app.use(telegramWebhookRouter({ config, telegram }));
 
   // Preview/sandbox público (INC-002, CAP-008): enlace seguro con token.

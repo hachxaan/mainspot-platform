@@ -6,6 +6,10 @@
 services:
   postgres:
     image: postgres:16-alpine
+    # Persistente tras reinicio del host (servicio local scripts/deploy/mainspot-local.service
+    # depende de esta BD). Aplicar a un contenedor ya creado sin recrearlo:
+    #   docker update --restart unless-stopped mainspot-platform-postgres-1
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mainspot}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mainspot_dev_password}

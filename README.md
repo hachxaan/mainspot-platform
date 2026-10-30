@@ -358,7 +358,7 @@ npm run db:up && npm run db:setup && npm run test:e2e
 # (interfaz de Claude en Chrome headless vía playwright-core por https://app.mainspot.local.io contra
 #  servidor + PostgreSQL reales; usa /usr/bin/google-chrome o CHROME_PATH; EVIDENCE_SCREENSHOTS=1
 #  guarda capturas en evidence/dev-e2e-03/). E2E_BASE_URL cambia el origen; la prueba arranca su
-#  servidor como upstream del proxy (E2E_UPSTREAM_PORT=3100): detén scripts/dev-panel.sh mientras corre.
+#  servidor como upstream del proxy (E2E_UPSTREAM_PORT=3100): detén mainspot-local.service mientras corre y arráncalo después.
 ```
 
 ### DEV-E2E-03 — interfaz de Claude Design conectada al backend (desarrollo)
@@ -366,14 +366,22 @@ npm run db:up && npm run db:setup && npm run test:e2e
 Origen oficial de desarrollo: **https://app.mainspot.local.io** (panel `/panel`, invitaciones `/invitacion#<TOKEN>`). Lo sirve el nginx del LXC `webserver` (10.209.99.101) con certificado de la CA local, como proxy al proceso de MainSpot en el puerto interno 3100 del host. La instalación de hosts/proxy/TLS se hizo una sola vez con `scripts/dev-domain-bootstrap.sh` (evidencia `evidence/dev-domain-bootstrap.txt`); el arranque diario no la toca.
 
 ```bash
-scripts/dev-panel.sh                                              # PostgreSQL del compose en 127.0.0.1:55432 (BD mainspot_dev),
-                                                                  # servidor + worker detrás de https://app.mainspot.local.io
+sudo systemctl start mainspot-local.service                        # PostgreSQL en 127.0.0.1:55432 (BD mainspot_dev),
+                                                                  # servidor + un único worker persistente detrás del dominio
 scripts/dev-panel.sh invite "Panadería Lupita" lupita@example.com # imprime https://app.mainspot.local.io/invitacion#… (un solo uso, 72 h)
 ```
 
-Abre el enlace: invitación → contraseña → datos del negocio (crea la página y su primera versión con vista previa) → Telegram simulado → panel. Después se entra en `https://app.mainspot.local.io/` con correo + contraseña (sin id de cliente). La interfaz es la del prototipo `docs/ux/claude-design/deliverables` (referencia intacta) adaptada en `src/web/panel` para leer y escribir solo por la API (`/api/auth/*`, `/api/backoffice/*`); localStorage solo guarda qué avisos se leyeron. En desarrollo aparecen el simulador de reseñas/comentarios (Atención) y un chat de Telegram simulado que usa el mismo webhook que el bot real; ambos responden 404 en producción. Google, Meta y Telegram funcionan solo en modo **simulado**; los adaptadores reales no están certificados (`not_verified`).
+Abre el enlace: invitación → contraseña → datos del negocio (crea la página y su primera versión con vista previa) → Telegram simulado → panel. Después se entra en `https://app.mainspot.local.io/` con correo + contraseña (sin id de cliente). La interfaz es la del prototipo `docs/ux/claude-design/deliverables` (referencia intacta) adaptada en `src/web/panel` para leer y escribir solo por la API (`/api/auth/*`, `/api/backoffice/*`); localStorage solo guarda qué avisos se leyeron. En desarrollo aparecen el simulador de reseñas/comentarios (Atención) y un chat de Telegram simulado, ambos deshabilitados en producción. El simulador invoca el servicio de Telegram directamente; el webhook externo exige secreto incluso en desarrollo. Google y Meta siguen simulados; Telegram también por defecto, con activación real explícita y credenciales protegidas, todavía sin certificación de entrega real.
 
 Otros modos: `node scripts/invite-owner.ts …` con `npm start` (puerto 3000), y `ENGAGEMENT_WORKER=off npm start & node scripts/engagement-worker.ts` para el worker como proceso propio. Decisiones y shape de API: `docs/handoffs/e2e-parallel-2026-10-29/DECISION-LOG.md`.
+
+### Telegram — receptor persistente Starlink
+
+El endpoint público es `https://tg.mainspot.io/telegram/webhook`: KVM → WireGuard → proxy exclusivo `10.77.0.2:8080` → Express `POST /api/telegram/webhook`. El túnel no enruta Internet general. La infraestructura del panel y sus certificados son independientes y no se reconfiguran.
+
+Instalación, recuperación y estados de aceptación: [runbook Telegram](docs/architecture/telegram-webhook-starlink.md). Arranque persistente de Express y worker: [servicio local](scripts/deploy/README-mainspot-local.md). Nunca lanzar otro `scripts/dev-panel.sh` mientras `mainspot-local.service` esté activo.
+
+`TELEGRAM_WEBHOOK_SECRET` vive fuera de Git en `~/.config/mainspot/telegram-webhook.env` (0600). Sin secreto el webhook devuelve 503; con cabecera ausente o incorrecta, 401. La existencia de esta instalación no acredita `INFRASTRUCTURE_READY` ni `TELEGRAM_WEBHOOK_REAL_VERIFIED`: consultar evidencia y bloqueos del runbook.
 
 ## 12. Evidencia reproducible (AC-009)
 
@@ -416,7 +424,7 @@ La salida real queda en `evidence/` (00-14): environment, typecheck, permission 
 | Tema | Decisión tomada | Marca |
 |---|---|---|
 | Clasificador de intención | DETERMINISTA por reglas/keywords en español; Jev puede determinar la clasificación en `JEV_MODE=primary` tras superar la evaluación sintética (APR-0002, §5.1), con el determinista como respaldo (D2) y contraste de seguridad (D1) | TENTATIVA e iterable (umbral D3 a recalibrar con la evaluación) |
-| Canal Telegram real | `TelegramAdapter` con fetch a Bot API; ingesta por webhook y mapeo canal→cliente SIN implementar (identidad resuelta por sesión) | TENTATIVA |
+| Canal Telegram real | `TelegramAdapter` con fetch a Bot API; webhook autenticado y vínculo chat→persona→tenant implementados. Transporte KVM/WireGuard y receptor persistente instalados; entrega auténtica pendiente de bot autorizado | TENTATIVA: ver runbook Telegram |
 | Enlace de preview | token aleatorio alto entropía, hash SHA-256 en BD, expiración configurable, single-use, alcance `proposal_publish` | TENTATIVA (canon 05: audiencia/revocación pendiente) |
 | Publisher | contrato genérico `Publisher` (reutilizando INC-003/004/005) con `WebsitePublisher`/`ReputationPublisher`/`SocialPublisher`; `StubPublisher` como fallback | TENTATIVA |
 | Subdominio simulado | `<slug>.sim.mainspot.local` determinista; DNS CNAME + certificado simulados; idempotente | TENTATIVA (DEC-026) |

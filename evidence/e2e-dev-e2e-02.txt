@@ -1,10 +1,10 @@
-# E2E DEV-E2E-02 — transcript (run 2026-10-30T06:21:35.111Z)
-# HEAD: 291d6be806282573a6b3320adeabf39bded73d7d
+# E2E DEV-E2E-02 — transcript (run 2026-10-30T07:45:21.272Z)
+# HEAD: ef9d42ccd27fabfb157abf7593a41ceabfbd8e49
 # procesos reales: servidor, CLI invite-owner, worker independiente
 # proveedores: simulated (Google, Meta, Telegram); ningún resultado es real
 # DB: mainspot_test (recreada por scripts/test-prep.ts)
 
-servidor real en http://127.0.0.1:42381 (worker en proceso, ciclo 1 s) [simulated]
+servidor real en http://127.0.0.1:38005 (worker en proceso, ciclo 1 s) [simulated]
 
 -- FLOW-01: alta asistida --
 PASS 1. CLI de operación crea negocio + invitación de un solo uso
@@ -27,31 +27,33 @@ PASS 12. aprobación → publicado una sola vez (desarrollo)
 
 -- Agente: políticas opt-in, Telegram y post de Facebook --
 PASS 13. opt-in explícito por origen y categoría (versión 1)
-PASS 14. Telegram vinculado con código de un solo uso (simulado)
-PASS 15. publicación de Facebook aprobada y publicada (simulado)
+PASS 14. webhook sin la cabecera del secreto: 401 (también en desarrollo)
+PASS 15. Telegram vinculado con código de un solo uso (simulado)
+PASS 16. publicación de Facebook aprobada y publicada (simulado)
 
 -- AG-01..03: el worker atiende sin navegador --
-PASS 16. AG-01 reseña simple respondida sola (política v1, simulated)
-PASS 17. AG-03 pregunta en Facebook respondida con el número de Facebook
-PASS 18. AG-02/03 casos delicados esperan decisión humana
-PASS 19. un aviso de Telegram por caso delicado (simulado)
-PASS 20. la publicación previa no cambia
-PASS 21. aprobación desde Telegram (alternativa 1)
-PASS 22. rechazo desde el panel (mismo caso)
-PASS 23. panel refleja la decisión tomada en Telegram
+PASS 17. AG-01 reseña simple respondida sola (política v1, simulated)
+PASS 18. AG-03 pregunta en Facebook respondida con el número de Facebook
+PASS 19. AG-02/03 casos delicados esperan decisión humana
+PASS 20. un aviso de Telegram por caso delicado (simulado)
+PASS 21. la publicación previa no cambia
+PASS 22. aprobación desde Telegram (alternativa 1)
+PASS 23. rechazo desde el panel (mismo caso)
+PASS 24. panel refleja la decisión tomada en Telegram
 
 -- AG-04: caída del servidor y worker independiente --
    servidor terminado con SIGKILL
    estado de g-crash al morir el servidor: aún no ingerido
    envíos interrumpidos a recuperar: 0 (lease vencida forzada)
-PASS 24. worker independiente (proceso propio) ejecuta un ciclo
-PASS 25. caso recibido antes de la caída queda respondido
+PASS 25. worker independiente (proceso propio) ejecuta un ciclo
+PASS 26. caso recibido antes de la caída queda respondido
+PASS 27. reentrega del mismo update_id tras reiniciar: duplicate (sin actuar)
    respuestas públicas simuladas: fb-q, g-crash, g-risk, g-simple
-PASS 26. reinicio sin dobles respuestas (una por caso, rechazado sin respuesta)
-PASS 27. sin avisos duplicados tras el reinicio
+PASS 28. reinicio sin dobles respuestas (una por caso, rechazado sin respuesta)
+PASS 29. sin avisos duplicados tras el reinicio
 
 -- Aislamiento multi-tenant --
-PASS 28. otro negocio recibe el mismo 404 que un caso inexistente
-PASS 29. chat no vinculado no puede decidir
+PASS 30. otro negocio recibe el mismo 404 que un caso inexistente
+PASS 31. chat no vinculado no puede decidir
 
 # Fin de transcript

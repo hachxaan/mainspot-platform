@@ -34,6 +34,9 @@ function check(ok: boolean, label: string): void {
 
 const pool = new pg.Pool({ connectionString: TEST_URL, max: 2 });
 const children = new Set<ChildProcess>();
+/** El webhook exige el secreto en todo entorno; el servidor hijo lo recibe por entorno y las entregas lo envían en la cabecera. */
+const WEBHOOK_SECRET = 'e2e-dev-e2e-02-telegram-webhook-secret-only-for-tests';
+const WEBHOOK_HEADERS = { 'X-Telegram-Bot-Api-Secret-Token': WEBHOOK_SECRET };
 
 function childEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
@@ -41,6 +44,7 @@ function childEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   return {
     ...env, DATABASE_URL: TEST_URL, TEST_DATABASE_URL: TEST_URL, APP_ENV: 'test', JWT_SECRET: 'e2e-dev-e2e-02-secret-only-for-tests',
     JEV_MODE: 'disabled', CHANNEL_PRIMARY: 'simulated', REPUTATION_PROVIDER: 'simulated', SOCIAL_PROVIDER: 'simulated',
+    TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
     ENGAGEMENT_WORKER_INTERVAL_MS: '1000', ENGAGEMENT_POLL_INTERVAL_MS: '0', LOG_LEVEL: 'warn', ...extra,
   };
 }
@@ -81,10 +85,14 @@ async function kill(proc: ChildProcess, signal: NodeJS.Signals): Promise<void> {
 }
 
 let base = '';
-function call(path: string, opts: { method?: string; token?: string; body?: unknown } = {}) {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+function call(path: string, opts: { method?: string; token?: string; body?: unknown; headers?: Record<string, string> } = {}) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...opts.headers };
   if (opts.token) headers['Authorization'] = `Bearer ${opts.token}`;
   return api(base, path, { method: opts.method ?? 'GET', headers, body: opts.body === undefined ? undefined : JSON.stringify(opts.body) });
+}
+/** Entrega de un Update de Telegram al webhook (misma forma que el bot real; simulado). */
+function telegram(updateId: number, chatId: number, text: string, headers: Record<string, string> = WEBHOOK_HEADERS) {
+  return call('/api/telegram/webhook', { method: 'POST', headers, body: { update_id: updateId, message: { chat: { id: chatId }, text } } });
 }
 async function page(path: string): Promise<{ status: number; html: string }> {
   const res = await fetch(`${base}${path}`);
@@ -198,7 +206,10 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   check(p1.body.policy.version === 1 && p2.body.policy.version === 1, 'opt-in explícito por origen y categoría (versión 1)');
   const code = await call('/api/backoffice/telegram/link-code', { method: 'POST', token });
   const chat = 880000000 + Math.floor(Math.random() * 1e6);
-  const tgLink = await call('/api/telegram/webhook', { method: 'POST', body: { update_id: 1, message: { chat: { id: chat }, text: `/start ${code.body.code}` } } });
+  const upd = 1_000_000_000 + (Date.now() % 1_000_000_000); // update_id propios de esta corrida
+  const noSecret = await telegram(upd + 1, chat, `/start ${code.body.code}`, {});
+  check(noSecret.status === 401 && noSecret.body.error?.code === 'unauthorized', 'webhook sin la cabecera del secreto: 401 (también en desarrollo)');
+  const tgLink = await telegram(upd + 1, chat, `/start ${code.body.code}`);
   check(tgLink.body.handled === 'linked', 'Telegram vinculado con código de un solo uso (simulado)');
   const post = await call('/api/backoffice/social/posts', { method: 'POST', token, body: { text: 'Hoy: mole poblano y agua de jamaica.' } });
   const postId = String(post.body.post.post_id);
@@ -227,7 +238,7 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   check(JSON.stringify(postAfter) === JSON.stringify(postBefore), 'la publicación previa no cambia');
 
   const gRisk = cs.get('g-risk');
-  const approve = await call('/api/telegram/webhook', { method: 'POST', body: { update_id: 2, message: { chat: { id: chat }, text: `/aprobar ${gRisk?.case_id} 1` } } });
+  const approve = await telegram(upd + 2, chat, `/aprobar ${gRisk?.case_id} 1`);
   check(approve.body.handled === 'approved', 'aprobación desde Telegram (alternativa 1)');
   const reject = await call(`/api/backoffice/engagement/cases/${cs.get('fb-risk')?.case_id}/reject`, { method: 'POST', token, body: {} });
   check(reject.body.case.state === 'rejected', 'rechazo desde el panel (mismo caso)');
@@ -255,6 +266,9 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   server = await startServer('on');
   base = server.base;
   await waitWorkerCycles(cli.tenant_id, 2);
+  // Telegram reentrega la MISMA aprobación tras el reinicio (otro proceso): dedupe durable, sin segunda publicación.
+  const redelivered = await telegram(upd + 2, chat, `/aprobar ${gRisk?.case_id} 1`);
+  check(redelivered.status === 200 && redelivered.body.handled === 'duplicate', 'reentrega del mismo update_id tras reiniciar: duplicate (sin actuar)');
   const replies = (await call('/api/backoffice/dev/simulator/replies', { token })).body.replies as Array<{ target_ref: string }>;
   const refs = replies.map((r) => r.target_ref).sort();
   say(`   respuestas públicas simuladas: ${refs.join(', ')}`);
@@ -268,7 +282,7 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   const foreign = await call(`/api/backoffice/engagement/cases/${gRisk?.case_id}`, { token: String(other.body.token) });
   const ghost = await call('/api/backoffice/engagement/cases/case_inexistente', { token: String(other.body.token) });
   check(foreign.status === 404 && JSON.stringify(foreign.body) === JSON.stringify(ghost.body), 'otro negocio recibe el mismo 404 que un caso inexistente');
-  const foreignTg = await call('/api/telegram/webhook', { method: 'POST', body: { update_id: 3, message: { chat: { id: chat + 1 }, text: `/aprobar ${gRisk?.case_id} 1` } } });
+  const foreignTg = await telegram(upd + 3, chat + 1, `/aprobar ${gRisk?.case_id} 1`);
   check(foreignTg.body.handled === 'unlinked_chat', 'chat no vinculado no puede decidir');
   await kill(server.proc, 'SIGTERM');
 });

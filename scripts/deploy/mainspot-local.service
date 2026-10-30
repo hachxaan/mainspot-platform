@@ -1,0 +1,62 @@
+# MainSpot — servicio de SISTEMA persistente del entorno local (https://app.mainspot.local.io).
+# Ejecuta scripts/dev-panel.sh serve como el usuario del repo: un solo proceso `node`
+# (API + worker integrado), PostgreSQL del docker-compose del repo (127.0.0.1:55432).
+# Instalar/cutover: scripts/deploy/README-mainspot-local.md. Sin secretos aquí: .env del repo
+# y, para Telegram, el archivo protegido ~/.config/mainspot/telegram-webhook.env (0600).
+# Distinto de mainspot.service (deploy LXD) y de la unidad de usuario mainspot-hdc (ajena).
+[Unit]
+Description=MainSpot — panel local persistente (scripts/dev-panel.sh serve)
+Documentation=file:///home/administrador/codeart/mainspoot/mainspot-platform/scripts/deploy/README-mainspot-local.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+# Sin límite de reintentos: la BD puede tardar (Docker arrancando) y el script debe poder
+# recuperar; los errores de configuración (exit 78) no reintentan (ver RestartPreventExitStatus).
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=administrador
+Group=administrador
+# Grupo docker: el script usa `docker exec`/`docker compose` (socket /var/run/docker.sock).
+SupplementaryGroups=docker
+WorkingDirectory=/home/administrador/codeart/mainspoot/mainspot-platform
+# Node 24 de nvm (el script y la app no usan Docker para la aplicación).
+Environment=PATH=/home/administrador/.nvm/versions/node/v24.16.0/bin:/usr/local/bin:/usr/bin:/bin
+Environment=MAINSPOT_DEV_PORT=3100
+Environment=MAINSPOT_TELEGRAM_ENV_FILE=/home/administrador/.config/mainspot/telegram-webhook.env
+# Environment=PUBLIC_BASE_URL=https://app.mainspot.local.io   (valor por defecto del script)
+ExecStart=/home/administrador/codeart/mainspoot/mainspot-platform/scripts/dev-panel.sh serve
+Restart=on-failure
+RestartSec=10
+# 78 = EX_CONFIG: Telegram real sin token/secreto, archivo protegido con permisos laxos, modo inválido.
+RestartPreventExitStatus=78
+KillMode=mixed
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mainspot-local
+UMask=0077
+
+# Endurecimiento compatible con Node (JIT) y con el socket de Docker. No usar ProtectHome
+# (el repo y el archivo protegido viven en /home) ni MemoryDenyWriteExecute (rompe V8).
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
