@@ -242,8 +242,8 @@ test('E14: un job que cae a mitad se reintenta con su lease y reutiliza el paso 
 test('E15/BR-0007: datos reales solo con proveedor verificado; techo duro con reservas concurrentes; proveedor retirado no vuelve', async () => {
   const a = await createTenantWithPlan(t, LIMITS, 'client_aig');
   const route = (await t.pool.query<{ route_id: string; max_cost_usd: string }>(
-    `SELECT r.route_id, r.max_cost_usd FROM ai_route_revision r WHERE r.use_case_id = 'business.insights.generate' AND r.model_id = 'an:claude-haiku-5-5' ORDER BY r.version LIMIT 1`)).rows[0];
-  assert.ok(route, 'hay una ruta candidata de Anthropic directo');
+    `SELECT r.route_id, r.max_cost_usd FROM ai_route_revision r WHERE r.use_case_id = 'business.insights.generate' AND r.model_id = 'oa:gpt-6-luna' ORDER BY r.version DESC LIMIT 1`)).rows[0];
+  assert.ok(route, 'hay una ruta candidata de OpenAI directo');
   let calls = 0;
   const bodies: string[] = [];
   // Compuerta: la llamada al proveedor queda abierta hasta que la prueba la suelta (sin esperas por reloj).
@@ -253,26 +253,26 @@ test('E15/BR-0007: datos reales solo con proveedor verificado; techo duro con re
   const fake: typeof fetch = async (url, init) => {
     calls++;
     bodies.push(String(init?.body ?? ''));
-    assert.match(String(url), /^https:\/\/api\.anthropic\.com\/v1\/messages$/);
+    assert.match(String(url), /^https:\/\/api\.openai\.com\/v1\/responses$/);
     await gate;
     const text = JSON.stringify({ status: 'abstained', summary: 'Sin datos suficientes.', highlights: [], recommendations: [], abstain_reason: 'pocos días' });
-    return new Response(JSON.stringify({ id: 'msg_test', type: 'message', role: 'assistant', model: 'claude-haiku-5-5', content: [{ type: 'text', text }], stop_reason: 'end_turn', usage: { input_tokens: 100, output_tokens: 50 } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ id: 'resp_test', status: 'completed', model: 'gpt-6-luna', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }], usage: { input_tokens: 100, output_tokens: 50 } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
-  const prevKey = process.env.ANTHROPIC_API_KEY;
-  process.env.ANTHROPIC_API_KEY = 'fake-key-for-tests';
+  const prevKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = 'fake-key-for-tests';
   const dispatcher = new AiDispatcher({ pool: t.pool, config: { ...t.handle.config, aiRealProviders: true, aiEnvironment: ENV }, fetchImpl: fake });
   const ctx = (key: string) => ({ requestId: key, idempotencyKey: key, tenantId: a.tenant, actorId: a.userId, actorKind: 'tenant_user' as const, origin: 'test', pinnedRouteId: route.route_id });
   const values = { period: '2026-10-24 a 2026-10-30', metrics: { days_with_activity: 1 } };
-  const verified = (await t.pool.query<{ real_data_basis: string; terms_verified_at: Date }>(`SELECT real_data_basis, terms_verified_at FROM ai_provider WHERE provider_id = 'anthropic'`)).rows[0]!;
+  const verified = (await t.pool.query<{ real_data_basis: string; terms_verified_at: Date }>(`SELECT real_data_basis, terms_verified_at FROM ai_provider WHERE provider_id = 'openai'`)).rows[0]!;
   try {
     // Negocio real + proveedor sin cobertura verificada: bloqueado sin llamar (solo ese tratamiento).
-    await t.pool.query(`UPDATE ai_provider SET real_data = 'blocked' WHERE provider_id = 'anthropic'`);
+    await t.pool.query(`UPDATE ai_provider SET real_data = 'blocked' WHERE provider_id = 'openai'`);
     const blocked = await dispatcher.invokeStructured('business.insights.generate', ctx(`k-${randomUUID()}`), values);
     assert.deepEqual([blocked.ok, !blocked.ok && blocked.code, !blocked.ok && blocked.reason], [false, 'blocked_external', 'provider_terms_unverified']);
     assert.equal(calls, 0);
 
     // Con la cobertura verificada (DEC-0071) el negocio real usa el proveedor; nada interno viaja.
-    await t.pool.query(`UPDATE ai_provider SET real_data = 'allowed', real_data_basis = $1, terms_verified_at = $2 WHERE provider_id = 'anthropic'`, [verified.real_data_basis, verified.terms_verified_at]);
+    await t.pool.query(`UPDATE ai_provider SET real_data = 'allowed', real_data_basis = $1, terms_verified_at = $2 WHERE provider_id = 'openai'`, [verified.real_data_basis, verified.terms_verified_at]);
     await t.pool.query(`INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES ($1,'tenant_day',$2,$3,'test','test')`,
       [`bud_${randomUUID()}`, a.tenant, Number(route.max_cost_usd) * 1.5]);
     gate = new Promise<void>((resolve) => { release = resolve; });
@@ -312,12 +312,12 @@ test('E15/BR-0007: datos reales solo con proveedor verificado; techo duro con re
 
     // Un proveedor deshabilitado (como OpenRouter tras DEC-0069) no vuelve a ningún rollout.
     await t.pool.query(`UPDATE ai_route_revision SET status = 'APPROVED' WHERE route_id = $1`, [route.route_id]);
-    await t.pool.query(`UPDATE ai_provider SET status = 'disabled' WHERE provider_id = 'anthropic'`);
+    await t.pool.query(`UPDATE ai_provider SET status = 'disabled' WHERE provider_id = 'openai'`);
     await assert.rejects(t.handle.dispatcher.registry.activate('business.insights.generate', 'lab', route.route_id, 'test', 'proveedor retirado'), /deshabilitado/);
   } finally {
-    await t.pool.query(`UPDATE ai_provider SET status = 'active' WHERE provider_id = 'anthropic'`);
+    await t.pool.query(`UPDATE ai_provider SET status = 'active' WHERE provider_id = 'openai'`);
     await t.pool.query(`UPDATE ai_route_revision SET status = 'DRAFT' WHERE route_id = $1 AND status = 'APPROVED'`, [route.route_id]);
-    if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prevKey;
+    if (prevKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = prevKey;
   }
 });
 
@@ -513,4 +513,49 @@ test('APR-0003: trazas de más de 90 días pierden contenido, no costos ni aisla
   const replay = await dispatcher.invokeStructured('business.insights.generate', oldCtx, values);
   assert.ok(!replay.ok && replay.code === 'invalid_output', 'contenido purgado no se devuelve como éxito vacío ni se regenera con la misma clave');
   assert.equal(await countRows(t, 'SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1', [a.tenant]), 2);
+});
+
+test('DEC-0073: el corte retira Anthropic activo/canary sin promover OpenAI ni alterar costo histórico', async () => {
+  const client = await t.pool.connect();
+  await client.query('BEGIN');
+  try {
+    const template = (await client.query<{ route_id: string }>(
+      `SELECT route_id FROM ai_route_revision WHERE use_case_id = 'website.initial.design' AND model_id = 'oa:gpt-6.1-sol' LIMIT 1`)).rows[0]!;
+    let version = Number((await client.query(`SELECT max(version) AS v FROM ai_route_revision WHERE use_case_id = 'website.initial.design'`)).rows[0].v);
+    const clone = async (model: string, status: string) => {
+      const id = `rte_${randomUUID()}`;
+      await client.query(`INSERT INTO ai_route_revision
+        SELECT (jsonb_populate_record(NULL::ai_route_revision, to_jsonb(r) ||
+          jsonb_build_object('route_id',$2::text,'version',$3::int,'model_id',$4::text,'status',$5::text))).*
+        FROM ai_route_revision r WHERE route_id = $1`, [template.route_id, id, ++version, model, status]);
+      return id;
+    };
+    const anActive = await clone('an:claude-haiku-5-5', 'ACTIVE');
+    const oaCanary = await clone('oa:gpt-6.1-sol', 'CANARY');
+    const oaActive = await clone('oa:gpt-6.1-sol', 'ACTIVE');
+    const anCanary = await clone('an:claude-haiku-5-5', 'CANARY');
+    const envA = `migration-${randomUUID()}`;
+    const envB = `migration-${randomUUID()}`;
+    for (const [env, active, canary] of [[envA, anActive, oaCanary], [envB, oaActive, anCanary]]) {
+      await client.query(`INSERT INTO ai_rollout(use_case_id,environment,active_route_id,canary_route_id,canary_percent,version,updated_by)
+        VALUES ('website.initial.design',$1,$2,$3,20,10,'test')`, [env, active, canary]);
+    }
+    const costsBefore = (await client.query('SELECT sum(cost_usd)::text AS total FROM ai_invocation')).rows[0].total;
+    await client.query(await readFile(new URL('../../migrations/0029_ai_openai_development.sql', import.meta.url), 'utf8'));
+    const rows = (await client.query('SELECT environment,active_route_id,canary_route_id,canary_percent,version FROM ai_rollout WHERE environment = ANY($1)',
+      [[envA, envB]])).rows;
+    const a = rows.find((r) => r.environment === envA)!;
+    const b = rows.find((r) => r.environment === envB)!;
+    assert.deepEqual([a.active_route_id, a.canary_route_id, a.canary_percent, Number(a.version)], [null, oaCanary, 20, 11]);
+    assert.deepEqual([b.active_route_id, b.canary_route_id, b.canary_percent, Number(b.version)], [oaActive, null, 0, 11]);
+    assert.deepEqual((await client.query('SELECT status FROM ai_route_revision WHERE route_id = ANY($1)', [[anActive, anCanary]])).rows,
+      [{ status: 'RETIRED' }, { status: 'RETIRED' }]);
+    assert.equal((await client.query('SELECT sum(cost_usd)::text AS total FROM ai_invocation')).rows[0].total, costsBefore);
+    const events = (await client.query('SELECT action,from_route_id,to_route_id FROM ai_rollout_event WHERE environment = ANY($1)', [[envA, envB]])).rows;
+    assert.equal(events.length, 2);
+    assert.ok(events.every((e) => e.action === 'retire' && e.to_route_id === null && [anActive, anCanary].includes(e.from_route_id)));
+  } finally {
+    await client.query('ROLLBACK');
+    client.release();
+  }
 });

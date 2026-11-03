@@ -7,6 +7,7 @@ changelog: .canonflow/canon/technical/CHANGELOG.md
 blocking_open:
 - QS-0001
 note: >-
-  Baseline global 0.1.0 sin reclasificar otros deltas. AI Core ARC-0001, DAT-0001, SEC-0001
-  y OPS-0001 DECIDED, versión 0.3.0, por APR-0003 y DEC-0066..0071.
-  Plan de corte directo: .canonflow/increments/INC-0008.md.
+  Baseline global 0.1.0 sin reclasificar otros deltas. AI Core DECIDED por APR-0003 y DEC-0066..0071.
+  Delta 0.4.0: ARC-0001 y OPS-0001 cambian por DEC-0073/SRC-0011; DAT-0001 y SEC-0001 quedan en 0.3.0.
+  DESARROLLO usa OpenAI para texto/imágenes, Jev primario, Anthropic técnico no operativo sin fallback.
+  Plan y evidencia pendientes de generación/evaluación real: .canonflow/increments/INC-0008.md.

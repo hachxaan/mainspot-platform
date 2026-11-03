@@ -141,7 +141,7 @@ items:
   tier_hint: 4
   path: items/NFR-0005.md
   source: recovered (SRC-0006/SRC-0007)
-# AI Core (issue #9): DECIDED por APR-0003 (QS-0017/ANS-0017, 2026-11-03), canon 0.3.0 con DEC-0066..DEC-0071.
+# AI Core (issue #9): DECIDED por APR-0003, delta 0.3.0; DEC-0073/SRC-0011 actualiza solo BR-0007 a 0.4.0.
 - id: FR-0012
   title: 'MainSpot AI Core: un asistente, catálogo de casos de uso y Jev como clasificador primario'
   state: DECIDED

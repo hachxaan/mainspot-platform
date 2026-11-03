@@ -8,6 +8,8 @@ blocking_open:
 - QS-0002
 note: >-
   Baseline global v0.1.0 desde DEC-015; los deltas INFERRED ajenos al AI Core conservan su estado.
-  El subconjunto AI Core (FR-0012..0019, BR-0007, NFR-0006..0008) está DECIDED, versión 0.3.0:
-  APR-0003 aprueba el artefacto 0.2.0 y DEC-0066..0071 incorporan las condiciones de QS-0017.
+  El subconjunto AI Core (FR-0012..0019, BR-0007, NFR-0006..0008) está DECIDED:
+  APR-0003 aprueba 0.2.0 y DEC-0066..0071 incorporan QS-0017 en 0.3.0.
+  Delta 0.4.0: solo BR-0007 cambia por DEC-0073/SRC-0011, OpenAI para generación de DESARROLLO.
+  No nueva sesión HDC ni decisión comercial irreversible; otros items conservan versión/estado.
   Esta aprobación acotada no declara terminado el canon global.

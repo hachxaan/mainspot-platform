@@ -1,0 +1,404 @@
+{
+  "date": "2026-11-03",
+  "decision": "DEC-0073",
+  "source": "SRC-0011",
+  "source_sha256": "b4b6563a4c236e89af545a1c6e6e9fc2aaeedea3e5d0af1df3c16bb1077f01df",
+  "record_validation": {
+    "profile": "v2",
+    "errors": [],
+    "origin": "external human directive; no fabricated QS/ANS"
+  },
+  "api_catalog": "openai-development-catalog-2026-11-03.json",
+  "real_evals": {
+    "evidence": "openai-development-evals-2026-11-03.json",
+    "suites": 20,
+    "cases": 50,
+    "successful": 0,
+    "all_failures": "provider_auth: insufficient_credit",
+    "interpretation": "Quota/credit block, not a model quality verdict. No new routes approved or activated."
+  },
+  "local_tests": {
+    "npm_test": {
+      "typecheck": "PASS",
+      "unit": {
+        "passed": 169,
+        "failed": 0
+      },
+      "integration": {
+        "passed": 164,
+        "failed": 0
+      },
+      "smoke": {
+        "passed": 5,
+        "failed": 0
+      },
+      "e2e": {
+        "passed": 4,
+        "failed": 0
+      }
+    },
+    "final_openai_adapter_unit": {
+      "passed": 10,
+      "failed": 0
+    },
+    "final_seed_sync_and_typecheck": "PASS",
+    "notes": "No real generation is inferred from local fake-provider tests; migration regression covers Anthropic active/canary removal, no auto-promotion and retained cost."
+  },
+  "browser": {
+    "origin": "https://app.mainspot.local.io",
+    "tls_bypass": false,
+    "command": "node scripts/ai-core-lab-e2e.ts --blocked-providers",
+    "exit_code": 1,
+    "verdict": "BLOCKED, reachable subset verified; not full generative E2E",
+    "evidence": "openai-development-e2e-2026-11-03.txt",
+    "registry_visual": "openai-development-model-registry-2026-11-03.png",
+    "new_anthropic_invocations": 0,
+    "new_openrouter_invocations": 0
+  },
+  "runtime": {
+    "observed_at": "2026-11-03T08:20:10.186Z",
+    "providers": [
+      {
+        "provider_id": "anthropic",
+        "kind": "anthropic",
+        "status": "disabled",
+        "real_data": "allowed",
+        "real_data_basis": "DEC-0071; docs/architecture/ai-providers-data-terms.md §4 (COVERED_WITH_CONDITIONS)"
+      },
+      {
+        "provider_id": "openai",
+        "kind": "openai",
+        "status": "active",
+        "real_data": "allowed",
+        "real_data_basis": "DEC-0071; DEC-0073; docs/architecture/ai-providers-data-terms.md §4 (COVERED_WITH_CONDITIONS)"
+      },
+      {
+        "provider_id": "openrouter",
+        "kind": "openrouter",
+        "status": "disabled",
+        "real_data": "blocked",
+        "real_data_basis": null
+      },
+      {
+        "provider_id": "simulated",
+        "kind": "simulated",
+        "status": "active",
+        "real_data": "blocked",
+        "real_data_basis": null
+      },
+      {
+        "provider_id": "typesafe",
+        "kind": "typesafe",
+        "status": "active",
+        "real_data": "allowed",
+        "real_data_basis": "DEC-0067; docs/architecture/ai-providers-data-terms.md §4 (COVERED_WITH_CONDITIONS)"
+      }
+    ],
+    "rollouts": [
+      {
+        "use_case_id": "business.insights.generate",
+        "active_route_id": null,
+        "canary_route_id": null,
+        "active_provider": null,
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "conversation.intent.classify",
+        "active_route_id": "rte_0909c4d8-a5e0-4e3a-8806-bc9e6285b024",
+        "canary_route_id": null,
+        "active_provider": "typesafe",
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "conversation.owner.assistant",
+        "active_route_id": null,
+        "canary_route_id": null,
+        "active_provider": null,
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "editorial.calendar.suggest",
+        "active_route_id": null,
+        "canary_route_id": null,
+        "active_provider": null,
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "engagement.facebook.comment.classify",
+        "active_route_id": "rte_6f581281-7371-4f4c-b2d1-aa7b2ae65961",
+        "canary_route_id": null,
+        "active_provider": "typesafe",
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "engagement.facebook.comment.reply",
+        "active_route_id": null,
+        "canary_route_id": null,
+        "active_provider": null,
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "engagement.google.review.classify",
+        "active_route_id": "rte_3002be24-8896-4df4-9956-133693703695",
+        "canary_route_id": null,
+        "active_provider": "typesafe",
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "engagement.google.review.reply",
+        "active_route_id": null,
+        "canary_route_id": null,
+        "active_provider": null,
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "marketing.campaign.creatives",
+        "active_route_id": null,
+        "canary_route_id": null,
+        "active_provider": null,
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "marketing.campaign.plan",
+        "active_route_id": null,
+        "canary_route_id": null,
+        "active_provider": null,
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "social.facebook.post.compose",
+        "active_route_id": null,
+        "canary_route_id": null,
+        "active_provider": null,
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "website.edit.complex",
+        "active_route_id": null,
+        "canary_route_id": null,
+        "active_provider": null,
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "website.edit.simple",
+        "active_route_id": null,
+        "canary_route_id": null,
+        "active_provider": null,
+        "canary_provider": null
+      },
+      {
+        "use_case_id": "website.initial.design",
+        "active_route_id": null,
+        "canary_route_id": null,
+        "active_provider": null,
+        "canary_provider": null
+      }
+    ],
+    "candidates": [
+      {
+        "use_case_id": "business.insights.generate",
+        "modality": "text",
+        "route_id": "rte_a4c8c242-575f-4d43-9ca1-bb7e750d99d2",
+        "model_id": "oa:gpt-6-luna",
+        "status": "DRAFT",
+        "params": {
+          "max_tokens": 1500,
+          "timeout_ms": 90000,
+          "repair_attempts": 1,
+          "reasoning_effort": "low"
+        },
+        "max_cost_usd": "0.0200"
+      },
+      {
+        "use_case_id": "conversation.owner.assistant",
+        "modality": "text",
+        "route_id": "rte_45000414-5aae-48d1-b828-5f66f5423c44",
+        "model_id": "oa:gpt-6-luna",
+        "status": "DRAFT",
+        "params": {
+          "max_tokens": 3000,
+          "timeout_ms": 60000,
+          "repair_attempts": 1,
+          "reasoning_effort": "low"
+        },
+        "max_cost_usd": "0.0300"
+      },
+      {
+        "use_case_id": "editorial.calendar.suggest",
+        "modality": "text",
+        "route_id": "rte_cdd00d75-f0c1-4733-af79-d59d2474793c",
+        "model_id": "oa:gpt-6-luna",
+        "status": "DRAFT",
+        "params": {
+          "max_tokens": 3000,
+          "timeout_ms": 90000,
+          "repair_attempts": 1,
+          "reasoning_effort": "low"
+        },
+        "max_cost_usd": "0.0200"
+      },
+      {
+        "use_case_id": "engagement.facebook.comment.reply",
+        "modality": "text",
+        "route_id": "rte_5b186aa1-72ce-4379-840a-7da53f77558c",
+        "model_id": "oa:gpt-6-luna",
+        "status": "DRAFT",
+        "params": {
+          "max_tokens": 1600,
+          "timeout_ms": 45000,
+          "repair_attempts": 1,
+          "reasoning_effort": "low"
+        },
+        "max_cost_usd": "0.0100"
+      },
+      {
+        "use_case_id": "engagement.google.review.reply",
+        "modality": "text",
+        "route_id": "rte_72c13b89-239e-43a3-a9e9-c218a4cd6008",
+        "model_id": "oa:gpt-6-luna",
+        "status": "DRAFT",
+        "params": {
+          "max_tokens": 1600,
+          "timeout_ms": 45000,
+          "repair_attempts": 1,
+          "reasoning_effort": "low"
+        },
+        "max_cost_usd": "0.0100"
+      },
+      {
+        "use_case_id": "marketing.campaign.creatives",
+        "modality": "text",
+        "route_id": "rte_cfd7da67-8de7-4051-b091-1d208390b981",
+        "model_id": "oa:gpt-6-luna",
+        "status": "DRAFT",
+        "params": {
+          "max_tokens": 2500,
+          "timeout_ms": 90000,
+          "repair_attempts": 1,
+          "reasoning_effort": "low"
+        },
+        "max_cost_usd": "0.0300"
+      },
+      {
+        "use_case_id": "marketing.campaign.plan",
+        "modality": "text",
+        "route_id": "rte_b6ce72f1-42a1-4f57-a8f3-c11f30b482bd",
+        "model_id": "oa:gpt-6-luna",
+        "status": "DRAFT",
+        "params": {
+          "max_tokens": 3000,
+          "timeout_ms": 120000,
+          "repair_attempts": 1,
+          "reasoning_effort": "medium"
+        },
+        "max_cost_usd": "0.0300"
+      },
+      {
+        "use_case_id": "social.facebook.image.generate",
+        "modality": "image",
+        "route_id": "rte_4b1d9ceb-afee-4b7d-88ea-2369d03c0292",
+        "model_id": "oa:gpt-image-2",
+        "status": "DRAFT",
+        "params": {
+          "quality": "medium",
+          "timeout_ms": 180000,
+          "aspect_ratio": "1:1"
+        },
+        "max_cost_usd": "0.0800"
+      },
+      {
+        "use_case_id": "social.facebook.post.compose",
+        "modality": "text",
+        "route_id": "rte_07359dd8-89e9-4dbd-a4b2-d17ae059bd29",
+        "model_id": "oa:gpt-6-luna",
+        "status": "DRAFT",
+        "params": {
+          "max_tokens": 2500,
+          "timeout_ms": 90000,
+          "repair_attempts": 1,
+          "reasoning_effort": "low"
+        },
+        "max_cost_usd": "0.0300"
+      },
+      {
+        "use_case_id": "website.edit.complex",
+        "modality": "text",
+        "route_id": "rte_a5e48533-3368-42e6-acba-3a0c08004253",
+        "model_id": "oa:gpt-6-luna",
+        "status": "DRAFT",
+        "params": {
+          "max_tokens": 9000,
+          "timeout_ms": 180000,
+          "repair_attempts": 1,
+          "reasoning_effort": "medium"
+        },
+        "max_cost_usd": "0.0500"
+      },
+      {
+        "use_case_id": "website.edit.simple",
+        "modality": "text",
+        "route_id": "rte_463b66d1-bcd3-4e58-8baa-dbb98e5c39b5",
+        "model_id": "oa:gpt-6-luna",
+        "status": "DRAFT",
+        "params": {
+          "max_tokens": 3000,
+          "timeout_ms": 60000,
+          "repair_attempts": 1,
+          "reasoning_effort": "low"
+        },
+        "max_cost_usd": "0.0200"
+      },
+      {
+        "use_case_id": "website.image.generate",
+        "modality": "image",
+        "route_id": "rte_32b0ca2b-a42a-4c83-a29e-c0fb3bd42348",
+        "model_id": "oa:gpt-image-2",
+        "status": "DRAFT",
+        "params": {
+          "quality": "medium",
+          "timeout_ms": 180000,
+          "aspect_ratio": "16:9"
+        },
+        "max_cost_usd": "0.0800"
+      },
+      {
+        "use_case_id": "website.initial.design",
+        "modality": "text",
+        "route_id": "rte_ac5eb3ea-00eb-4cc0-816a-e80f54d99e3f",
+        "model_id": "oa:gpt-6-luna",
+        "status": "DRAFT",
+        "params": {
+          "max_tokens": 9000,
+          "timeout_ms": 180000,
+          "repair_attempts": 1,
+          "reasoning_effort": "medium"
+        },
+        "max_cost_usd": "0.0500"
+      }
+    ],
+    "budgets": [
+      {
+        "scope": "lab_total",
+        "limit_usd": "25.0000",
+        "source": "DEC-0068: USD 25 acumulado de IA generativa, incluido el consumo histórico"
+      },
+      {
+        "scope": "tenant_day",
+        "limit_usd": "1.0000",
+        "source": "Propuesta técnica OPS-0001 (por defecto por negocio y día)"
+      }
+    ],
+    "generative_spent_total_usd": 0.096726,
+    "typesafe_day_usd": 0.015064607999999988,
+    "jev_fixture": {
+      "mode": "primary",
+      "decision_source": "jev",
+      "decision_reason": "jev_confident",
+      "status": "evaluated",
+      "provider": "typesafe",
+      "resolved_model": "jev-1.14.0"
+    },
+    "assertions": "PASS: 13 generative capabilities OpenAI DRAFT; 3 TypeSafe active; no Anthropic/OpenRouter rollout; DEC-0073 basis; budget unchanged"
+  },
+  "commercial_research": "Separate branch untouched; development choice is not irreversible production supplier selection."
+}

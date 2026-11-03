@@ -277,8 +277,16 @@ publicaciones de Facebook, atención con Jev + ledger único de respuestas, asis
 lectura, campañas sin gasto, calendario editorial y resumen. Consolas de plataforma con MFA y step-up:
 `/plataforma` (Administration) y `/ingenieria` (Engineering Console). Proveedores reales solo con
 `AI_REAL_PROVIDERS=on`; negocios `real` requieren cobertura contractual verificada por proveedor
-(DEC-0067/0071). TypeSafe directo para semántica, Anthropic directo para texto, OpenAI `gpt-image-2`
-directo para imágenes; OpenRouter retirado, con evidencia/costo históricos intactos. Independiente de OMP.
+(DEC-0067/0071). DEC-0073 configura **DESARROLLO** con TypeSafe/Jev semántico primario y OpenAI directo
+para todo texto (Responses `store:false`) e imágenes (`gpt-image-2`). Luna (`gpt-6-luna`) eficiente y
+Sol (`gpt-6.1-sol`) para diseño inicial/edición compleja/campañas son candidatas descubiertas con API MainSpot,
+no desde OMP; DRAFT hasta suites reales PASS, sin generación/calidad acreditadas por el catálogo.
+Anthropic conserva adaptador/catálogo técnicamente disponibles, sin rutas activas/canary ni fallback
+automático; OpenRouter deshabilitado, evidencia/costo históricos intactos. Claves API propias, nunca de
+consumidor/OMP. No es elección comercial irreversible de producción; investigación comercial independiente
+en su rama. USD 25 generativos acumulados con historia; TypeSafe USD 1/día; límites sin cambios.
+Evidencia nueva: `evidence/ai-core/openai-development-{catalog,evals,verification}-2026-11-03.json` y
+`openai-development-e2e-2026-11-03.txt`; leer sus resultados antes de afirmar activación.
 Operación, plan aprobado, estado y bloqueos actuales: [`docs/architecture/ai-core.md`](docs/architecture/ai-core.md)
 y [INC-0008](.canonflow/increments/INC-0008.md). Resultados anteriores, solo históricos:
 [`AI-CORE-RESULTS.md`](docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-RESULTS.md).

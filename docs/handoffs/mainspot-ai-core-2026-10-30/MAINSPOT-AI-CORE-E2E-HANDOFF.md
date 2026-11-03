@@ -6,6 +6,30 @@
 **Ejecución:** SOL MAIN / OMP, GPT-6.1 Sol, documentación canónica funcional → técnica → implementación → QA real.  
 **Estado de este documento:** orden de ejecución para desarrollar toda la capacidad; NO certifica que el E2E ya exista ni concede permisos para alterar cuentas, pagar anuncios o enviar datos reales a proveedores nuevos.
 
+### Configuración vigente de DESARROLLO — DEC-0073 (2026-11-03)
+
+La directiva humana externa SRC-0011 (`.canonflow/sources/SRC-0011-openai-development-directive.md`),
+no otra respuesta QS/ANS ni una nueva sesión HDC, actualiza el plan operativo siguiente:
+**OpenAI directo para todo texto generativo e imágenes; TypeSafe/Jev primario semántico**.
+Anthropic mantiene adaptador/catálogo como alternativa técnica no operativa, sin rutas activas/canary
+ni fallback automático. OpenRouter sigue deshabilitado, con historia intacta. El apartado QS-0017 que
+sigue conserva la decisión histórica; su asignación de texto a Anthropic queda sustituida por DEC-0073.
+
+Canon delta 0.4.0 solo para BR-0007, ARC-0001 y OPS-0001. Reutilizar el AI Core existente.
+Luna (`gpt-6-luna`) para texto eficiente, Sol (`gpt-6.1-sol`) para diseño inicial, edición compleja
+y planificación de campañas, e Images `gpt-image-2`: descubiertos por API MainSpot, capacidades
+documentadas verificadas, **no generación/calidad acreditadas**; DRAFT hasta suites reales PASS.
+Responses `store:false`, claves API propias, nunca credenciales de consumidor/OMP.
+USD 25 generativos acumulados con historia y TypeSafe USD 1/día siguen sin cambios. No es una elección
+comercial irreversible de producción; la investigación comercial sigue independiente en su rama.
+
+Evidencia actual del cambio: `evidence/ai-core/openai-development-{catalog,evals,verification}-2026-11-03.json`,
+`openai-development-e2e-2026-11-03.txt` y `openai-development-screens-2026-11-03/<run>/`.
+Leer resultados antes de afirmar generación, consumo o activación. Cuota OpenAI 429
+`credit_balance_exhausted` fue la observación previa del 2026-11-03, no una nueva comprobación aquí.
+Las pruebas y resultados históricos no certifican este recorrido. Sin nuevas sesiones HDC ordinarias,
+sin relajar permisos, gates de rutas, conectores externos ni aprobación específica del gasto publicitario.
+
 ### Actualización aprobada — 2026-11-03 (QS-0017 / ANS-0017)
 
 APR-0003 aprueba el artefacto de canon 0.2.0; el delta 0.3.0 incorpora DEC-0066…DEC-0071. Ambos textos

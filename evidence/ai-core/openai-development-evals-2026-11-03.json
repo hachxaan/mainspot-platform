@@ -1,0 +1,687 @@
+{
+  "generated_at": "2026-11-03T08:14:39.726Z",
+  "environment": "lab",
+  "real_providers": true,
+  "report": [
+    {
+      "use_case": "business.insights.generate",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_a4c8c242-575f-4d43-9ca1-bb7e750d99d2",
+      "route_version": 5,
+      "suite": "insights@v1",
+      "run_id": "evr_5d9cfc3f-1b90-4c91-8122-95c51562e336",
+      "status": "failed",
+      "cases": 2,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 2926,
+      "failures": [
+        {
+          "case": "poco",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "suficiente",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "conversation.owner.assistant",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_45000414-5aae-48d1-b828-5f66f5423c44",
+      "route_version": 5,
+      "suite": "asistente-herramientas@v1",
+      "run_id": "evr_d4056215-045f-44f9-83c6-18769fc155ed",
+      "status": "failed",
+      "cases": 3,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 3083,
+      "failures": [
+        {
+          "case": "posts",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "cases",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "inject",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "editorial.calendar.suggest",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_a452c30c-14c3-4f3a-9d5d-25a6b5f6b0e8",
+      "route_version": 6,
+      "suite": "calendario@v1",
+      "run_id": "evr_c79dc358-a361-41f3-be43-e233844c2b83",
+      "status": "failed",
+      "cases": 1,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 805,
+      "failures": [
+        {
+          "case": "semana",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "editorial.calendar.suggest",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_cdd00d75-f0c1-4733-af79-d59d2474793c",
+      "route_version": 7,
+      "suite": "calendario@v1",
+      "run_id": "evr_cb5acadc-c5ab-485e-99a9-e9b98a4b8f62",
+      "status": "failed",
+      "cases": 1,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 515,
+      "failures": [
+        {
+          "case": "semana",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "engagement.facebook.comment.reply",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_5b186aa1-72ce-4379-840a-7da53f77558c",
+      "route_version": 5,
+      "suite": "respuestas@v1",
+      "run_id": "evr_27fc0963-8ae1-48ca-ab62-7735e8fdab50",
+      "status": "failed",
+      "cases": 4,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 2124,
+      "failures": [
+        {
+          "case": "gracias",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "ironia",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "horario",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "inyeccion",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "engagement.google.review.reply",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_72c13b89-239e-43a3-a9e9-c218a4cd6008",
+      "route_version": 5,
+      "suite": "respuestas@v1",
+      "run_id": "evr_06fa1996-824e-4c87-9629-2af2b1d82aa3",
+      "status": "failed",
+      "cases": 4,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 2292,
+      "failures": [
+        {
+          "case": "gracias",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "ironia",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "horario",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "inyeccion",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "marketing.campaign.creatives",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_cfd7da67-8de7-4051-b091-1d208390b981",
+      "route_version": 5,
+      "suite": "creatividades@v1",
+      "run_id": "evr_3e0d5d32-ccae-4f6e-a506-d082b44cec8c",
+      "status": "failed",
+      "cases": 2,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1606,
+      "failures": [
+        {
+          "case": "visitas",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "promo_inventada",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "marketing.campaign.plan",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_adffccc9-2672-4cb7-8521-0d0fe2cb9ee8",
+      "route_version": 7,
+      "suite": "campanas@v1",
+      "run_id": "evr_d46f5e9a-ea40-455f-9ab2-1576933a46f6",
+      "status": "failed",
+      "cases": 2,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1357,
+      "failures": [
+        {
+          "case": "monto",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "sin_monto",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "marketing.campaign.plan",
+      "model": "oa:gpt-6.1-sol",
+      "route_id": "rte_18983c9c-86e0-4045-ab55-a06eae61cc71",
+      "route_version": 8,
+      "suite": "campanas@v1",
+      "run_id": "evr_e87b1195-0c3a-49a4-927c-894e954eb0e2",
+      "status": "failed",
+      "cases": 2,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1074,
+      "failures": [
+        {
+          "case": "monto",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "sin_monto",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "marketing.campaign.plan",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_b6ce72f1-42a1-4f57-a8f3-c11f30b482bd",
+      "route_version": 9,
+      "suite": "campanas@v1",
+      "run_id": "evr_3fe957ec-9bae-43a6-b59c-fd3610ec3642",
+      "status": "failed",
+      "cases": 2,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1010,
+      "failures": [
+        {
+          "case": "monto",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "sin_monto",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "social.facebook.image.generate",
+      "model": "oa:gpt-image-2",
+      "route_id": "rte_4b1d9ceb-afee-4b7d-88ea-2369d03c0292",
+      "route_version": 6,
+      "suite": "imagenes@v1",
+      "run_id": "evr_e70b8557-3a8a-4f72-aee7-b139a25efa4a",
+      "status": "failed",
+      "cases": 1,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 904,
+      "failures": [
+        {
+          "case": "cafe",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "social.facebook.post.compose",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_07359dd8-89e9-4dbd-a4b2-d17ae059bd29",
+      "route_version": 5,
+      "suite": "publicaciones@v1",
+      "run_id": "evr_a21d9671-51ae-4432-9f0d-1e0a3da603b0",
+      "status": "failed",
+      "cases": 3,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1929,
+      "failures": [
+        {
+          "case": "pan",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "promo_inventada",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "promo_real",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.edit.complex",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_756ff80a-758f-4047-be43-525c8fd645e8",
+      "route_version": 8,
+      "suite": "redisenos@v1",
+      "run_id": "evr_be342a59-9018-41d1-b637-dc9be69db5f8",
+      "status": "failed",
+      "cases": 2,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1103,
+      "failures": [
+        {
+          "case": "dark",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "faq",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.edit.complex",
+      "model": "oa:gpt-6.1-sol",
+      "route_id": "rte_41cad486-ff18-4f22-96a9-ce828f3ef97e",
+      "route_version": 9,
+      "suite": "redisenos@v1",
+      "run_id": "evr_0644791f-6ac9-4ac1-83f4-69d2f24d2878",
+      "status": "failed",
+      "cases": 2,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1135,
+      "failures": [
+        {
+          "case": "dark",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "faq",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.edit.complex",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_a5e48533-3368-42e6-acba-3a0c08004253",
+      "route_version": 10,
+      "suite": "redisenos@v1",
+      "run_id": "evr_a88eb876-a269-4b51-9ec9-f918ebce1946",
+      "status": "failed",
+      "cases": 2,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1012,
+      "failures": [
+        {
+          "case": "dark",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "faq",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.edit.simple",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_56329b2b-8c9b-45fb-a548-c4d916c8b5ca",
+      "route_version": 6,
+      "suite": "ediciones-simples@v1",
+      "run_id": "evr_541d4329-b096-430e-87b3-8c57c23bbd7f",
+      "status": "failed",
+      "cases": 5,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 2659,
+      "failures": [
+        {
+          "case": "hours",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "title",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "color",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "item",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "phone",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.edit.simple",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_463b66d1-bcd3-4e58-8baa-dbb98e5c39b5",
+      "route_version": 7,
+      "suite": "ediciones-simples@v1",
+      "run_id": "evr_1ae751c8-2693-496f-b821-fe02680ccdd7",
+      "status": "failed",
+      "cases": 5,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 2511,
+      "failures": [
+        {
+          "case": "hours",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "title",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "color",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "item",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "phone",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.image.generate",
+      "model": "oa:gpt-image-2",
+      "route_id": "rte_32b0ca2b-a42a-4c83-a29e-c0fb3bd42348",
+      "route_version": 6,
+      "suite": "imagenes@v1",
+      "run_id": "evr_15b9cbb3-599d-4558-bab3-e616ab17953d",
+      "status": "failed",
+      "cases": 1,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 464,
+      "failures": [
+        {
+          "case": "cafe",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.initial.design",
+      "model": "oa:gpt-6.1-sol",
+      "route_id": "rte_6dbcbc69-85b3-4d6c-bb75-11189adfc6dd",
+      "route_version": 8,
+      "suite": "negocios-sinteticos@v1",
+      "run_id": "evr_4e4c6e45-8f7b-4b8c-8aad-fbf7669f67e6",
+      "status": "failed",
+      "cases": 3,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1615,
+      "failures": [
+        {
+          "case": "cafe",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "taller",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "lirio",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    },
+    {
+      "use_case": "website.initial.design",
+      "model": "oa:gpt-6-luna",
+      "route_id": "rte_ac5eb3ea-00eb-4cc0-816a-e80f54d99e3f",
+      "route_version": 9,
+      "suite": "negocios-sinteticos@v1",
+      "run_id": "evr_fb59ee2b-2e9e-4741-a6d4-47d3de0bcbd0",
+      "status": "failed",
+      "cases": 3,
+      "passed": 0,
+      "pass_rate": 0,
+      "latency_p50_ms": null,
+      "latency_p95_ms": null,
+      "cost_usd": 0,
+      "cost_per_case_usd": 0,
+      "wall_ms": 1811,
+      "failures": [
+        {
+          "case": "cafe",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "taller",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        },
+        {
+          "case": "lirio",
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ]
+        }
+      ]
+    }
+  ]
+}

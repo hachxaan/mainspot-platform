@@ -34,7 +34,7 @@ async function main(): Promise<void> {
     const routes = await pool.query<{ route_id: string; use_case_id: string; model_id: string; version: number; status: string; provider_kind: string }>(
       `SELECT r.route_id, r.use_case_id, r.model_id, r.version, r.status, p.kind AS provider_kind
          FROM ai_route_revision r JOIN ai_model m ON m.model_id = r.model_id JOIN ai_provider p ON p.provider_id = m.provider_id
-        WHERE p.kind <> 'simulated' AND p.status = 'active' AND m.status = 'active' AND ($1 = 'all' OR r.use_case_id = $1) AND ($2 = 'all' OR r.status = $2) AND ($3::text IS NULL OR r.route_id = $3)
+        WHERE p.kind <> 'simulated' AND p.status = 'active' AND m.status = 'active' AND r.status <> 'RETIRED' AND ($1 = 'all' OR r.use_case_id = $1) AND ($2 = 'all' OR r.status = $2) AND ($3::text IS NULL OR r.route_id = $3)
         ORDER BY r.use_case_id, r.version`, [useCase, status, only ?? null]);
     const report: Array<Record<string, unknown>> = [];
     for (const r of routes.rows) {

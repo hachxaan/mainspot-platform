@@ -1,5 +1,13 @@
 # Technical Canon changelog
 
+## 0.4.0 — 2026-11-03
+- Solo ARC-0001 y OPS-0001 cambian por DEC-0073/SRC-0011: OpenAI Responses `store:false` e Images
+  para toda generación de DESARROLLO; TypeSafe semántico primario. Anthropic conserva adaptador/catálogo
+  sin rutas activas/canary ni fallback; OpenRouter deshabilitado, historial intacto.
+- Luna (`gpt-6-luna`) eficiente y Sol (`gpt-6.1-sol`) complejo son candidatas API-descubiertas, no
+  generación/calidad probadas. DRAFT hasta suites reales PASS. Sin cambio de presupuestos ni
+  decisión comercial irreversible de producción. DAT-0001, SEC-0001 y el resto del canon no cambian.
+
 ## 0.3.0 — 2026-11-03
 - ARC-0001, DAT-0001, SEC-0001 y OPS-0001 pasan a DECIDED por APR-0003. ARC-0001: adaptadores directos `anthropic` y
   `openai`, OpenRouter retirado (DEC-0069). DAT-0001: `ai_provider.real_data` con base y fecha de verificación,

@@ -8,8 +8,8 @@
  *  - `lab`:  rutas reales candidatas en DRAFT. Ninguna se activa sin evaluación aprobada
  *            (la Engineering Console o scripts/ai-eval.ts).
  *
- * Proveedores directos (DEC-0069): Anthropic (texto), OpenAI (imágenes `gpt-image-2`; texto solo como
- * alternativa evaluada), TypeSafe (Jev). OpenRouter quedó retirado (migración 0028) y no se siembra.
+ * Configuración de desarrollo (DEC-0073): OpenAI para toda generación; TypeSafe para clasificación.
+ * Anthropic conserva adaptador y catálogo como alternativa técnica deshabilitada, sin rutas ni fallback.
  * Precios publicados consultados el 2026-11-03: https://platform.claude.com/docs/en/about-claude/pricing,
  * https://developers.openai.com/api/docs/pricing; TypeSafe 2026-10-20 (JEV_PRICING). Ningún proveedor directo
  * informa el cargo por llamada: el costo registrado es `estimated` (uso × precio de esta tabla).
@@ -21,7 +21,7 @@ import type { PromptVariable } from './prompt.ts';
 import { AiRegistry, type RouteParams } from './registry.ts';
 
 const ANTHROPIC_PRICES = { source: 'anthropic_pricing_page', observedAt: '2026-11-03T06:00:00Z' } as const;
-const OPENAI_PRICES = { source: 'openai_pricing_page', observedAt: '2026-11-03T06:00:00Z' } as const;
+const OPENAI_PRICES = { source: 'openai_pricing_page', observedAt: '2026-11-03T08:00:00Z' } as const;
 const SIM_OBSERVED_AT = '2026-10-30T10:29:24Z';
 
 /**
@@ -56,18 +56,20 @@ export const USE_CASE_SEEDS: UseCaseSeed[] = [
 
 interface ProviderSeed {
   id: string; name: string; kind: 'anthropic' | 'openai' | 'typesafe' | 'simulated'; baseUrl: string | null; secretRef: string | null;
+  status?: 'active' | 'disabled';
   dataPolicy: string; terms: string | null; realData: { basis: string; verifiedAt: string } | null;
 }
 const PROVIDER_SEEDS: ProviderSeed[] = [
   {
     id: 'anthropic', name: 'Anthropic (Claude API)', kind: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', secretRef: 'ANTHROPIC_API_KEY',
-    dataPolicy: 'Texto generativo (DEC-0069). Commercial Terms + DPA; sin entrenamiento; retención 30 días. Sin Files/Batch con datos reales; esquemas sin datos personales; respuestas automáticas a clientes revelan IA (AUP).',
+    status: 'disabled',
+    dataPolicy: 'Alternativa técnica fuera de operación en desarrollo (DEC-0073); adaptador conservado, sin rutas activas ni fallback. Commercial Terms + DPA; sin entrenamiento; condiciones históricas de DEC-0071.',
     terms: 'https://www.anthropic.com/legal/commercial-terms', realData: { basis: TERMS_BASIS('DEC-0071'), verifiedAt: TERMS_VERIFIED_AT },
   },
   {
     id: 'openai', name: 'OpenAI (API)', kind: 'openai', baseUrl: 'https://api.openai.com/v1', secretRef: 'OPENAI_API_KEY',
-    dataPolicy: 'Imágenes gpt-image-2 (DEC-0069); texto solo como alternativa evaluada con store:false. Services Agreement + DPA; sin entrenamiento; logs de abuso 30 días. Solo prompts de texto, nunca personas reales; imágenes publicadas con revisión humana y etiqueta de IA.',
-    terms: 'https://openai.com/policies/services-agreement', realData: { basis: TERMS_BASIS('DEC-0071'), verifiedAt: TERMS_VERIFIED_AT },
+    dataPolicy: 'Proveedor generativo de desarrollo (DEC-0073): texto/razonamiento por Responses store:false e imágenes gpt-image-2 por Images. Services Agreement + DPA; sin entrenamiento; logs de abuso 30 días. Prompts mínimos, sin personas reales; revisión y etiqueta de IA al publicar imágenes.',
+    terms: 'https://openai.com/policies/services-agreement', realData: { basis: TERMS_BASIS('DEC-0071; DEC-0073'), verifiedAt: TERMS_VERIFIED_AT },
   },
   {
     id: 'typesafe', name: 'TypeSafe (Jev)', kind: 'typesafe', baseUrl: 'https://api.typesafe.ai/v1/systemone', secretRef: 'TYPESAFE_API_KEY',
@@ -85,8 +87,9 @@ const MODEL_SEEDS: ModelSeed[] = [
   { id: 'an:claude-opus-5-5', provider: 'anthropic', providerModel: 'claude-opus-5-5', name: 'Claude Opus 5.5', modality: 'text', pricing: { input_per_mtok: 4, output_per_mtok: 20 }, ...ANTHROPIC_PRICES, capabilities: { structured_outputs: true, tools: true, temperature: false, forced_tool_choice: false, tier: 'max' } },
   // gpt-image-2: USD por millón de tokens (texto de entrada 5, imagen de salida 30); calidad media 1536x1024 ≈ USD 0.041.
   { id: 'oa:gpt-image-2', provider: 'openai', providerModel: 'gpt-image-2', name: 'GPT Image 2', modality: 'image', pricing: { input_per_mtok: 5, output_per_mtok: 30 }, ...OPENAI_PRICES, capabilities: { aspect_ratios: ['16:9', '4:3', '1:1', '3:4', '4:5'], quality: ['low', 'medium', 'high'], requires_org_verification: true } },
-  // Alternativa de texto evaluable solo donde Anthropic no alcance la calidad (DEC-0069).
-  { id: 'oa:gpt-6-luna', provider: 'openai', providerModel: 'gpt-6-luna', name: 'GPT-6 Luna', modality: 'text', pricing: { input_per_mtok: 0.1, output_per_mtok: 0.5 }, ...OPENAI_PRICES, capabilities: { structured_outputs: true, tools: true, temperature: false, tier: 'fast' } },
+  // Descubiertos en el catálogo autenticado de MainSpot (2026-11-03), no derivados del acceso de OMP.
+  { id: 'oa:gpt-6-luna', provider: 'openai', providerModel: 'gpt-6-luna', name: 'GPT-6 Luna', modality: 'text', pricing: { input_per_mtok: 0.1, output_per_mtok: 0.5 }, ...OPENAI_PRICES, capabilities: { structured_outputs: true, tools: true, temperature: false, tier: 'fast', endpoint: 'responses' } },
+  { id: 'oa:gpt-6.1-sol', provider: 'openai', providerModel: 'gpt-6.1-sol', name: 'GPT-6.1 Sol (API MainSpot)', modality: 'text', pricing: { input_per_mtok: 2, output_per_mtok: 10 }, ...OPENAI_PRICES, capabilities: { structured_outputs: true, tools: true, temperature: false, tier: 'high', endpoint: 'responses' } },
   { id: 'ts:jev-1.14.0', provider: 'typesafe', providerModel: 'jev-1.14.0', name: 'Jev 1.14.0 (versión fijada)', modality: 'classification', pricing: { input_per_mtok: 0.042, output_per_mtok: 0 }, source: 'typesafe_public_pricing', observedAt: '2026-10-20T00:00:00Z', capabilities: { question_types: ['choice', 'noul', 'score'] } },
   { id: 'sim:text', provider: 'simulated', providerModel: 'simulated-text', name: 'Simulador de texto', modality: 'text', pricing: {}, source: 'internal', observedAt: SIM_OBSERVED_AT, capabilities: { simulated: true } },
   { id: 'sim:image', provider: 'simulated', providerModel: 'simulated-image', name: 'Simulador de imágenes', modality: 'image', pricing: {}, source: 'internal', observedAt: SIM_OBSERVED_AT, capabilities: { simulated: true } },
@@ -281,27 +284,26 @@ export const PROMPT_SEEDS: PromptSeed[] = [
 
 interface RouteSeed { useCase: string; model: string; params: RouteParams; maxCost: number; note: string }
 
-const TEXT_DEFAULT = { temperature: 0.4, timeout_ms: 90_000, repair_attempts: 1 } as const;
+const TEXT_DEFAULT = { timeout_ms: 90_000, repair_attempts: 1, reasoning_effort: 'low' } as const;
 
 /**
- * Candidatas reales (lab), en DRAFT hasta su evaluación (DEC-0069): Anthropic primero (Haiku 5.5 por costo,
- * Sonnet 5.5 donde la tarea pide más capacidad); GPT-6 Luna (OpenAI directo) solo donde Anthropic falló la suite
- * con OpenRouter (edición, plan y calendario); imágenes con gpt-image-2 en calidad media.
+ * Candidatas de desarrollo (DEC-0073), nunca activadas por semilla. IDs disponibles en el catálogo
+ * autenticado; compatibilidad publicada Responses + esquemas + herramientas. Calidad y cuota se prueban
+ * con las suites existentes antes de aprobar. Sol para trabajo complejo, Luna para volumen/costo.
  */
-const HAIKU = 'an:claude-haiku-5-5';
-const SONNET = 'an:claude-sonnet-5-5';
 const LUNA = 'oa:gpt-6-luna';
+const SOL = 'oa:gpt-6.1-sol';
 export const LAB_CANDIDATES: RouteSeed[] = [
-  ...[[SONNET, 'low', 0.25], [HAIKU, 'medium', 0.05]].map(([m, effort, cost]) => ({ useCase: 'website.initial.design', model: m as string, params: { ...TEXT_DEFAULT, max_tokens: 9000, timeout_ms: 180_000, reasoning_effort: effort as 'low' | 'medium' }, maxCost: cost as number, note: 'Diseño inicial con Anthropic directo' })),
-  ...[HAIKU, LUNA].map((m) => ({ useCase: 'website.edit.simple', model: m, params: { ...TEXT_DEFAULT, max_tokens: 3000, timeout_ms: 60_000 }, maxCost: 0.02, note: m === LUNA ? 'Alternativa directa si Anthropic no pasa la suite' : 'Edición simple con Anthropic directo' })),
-  ...[[SONNET, 'low', 0.2], [HAIKU, 'high', 0.05], [LUNA, 'high', 0.05]].map(([m, effort, cost]) => ({ useCase: 'website.edit.complex', model: m as string, params: { ...TEXT_DEFAULT, max_tokens: 9000, timeout_ms: 180_000, reasoning_effort: effort as 'low' | 'high' }, maxCost: cost as number, note: m === LUNA ? 'Alternativa directa si Anthropic no pasa la suite' : 'Rediseños con Anthropic directo' })),
-  { useCase: 'social.facebook.post.compose', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 2500 }, maxCost: 0.03, note: 'Copy social con Anthropic directo' },
-  { useCase: 'marketing.campaign.creatives', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 2500 }, maxCost: 0.03, note: 'Creatividades con Anthropic directo' },
-  ...['engagement.facebook.comment.reply', 'engagement.google.review.reply'].map((uc) => ({ useCase: uc, model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 800, timeout_ms: 45_000 }, maxCost: 0.01, note: 'Respuestas con Anthropic directo' })),
-  { useCase: 'conversation.owner.assistant', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 1500, timeout_ms: 60_000 }, maxCost: 0.03, note: 'Asistente con herramientas, Anthropic directo' },
-  ...[[SONNET, 0.1], [HAIKU, 0.03], [LUNA, 0.03]].map(([m, cost]) => ({ useCase: 'marketing.campaign.plan', model: m as string, params: { ...TEXT_DEFAULT, max_tokens: 3000, timeout_ms: 120_000, reasoning_effort: 'medium' as const }, maxCost: cost as number, note: m === LUNA ? 'Alternativa directa si Anthropic no pasa la suite' : 'Planeación con Anthropic directo' })),
-  { useCase: 'business.insights.generate', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 1500 }, maxCost: 0.02, note: 'Resumen con Anthropic directo' },
-  ...[[SONNET, 0.08], [HAIKU, 0.02], [LUNA, 0.02]].map(([m, cost]) => ({ useCase: 'editorial.calendar.suggest', model: m as string, params: { ...TEXT_DEFAULT, max_tokens: 2000 }, maxCost: cost as number, note: m === LUNA ? 'Alternativa directa si Anthropic no pasa la suite' : 'Calendario con Anthropic directo' })),
+  ...[[SOL, 0.25], [LUNA, 0.05]].map(([model, cost]) => ({ useCase: 'website.initial.design', model: model as string, params: { ...TEXT_DEFAULT, max_tokens: 9000, timeout_ms: 180_000, reasoning_effort: 'medium' as const }, maxCost: cost as number, note: 'DEC-0073: diseño inicial con OpenAI directo (candidata evaluable)' })),
+  { useCase: 'website.edit.simple', model: LUNA, params: { ...TEXT_DEFAULT, max_tokens: 3000, timeout_ms: 60_000 }, maxCost: 0.02, note: 'DEC-0073: edición simple OpenAI directo' },
+  ...[[SOL, 0.2], [LUNA, 0.05]].map(([model, cost]) => ({ useCase: 'website.edit.complex', model: model as string, params: { ...TEXT_DEFAULT, max_tokens: 9000, timeout_ms: 180_000, reasoning_effort: 'medium' as const }, maxCost: cost as number, note: 'DEC-0073: edición compleja OpenAI directo (selección explícita, no fallback)' })),
+  { useCase: 'social.facebook.post.compose', model: LUNA, params: { ...TEXT_DEFAULT, max_tokens: 2500 }, maxCost: 0.03, note: 'DEC-0073: redacción social OpenAI directo' },
+  { useCase: 'marketing.campaign.creatives', model: LUNA, params: { ...TEXT_DEFAULT, max_tokens: 2500 }, maxCost: 0.03, note: 'DEC-0073: creatividades OpenAI directo' },
+  ...['engagement.facebook.comment.reply', 'engagement.google.review.reply'].map((uc) => ({ useCase: uc, model: LUNA, params: { ...TEXT_DEFAULT, max_tokens: 1600, timeout_ms: 45_000 }, maxCost: 0.01, note: 'DEC-0073: respuestas OpenAI directo' })),
+  { useCase: 'conversation.owner.assistant', model: LUNA, params: { ...TEXT_DEFAULT, max_tokens: 3000, timeout_ms: 60_000 }, maxCost: 0.03, note: 'DEC-0073: asistente con herramientas por OpenAI Responses' },
+  ...[[SOL, 0.1], [LUNA, 0.03]].map(([model, cost]) => ({ useCase: 'marketing.campaign.plan', model: model as string, params: { ...TEXT_DEFAULT, max_tokens: 3000, timeout_ms: 120_000, reasoning_effort: 'medium' as const }, maxCost: cost as number, note: 'DEC-0073: planeación OpenAI directo sin gasto publicitario' })),
+  { useCase: 'business.insights.generate', model: LUNA, params: { ...TEXT_DEFAULT, max_tokens: 1500 }, maxCost: 0.02, note: 'DEC-0073: análisis de negocio OpenAI directo' },
+  { useCase: 'editorial.calendar.suggest', model: LUNA, params: { ...TEXT_DEFAULT, max_tokens: 3000 }, maxCost: 0.02, note: 'DEC-0073: calendario OpenAI directo' },
   ...['website.image.generate', 'social.facebook.image.generate'].map((uc) => ({ useCase: uc, model: 'oa:gpt-image-2', params: { timeout_ms: 180_000, aspect_ratio: uc.startsWith('social') ? '1:1' : '16:9', quality: 'medium' as const }, maxCost: 0.08, note: 'gpt-image-2 directo (DEC-0069), calidad media' })),
   ...['conversation.intent.classify', 'engagement.facebook.comment.classify', 'engagement.google.review.classify'].map((uc) => ({ useCase: uc, model: 'ts:jev-1.14.0', params: { timeout_ms: 15_000 }, maxCost: 0.01, note: 'Jev primario (versión fijada)' })),
 ];
@@ -330,15 +332,15 @@ export async function ensureAiCatalog(pool: Pool): Promise<{ created: string[] }
       if (r.rowCount) created.push(`use_case:${uc.id}`);
     }
     for (const p of PROVIDER_SEEDS) {
-      // La verificación de términos registrada en código se aplica si es más reciente que la de la BD.
+      // Misma verificación contractual: sincronizar también la decisión de desarrollo que la aplica.
       const r = await client.query(
-        `INSERT INTO ai_provider (provider_id, display_name, kind, base_url, secret_ref, data_policy, terms_url, real_data, real_data_basis, terms_verified_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        `INSERT INTO ai_provider (provider_id, display_name, kind, base_url, secret_ref, data_policy, terms_url, real_data, real_data_basis, terms_verified_at, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (provider_id) DO UPDATE SET real_data = EXCLUDED.real_data, real_data_basis = EXCLUDED.real_data_basis,
-           terms_verified_at = EXCLUDED.terms_verified_at, data_policy = EXCLUDED.data_policy, updated_at = now()
-         WHERE EXCLUDED.terms_verified_at IS NOT NULL AND ai_provider.terms_verified_at IS DISTINCT FROM EXCLUDED.terms_verified_at
-           AND (ai_provider.terms_verified_at IS NULL OR ai_provider.terms_verified_at < EXCLUDED.terms_verified_at)`,
-        [p.id, p.name, p.kind, p.baseUrl, p.secretRef, p.dataPolicy, p.terms, p.realData ? 'allowed' : 'blocked', p.realData?.basis ?? null, p.realData?.verifiedAt ?? null]);
+           terms_verified_at = EXCLUDED.terms_verified_at, data_policy = EXCLUDED.data_policy, status = EXCLUDED.status, updated_at = now()
+         WHERE EXCLUDED.terms_verified_at IS NOT NULL AND (ai_provider.terms_verified_at IS NULL OR ai_provider.terms_verified_at <= EXCLUDED.terms_verified_at)
+           AND (ai_provider.data_policy IS DISTINCT FROM EXCLUDED.data_policy OR ai_provider.real_data_basis IS DISTINCT FROM EXCLUDED.real_data_basis OR ai_provider.terms_verified_at IS DISTINCT FROM EXCLUDED.terms_verified_at)`,
+        [p.id, p.name, p.kind, p.baseUrl, p.secretRef, p.dataPolicy, p.terms, p.realData ? 'allowed' : 'blocked', p.realData?.basis ?? null, p.realData?.verifiedAt ?? null, p.status ?? 'active']);
       if (r.rowCount) created.push(`provider:${p.id}`);
     }
     for (const m of MODEL_SEEDS) {
@@ -383,7 +385,7 @@ export async function ensureAiCatalog(pool: Pool): Promise<{ created: string[] }
   for (const r of LAB_CANDIDATES) {
     const prompt = await promptV1(r.useCase);
     if (!prompt) continue;
-    const exists = await pool.query('SELECT 1 FROM ai_route_revision WHERE use_case_id = $1 AND model_id = $2 AND prompt_revision_id = $3 LIMIT 1', [r.useCase, r.model, prompt]);
+    const exists = await pool.query(`SELECT 1 FROM ai_route_revision WHERE use_case_id = $1 AND model_id = $2 AND prompt_revision_id = $3 AND params = $4::jsonb AND max_cost_usd = $5 AND status <> 'RETIRED' LIMIT 1`, [r.useCase, r.model, prompt, JSON.stringify(r.params), r.maxCost]);
     if (exists.rowCount) continue;
     await registry.createRoute({ useCaseId: r.useCase, modelId: r.model, promptRevisionId: prompt, params: r.params, maxCostUsd: r.maxCost, changeNote: r.note, actor: SEED_ACTOR });
     created.push(`route:lab-candidate:${r.useCase}:${r.model}`);

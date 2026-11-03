@@ -91,3 +91,14 @@ sources:
   registered_at: '2026-09-21'
   notes: 'Topología piloto sin Docker: contenedores LXC mainspot-db/mainspot-app;
     secretos fuera del repo (0600).'
+- id: SRC-0011
+  title: Instrucción explícita del propietario — OpenAI generativo en desarrollo
+  kind: document
+  location: .canonflow/sources/SRC-0011-openai-development-directive.md
+  fingerprint: sha256:b4b6563a4c236e89af545a1c6e6e9fc2aaeedea3e5d0af1df3c16bb1077f01df
+  reliability: authoritative
+  registered_at: '2026-11-03'
+  notes: >-
+    Fuente humana literal externa al HDC; registrada como DEC-0073 sin inventar QS/ANS.
+    Configuración de desarrollo, no selección comercial irreversible de producción.
+    Mantiene TypeSafe/Jev, presupuestos y controles de QS-0017; sustituye solo la preferencia generativa.

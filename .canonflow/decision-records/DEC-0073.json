@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0073",
+  "kind": "decision",
+  "title": "Configuración de desarrollo: OpenAI directo para toda generación; Jev primario; Anthropic alternativa técnica sin tráfico",
+  "decision": "La instrucción explícita del propietario en SRC-0011 sustituye, para la configuración actual de desarrollo de MainSpot, la preferencia generativa Anthropic de DEC-0069 por OpenAI directo en todas las capacidades generativas de texto e imágenes. TypeSafe/Jev conserva clasificación semántica primaria. Reutilizar Registry/Dispatcher; elegir IDs del catálogo autenticado de MainSpot y evaluar compatibilidad, calidad y costo antes de activar. Anthropic conserva adaptador como alternativa técnica sin rutas activas/canary ni fallback automático. OpenRouter sigue deshabilitado. Presupuestos, privacidad y gates vigentes no cambian. Esta configuración de desarrollo no decide irreversiblemente el proveedor comercial de producción ni interviene en la investigación de su rama independiente. Ante cuota/saldo bloqueado: completar validación local y preparar evaluaciones reales, sin presentar mocks como E2E satisfactorio.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-11-03T08:06:53.691164Z",
+  "source": "SRC-0011 — instrucción explícita del propietario en conversación OMP",
+  "artifact_ref": ".canonflow/sources/SRC-0011-openai-development-directive.md",
+  "options_rejected": [
+    "Mantener Anthropic como proveedor generativo operativo de desarrollo",
+    "Fallback automático a Anthropic u OpenRouter",
+    "Activar rutas sin evaluación satisfactoria",
+    "Inferir acceso API por disponibilidad del modelo en OMP"
+  ],
+  "affected_items": [
+    "DEC-0069",
+    "BR-0007",
+    "ARC-0001",
+    "OPS-0001",
+    "INC-0008",
+    "src/ai/catalog.ts",
+    "migrations/0029_ai_openai_development.sql"
+  ],
+  "expiry": "",
+  "comment": "Origen humano externo al HDC. source_ref se omite porque el esquema v2 lo permite como campo opcional y solo admite QS/ANS cuando está presente; no se inventa una sesión. Fuente literal registrada en SRC-0011. La fecha es la del registro en esta conversación; no un timestamp aportado por el propietario. Sustitución acotada al proveedor de desarrollo; DEC-0066/0067/0068/0070/0071 conservan sus controles y QS-0017/ANS-0017 quedan íntegros."
+}

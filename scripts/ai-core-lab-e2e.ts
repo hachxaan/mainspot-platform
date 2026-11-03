@@ -1,5 +1,5 @@
 /**
- * AI Core / QS0017 — E2E con Anthropic, OpenAI Images y TypeSafe DIRECTOS.
+ * AI Core / DEC-0073 — E2E con OpenAI directo (texto e imágenes) y TypeSafe directo.
  * Solo crea una fixture ficticia: ningún dato corresponde a clientes ni a PII real.
  *
  *   bash -c 'set -a; . ./.env; set +a; node scripts/ai-core-lab-e2e.ts'
@@ -11,8 +11,9 @@
  * → canary, promoción y rollback de una alternativa directa evaluada (o BLOCKED explícito).
  * La fixture pasa por synthetic y real desde Administration para ejercitar la política contractual;
  * «real» es una clasificación administrativa de prueba, NO datos personales de clientes.
- * Evidencia nueva: evidence/ai-core/direct-e2e-2026-11-03.txt y direct-screens-2026-11-03/<run>/.
- * No modifica hosts/proxy/certificados ni invoca OpenRouter. Nunca imprime credenciales o tokens.
+ * Evidencia nueva: evidence/ai-core/openai-development-e2e-2026-11-03.txt
+ * y openai-development-screens-2026-11-03/<run>/; conserva los artefactos direct anteriores.
+ * No modifica hosts/proxy/certificados ni invoca Anthropic/OpenRouter. Nunca imprime credenciales o tokens.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -31,21 +32,31 @@ tls.setDefaultCACertificates([...tls.getCACertificates('default'), ...tls.getCAC
 
 const BASE = (process.env.E2E_BASE_URL ?? 'https://app.mainspot.local.io').replace(/\/$/, '');
 const CHROME = process.env.CHROME_PATH ?? '/usr/bin/google-chrome';
-const EVIDENCE = 'evidence/ai-core/direct-e2e-2026-11-03.txt';
+const EVIDENCE = 'evidence/ai-core/openai-development-e2e-2026-11-03.txt';
 const RUN = randomUUID().slice(0, 6);
-const SHOTS = `evidence/ai-core/direct-screens-2026-11-03/${RUN}`;
-const DIRECT_TEXT = ['an:claude-haiku-5-5', 'an:claude-sonnet-5-5'];
+const SHOTS = `evidence/ai-core/openai-development-screens-2026-11-03/${RUN}`;
 const DIRECT_IMAGE = 'oa:gpt-image-2';
 const DIRECT_JEV = 'ts:jev-1.14.0';
 const BLOCKED_PROVIDERS = process.argv.includes('--blocked-providers');
 let tenantForEvidence: string | null = null;
-let openRouterBefore: number | null = null;
+let forbiddenProvidersBefore: { anthropic: number; openrouter: number } | null = null;
 let spentBefore = 0;
 let costsReported = false;
 const BUSINESS = `Café Brisa Lab ${RUN}`;
 const EMAIL = `brisa.lab.${RUN}@example.test`;
 const PASSWORD = `Brisa-Lab-${RUN}-2026`;
 
+
+interface RegisteredModel {
+  model_id: string | null; kind: string | null; model_modality: string | null;
+  model_status: string | null; provider_status: string | null;
+}
+function isDirectModel(model: RegisteredModel): boolean {
+  if (model.model_status !== 'active' || model.provider_status !== 'active') return false;
+  if (model.model_modality === 'text') return model.kind === 'openai';
+  if (model.model_modality === 'image') return model.kind === 'openai' && model.model_id === DIRECT_IMAGE;
+  return model.model_modality === 'classification' && model.kind === 'typesafe' && model.model_id === DIRECT_JEV;
+}
 const transcript: string[] = [];
 let failures = 0;
 function say(line: string): void {
@@ -71,28 +82,41 @@ async function reportCosts(): Promise<void> {
        FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
       WHERE p.kind IN ('anthropic','openai','openrouter') AND i.status IN ('running','succeeded','failed')
       GROUP BY 1,2 ORDER BY 1,2`)).rows;
-  say('\n-- E15: libro generativo acumulado (histórico + directos; reservas pendientes incluidas) --');
+  say('\n-- E15: libro generativo acumulado (histórico Anthropic/OpenRouter + OpenAI directo; reservas pendientes incluidas) --');
   for (const g of groups) say(`   ${g.kind} · fuente=${g.cost_source} · n=${g.n} · costo=${g.cost === null ? 'desconocido' : `USD ${Number(g.cost).toFixed(6)}`} · cargo/reserva efectivo USD ${Number(g.effective).toFixed(6)}`);
   say(`   incremento global durante recorrido USD ${(spent - spentBefore).toFixed(6)} · laboratorio acumulado USD ${spent.toFixed(6)} de 25 (TypeSafe excluido)`);
-  check(spent <= 25, 'E15 techo generativo acumulado USD 25, incluido OpenRouter histórico');
-  const orCount = Number((await one<{ n: number }>(`SELECT count(*)::int AS n FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id WHERE p.kind = 'openrouter'`))?.n ?? 0);
-  check(openRouterBefore !== null && orCount === openRouterBefore, `ninguna invocación OpenRouter nueva (antes=${openRouterBefore}, después=${orCount})`);
+  check(spent <= 25, 'E15 techo generativo acumulado USD 25, incluidos Anthropic/OpenRouter históricos');
+  const forbidden = await one<{ anthropic: number; openrouter: number }>(
+    `SELECT count(*) FILTER (WHERE p.kind = 'anthropic')::int AS anthropic,
+            count(*) FILTER (WHERE p.kind = 'openrouter')::int AS openrouter
+       FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id`);
+  for (const kind of ['anthropic', 'openrouter'] as const) {
+    check(forbiddenProvidersBefore !== null && forbidden !== undefined && forbidden[kind] === forbiddenProvidersBefore[kind], `ninguna invocación ${kind} nueva (antes=${forbiddenProvidersBefore?.[kind] ?? 'sin captura'}, después=${forbidden?.[kind] ?? 'sin captura'}); solo historia`);
+  }
   const day = new Date().toISOString().slice(0, 10);
   const jevSpent = await new JevRepository(pool).spentOn(day);
   say(`   TypeSafe DEC-0032 · día UTC ${day} · USD ${jevSpent.toFixed(6)} de 1 · libro independiente (pipeline + evaluaciones + AI Core)`);
   check(jevSpent <= 1, 'E15 TypeSafe directo no supera USD 1/día, separado del techo generativo');
   if (!tenantForEvidence) return;
-  const byUc = (await pool.query<{ use_case_id: string; model_id: string; kind: string; cost_source: string; n: number; cost: string | null; p50: number; p95: number }>(
-    `SELECT i.use_case_id, i.model_id, p.kind, i.cost_source, count(*)::int AS n, sum(i.cost_usd) AS cost,
+  const byUc = (await pool.query<RegisteredModel & { use_case_id: string; cost_source: string; n: number; cost: string | null; p50: number; p95: number }>(
+    `SELECT i.use_case_id, i.model_id, p.kind, m.modality AS model_modality, m.status AS model_status,
+            p.status AS provider_status, i.cost_source, count(*)::int AS n, sum(i.cost_usd) AS cost,
             percentile_disc(0.5) WITHIN GROUP (ORDER BY i.latency_ms) AS p50,
             percentile_disc(0.95) WITHIN GROUP (ORDER BY i.latency_ms) AS p95
        FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
-      WHERE i.tenant_id = $1 AND i.status = 'succeeded' GROUP BY 1,2,3,4 ORDER BY 1`, [tenantForEvidence])).rows;
-  for (const r of byUc) say(`   ${r.use_case_id} · ${r.model_id} · proveedor=${r.kind} · n=${r.n} · USD ${r.cost === null ? 'desconocido' : Number(r.cost).toFixed(6)} (${r.cost_source}) · p50=${r.p50} ms p95=${r.p95} ms`);
-  check((BLOCKED_PROVIDERS || byUc.length > 0) && byUc.every((r) => (r.kind === 'anthropic' && DIRECT_TEXT.includes(r.model_id) || r.kind === 'openai' && r.model_id === DIRECT_IMAGE || r.kind === 'typesafe' && r.model_id === DIRECT_JEV)), 'ninguna invocación exitosa de la fixture usa un modelo fuera de los directos previstos');
-  const generative = byUc.filter((r) => ['anthropic', 'openai'].includes(r.kind));
-  if (generative.length) check(generative.every((r) => r.cost !== null && r.cost_source === 'estimated'), 'costos directos de Anthropic/OpenAI explícitamente estimados, no reportados por el proveedor');
+       JOIN ai_model m ON m.model_id = i.model_id AND m.provider_id = i.provider_id
+      WHERE i.tenant_id = $1 AND i.status = 'succeeded' GROUP BY 1,2,3,4,5,6,7 ORDER BY 1`, [tenantForEvidence])).rows;
+  for (const r of byUc) say(`   ${r.use_case_id} · ${r.model_id} · proveedor=${r.kind} · modalidad=${r.model_modality} · n=${r.n} · USD ${r.cost === null ? 'desconocido' : Number(r.cost).toFixed(6)} (${r.cost_source}) · p50=${r.p50} ms p95=${r.p95} ms`);
+  check((BLOCKED_PROVIDERS || byUc.length > 0) && byUc.every(isDirectModel), 'ninguna invocación exitosa de la fixture usa generación fuera de OpenAI directo o clasificación fuera de TypeSafe directo; modelos activos del registro');
+  const generative = byUc.filter((r) => r.kind === 'openai');
+  if (generative.length) check(generative.every((r) => r.cost !== null && r.cost_source === 'estimated'), 'costos directos de OpenAI explícitamente estimados, no reportados por el proveedor');
   else say('   sin generaciones directas exitosas: no se atribuyen costos ni evidencia de texto/imagen a proveedores bloqueados');
+  if (BLOCKED_PROVIDERS) {
+    const started = await one<{ n: number }>(
+      `SELECT count(*)::int AS n FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
+        WHERE i.tenant_id = $1 AND p.kind IN ('anthropic','openai','openrouter') AND i.status IN ('running','succeeded','failed')`, [tenantForEvidence]);
+    check(started?.n === 0, 'subconjunto bloqueado no inicia ninguna generación ni gasto generativo de la fixture');
+  }
 }
 
 async function publishedFrame(page: Page, width: number, height: number, version: number) {
@@ -120,29 +144,37 @@ async function publishedFrame(page: Page, width: number, height: number, version
 
 async function directPreflight(): Promise<boolean> {
   say('\n-- Preflight directo (solo lecturas; sin invocaciones ni activaciones) --');
-  const rows = (await pool.query<{ use_case_id: string; modality: string; model_id: string | null; kind: string | null; status: string | null; real_data: string | null; terms_verified_at: string | null; real_data_basis: string | null; passed: boolean; error_code: string | null; detail: string | null }>(
-    `SELECT u.use_case_id, u.modality, r.model_id, p.kind, r.status, p.real_data, p.terms_verified_at, p.real_data_basis,
-            COALESCE(e.status = 'passed' AND e.real_provider, false) AS passed,
+  const rows = (await pool.query<RegisteredModel & { use_case_id: string; modality: string; status: string | null; real_data: string | null; terms_verified_at: string | null; real_data_basis: string | null; passed: boolean; error_code: string | null; detail: string | null }>(
+    `SELECT u.use_case_id, u.modality, r.model_id, p.kind, m.modality AS model_modality,
+            m.status AS model_status, p.status AS provider_status, r.status, p.real_data, p.terms_verified_at, p.real_data_basis,
+            COALESCE(e.status = 'passed' AND e.real_provider AND e.route_id = r.route_id, false) AS passed,
             last_i.error_code, last_i.validation->>'detail' AS detail
        FROM ai_use_case u LEFT JOIN ai_rollout ro ON ro.use_case_id = u.use_case_id AND ro.environment = 'lab'
        LEFT JOIN ai_route_revision r ON r.route_id = ro.active_route_id
-       LEFT JOIN ai_provider p ON p.provider_id = (SELECT m.provider_id FROM ai_model m WHERE m.model_id = r.model_id)
+       LEFT JOIN ai_model m ON m.model_id = r.model_id
+       LEFT JOIN ai_provider p ON p.provider_id = m.provider_id
        LEFT JOIN ai_eval_run e ON e.run_id = r.tested_eval_run_id
        LEFT JOIN LATERAL (SELECT i.error_code, i.validation FROM ai_invocation i
-          WHERE i.use_case_id = u.use_case_id AND i.model_id IN ('an:claude-haiku-5-5','an:claude-sonnet-5-5','oa:gpt-image-2')
+          JOIN ai_model im ON im.model_id = i.model_id AND im.provider_id = i.provider_id
+          JOIN ai_provider ip ON ip.provider_id = i.provider_id
+          WHERE i.use_case_id = u.use_case_id
+            AND (i.route_id = r.route_id OR (r.route_id IS NULL AND im.status = 'active' AND ip.status = 'active'
+              AND im.modality = u.modality AND (
+                (u.modality = 'text' AND ip.kind = 'openai')
+                OR (u.modality = 'image' AND ip.kind = 'openai' AND im.model_id = $1)
+                OR (u.modality = 'classification' AND ip.kind = 'typesafe' AND im.model_id = $2))))
           ORDER BY i.created_at DESC LIMIT 1) last_i ON true
-      WHERE u.status = 'active' ORDER BY u.use_case_id`)).rows;
+      WHERE u.status = 'active' ORDER BY u.use_case_id`, [DIRECT_IMAGE, DIRECT_JEV])).rows;
   let ready = rows.length > 0;
   for (const r of rows) {
-    const direct = r.modality === 'classification' ? r.model_id === DIRECT_JEV && r.kind === 'typesafe'
-      : r.modality === 'image' ? r.model_id === DIRECT_IMAGE && r.kind === 'openai'
-        : DIRECT_TEXT.includes(r.model_id ?? '') && r.kind === 'anthropic';
+    const direct = r.modality === r.model_modality && isDirectModel(r);
     const ok = direct && r.status === 'ACTIVE' && r.passed && !r.error_code && r.real_data === 'allowed' && Boolean(r.terms_verified_at && r.real_data_basis);
-    say(`   ${r.use_case_id}: ${r.model_id ?? 'sin ruta activa'} · evaluación real=${r.passed} · política=${r.real_data ?? 'sin proveedor'}${r.error_code ? ` · último fallo directo=${r.error_code}:${r.detail ?? 'sin detalle'}` : ''}`);
+    say(`   ${r.use_case_id}: ${r.model_id ?? 'sin ruta activa'} · proveedor=${r.kind ?? 'ninguno'} · modalidad=${r.model_modality ?? 'ninguna'} · modelo=${r.model_status ?? 'sin registro'} · evaluación real=${r.passed} · política=${r.real_data ?? 'sin proveedor'}${r.error_code ? ` · último fallo de ruta=${r.error_code}:${r.detail ?? 'sin detalle'}` : ''}`);
     if (!ok) { ready = false; blocked(`BLOCKED_EXTERNAL ${r.use_case_id}: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente`); }
   }
-  const unsafe = await one<{ n: number }>(`SELECT count(*)::int AS n FROM ai_rollout ro JOIN ai_route_revision r ON r.route_id IN (ro.active_route_id,ro.canary_route_id) JOIN ai_model m ON m.model_id = r.model_id JOIN ai_provider p ON p.provider_id = m.provider_id WHERE ro.environment = 'lab' AND p.kind = 'openrouter'`);
-  check(unsafe?.n === 0, 'ningún rollout activo/canary apunta a OpenRouter');
+  const unsafe = await one<{ n: number }>(`SELECT count(*)::int AS n FROM ai_rollout ro JOIN ai_route_revision r ON r.route_id IN (ro.active_route_id,ro.canary_route_id) JOIN ai_model m ON m.model_id = r.model_id JOIN ai_provider p ON p.provider_id = m.provider_id WHERE ro.environment = 'lab' AND (p.kind IN ('anthropic','openrouter') OR r.params->>'fallback_route_id' IS NOT NULL)`);
+  check(unsafe?.n === 0, 'ningún rollout activo/canary apunta a Anthropic/OpenRouter ni tiene fallback automático');
+  if (unsafe?.n !== 0) throw new Error('Preflight inseguro: retirar rutas Anthropic/OpenRouter y fallbacks automáticos antes de ejecutar incluso el subconjunto bloqueado; el escenario no los modifica');
   return ready && unsafe?.n === 0;
 }
 
@@ -251,9 +283,12 @@ async function main(): Promise<void> {
   say(`# HEAD ${head} · origen ${BASE} · Chrome ${CHROME} (TLS verificado, sin ignoreHTTPSErrors)`);
   say(`# fixture ficticia «${BUSINESS}»: sin PII de clientes; modo ${BLOCKED_PROVIDERS ? 'subconjunto BLOCKED_EXTERNAL' : 'completo E01–E20'}`);
   spentBefore = Number((await one<{ spent: string }>(SPENT_SQL))?.spent ?? 0);
-  openRouterBefore = Number((await one<{ n: number }>(`SELECT count(*)::int AS n FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id WHERE p.kind = 'openrouter'`))?.n ?? 0);
+  forbiddenProvidersBefore = (await one<{ anthropic: number; openrouter: number }>(
+    `SELECT count(*) FILTER (WHERE p.kind = 'anthropic')::int AS anthropic,
+            count(*) FILTER (WHERE p.kind = 'openrouter')::int AS openrouter
+       FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id`)) ?? null;
   const ready = await directPreflight();
-  if (!ready && !BLOCKED_PROVIDERS) throw new Error('BLOCKED_EXTERNAL preflight: faltan rutas/evaluaciones directas. Anthropic/OpenAI requieren saldo/cuota habilitados; consultar los fallos reales arriba. Para el subconjunto sin generación: --blocked-providers');
+  if (!ready && !BLOCKED_PROVIDERS) throw new Error('BLOCKED_EXTERNAL preflight: faltan rutas/evaluaciones directas. OpenAI requiere saldo/cuota habilitados para texto e imágenes; consultar los fallos reales arriba. Para el subconjunto sin generación: --blocked-providers');
 
   // ---------------------------------------------------------------- alta por invitación (CLI de operación)
   const inv = JSON.parse(execFileSync(process.execPath, ['scripts/invite-owner.ts', '--business', BUSINESS, '--email', EMAIL, '--base', BASE], { env: { ...process.env, DATABASE_URL: devUrl(), LOG_LEVEL: 'error' } }).toString()) as { tenant_id: string; invitation_link: string };
@@ -350,10 +385,15 @@ async function main(): Promise<void> {
     await page.locator('#ai-design-btn').click();
     await page.getByText('La vista previa está lista').waitFor({ timeout: 300_000 });
     const design = await one<{ result: { proposal_id: string; model: string; images: number; images_blocked: string[]; simulated: boolean } }>(`SELECT result FROM ai_job WHERE tenant_id = $1 AND kind = 'website.design' ORDER BY created_at DESC LIMIT 1`, [tenant]);
-    const dInv = await one<{ model_id: string; cost_usd: string; cost_source: string; latency_ms: number; route_version: number; prompt_version: number }>(
-      `SELECT i.model_id, i.cost_usd, i.cost_source, i.latency_ms, i.route_version, p.version AS prompt_version FROM ai_invocation i JOIN ai_prompt_revision p ON p.revision_id = i.prompt_revision_id WHERE i.tenant_id = $1 AND i.use_case_id = 'website.initial.design' AND i.status = 'succeeded' ORDER BY i.created_at DESC LIMIT 1`, [tenant]);
+    const dInv = await one<RegisteredModel & { cost_usd: string; cost_source: string; latency_ms: number; route_version: number; prompt_version: number }>(
+      `SELECT i.model_id, provider.kind, m.modality AS model_modality, m.status AS model_status, provider.status AS provider_status,
+              i.cost_usd, i.cost_source, i.latency_ms, i.route_version, p.version AS prompt_version
+         FROM ai_invocation i JOIN ai_prompt_revision p ON p.revision_id = i.prompt_revision_id
+         JOIN ai_model m ON m.model_id = i.model_id AND m.provider_id = i.provider_id
+         JOIN ai_provider provider ON provider.provider_id = i.provider_id
+        WHERE i.tenant_id = $1 AND i.use_case_id = 'website.initial.design' AND i.status = 'succeeded' ORDER BY i.created_at DESC LIMIT 1`, [tenant]);
     say(`   diseño: ${dInv?.model_id} r${dInv?.route_version}/p${dInv?.prompt_version} · ${dInv?.latency_ms} ms · USD ${dInv?.cost_usd} (${dInv?.cost_source}) · imágenes ${design?.result.images} · bloqueadas ${JSON.stringify(design?.result.images_blocked)}`);
-    check(design?.result.simulated === false && DIRECT_TEXT.includes(dInv?.model_id ?? ''), 'E05 diseño directo Anthropic no simulado con ruta y costo estimado trazados');
+    check(design?.result.simulated === false && Boolean(dInv && dInv.model_modality === 'text' && isDirectModel(dInv)), 'E05 diseño directo OpenAI no simulado con modelo textual activo del registro, ruta y costo estimado trazados');
     const generated = (await pool.query<{ asset_id: string; bytes: Buffer; sha256: string; width: number; height: number; mime: string; generator_model: string; is_illustration: boolean; alt_text: string; invocation_id: string; kind: string; model_id: string; provider_model: string; status: string; cost_source: string; usage: { images?: number } }>(
       `SELECT a.asset_id, a.bytes, a.sha256, a.width, a.height, a.mime, a.generator_model, a.is_illustration, a.alt_text,
               a.invocation_id, p.kind, i.model_id, i.provider_model, i.status, i.cost_source, i.usage
@@ -543,15 +583,18 @@ async function main(): Promise<void> {
     const baseline = await one<{ active_route_id: string; canary_route_id: string | null; version: string }>('SELECT active_route_id, canary_route_id, version FROM ai_rollout WHERE use_case_id = $1 AND environment = $2', [uc, 'lab']);
     const alternate = await one<{ route_id: string; model_id: string; run_id: string }>(
       `SELECT r.route_id, r.model_id, e.run_id FROM ai_route_revision r
-         JOIN ai_eval_run e ON e.run_id = r.tested_eval_run_id AND e.status = 'passed' AND e.real_provider
-         JOIN ai_model m ON m.model_id = r.model_id AND m.status = 'active'
-         JOIN ai_provider p ON p.provider_id = m.provider_id AND p.kind = 'anthropic' AND p.status = 'active'
-        WHERE r.use_case_id = $1 AND r.route_id <> $2 AND r.model_id IN ('an:claude-haiku-5-5','an:claude-sonnet-5-5')
-          AND r.status = 'APPROVED' ORDER BY r.version DESC LIMIT 1`, [uc, baseline?.active_route_id]);
+         JOIN ai_eval_run e ON e.run_id = r.tested_eval_run_id AND e.route_id = r.route_id AND e.status = 'passed' AND e.real_provider
+         JOIN ai_model m ON m.model_id = r.model_id AND m.status = 'active' AND m.modality = 'text'
+         JOIN ai_provider p ON p.provider_id = m.provider_id AND p.kind = 'openai' AND p.status = 'active'
+        WHERE r.use_case_id = $1 AND r.route_id <> $2 AND p.real_data = 'allowed'
+          AND p.terms_verified_at IS NOT NULL AND p.real_data_basis IS NOT NULL
+          AND r.params->>'fallback_route_id' IS NULL
+          AND r.status = 'APPROVED' AND r.approved_by IS NOT NULL AND r.approved_at IS NOT NULL
+        ORDER BY r.version DESC LIMIT 1`, [uc, baseline?.active_route_id]);
     if (!baseline?.active_route_id || baseline.canary_route_id || !alternate) {
-      blocked('E04 canary/rollback: no hay alternativa directa previamente evaluada y aprobada, o existe un canary ajeno; no se aprueba, activa ni simula una alternativa');
+      blocked('E04 canary/rollback: no hay alternativa textual OpenAI directa previamente evaluada y aprobada, o existe un canary ajeno; no se aprueba, activa ni simula una alternativa');
     } else {
-      say(`   alternativa directa ${alternate.model_id}, evaluación real ${alternate.run_id}; baseline ${baseline.active_route_id}`);
+      say(`   alternativa OpenAI directa ${alternate.model_id}, evaluación real ${alternate.run_id}; baseline ${baseline.active_route_id}`);
       const rollout = async (action: string, reason: string, expectedActive: string, expectedCanary: string | null) => {
         await eng.locator('#ro-act').selectOption(action);
         if (action === 'canary') { await eng.locator('#ro-route').selectOption(alternate.route_id); await eng.locator('#ro-pct').fill('20'); }
@@ -565,18 +608,18 @@ async function main(): Promise<void> {
         await eng.getByText('Prompt Studio').waitFor();
       };
       try {
-        await rollout('canary', 'QS0017 comparar alternativa directa ya evaluada al veinte por ciento', baseline.active_route_id, alternate.route_id);
+        await rollout('canary', 'DEC-0073 comparar alternativa OpenAI directa ya evaluada y aprobada al veinte por ciento', baseline.active_route_id, alternate.route_id);
         await shot(eng, 'eng-01-canary-directo', true);
-        await rollout('promote', 'QS0017 promover alternativa directa evaluada para demostrar rollback real', alternate.route_id, null);
-        await rollout('rollback', 'QS0017 restaurar ruta directa inicial después del canary', baseline.active_route_id, null);
+        await rollout('promote', 'DEC-0073 promover alternativa OpenAI directa evaluada para demostrar rollback real', alternate.route_id, null);
+        await rollout('rollback', 'DEC-0073 restaurar ruta OpenAI directa inicial después del canary', baseline.active_route_id, null);
       } finally {
         const current = await one<{ active_route_id: string; canary_route_id: string | null }>('SELECT active_route_id, canary_route_id FROM ai_rollout WHERE use_case_id = $1 AND environment = $2', [uc, 'lab']);
-        if (current?.active_route_id === alternate.route_id) await rollout('rollback', 'QS0017 recuperar baseline directo tras interrupción', baseline.active_route_id, null);
-        else if (current?.canary_route_id === alternate.route_id) await rollout('clear_canary', 'QS0017 retirar canary directo tras interrupción', baseline.active_route_id, null);
+        if (current?.active_route_id === alternate.route_id) await rollout('rollback', 'DEC-0073 recuperar baseline OpenAI directo tras interrupción', baseline.active_route_id, null);
+        else if (current?.canary_route_id === alternate.route_id) await rollout('clear_canary', 'DEC-0073 retirar canary OpenAI directo tras interrupción', baseline.active_route_id, null);
       }
       await shot(eng, 'eng-03-canary-rollback-historial', true);
       const evs = (await pool.query<{ action: string }>(`SELECT action FROM ai_rollout_event WHERE use_case_id = $1 AND environment = 'lab' AND rollout_version > $2 ORDER BY rollout_version`, [uc, baseline.version])).rows.map((r) => r.action);
-      check(evs.join(',') === 'canary,promote,rollback', 'E04 canary directo 20 %, promoción y rollback auditados; baseline restaurado sin redeploy');
+      check(evs.join(',') === 'canary,promote,rollback', 'E04 canary OpenAI directo 20 %, promoción y rollback auditados; baseline restaurado sin redeploy');
     }
     completed = true;
   } finally {
