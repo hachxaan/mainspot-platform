@@ -1,0 +1,24 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+# Registrado a posteriori el 2026-11-03 (RUN-0022) a partir de la evidencia local de la ejecución:
+# la publicación de QS-0016 se hizo y se versionó en 878f7de, pero su registro de ejecución faltaba.
+schema: skill-run/v1
+run_id: RUN-0021
+skill_id: canonflow-human-decision-console
+mode: generate
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  Publish the AI Core HDC session (issue #9): approval of canon AI Core 0.2.0, Jev primary scope, real data to
+  TypeSafe (DEC-0019) and generative AI budget. Publication only: no answer is written or inferred, no DEC.
+  Service stopped during the publication window (HDC-0007); stamped publish (HDC-0009); compatibility views (HDC-0006).
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: ad7287c
+inputs:
+  - "docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-CANON-PROPOSAL.md sha256 f129b92b2b6e7926babd6790d01e5b75dbdb4cea7e0d374405c6d60c3642f6a7"
+expected_outputs:
+  - .canonflow/decision-sessions/pending/QS-0016.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow/skill-runs/RUN-0021.skill-report.yaml
+created_at: "2026-10-30T14:31:00Z"

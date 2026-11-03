@@ -216,23 +216,32 @@
     },
     {
       "question_session_id": "QS-0016",
-      "state": "PENDING",
+      "state": "ANSWERED",
       "generated_at": "2026-10-30T14:32:11Z",
       "records": [],
-      "session_label": "AI Core: canon, Jev primario, datos reales y presupuesto de IA"
+      "answered_at": "2026-11-03T04:56:44Z",
+      "session_label": "AI Core: canon, Jev primario, datos reales y presupuesto de IA",
+      "answer_session_id": "ANS-0016"
+    },
+    {
+      "question_session_id": "QS-0017",
+      "state": "PENDING",
+      "generated_at": "2026-11-03T05:03:37Z",
+      "records": [],
+      "session_label": "Corrección de QS-0016: AI Core, Jev primario, datos reales y presupuesto de IA"
     }
   ],
   "counters": {
-    "qs": 16,
-    "ans": 15,
+    "qs": 17,
+    "ans": 16,
     "dec": 65,
     "apr": 2,
     "rsk": 0
   },
-  "latest": "QS-0016",
+  "latest": "QS-0017",
   "reconstructed": {
-    "at": "2026-10-30T14:32:11Z",
-    "by": "RUN-0021 (canonflow-human-decision-console)",
+    "at": "2026-11-03T05:05:00Z",
+    "by": "RUN-0022 (canonflow-human-decision-console)",
     "source": "artifacts+lifecycle+legacy-snapshots; state = evidence-derived effective state",
     "preserved": true
   }

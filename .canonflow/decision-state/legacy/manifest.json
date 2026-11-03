@@ -580,6 +580,41 @@
       "original_path": ".canonflow/decision-state/latest.json",
       "sha256": "1a7a9808f6333bfbe8feca6de92b4f8a6f179fe68e57a52f9a3c0b2b7b045dd3",
       "snapshot_path": ".canonflow/decision-state/legacy/latest.json.1a7a9808f6333bfbe8feca6de92b4f8a6f179fe68e57a52f9a3c0b2b7b045dd3.json"
+    },
+    {
+      "bytes": 6829,
+      "captured_at": "2026-11-03T04:56:45Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "af520ee4f7ffab9564dfe9ef013d508eee123fd7f765c61fd8df513fd25a3e2f",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.af520ee4f7ffab9564dfe9ef013d508eee123fd7f765c61fd8df513fd25a3e2f.json"
+    },
+    {
+      "bytes": 237,
+      "captured_at": "2026-11-03T04:56:45Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "643b70a479ebb3a243e82b928991ea5d77021defab7da5882d24ab96498196f0",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.643b70a479ebb3a243e82b928991ea5d77021defab7da5882d24ab96498196f0.json"
+    },
+    {
+      "bytes": 6829,
+      "captured_at": "2026-11-03T05:03:38Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "4c9b96141187745400e9c7a245e60e14d01a4d513b004ac38a969230f8610841",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.4c9b96141187745400e9c7a245e60e14d01a4d513b004ac38a969230f8610841.json"
+    },
+    {
+      "bytes": 7043,
+      "captured_at": "2026-11-03T05:05:03Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "39b759270f73abacf314609be06a427e3a65258693712d0743c5838fa683f910",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.39b759270f73abacf314609be06a427e3a65258693712d0743c5838fa683f910.json"
+    },
+    {
+      "bytes": 88,
+      "captured_at": "2026-11-03T05:05:03Z",
+      "original_path": ".canonflow/decision-state/latest.json",
+      "sha256": "735be91819bc6437ab155a83383cc7321c364c74ba21ede8d446e37fbccdc85d",
+      "snapshot_path": ".canonflow/decision-state/legacy/latest.json.735be91819bc6437ab155a83383cc7321c364c74ba21ede8d446e37fbccdc85d.json"
     }
   ],
   "schema_version": 1,

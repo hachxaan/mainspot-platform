@@ -1,0 +1,33 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+# Registrado a posteriori el 2026-11-03 (RUN-0022) a partir de la evidencia local de RUN-0021.
+schema: skill-report/v1
+report_id: SRP-0021
+run_id: RUN-0021
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: Publication of QS-0016 (PENDING). No answer, no ingestion, no DEC, no production change.
+created_at: "2026-11-03T05:08:00Z"
+evidence:
+  - .canonflow/skill-runs/RUN-0021/evidence/QS-aicore.input.json
+  - .canonflow/skill-runs/RUN-0021/evidence/EV-0001-publish-session.txt
+  - .canonflow/skill-runs/RUN-0021/evidence/EV-0002-compat-views.txt
+  - .canonflow/skill-runs/RUN-0021/evidence/EV-0003-hdc-live-session.txt
+human_summary: |
+  QS-0016 published on 2026-10-30 with the canon AI Core 0.2.0 approval bound to AI-CORE-CANON-PROPOSAL.md,
+  Jev primary scope, real data to TypeSafe and generative AI budget. The run record was missing and is
+  registered afterwards from the local evidence; the published file is in commit 878f7de.
+claims:
+  - class: VERIFIED
+    statement: "publish_exit=0, QS-0016 in pending/; service stopped 14:32:11Z-14:32:13Z; live API QS-0016 declared/effective PENDING, can_answer=true, no diagnostics."
+    evidence: [.canonflow/skill-runs/RUN-0021/evidence/EV-0001-publish-session.txt, .canonflow/skill-runs/RUN-0021/evidence/EV-0003-hdc-live-session.txt]
+  - class: VERIFIED
+    statement: "Compatibility views --run RUN-0021: qs 16 · ans 15 · dec 65 · apr 2, latest QS-0016 PENDING; pending_human [QS-0015, QS-0016]."
+    evidence: [.canonflow/skill-runs/RUN-0021/evidence/EV-0002-compat-views.txt]
+limitations:
+  - "Run record registered after the fact (2026-11-03) from local evidence; the evidence directory is local (not versioned), as for previous runs."
+outputs:
+  - .canonflow/decision-sessions/pending/QS-0016.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml
+next_pointer: "Superseded by RUN-0022: the owner answered QS-0016 (ANS-0016) by mistake; QS-0017 corrects it"

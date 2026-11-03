@@ -1,0 +1,30 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0022
+skill_id: canonflow-human-decision-console
+mode: generate
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  The owner answered QS-0016 (ANS-0016, 2026-11-03T04:56:44Z) and then reported that the answers were mistaken
+  and asked to regenerate QS-0016. A published QS and its ANS are immutable and admit a single canonical answer
+  (CANONFLOW_HDC_DEFINITION §5.2-§5.3), so the correction is a new session, QS-0017, with
+  supersedes_question_session_id QS-0016, the previous answer and its purpose stated, and the same questions and
+  options. ANS-0016 is not ingested and produces no DEC/APR. Publication only: no answer is written or inferred.
+  Service stopped during the publication window (HDC-0007); stamped publish (HDC-0009); compatibility views (HDC-0006).
+  Also registers the missing RUN-0021 record (publication of QS-0016) from its local evidence.
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: cf70bc1
+inputs:
+  - ".canonflow/decision-sessions/pending/QS-0016.questions.json sha256 2100a49bcc5134547074da7ddfdeb4cacb1034c33a83b44beb15e8eccb0ff85c"
+  - ".canonflow/decision-sessions/answered/QS-0016.answers.json (ANS-0016, local, not versioned)"
+  - "docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-CANON-PROPOSAL.md sha256 f129b92b2b6e7926babd6790d01e5b75dbdb4cea7e0d374405c6d60c3642f6a7"
+expected_outputs:
+  - .canonflow/decision-sessions/pending/QS-0017.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow/skill-runs/RUN-0021.skill-run.yaml
+  - .canonflow/skill-runs/RUN-0021.skill-report.yaml
+  - .canonflow/skill-runs/RUN-0022.skill-report.yaml
+created_at: "2026-11-03T05:02:00Z"

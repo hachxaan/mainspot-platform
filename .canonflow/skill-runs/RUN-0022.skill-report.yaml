@@ -1,0 +1,43 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0022
+run_id: RUN-0022
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: Publication of QS-0017 (PENDING), correction of QS-0016. No answer, no ingestion, no DEC, no production change.
+created_at: "2026-11-03T05:08:00Z"
+evidence:
+  - .canonflow/skill-runs/RUN-0022/evidence/QS-correccion-0016.input.json
+  - .canonflow/skill-runs/RUN-0022/evidence/EV-0001-publish-session.txt
+  - .canonflow/skill-runs/RUN-0022/evidence/EV-0002-compat-views.txt
+  - .canonflow/skill-runs/RUN-0022/evidence/EV-0003-hdc-live-session.txt
+  - .canonflow/skill-runs/RUN-0022/evidence/EV-0004-final-validation.txt
+human_summary: |
+  QS-0017 republishes the QS-0016 questions for the owner to answer again. Same question ids, types, titles,
+  options and recommendations; the canon approval stays bound to AI-CORE-CANON-PROPOSAL.md (unchanged bytes).
+  Differences: session_label, intervention_reason (states it is a correction, lists the ANS-0016 answers and that
+  ANS-0016 is not ingested), decision_impact, supersedes_question_session_id QS-0016, and the full_explanation of
+  Q-JEV-PRIMARY-SCOPE (lab state of Jev on comments/reviews for synthetic tenants) and Q-AI-BUDGET (OpenRouter spend
+  USD 0.097 of 25) updated with facts from 2026-10-30. generated_at stamped at publication (HDC-0009).
+  ANS-0016 stays in place as immutable evidence without effect; pending_human now lists QS-0015 and QS-0017.
+claims:
+  - class: VERIFIED
+    statement: "Published QS-0017 sha256 cd21847b1408243406d86b8b63bbed85606998a08cce2be00c5d8811c20949f5; v2 profile, 0 schema and 0 cross-rule errors; supersedes QS-0016; artifact_binding = proposal sha256 f129b92b…; no preselection; same ids/titles/options as QS-0016."
+    evidence: [.canonflow/skill-runs/RUN-0022/evidence/EV-0001-publish-session.txt, .canonflow/skill-runs/RUN-0022/evidence/EV-0004-final-validation.txt]
+  - class: VERIFIED
+    statement: "Compatibility views --run RUN-0022: qs 17 · ans 16 · dec 65 · apr 2, latest QS-0017 PENDING; pending_human [QS-0015, QS-0017]; after restart ready, writes_enabled=true; live API QS-0017 declared/effective PENDING, can_answer=true, no diagnostics; HTTPS 200."
+    evidence: [.canonflow/skill-runs/RUN-0022/evidence/EV-0002-compat-views.txt, .canonflow/skill-runs/RUN-0022/evidence/EV-0003-hdc-live-session.txt]
+  - class: VERIFIED
+    statement: "No answers file and no decision record were created; ANS-0016 was not modified, moved or ingested."
+limitations:
+  - "The publish step ran with the service stopped and the compatibility views in a second stop window (05:05:00Z-05:05:08Z); between both, the console showed QS-0017 without updated index.json/latest.json."
+  - "QS-0016 keeps the diagnostics DECLARED_STATE_CONFLICT (HDC-0008, known false warning) and QS_FOLDER_MISMATCH (answered QS still in pending/) until the ingestion of QS-0017 archives it with a SUPERSEDES link."
+  - "The canon proposal must stay byte-identical until the owner submits QS-0017 (approval binding re-verified at submit)."
+outputs:
+  - .canonflow/decision-sessions/pending/QS-0017.questions.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/state/method-state.yaml
+  - .canonflow/skill-runs/RUN-0021.skill-run.yaml
+  - .canonflow/skill-runs/RUN-0021.skill-report.yaml
+next_pointer: "Owner answers QS-0017 in the HDC; then RUN ingest of ANS for QS-0017 only, archiving QS-0016 as superseded (ANS-0016 without effect)"
