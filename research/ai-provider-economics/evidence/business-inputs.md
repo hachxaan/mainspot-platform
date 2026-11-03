@@ -93,10 +93,10 @@ Fórmula: `cobro = (%tarifa × monto + cuota_fija) × (1 + 0.16)` cuando la tari
 | Openpay tarjeta internacional | (20.50 + 0) × 1.16 | MXN 23.78 | 4.76 % | 5.52 % |
 | Openpay SPEI | (8.00 + 0) × 1.16 | MXN 9.28 | 1.86 % | 2.15 % |
 
-Para MXN 1,000 y MXN 2,000 la parte porcentual escala y la cuota fija se diluye (ej. Stripe nacional: MXN 39.72 y 70.44; Openpay: MXN 34.44 y 64.16; ESTIMACIÓN con la misma fórmula).
+Para MXN 1,000 y MXN 2,000 la parte porcentual escala y la cuota fija se diluye (misma fórmula, sobre el precio al público: Stripe nacional **MXN 45.24 y 87.00**; Openpay nacional **MXN 36.54 y 70.18**; ESTIMACIÓN). *Corrección del 2026-11-03 (integrador): una versión anterior de esta línea daba 39.72/70.44 y 34.44/64.16, valores inconsistentes con la fórmula documentada; se sustituyen por los derivados de la fórmula.*
 
 Lecturas para el modelo:
-1. **Rango de comisión realista: 3.9 %–5.5 %** del precio al público con tarjeta nacional (ESTIMACIÓN a partir de tarifas verificadas). En MXN 500 eso es **MXN 19.7–27.3 por cliente/mes** (USD 1.05–1.45 al FIX).
+1. **Rango de comisión realista con tarjeta nacional: 3.9 %–4.9 %** del precio al público (ESTIMACIÓN a partir de tarifas verificadas). En MXN 500 eso es **MXN 19.7–24.4 por cliente/mes** (USD 1.05–1.30 al FIX); con tarjeta internacional sube hasta ~5.5 % (MXN 27.3).
 2. OXXO cuesta ~1–2 puntos porcentuales más y tiene fricción de "pago en tienda"; para cobro recurrente de suscripciones conviene priorizar tarjeta guardada + SPEI como respaldo.
 3. **Openpay es la más barata en tarjeta nacional** en tarifas publicadas; Stripe agrega ecosistema (Billing/suscripciones, Smart Retries, dunning) que reduce el churn involuntario — el comparativo de costo total debe incluir el valor del dunning (ver §7, Recurly: churn involuntario 1.30 % anual en el tramo USD 10–25 ARPC).
 4. Cobros internacionales (tarjeta extranjera) pagan +0.5 % (Stripe) o 4.10 % flat (Openpay). Para clientes mexicanos, mezcla esperada de tarjetas nacionales dominante → modelar mix (HIPÓTESIS: 85 % nacional / 15 % internacional).

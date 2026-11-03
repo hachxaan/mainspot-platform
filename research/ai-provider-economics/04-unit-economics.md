@@ -239,6 +239,6 @@ Presupuesto variable por plan (neto − PSP − infra): MXN 500 → **$21.76**; 
 | Tasa de reparación de Sol/Terra/Sonnet y del esquema aplanado de ediciones en Anthropic | Correr las suites del catálogo con esos modelos; registrar `validation.first_errors` |
 | Efecto de caché real | Habilitar `cache_control` en el dispatcher y medir `usage` antes/después (hoy el dispatcher no lo envía) |
 | Frecuencias reales de uso por cliente | Cohortes del piloto; sustituir las HIPÓTESIS de §3 por datos observados |
-| Discrepancia PSP en business-inputs (tabla cita MXN 34.44 para plan 1,000; la fórmula documentada da 36.54) | Confirmar con la calculadora oficial de Openpay; este modelo usa la fórmula §3.1 |
+| Discrepancia PSP en business-inputs (tabla cita MXN 34.44 para plan 1,000; la fórmula documentada da 36.54) | **CERRADO 2026-11-03**: business-inputs.md §3.2 corregido por el integrador con los valores derivados de la fórmula (Stripe 45.24/87.00; Openpay 36.54/70.18); este modelo ya usaba la fórmula, por lo que sus resultados no cambian |
 | Costo por imagen 2K/4K de gpt-image-2 y consumo de gpt-image-2.5-* | Calculadora interactiva en navegador o una medición real leyendo `usage.output_tokens` |
 | Sensibilidad thinking/effort por perfil (Anthropic directo; Sol `medium`) | Medir `usage.output_tokens` real con effort medium vs none/low |
