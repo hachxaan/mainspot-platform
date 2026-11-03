@@ -210,10 +210,17 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
       engagement_backlog: (await q(`SELECT count(*) FILTER (WHERE state = 'received') AS received, count(*) FILTER (WHERE state = 'retry_pending') AS retry, count(*) FILTER (WHERE state = 'needs_human') AS human FROM engagement_case`))[0],
       scheduler_backlog: (await q(`SELECT count(*) FILTER (WHERE status = 'scheduled' AND publish_at < now()) AS overdue, count(*) FILTER (WHERE status = 'uncertain') AS uncertain FROM scheduled_post`))[0],
       budgets: await q(`SELECT scope, tenant_id, limit_usd, source, updated_at FROM ai_budget ORDER BY scope`),
+      // DEC-0068: techo acumulado de IA generativa (incluye el historial de OpenRouter); TypeSafe va aparte (DEC-0032).
       spend: (await q(`SELECT COALESCE(sum(COALESCE(cost_usd, reserved_usd)) FILTER (WHERE created_at >= date_trunc('day', now())), 0) AS today,
                               COALESCE(sum(COALESCE(cost_usd, reserved_usd)) FILTER (WHERE created_at >= date_trunc('month', now())), 0) AS month,
                               COALESCE(sum(COALESCE(cost_usd, reserved_usd)), 0) AS lab_total
-                         FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id WHERE p.kind = 'openrouter'`))[0],
+                         FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
+                        WHERE p.kind IN ('anthropic','openai','openrouter') AND i.status IN ('running','succeeded','failed')`))[0],
+      spend_by_provider: await q(`SELECT p.provider_id, p.display_name, p.status, i.cost_source, COALESCE(sum(COALESCE(i.cost_usd, i.reserved_usd)), 0) AS usd, count(*) AS n
+                                    FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
+                                   WHERE p.kind IN ('anthropic','openai','openrouter','typesafe') AND i.status IN ('running','succeeded','failed')
+                                   GROUP BY 1,2,3,4 ORDER BY 1,4`),
+      providers: await q(`SELECT provider_id, display_name, kind, status, real_data, real_data_basis, terms_verified_at, (secret_ref IS NOT NULL) AS needs_secret FROM ai_provider ORDER BY provider_id`),
     });
   }));
 

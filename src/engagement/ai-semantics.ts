@@ -12,6 +12,7 @@
 
 import type { AiDispatcher } from '../ai/dispatcher.ts';
 import { replyViolations, type ReplyOutput } from '../ai/contracts.ts';
+import { redactContactData } from '../ai/minimize.ts';
 import type { Answer, ChoiceAnswer, NoulAnswer } from '../jev/types.ts';
 import type { Classification, EngagementCategory, InfoTopic } from './classifier.ts';
 import type { CaseRow } from './service.ts';
@@ -74,7 +75,7 @@ export class AiEngagementSemantics implements EngagementSemantics {
     const res = await this.dispatcher.invokeClassification(uc, {
       requestId: `eng_${row.case_id}`, idempotencyKey: `case:${row.case_id}:read`, tenantId: row.tenant_id, actorId: 'system:engagement-agent',
       actorKind: 'system', origin: 'engagement.case', consentRef: null,
-    }, { message: row.body, ...(row.rating ? { rating_stars: row.rating } : {}) });
+    }, { message: redactContactData(row.body), ...(row.rating ? { rating_stars: row.rating } : {}) });
     if (!res.ok) return { ok: false, source: res.code === 'blocked_external' ? 'blocked_external' : 'unavailable' };
     return { ok: true, invocationId: res.invocationId, ...toClassification(res.output.answers) };
   }
@@ -87,7 +88,7 @@ export class AiEngagementSemantics implements EngagementSemantics {
       actorKind: 'system', origin: 'engagement.case',
     }, {
       facts, reading: { sentiment: c.sentiment, category: c.category, risks: c.risk_flags },
-      author: row.author_label || 'cliente', rating: row.rating ? String(row.rating) : 'n/a', message: row.body,
+      author: row.author_label || 'cliente', rating: row.rating ? String(row.rating) : 'n/a', message: redactContactData(row.body),
     }, { domainCheck: (out) => replyViolations(out) });
     if (!res.ok) return null;
     return { text: res.output.reply, needsHuman: res.output.needs_human, invocationId: res.invocationId };

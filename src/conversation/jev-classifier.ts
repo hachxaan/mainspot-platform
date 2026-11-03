@@ -32,7 +32,7 @@ import { readFileSync } from 'node:fs';
 import { ContractError, JevClient, JevHttpError, type SystemOneResult } from '../jev/client.ts';
 import { choice } from '../jev/helpers.ts';
 import { QuestionValidationError, type Answer } from '../jev/types.ts';
-import type { JevConfig } from '../shared/config.ts';
+import type { JevConfig, JevDataScope } from '../shared/config.ts';
 import { log } from '../shared/logger.ts';
 import type { ActionClass, CapabilityTarget, ClassificationResult } from './intents.ts';
 import type {
@@ -461,6 +461,8 @@ export interface JevClassifierDeps {
   client: JevClient;
   store: JevClassificationStore;
   mode: 'shadow' | 'primary';
+  /** `all`: cualquier negocio (DEC-0067); `synthetic`: solo `syntheticTenants`. */
+  dataScope: JevDataScope;
   syntheticTenants: readonly string[];
   budget: JevBudget;
   gate: JevPrimaryGate;
@@ -473,7 +475,8 @@ export class JevClassifier {
   readonly mode: 'shadow' | 'primary';
   private readonly client: JevClient;
   private readonly store: JevClassificationStore;
-  private readonly tenants: ReadonlySet<string>;
+  /** null ⇒ alcance `all` (DEC-0067). */
+  private readonly tenants: ReadonlySet<string> | null;
   private readonly budget: JevBudget;
   private readonly gate: JevPrimaryGate;
   private readonly now: () => Date;
@@ -487,7 +490,7 @@ export class JevClassifier {
     this.mode = deps.mode;
     this.client = deps.client;
     this.store = deps.store;
-    this.tenants = new Set(deps.syntheticTenants);
+    this.tenants = deps.dataScope === 'all' ? null : new Set(deps.syntheticTenants);
     this.budget = deps.budget;
     this.gate = deps.gate;
     this.now = deps.now ?? (() => new Date());
@@ -496,7 +499,7 @@ export class JevClassifier {
   /** Nunca lanza: cualquier fallo inesperado deja la decisión al determinista. */
   async decide(input: JevDecideInput): Promise<JevDecision> {
     const passthrough = (audit: string): JevDecision => ({ classification: input.deterministic, source: 'deterministic', audit, ...NO_RECORD });
-    if (!this.tenants.has(input.tenantId)) return passthrough(';jev_skipped=data_scope');
+    if (this.tenants && !this.tenants.has(input.tenantId)) return passthrough(';jev_skipped=data_scope');
     try {
       if (this.mode === 'shadow') return this.shadow(input, 'shadow');
       const gate = await this.gate.state();
@@ -699,6 +702,7 @@ export function createJevClassifier(jev: JevConfig, store: JevClassificationStor
     client,
     store,
     mode: jev.mode,
+    dataScope: jev.dataScope,
     syntheticTenants: jev.syntheticTenants,
     budget: new JevBudget(store, jev.dailyBudgetUsd),
     gate: new JevPrimaryGate(store, client.defaultModel, {

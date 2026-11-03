@@ -154,7 +154,7 @@ export interface JevGateBinding {
 
 /** Consultas que necesitan el gate (D4) y el presupuesto (D5). */
 export interface JevLedgerStore {
-  /** USD gastados en el día UTC `day` (YYYY-MM-DD): clasificaciones + evaluaciones. */
+  /** USD DEC-0032 en el día UTC `day`: clasificaciones, evaluaciones y AI Core TypeSafe. */
   spentOn(day: string): Promise<number>;
   /**
    * Última evaluación para la política y los bytes ligados cuyo modelo es `model`: pedida
@@ -222,7 +222,12 @@ export class JevRepository implements JevClassificationStore {
   async spentOn(day: string): Promise<number> {
     const res = await this.pool.query<{ spent: string }>(
       `SELECT (COALESCE((SELECT SUM(cost_usd) FROM jev_classification WHERE budget_day = $1), 0)
-             + COALESCE((SELECT SUM(cost_usd) FROM jev_evaluation_run WHERE budget_day = $1), 0))::text AS spent`,
+             + COALESCE((SELECT SUM(cost_usd) FROM jev_evaluation_run WHERE budget_day = $1), 0)
+             + COALESCE((SELECT SUM(i.cost_usd) FROM ai_invocation i
+                           JOIN ai_provider p ON p.provider_id = i.provider_id
+                          WHERE p.kind = 'typesafe'
+                            AND i.created_at >= ($1::date::timestamp AT TIME ZONE 'UTC')
+                            AND i.created_at < (($1::date + 1)::timestamp AT TIME ZONE 'UTC')), 0))::text AS spent`,
       [day],
     );
     return Number(res.rows[0]?.spent ?? 0);

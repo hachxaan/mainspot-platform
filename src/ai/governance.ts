@@ -1,19 +1,27 @@
 /**
  * Gates previos a cualquier llamada de IA (BR-0007, NFR-0006):
- *  - Política de datos: proveedores reales solo con AI_REAL_PROVIDERS=on, secreto configurado y
- *    negocio `synthetic` (o evaluación de plataforma sin negocio). Negocios `real` ⇒ BLOCKED_EXTERNAL
- *    hasta una decisión de privacidad (QS-0016 / DEC-0019).
- *  - Presupuesto: reserva del costo máximo de la ruta bajo un candado global; la suma de lo gastado
- *    (costo real) + lo reservado (en curso) no puede superar ningún límite aplicable.
+ *  - Política de datos (DEC-0067, DEC-0071): proveedores reales solo con AI_REAL_PROVIDERS=on y
+ *    secreto configurado. Un negocio `synthetic` puede usar cualquier proveedor activo; un negocio
+ *    `real` solo los proveedores con cobertura contractual verificada (`ai_provider.real_data =
+ *    'allowed'`, con fecha y base documental). Sin verificación ⇒ BLOCKED_EXTERNAL solo para ese
+ *    proveedor; las demás capacidades siguen.
+ *  - Presupuesto (DEC-0068): reserva del costo máximo de la ruta bajo un candado global; la suma de lo
+ *    gastado (costo real o estimado) + lo reservado (en curso) no puede superar ningún límite. El techo
+ *    del laboratorio es acumulado e incluye el consumo histórico (OpenRouter). TypeSafe va aparte (DEC-0032).
  */
 
 import type { PoolClient, Pool } from 'pg';
 import type { AppConfig } from '../shared/config.ts';
 import type { ProviderRow } from './registry.ts';
 
-export type PolicyDecision = { allowed: true; dataScope: 'internal' | 'synthetic_tenant' | 'platform_synthetic' } | { allowed: false; reason: 'real_providers_disabled' | 'tenant_data_real' | 'tenant_inactive' | 'secret_missing' | 'provider_disabled' };
+export type PolicyDecision =
+  | { allowed: true; dataScope: 'internal' | 'synthetic_tenant' | 'real_tenant' | 'platform_synthetic' }
+  | { allowed: false; reason: 'real_providers_disabled' | 'provider_terms_unverified' | 'tenant_inactive' | 'secret_missing' | 'provider_disabled' };
 
-export const DATA_POLICY_VERSION = 'ai-data-policy-v1:synthetic-only';
+export const DATA_POLICY_VERSION = 'ai-data-policy-v2:verified-providers';
+
+/** Proveedores con cargo propio que cuentan para el techo de IA generativa (DEC-0068). */
+export const PAID_PROVIDER_KINDS = ['anthropic', 'openai', 'openrouter'] as const;
 
 export async function checkDataPolicy(pool: Pool | PoolClient, config: Pick<AppConfig, 'aiRealProviders'>, provider: ProviderRow, tenantId: string | null): Promise<PolicyDecision> {
   if (provider.status !== 'active') return { allowed: false, reason: 'provider_disabled' };
@@ -24,17 +32,18 @@ export async function checkDataPolicy(pool: Pool | PoolClient, config: Pick<AppC
   const r = await pool.query<{ data_classification: string; status: string }>('SELECT data_classification, status FROM client WHERE client_id = $1', [tenantId]);
   const row = r.rows[0];
   if (!row || row.status !== 'active') return { allowed: false, reason: 'tenant_inactive' };
-  if (row.data_classification !== 'synthetic') return { allowed: false, reason: 'tenant_data_real' };
-  return { allowed: true, dataScope: 'synthetic_tenant' };
+  if (row.data_classification === 'synthetic') return { allowed: true, dataScope: 'synthetic_tenant' };
+  if (provider.real_data !== 'allowed') return { allowed: false, reason: 'provider_terms_unverified' };
+  return { allowed: true, dataScope: 'real_tenant' };
 }
 
 export interface BudgetLimit { scope: 'lab_total' | 'platform_month' | 'tenant_day'; limitUsd: number; spentUsd: number }
 export type BudgetDecision = { allowed: true; limits: BudgetLimit[] } | { allowed: false; limits: BudgetLimit[]; exceeded: BudgetLimit['scope'] };
 
-/** Gasto efectivo: costo real de lo terminado + reserva de lo que sigue en curso. Solo proveedores de pago (OpenRouter). */
-const SPENT_SQL = `SELECT COALESCE(SUM(CASE WHEN i.status = 'running' THEN i.reserved_usd ELSE COALESCE(i.cost_usd, i.reserved_usd) END), 0) AS spent
+/** Gasto efectivo: costo (reportado o estimado) de lo terminado + reserva de lo que sigue en curso, de proveedores de pago. */
+export const SPENT_SQL = `SELECT COALESCE(SUM(CASE WHEN i.status = 'running' THEN i.reserved_usd ELSE COALESCE(i.cost_usd, i.reserved_usd) END), 0) AS spent
   FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
- WHERE p.kind = 'openrouter' AND i.status IN ('running','succeeded','failed')`;
+ WHERE p.kind IN ('anthropic','openai','openrouter') AND i.status IN ('running','succeeded','failed')`;
 
 /**
  * Comprueba y deja el candado tomado: el llamador inserta la invocación `running` con `reserved_usd`

@@ -6,6 +6,37 @@
 **Ejecución:** SOL MAIN / OMP, GPT-6.1 Sol, documentación canónica funcional → técnica → implementación → QA real.  
 **Estado de este documento:** orden de ejecución para desarrollar toda la capacidad; NO certifica que el E2E ya exista ni concede permisos para alterar cuentas, pagar anuncios o enviar datos reales a proveedores nuevos.
 
+### Actualización aprobada — 2026-11-03 (QS-0017 / ANS-0017)
+
+APR-0003 aprueba el artefacto de canon 0.2.0; el delta 0.3.0 incorpora DEC-0066…DEC-0071. Ambos textos
+del propietario se conservan literalmente en APR-0003 y DEC-0072. QS-0016 queda sin efecto, sustituida
+por QS-0017. Este apartado prevalece sobre las restricciones históricas del baseline y el G0 original.
+
+Plan vigente, **sin reconstruir los componentes funcionales F0–F5 ya entregados**:
+
+1. **Ingesta y canon:** preservar respuestas y notas, publicar DEC/APR y actualizar los 16 items AI Core a
+   `DECIDED`. Mantener el resto de la baseline en su estado propio; esta aprobación no cierra otros deltas.
+2. **Cobertura única de datos:** aplicar DEC-0067/0071 por proveedor; ver
+   `docs/architecture/ai-providers-data-terms.md`. MCA/DPA de TypeSafe cubren la clasificación prevista;
+   no se asume ZDR ni un plazo numérico de retención. No pedir aprobación por mensaje, negocio o
+   despliegue. Solo una incompatibilidad material nueva restringe el tratamiento afectado.
+3. **Corte operativo directo:** TypeSafe/Jev fijado y con gates por capacidad; Anthropic Messages para
+   texto/razonamiento; OpenAI Images con `gpt-image-2`. Retirar proveedor, modelos y rollouts OpenRouter,
+   sin borrar su consumo, evaluaciones o trazas históricos. Ningún fallback intermediado.
+4. **Gobernanza existente:** conservar selección granular de prompt/modelo/parámetros, evaluaciones,
+   aprobación técnica, canary/rollback, RBAC y límites. USD 25 **acumulados**, incluido el historial de
+   IA generativa; TypeSafe sigue bajo DEC-0032 (USD 1/día). No hay presupuesto mensual recurrente ni Ads
+   aprobado. AI Core usa claves API propias y no depende de OMP.
+5. **Verificación directa:** probar acceso autenticado y generación, no inferir disponibilidad por OMP o
+   por un GET del catálogo. Solo activar rutas cuya evaluación directa pase. Ejercitar navegador por
+   `https://app.mainspot.local.io`; conservar evidencia previa como histórica. Si falta saldo/cuota,
+   terminar lo independiente y reportar el endpoint/código exacto sin certificar generación.
+6. **Cierre por capacidad:** actualizar estado, evidencia, documentación e issue #9. No abrir HDC para
+   decisiones técnicas ordinarias ya autorizadas. Meta/Google/Telegram y gasto publicitario conservan
+   sus autorizaciones y pruebas externas pendientes.
+
+Seguimiento: `.canonflow/increments/INC-0008.md` y `.canonflow/state/implementation-state.yaml`.
+
 ## 0. Misión y no negociables
 
 Convertir MainSpot en una plataforma de presencia digital **operada transversalmente por IA** para propietarios de micronegocios sin conocimientos técnicos. El cliente trata con **un solo asistente** mediante panel, Telegram y otros canales autorizados; la implementación despacha a capacidades especializadas con prompts, modelos y presupuestos independientes. Jev es el **clasificador semántico primario** para mensajes y eventos de texto (intención, sentimiento, categoría y necesidades de atención), no un generador ni un motor de autorización.
@@ -110,7 +141,7 @@ Admin central consulta clientes/planes/consumos/health y atiende incidentes sin 
 
 ## 6. Riesgos y gates obligatorios
 
-**G0 — privacidad y autorización**: registrar en canon Jev PRIMARY como decisión explícita nueva; resolver DEC-0019 mediante decisión distinta sobre datos reales a TypeSafe (consentimiento, minimización, condiciones contractuales, retención, base legal en jurisdicción aplicable y alternativa compatible). Antes, usar Jev solo con datos sintéticos / corpus autorizado y mostrar BLOCKED_EXTERNAL para mensajes reales. No cambiar a primary en local engañando el gate ni borrar protección.
+**G0 — privacidad y autorización (resuelto por QS-0017)**: DEC-0066 fija Jev primario y DEC-0067 sustituye DEC-0019; DEC-0071 extiende las mismas condiciones a Anthropic/OpenAI. La verificación única está en `docs/architecture/ai-providers-data-terms.md`: cobertura con condiciones, sin ZDR asumido. Un proveedor sin verificación permanece bloqueado para datos reales; no se repite la aprobación por mensaje ni se bloquean capacidades independientes.
 
 **G1 — proveedor y modelo**: evaluar al menos dos rutas candidatas donde sea práctico. Medir calidad real y costo/latencia de tareas representativas; modelos y precios exactos se documentan con fecha, sin inventarlos. Capacidades de imagen, términos comerciales, requisitos de uso. Mantener SDK/adaptadores desacoplados y no hardcodear un proveedor por toda la plataforma.
 
@@ -146,7 +177,7 @@ Capas: adapters Jev/LLM/image, capability dispatcher, fact retrieval tools, prom
 
 **F6 — hardening y auditoría E2E final.** Suite completa: tests, seguridad, navegador, visual, integraciones reales, caos controlado, costos/latencia/eficacia, retención, recuperación y GO/NO-GO por capacidad. Si existe bloqueo externo, publicar todo lo independiente y reporte exacto de lo no verificado, NO fingir cierre global.
 
-Checkpoint por fase: source + tests + docs + evidencia sanitizada + commit + push sin force + issues actualizadas + evaluación y límites. No pedir aprobación intermedia para decisiones puramente reversibles de ingeniería dentro de esta autorización; **sí** elevar a dueño/HDC decisiones canónicas, transferencias de datos reales, gasto externo, cambios disruptivos y publicación a terceros.
+Checkpoint por fase: source + tests + docs + evidencia sanitizada + commit + push sin force + issues actualizadas + evaluación y límites. DEC-0070 autoriza resolver ingeniería ordinaria sin aprobación intermedia. Escalar solo excepciones materiales fuera del alcance aprobado (p. ej. contrato incompatible, gasto nuevo o cambio disruptivo); no reabrir datos reales ya autorizados por DEC-0067/0071. Publicación externa y Ads mantienen sus permisos específicos.
 
 ## 9. Matriz mínima E2E (obligatoria)
 

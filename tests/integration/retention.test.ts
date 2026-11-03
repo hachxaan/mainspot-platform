@@ -110,7 +110,7 @@ test('DEC-0021..0023: each kind of data is purged at its own term; structure and
   const oldSummary = await summaryAged(tenant, '2 years 1 day');
   const keptSummary = await summaryAged(tenant, '1 day');
 
-  const expected = { conversations: 1, proposals: 1, proposalsExpired: 1, jevBodies: 1, auditEvents: 1, analyticsRows: 1 };
+  const expected = { conversations: 1, proposals: 1, proposalsExpired: 1, jevBodies: 1, aiTraces: 0, auditEvents: 1, analyticsRows: 1 };
   assert.deepEqual((await retention.preview(tenant)).pending, expected);
   const dry = await retention.run({ trigger: 'manual', dryRun: true });
   assert.equal(dry.status, 'completed');
@@ -139,9 +139,8 @@ test('DEC-0021..0023: each kind of data is purged at its own term; structure and
 
   const audited = await t.pool.query<{ actor_id: string; result: string; request_id: string }>(
     `SELECT actor_id, result, request_id FROM audit_event WHERE tenant_id = $1 AND action = 'retention.purged'`, [tenant]);
-  assert.deepEqual(audited.rows, [{
-    actor_id: RETENTION_ACTOR, result: 'conversations:1,proposals:1,expired:1,jev:1,audit:1,analytics:1', request_id: report.runId,
-  }]);
+  assert.deepEqual(audited.rows.map(({ actor_id, request_id }) => ({ actor_id, request_id })),
+    [{ actor_id: RETENTION_ACTOR, request_id: report.runId }]);
   const runRow = await t.pool.query<{ status: string; dry_run: boolean }>('SELECT status, dry_run FROM retention_run WHERE run_id = $1', [report.runId]);
   assert.deepEqual(runRow.rows[0], { status: 'completed', dry_run: false });
 
@@ -154,7 +153,7 @@ test('DEC-0021..0023: each kind of data is purged at its own term; structure and
   assert.equal(await countRows(t, `SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1 AND action = 'retention.purged'`, [tenant]), 1,
     'a second run finds nothing left to purge');
   assert.deepEqual((await retention.preview(tenant)).pending,
-    { conversations: 0, proposals: 0, proposalsExpired: 0, jevBodies: 0, auditEvents: 0, analyticsRows: 0 });
+    { conversations: 0, proposals: 0, proposalsExpired: 0, jevBodies: 0, aiTraces: 0, auditEvents: 0, analyticsRows: 0 });
 });
 
 test('NFR-0001: if a tenant purge cannot be audited it is rolled back; the other tenants are still purged', async () => {

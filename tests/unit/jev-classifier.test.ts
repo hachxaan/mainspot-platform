@@ -106,7 +106,7 @@ function classifier(
   client = createJevClient({ mode, ...ENABLED }),
 ): JevClassifier {
   return new JevClassifier({
-    client, store, mode, syntheticTenants: ['client_a'],
+    client, store, mode, dataScope: 'synthetic', syntheticTenants: ['client_a'],
     budget: new JevBudget(store, 1), gate: new JevPrimaryGate(store, client.defaultModel, GATE_BINDING),
   });
 }

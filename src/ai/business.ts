@@ -18,6 +18,7 @@ import type { MediaService } from '../media/service.ts';
 import type { SocialService, SocialPostRow } from '../social/service.ts';
 import type { AiDispatcher, InvokeContext, ToolDef } from './dispatcher.ts';
 import { AiJobError, type AiJobs, type JobContext } from './jobs.ts';
+import { redactContactData } from './minimize.ts';
 import {
   composeViolations, INSIGHTS_MIN_ACTIVE_DAYS, untracedNumbers,
   type AssistantOutput, type CampaignOutput, type ComposeOutput, type EditorialOutput, type InsightsOutput,
@@ -27,6 +28,7 @@ export interface BizActor { tenantId: string; userId: string; role: string | nul
 
 export const SOCIAL_FACT_KEYS: readonly FactKey[] = ['name', 'category', 'description', 'value_proposition', 'voice', 'audience', 'avoid_tones', 'services', 'address', 'hours', 'cta', 'prices', 'restrictions'];
 const DUPLICATE_SIMILARITY = 0.7;
+export const AI_IMAGE_LABEL = 'Imagen generada con IA.';
 
 function words(text: string): Set<string> {
   return new Set(text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z0-9ñ]+/u).filter((w) => w.length > 3));
@@ -149,7 +151,10 @@ export class AiBusinessService {
     if (violations.length) throw new AppError(400, 'validation_error', `Revisa el texto: ${violations.join('; ')}.`);
     const image = job.result['image'] as { asset_id?: string } | null;
     const assetId = useImage === true && image?.asset_id ? image.asset_id : null;
-    const out = await this.deps.social.createDraft(a.tenantId, a.userId, a.requestId, { text, idempotencyKey: `compose:${jobId}:${i}`, actorRole: a.role });
+    // Política de publicación de OpenAI: una imagen generada se publica indicando que es de IA.
+    const postText = assetId ? `${text}\n\n${AI_IMAGE_LABEL}` : text;
+    if (postText.length > 2000) throw new AppError(400, 'validation_error', 'La publicación admite hasta 2000 caracteres (incluido el aviso de imagen generada con IA).');
+    const out = await this.deps.social.createDraft(a.tenantId, a.userId, a.requestId, { text: postText, idempotencyKey: `compose:${jobId}:${i}`, actorRole: a.role });
     if (!out.replayed) {
       await this.deps.pool.query(
         'UPDATE social_post SET media_asset_id = $3, generation = $4, brand_version = $5, updated_at = now() WHERE post_id = $1 AND tenant_id = $2',
@@ -212,7 +217,7 @@ export class AiBusinessService {
             `SELECT origin, category, rating, sentiment, left(body, 120) AS body FROM engagement_case WHERE tenant_id = $1 AND state IN ('needs_human','failed') ORDER BY created_at DESC LIMIT 5`, [t]);
           const n = await pool.query<{ n: string }>(`SELECT count(*) AS n FROM engagement_case WHERE tenant_id = $1 AND state IN ('needs_human','failed')`, [t]);
           // El texto del cliente es contenido NO confiable: se entrega marcado, nunca como instrucción.
-          return { tool: 'attention_cases', label: 'Casos que esperan tu decisión', count: Number(n.rows[0]?.n ?? 0), items: r.rows.map((x) => ({ origin: x.origin, category: x.category, rating: x.rating, sentiment: x.sentiment, customer_text_untrusted: x.body })) };
+          return { tool: 'attention_cases', label: 'Casos que esperan tu decisión', count: Number(n.rows[0]?.n ?? 0), items: r.rows.map((x) => ({ origin: x.origin, category: x.category, rating: x.rating, sentiment: x.sentiment, customer_text_untrusted: redactContactData(x.body) })) };
         },
       });
     }

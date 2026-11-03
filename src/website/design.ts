@@ -330,7 +330,9 @@ function imageTag(asset: DesignImageAsset | undefined, sizes: string, eager: boo
   const srcset = widths.map((w) => `${base}/w${w}.webp ${w}w`).join(', ');
   const fallback = widths.length ? `${base}/w${widths[Math.min(1, widths.length - 1)]}.webp` : `${base}/original.webp`;
   const ratioH = Math.round((asset.height / asset.width) * 1000);
-  return `<img src="${fallback}"${srcset ? ` srcset="${srcset}" sizes="${sizes}"` : ''} width="1000" height="${ratioH}" alt="${esc(asset.alt)}"${eager ? ' fetchpriority="high"' : ' loading="lazy"'} decoding="async">`;
+  const img = `<img src="${fallback}"${srcset ? ` srcset="${srcset}" sizes="${sizes}"` : ''} width="1000" height="${ratioH}" alt="${esc(asset.alt)}"${eager ? ' fetchpriority="high"' : ' loading="lazy"'} decoding="async">`;
+  // Política de publicación de OpenAI: el contenido generado se marca de forma que nadie lo pase por alto.
+  return asset.is_illustration ? `${img}<figcaption class="ai-label">Imagen generada con IA</figcaption>` : img;
 }
 
 const SECTION_ID: Partial<Record<BlockType, string>> = { services: 'servicios', contact: 'contacto', hours: 'horario', about: 'nosotros', gallery: 'galeria', faq: 'preguntas' };
@@ -396,6 +398,7 @@ p{margin:0 0 1em}.lead{font-size:1.2em;color:var(--mu)}
 .t-inverted .btn{background:var(--op);color:var(--p)}.t-accent .btn{background:var(--oa);color:var(--a)}
 .hero-grid{display:grid;gap:2.5rem;align-items:center}.blk-hero.v-split .hero-grid{grid-template-columns:1fr}.blk-hero.v-centered .hero-copy{text-align:center;max-width:48rem;margin-inline:auto}
 .blk-hero.v-overlay{position:relative;padding:0}.blk-hero.v-overlay .hero-grid{display:block;position:relative}.blk-hero.v-overlay .hero-media img{width:100%;max-height:78vh;object-fit:cover;border-radius:0;filter:brightness(.62)}
+.ai-label{font-size:.78rem;color:var(--mu);margin:.4rem 0 0}.blk-hero.v-overlay .ai-label{position:absolute;top:.75rem;right:.75rem;z-index:1;margin:0;padding:.2rem .6rem;border-radius:999px;background:rgba(0,0,0,.6);color:#fff}.t-inverted .ai-label{color:var(--op)}.t-accent .ai-label{color:var(--oa)}
 .blk-hero.v-overlay .hero-copy{position:absolute;inset:auto 0 0 0;padding:2rem 1.25rem 3rem;color:#fff}.blk-hero.v-overlay .hero-copy h1,.blk-hero.v-overlay .hero-copy .lead{color:#fff}
 .items{list-style:none;padding:0;margin:1.5rem 0 0;display:grid;gap:1.25rem}.item{background:var(--sf);border-radius:var(--r);padding:1.4rem;color:var(--tx)}.item h3,.item p{color:var(--tx)}
 .v-list .items{gap:.75rem}.v-list .item{display:grid;grid-template-columns:auto 1fr;column-gap:1rem}.v-list .item .ic{grid-row:span 2}

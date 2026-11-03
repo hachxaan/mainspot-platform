@@ -92,6 +92,33 @@ after(async () => {
   mock.restoreAll();
 });
 
+test('DEC-0032: el ledger legacy incluye AI Core TypeSafe, no generativos ni otros días UTC', async (t) => {
+  const repository = new JevRepository(plain.pool);
+  const day = '2001-02-03';
+  const beforeSpend = await repository.spentOn(day);
+  t.after(async () => {
+    await plain.pool.query(`DELETE FROM ai_invocation WHERE request_id = 'dec0032-regression'`);
+  });
+  const inserted = await plain.pool.query(
+    `INSERT INTO ai_invocation
+       (invocation_id, request_id, idempotency_key, actor_id, actor_kind, origin, use_case_id,
+        provider_id, policy_version, status, cost_usd, cost_source, trace_id, created_at)
+     SELECT 'dec0032-' || p.provider_id || '-' || sample.suffix,
+            'dec0032-regression', 'dec0032-' || p.provider_id || '-' || sample.suffix,
+            'test', 'system', 'test', (SELECT use_case_id FROM ai_use_case LIMIT 1),
+            p.provider_id, 'test', 'succeeded', sample.cost, 'reported', 'dec0032-regression', sample.at
+       FROM ai_provider p CROSS JOIN
+         (VALUES ('start', 1::numeric, '2001-02-03T00:00:00Z'::timestamptz),
+                 ('next', 25::numeric, '2001-02-04T00:00:00Z'::timestamptz)) sample(suffix, cost, at)
+      WHERE p.kind IN ('typesafe', 'anthropic', 'openai', 'openrouter')
+     RETURNING provider_id`,
+  );
+  const providers = await plain.pool.query<{ provider_id: string }>(`SELECT provider_id FROM ai_provider WHERE kind = 'typesafe'`);
+  assert.ok(providers.rowCount && inserted.rowCount, 'fixtures incluyen TypeSafe');
+  assert.equal(await repository.spentOn(day), beforeSpend + providers.rows.length,
+    'un dólar en AI Core agota el mismo presupuesto que ve el pipeline legacy; generativos y medianoche siguiente no cuentan');
+});
+
 async function send(app: TestApi, text: string, tenant: 'a' | 'b' = 'b') {
   const seed = SEED[tenant];
   const { token } = await login(app.baseUrl, seed.ops.login, seed.ops.password, seed.tenant);

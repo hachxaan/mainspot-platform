@@ -146,13 +146,18 @@ test('APR-0002 unit: enabled modes without key, provider or synthetic tenants fa
   jevThrows({ ...JEV_ON, JEV_MODE: 'shadow', TYPESAFE_API_KEY: undefined }, /TYPESAFE_API_KEY is required when JEV_MODE=shadow/);
   jevThrows({ ...JEV_ON, JEV_MODE: 'primary', TYPESAFE_API_KEY: '   ' }, /TYPESAFE_API_KEY is required when JEV_MODE=primary/);
   jevThrows({ ...JEV_ON, JEV_MODE: 'shadow', JEV_PROVIDER: undefined }, /JEV_PROVIDER is required when JEV_MODE=shadow/);
-  jevThrows({ ...JEV_ON, JEV_MODE: 'primary', JEV_SYNTHETIC_TENANTS: ' , ' }, /JEV_SYNTHETIC_TENANTS is required when JEV_MODE=primary/);
+  jevThrows({ ...JEV_ON, JEV_MODE: 'primary', JEV_SYNTHETIC_TENANTS: ' , ' }, /JEV_SYNTHETIC_TENANTS is required when JEV_MODE=primary and JEV_DATA_SCOPE=synthetic/);
+  // DEC-0067: con alcance `all` no hay lista de negocios sintéticos que exigir.
+  withEnv({ ...JEV_UNSET, ...JEV_ON, JEV_MODE: 'primary', JEV_DATA_SCOPE: 'all', JEV_SYNTHETIC_TENANTS: undefined }, () => {
+    const jev = loadConfig().jev;
+    assert.deepEqual(jev.mode === 'primary' ? [jev.dataScope, jev.syntheticTenants] : null, ['all', []]);
+  });
 });
 
-test('APR-0002 unit: only typesafe, synthetic scope and known modes are accepted', () => {
+test('APR-0002/DEC-0067 unit: only typesafe, known data scopes and known modes are accepted', () => {
   jevThrows({ ...JEV_ON, JEV_MODE: 'shadow', JEV_PROVIDER: 'openrouter' }, /JEV_PROVIDER=openrouter\. Allowed values: typesafe/);
   jevThrows({ JEV_PROVIDER: 'mock' }, /JEV_PROVIDER=mock\. Allowed values: typesafe/);
-  jevThrows({ ...JEV_ON, JEV_MODE: 'shadow', JEV_DATA_SCOPE: 'real' }, /JEV_DATA_SCOPE=real\. Allowed values: synthetic/);
+  jevThrows({ ...JEV_ON, JEV_MODE: 'shadow', JEV_DATA_SCOPE: 'real' }, /JEV_DATA_SCOPE=real\. Allowed values: synthetic, all/);
   jevThrows({ JEV_MODE: 'authoritative' }, /JEV_MODE=authoritative\. Allowed values: disabled, shadow, primary/);
 });
 

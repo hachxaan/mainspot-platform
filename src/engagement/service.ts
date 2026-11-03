@@ -39,9 +39,15 @@ export const RESPOND_LEASE_SECONDS = 120;
 export const PROVIDER_TIMEOUT_MS = 10_000;
 const MAX_TEXT = 1000;
 
+/**
+ * Aviso obligatorio en respuestas públicas automáticas redactadas por IA (política de uso de Anthropic:
+ * los agentes que hablan con usuarios externos deben revelar que son IA; ver ai-providers-data-terms.md §2.7).
+ */
+export const AI_REPLY_DISCLOSURE = 'Respuesta automática generada con IA.';
+
 export const CONSENT_TEXT: Record<PolicyMode, string> = {
   safe_auto_reply:
-    'Autorizo a MainSpot a responder públicamente en mi nombre solo los casos de esta categoría que pasen todas las comprobaciones de seguridad (sin riesgos, sin quejas, con datos verificados). Las demás interacciones quedan para mi revisión. Puedo revocarlo en cualquier momento.',
+    'Autorizo a MainSpot a responder públicamente en mi nombre solo los casos de esta categoría que pasen todas las comprobaciones de seguridad (sin riesgos, sin quejas, con datos verificados). Cuando la respuesta la redacta la IA de MainSpot, se publica indicando que es una respuesta automática generada con IA. Las demás interacciones quedan para mi revisión. Puedo revocarlo en cualquier momento.',
   review_required: 'Todas las respuestas públicas de esta categoría quedan pendientes de mi revisión.',
 };
 
@@ -290,7 +296,7 @@ export class EngagementService {
     return runAtomic(this.deps.pool, async (client) => {
       let res;
       if (decision.decision === 'auto_reply') {
-        const text = generated?.text ?? autoReplyText({ category: classification.category, author, business, verifiedAnswer: verified });
+        const text = generated ? `${generated.text}\n\n${AI_REPLY_DISCLOSURE}` : autoReplyText({ category: classification.category, author, business, verifiedAnswer: verified });
         res = await client.query<CaseRow>(
           `UPDATE engagement_case SET state = 'classified', decision = 'auto_reply', reason = $2, category = $3,
              risk_flags = $4, confidence = $5, policy_id = $6, policy_version = $7, response_text = $8,

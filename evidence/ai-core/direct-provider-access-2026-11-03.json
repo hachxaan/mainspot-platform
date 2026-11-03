@@ -1,0 +1,138 @@
+{
+  "generated_at": "2026-11-03T06:19:27.670Z",
+  "scope": "Direct APIs; synthetic prompts; no successful text/image generation",
+  "http": [
+    {
+      "url": "https://api.anthropic.com/v1/messages",
+      "status": 400,
+      "error_type": "invalid_request_error",
+      "credit_balance_too_low": true
+    },
+    {
+      "url": "https://api.openai.com/v1/images/generations",
+      "status": 429,
+      "error_type": "insufficient_quota",
+      "error_code": "credit_balance_exhausted",
+      "credit_balance_too_low": false
+    }
+  ],
+  "results": [
+    {
+      "use_case": "business.insights.generate",
+      "model": "an:claude-haiku-5-5",
+      "ok": false,
+      "code": "provider_auth",
+      "reason": "insufficient_credit",
+      "invocationId": "inv_61a11d7b-48e2-4080-bf27-28a765561865",
+      "route": {
+        "route_id": "rte_68c2fdb5-7845-42f2-af5d-e6d9538e4d76",
+        "route_version": 4,
+        "prompt_revision_id": "prm_0386f7c9-b3aa-4260-876f-fe6ecc8ddf9c",
+        "prompt_version": 1,
+        "prompt_sha256": "15b078b358d52ad0d13d84045811505cdb1950a447bc0a94b273cbaaa7a172df",
+        "model_id": "an:claude-haiku-5-5",
+        "provider_id": "anthropic",
+        "provider_kind": "anthropic",
+        "provider_model": "claude-haiku-5-5",
+        "assignment": "pinned"
+      },
+      "retryable": false
+    },
+    {
+      "use_case": "website.image.generate",
+      "model": "oa:gpt-image-2",
+      "ok": false,
+      "code": "provider_auth",
+      "reason": "insufficient_credit",
+      "invocationId": "inv_abdd91ed-08d3-49e1-9c0c-9a7f6a8f59e2",
+      "route": {
+        "route_id": "rte_32b0ca2b-a42a-4c83-a29e-c0fb3bd42348",
+        "route_version": 6,
+        "prompt_revision_id": "prm_89ccf71c-18b4-49bc-86dd-27c83a6c7a4f",
+        "prompt_version": 1,
+        "prompt_sha256": "5bc11d20950017da0945fa59ea8399313b523259d64c7e2456eb0076505e7102",
+        "model_id": "oa:gpt-image-2",
+        "provider_id": "openai",
+        "provider_kind": "openai",
+        "provider_model": "gpt-image-2",
+        "assignment": "pinned"
+      },
+      "retryable": false
+    }
+  ],
+  "providers": [
+    {
+      "provider_id": "anthropic",
+      "kind": "anthropic",
+      "status": "active",
+      "real_data": "allowed",
+      "terms_verified_at": "2026-11-03T06:00:00.000Z"
+    },
+    {
+      "provider_id": "openai",
+      "kind": "openai",
+      "status": "active",
+      "real_data": "allowed",
+      "terms_verified_at": "2026-11-03T06:00:00.000Z"
+    },
+    {
+      "provider_id": "openrouter",
+      "kind": "openrouter",
+      "status": "disabled",
+      "real_data": "blocked",
+      "terms_verified_at": null
+    },
+    {
+      "provider_id": "simulated",
+      "kind": "simulated",
+      "status": "active",
+      "real_data": "blocked",
+      "terms_verified_at": null
+    },
+    {
+      "provider_id": "typesafe",
+      "kind": "typesafe",
+      "status": "active",
+      "real_data": "allowed",
+      "terms_verified_at": "2026-11-03T06:00:00.000Z"
+    }
+  ],
+  "spend_by_provider_and_source": [
+    {
+      "kind": "anthropic",
+      "cost_source": "estimated",
+      "n": 33,
+      "usd": "0.000000"
+    },
+    {
+      "kind": "openai",
+      "cost_source": "estimated",
+      "n": 3,
+      "usd": "0.000000"
+    },
+    {
+      "kind": "openrouter",
+      "cost_source": "estimated",
+      "n": 26,
+      "usd": "0.000000"
+    },
+    {
+      "kind": "openrouter",
+      "cost_source": "reported",
+      "n": 114,
+      "usd": "0.096726"
+    },
+    {
+      "kind": "typesafe",
+      "cost_source": "estimated",
+      "n": 65,
+      "usd": "0.000000"
+    },
+    {
+      "kind": "typesafe",
+      "cost_source": "reported",
+      "n": 143,
+      "usd": "0.006553"
+    }
+  ]
+}

@@ -1,34 +1,47 @@
 /**
- * AI Core (issue #9) — E2E de LABORATORIO con proveedores REALES (OpenRouter + TypeSafe/Jev) en el
- * entorno local https://app.mainspot.local.io, solo con un negocio SINTÉTICO (BR-0007).
+ * AI Core / QS0017 — E2E con Anthropic, OpenAI Images y TypeSafe DIRECTOS.
+ * Solo crea una fixture ficticia: ningún dato corresponde a clientes ni a PII real.
  *
- *   node scripts/ai-core-lab-e2e.ts            # requiere mainspot-local activo con ai-core.env
+ *   bash -c 'set -a; . ./.env; set +a; node scripts/ai-core-lab-e2e.ts'
  *
- * Recorre en Chrome real (sin ignoreHTTPSErrors): Administration marca el negocio como sintético
- * (step-up) → alta por invitación (móvil 390 px) → Mi marca → diseño IA → vista previa → aprobación
- * → sitio local HTTPS (360/768/1440) → edición compleja → publicación de Facebook generada →
- * comentarios (Jev real + respuesta) → asistente → resumen → campaña sin gasto → calendario →
- * consumo en Administration → canary y rollback en la Engineering Console.
- * Evidencia: evidence/ai-core/lab-e2e.txt + evidence/ai-core/screens/. Nunca imprime tokens,
- * contraseñas ni enlaces de invitación (el enlace vive solo en memoria).
+ * Modo completo SOLO después de activar las rutas directas; --blocked-providers permite únicamente
+ * el subconjunto sin generación cuando falta saldo/cuota. Conserva el recorrido completo E01–E20:
+ * alta móvil → marca → diseño/imagen → iframe publicado (360/768/1440) → edición/restauración
+ * → Facebook simulado → Jev/respuesta → asistente → resumen/campaña/calendario → consumo
+ * → canary, promoción y rollback de una alternativa directa evaluada (o BLOCKED explícito).
+ * La fixture pasa por synthetic y real desde Administration para ejercitar la política contractual;
+ * «real» es una clasificación administrativa de prueba, NO datos personales de clientes.
+ * Evidencia nueva: evidence/ai-core/direct-e2e-2026-11-03.txt y direct-screens-2026-11-03/<run>/.
+ * No modifica hosts/proxy/certificados ni invoca OpenRouter. Nunca imprime credenciales o tokens.
  */
 
 import { execFileSync } from 'node:child_process';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import tls from 'node:tls';
 import pg from 'pg';
 import sharp from 'sharp';
 import { chromium, type Browser, type Page } from 'playwright-core';
+import { SPENT_SQL } from '../src/ai/governance.ts';
+import { JevRepository } from '../src/conversation/jev-repository.ts';
 
 // Node confía en la misma CA local que el navegador (almacén del sistema), sin desactivar TLS.
 tls.setDefaultCACertificates([...tls.getCACertificates('default'), ...tls.getCACertificates('system')]);
 
 const BASE = (process.env.E2E_BASE_URL ?? 'https://app.mainspot.local.io').replace(/\/$/, '');
 const CHROME = process.env.CHROME_PATH ?? '/usr/bin/google-chrome';
-const SHOTS = 'evidence/ai-core/screens';
+const EVIDENCE = 'evidence/ai-core/direct-e2e-2026-11-03.txt';
 const RUN = randomUUID().slice(0, 6);
+const SHOTS = `evidence/ai-core/direct-screens-2026-11-03/${RUN}`;
+const DIRECT_TEXT = ['an:claude-haiku-5-5', 'an:claude-sonnet-5-5'];
+const DIRECT_IMAGE = 'oa:gpt-image-2';
+const DIRECT_JEV = 'ts:jev-1.14.0';
+const BLOCKED_PROVIDERS = process.argv.includes('--blocked-providers');
+let tenantForEvidence: string | null = null;
+let openRouterBefore: number | null = null;
+let spentBefore = 0;
+let costsReported = false;
 const BUSINESS = `Café Brisa Lab ${RUN}`;
 const EMAIL = `brisa.lab.${RUN}@example.test`;
 const PASSWORD = `Brisa-Lab-${RUN}-2026`;
@@ -42,6 +55,128 @@ function say(line: string): void {
 function check(ok: boolean, label: string): void {
   if (!ok) failures++;
   say(`${ok ? 'PASS' : 'FAIL'} ${label}`);
+}
+function blocked(label: string): void {
+  failures++;
+  say(`BLOCKED ${label}`);
+}
+
+async function reportCosts(): Promise<void> {
+  if (costsReported) return;
+  costsReported = true;
+  const spent = Number((await one<{ spent: string }>(SPENT_SQL))?.spent ?? 0);
+  const groups = (await pool.query<{ kind: string; cost_source: string; n: number; cost: string | null; effective: string }>(
+    `SELECT p.kind, i.cost_source, count(*)::int AS n, sum(i.cost_usd) AS cost,
+            sum(CASE WHEN i.status = 'running' THEN i.reserved_usd ELSE COALESCE(i.cost_usd,i.reserved_usd) END) AS effective
+       FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
+      WHERE p.kind IN ('anthropic','openai','openrouter') AND i.status IN ('running','succeeded','failed')
+      GROUP BY 1,2 ORDER BY 1,2`)).rows;
+  say('\n-- E15: libro generativo acumulado (histórico + directos; reservas pendientes incluidas) --');
+  for (const g of groups) say(`   ${g.kind} · fuente=${g.cost_source} · n=${g.n} · costo=${g.cost === null ? 'desconocido' : `USD ${Number(g.cost).toFixed(6)}`} · cargo/reserva efectivo USD ${Number(g.effective).toFixed(6)}`);
+  say(`   incremento global durante recorrido USD ${(spent - spentBefore).toFixed(6)} · laboratorio acumulado USD ${spent.toFixed(6)} de 25 (TypeSafe excluido)`);
+  check(spent <= 25, 'E15 techo generativo acumulado USD 25, incluido OpenRouter histórico');
+  const orCount = Number((await one<{ n: number }>(`SELECT count(*)::int AS n FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id WHERE p.kind = 'openrouter'`))?.n ?? 0);
+  check(openRouterBefore !== null && orCount === openRouterBefore, `ninguna invocación OpenRouter nueva (antes=${openRouterBefore}, después=${orCount})`);
+  const day = new Date().toISOString().slice(0, 10);
+  const jevSpent = await new JevRepository(pool).spentOn(day);
+  say(`   TypeSafe DEC-0032 · día UTC ${day} · USD ${jevSpent.toFixed(6)} de 1 · libro independiente (pipeline + evaluaciones + AI Core)`);
+  check(jevSpent <= 1, 'E15 TypeSafe directo no supera USD 1/día, separado del techo generativo');
+  if (!tenantForEvidence) return;
+  const byUc = (await pool.query<{ use_case_id: string; model_id: string; kind: string; cost_source: string; n: number; cost: string | null; p50: number; p95: number }>(
+    `SELECT i.use_case_id, i.model_id, p.kind, i.cost_source, count(*)::int AS n, sum(i.cost_usd) AS cost,
+            percentile_disc(0.5) WITHIN GROUP (ORDER BY i.latency_ms) AS p50,
+            percentile_disc(0.95) WITHIN GROUP (ORDER BY i.latency_ms) AS p95
+       FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
+      WHERE i.tenant_id = $1 AND i.status = 'succeeded' GROUP BY 1,2,3,4 ORDER BY 1`, [tenantForEvidence])).rows;
+  for (const r of byUc) say(`   ${r.use_case_id} · ${r.model_id} · proveedor=${r.kind} · n=${r.n} · USD ${r.cost === null ? 'desconocido' : Number(r.cost).toFixed(6)} (${r.cost_source}) · p50=${r.p50} ms p95=${r.p95} ms`);
+  check((BLOCKED_PROVIDERS || byUc.length > 0) && byUc.every((r) => (r.kind === 'anthropic' && DIRECT_TEXT.includes(r.model_id) || r.kind === 'openai' && r.model_id === DIRECT_IMAGE || r.kind === 'typesafe' && r.model_id === DIRECT_JEV)), 'ninguna invocación exitosa de la fixture usa un modelo fuera de los directos previstos');
+  const generative = byUc.filter((r) => ['anthropic', 'openai'].includes(r.kind));
+  if (generative.length) check(generative.every((r) => r.cost !== null && r.cost_source === 'estimated'), 'costos directos de Anthropic/OpenAI explícitamente estimados, no reportados por el proveedor');
+  else say('   sin generaciones directas exitosas: no se atribuyen costos ni evidencia de texto/imagen a proveedores bloqueados');
+}
+
+async function publishedFrame(page: Page, width: number, height: number, version: number) {
+  await page.setViewportSize({ width, height });
+  const rendered = page.waitForResponse((r) => r.url() === `${BASE}/api/backoffice/ai/website/render` && r.request().method() === 'GET');
+  await page.goto(`${BASE}/panel#/sitio`);
+  await page.reload(); // Descarta la caché del iframe «published» entre versiones.
+  const response = await rendered;
+  const payload = await response.json() as { html: string };
+  const snapshot = await one<{ html: string }>('SELECT html FROM website_content WHERE tenant_id = $1 AND version = $2', [tenantForEvidence, version]);
+  check(response.status() === 200 && Boolean(snapshot?.html) && payload.html === snapshot?.html, `E07 iframe de publicación v${version}: HTTP ${response.status()}, snapshot inmutable exacto por HTTPS canónico`);
+  const iframe = page.locator('iframe.site-frame');
+  await iframe.waitFor({ timeout: 30_000 });
+  await iframe.evaluate((el, size) => { el.setAttribute('style', `position:fixed;inset:0;width:${size.width}px;height:${size.height}px;border:0;z-index:9999;background:white`); }, { width, height });
+  const frame = await (await iframe.elementHandle())?.contentFrame();
+  if (!frame) throw new Error('El iframe publicado no tiene documento');
+  await frame.waitForLoadState('networkidle');
+  await frame.locator('img').evaluateAll(async (images) => {
+    await Promise.all(images.map(async (image) => {
+      if ('decode' in image && typeof image.decode === 'function') await image.decode().catch(() => undefined);
+    }));
+  });
+  return { iframe, frame };
+}
+
+async function directPreflight(): Promise<boolean> {
+  say('\n-- Preflight directo (solo lecturas; sin invocaciones ni activaciones) --');
+  const rows = (await pool.query<{ use_case_id: string; modality: string; model_id: string | null; kind: string | null; status: string | null; real_data: string | null; terms_verified_at: string | null; real_data_basis: string | null; passed: boolean; error_code: string | null; detail: string | null }>(
+    `SELECT u.use_case_id, u.modality, r.model_id, p.kind, r.status, p.real_data, p.terms_verified_at, p.real_data_basis,
+            COALESCE(e.status = 'passed' AND e.real_provider, false) AS passed,
+            last_i.error_code, last_i.validation->>'detail' AS detail
+       FROM ai_use_case u LEFT JOIN ai_rollout ro ON ro.use_case_id = u.use_case_id AND ro.environment = 'lab'
+       LEFT JOIN ai_route_revision r ON r.route_id = ro.active_route_id
+       LEFT JOIN ai_provider p ON p.provider_id = (SELECT m.provider_id FROM ai_model m WHERE m.model_id = r.model_id)
+       LEFT JOIN ai_eval_run e ON e.run_id = r.tested_eval_run_id
+       LEFT JOIN LATERAL (SELECT i.error_code, i.validation FROM ai_invocation i
+          WHERE i.use_case_id = u.use_case_id AND i.model_id IN ('an:claude-haiku-5-5','an:claude-sonnet-5-5','oa:gpt-image-2')
+          ORDER BY i.created_at DESC LIMIT 1) last_i ON true
+      WHERE u.status = 'active' ORDER BY u.use_case_id`)).rows;
+  let ready = rows.length > 0;
+  for (const r of rows) {
+    const direct = r.modality === 'classification' ? r.model_id === DIRECT_JEV && r.kind === 'typesafe'
+      : r.modality === 'image' ? r.model_id === DIRECT_IMAGE && r.kind === 'openai'
+        : DIRECT_TEXT.includes(r.model_id ?? '') && r.kind === 'anthropic';
+    const ok = direct && r.status === 'ACTIVE' && r.passed && !r.error_code && r.real_data === 'allowed' && Boolean(r.terms_verified_at && r.real_data_basis);
+    say(`   ${r.use_case_id}: ${r.model_id ?? 'sin ruta activa'} · evaluación real=${r.passed} · política=${r.real_data ?? 'sin proveedor'}${r.error_code ? ` · último fallo directo=${r.error_code}:${r.detail ?? 'sin detalle'}` : ''}`);
+    if (!ok) { ready = false; blocked(`BLOCKED_EXTERNAL ${r.use_case_id}: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente`); }
+  }
+  const unsafe = await one<{ n: number }>(`SELECT count(*)::int AS n FROM ai_rollout ro JOIN ai_route_revision r ON r.route_id IN (ro.active_route_id,ro.canary_route_id) JOIN ai_model m ON m.model_id = r.model_id JOIN ai_provider p ON p.provider_id = m.provider_id WHERE ro.environment = 'lab' AND p.kind = 'openrouter'`);
+  check(unsafe?.n === 0, 'ningún rollout activo/canary apunta a OpenRouter');
+  return ready && unsafe?.n === 0;
+}
+
+async function blockedSubset(browser: Browser, page: Page, admin: Page, tenant: string): Promise<void> {
+  say('\n-- Subconjunto alcanzable; NO sustituye la aceptación completa E01–E20 --');
+  const token = await page.evaluate(() => {
+    // Global DOM conocido; el tsconfig del backend no incluye la biblioteca DOM.
+    const browserGlobal = globalThis as unknown as { sessionStorage: { getItem: (key: string) => string | null } };
+    return browserGlobal.sessionStorage.getItem('mainspot.token');
+  });
+  const provider = await one<{ real_data: string; terms_verified_at: string | null; real_data_basis: string | null }>(`SELECT real_data, terms_verified_at, real_data_basis FROM ai_provider WHERE kind = 'typesafe' AND status = 'active'`);
+  check(provider?.real_data === 'allowed' && Boolean(provider.terms_verified_at && provider.real_data_basis), 'TypeSafe activo y contractualmente verificado para la política de datos reales');
+  const response = await fetch(`${BASE}/api/backoffice/conversation/messages`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'Idempotency-Key': `direct-blocked-${RUN}` },
+    body: JSON.stringify({ text: 'Cambia el horario a lunes a viernes de 8:00 a 18:00.', channel: 'simulated' }),
+  });
+  check(response.ok, `E02 solicitud determinista por API del dueño: HTTP ${response.status} (canal simulado, no generativa)`);
+  if (response.ok) await until('clasificación TypeSafe persistida', async () => Boolean(await one(
+    'SELECT classification_id FROM jev_classification WHERE tenant_id = $1 LIMIT 1', [tenant])), 20_000);
+  const classification = await one<{ status: string; provider: string; resolved_model: string; cost_source: string }>('SELECT status, provider, resolved_model, cost_source FROM jev_classification WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1', [tenant]);
+  check(classification?.status === 'evaluated' && classification.provider === 'typesafe' && classification.resolved_model === 'jev-1.14.0', `E02 TypeSafe real de fixture clasificada real: ${classification?.status ?? 'sin clasificación'} / ${classification?.provider ?? 'sin proveedor'} / ${classification?.resolved_model ?? 'sin modelo'} / costo ${classification?.cost_source ?? 'sin fuente'}`);
+  await go(page, '#/cambios');
+  await shot(page, 'blocked-own-02-solicitud-determinista', true);
+  await admin.goto(`${BASE}/plataforma#/negocio/${encodeURIComponent(tenant)}`);
+  await admin.getByRole('heading', { name: BUSINESS }).waitFor();
+  await shot(admin, 'blocked-adm-02-fixture-real', true);
+  const eng = await platformLogin(browser, 'ingenieria', 'lab-ingenieria', 1);
+  for (const uc of ['conversation.intent.classify', 'website.initial.design', 'website.image.generate']) {
+    await eng.goto(`${BASE}/ingenieria#/caso/${uc}`);
+    await eng.getByText('Prompt Studio').waitFor();
+    await shot(eng, `blocked-eng-${uc.replaceAll('.', '-')}`, true);
+  }
+  blocked('E04/E05/E06/E07/E08/E09-respuesta/E11/E12/E20 completo: pendientes saldo/cuota generativos y evaluaciones directas; no se ejecutan ni se declaran aprobados');
+  say('# Subconjunto: pantallas reales de dueño/Administration/Engineering; Google/Meta/Telegram siguen simulados. Sin canary, rollback, publicación generativa ni imagen fingidos.');
 }
 
 // ------------------------------------------------------------------ credenciales del laboratorio
@@ -110,18 +245,25 @@ async function platformLogin(browser: Browser, area: 'plataforma' | 'ingenieria'
 
 async function main(): Promise<void> {
   mkdirSync(SHOTS, { recursive: true });
+  if (BASE !== 'https://app.mainspot.local.io') throw new Error('E2E_BASE_URL debe ser exactamente https://app.mainspot.local.io');
   const head = execFileSync('git', ['rev-parse', 'HEAD']).toString().trim();
   say(`# AI Core — E2E de laboratorio con proveedores reales (${new Date().toISOString()})`);
   say(`# HEAD ${head} · origen ${BASE} · Chrome ${CHROME} (TLS verificado, sin ignoreHTTPSErrors)`);
-  say(`# negocio sintético «${BUSINESS}»; costos y rutas leídos de ai_invocation (procedencia: proveedor)`);
-  const spentBefore = Number((await one<{ s: string }>(`SELECT COALESCE(sum(COALESCE(cost_usd, reserved_usd)),0) AS s FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id WHERE p.kind = 'openrouter'`))?.s ?? 0);
+  say(`# fixture ficticia «${BUSINESS}»: sin PII de clientes; modo ${BLOCKED_PROVIDERS ? 'subconjunto BLOCKED_EXTERNAL' : 'completo E01–E20'}`);
+  spentBefore = Number((await one<{ spent: string }>(SPENT_SQL))?.spent ?? 0);
+  openRouterBefore = Number((await one<{ n: number }>(`SELECT count(*)::int AS n FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id WHERE p.kind = 'openrouter'`))?.n ?? 0);
+  const ready = await directPreflight();
+  if (!ready && !BLOCKED_PROVIDERS) throw new Error('BLOCKED_EXTERNAL preflight: faltan rutas/evaluaciones directas. Anthropic/OpenAI requieren saldo/cuota habilitados; consultar los fallos reales arriba. Para el subconjunto sin generación: --blocked-providers');
 
   // ---------------------------------------------------------------- alta por invitación (CLI de operación)
   const inv = JSON.parse(execFileSync(process.execPath, ['scripts/invite-owner.ts', '--business', BUSINESS, '--email', EMAIL, '--base', BASE], { env: { ...process.env, DATABASE_URL: devUrl(), LOG_LEVEL: 'error' } }).toString()) as { tenant_id: string; invitation_link: string };
   const tenant = inv.tenant_id;
+  tenantForEvidence = tenant;
+  if (new URL(inv.invitation_link).origin !== BASE) throw new Error('La invitación no usa el origen canónico');
   say(`\n-- E17/BR-0007: Administration marca el negocio como sintético (motivo + step-up) --`);
   const browser = await chromium.launch({ executablePath: CHROME, headless: true });
   const pageErrors: string[] = [];
+  let completed = false;
   try {
     const admin = await platformLogin(browser, 'plataforma', 'lab-admin', 0);
     await admin.goto(`${BASE}/plataforma#/negocio/${encodeURIComponent(tenant)}`);
@@ -134,6 +276,12 @@ async function main(): Promise<void> {
     check(cls?.data_classification === 'synthetic' && cls.status === 'active', 'solo un platform_admin con step-up clasifica el negocio como sintético (sigue activo)');
     await admin.waitForTimeout(1000);
     await shot(admin, 'adm-01-negocio-sintetico');
+    await admin.locator('#ta-op').selectOption('class:real');
+    await admin.locator('#ta-reason').fill('Fixture ficticia sin PII de clientes: ejercicio explícito de política real con proveedores verificados QS0017');
+    await admin.locator('#ta-submit').click();
+    await until('clasificación administrativa real de fixture', async () => (await one<{ c: string }>('SELECT data_classification AS c FROM client WHERE client_id = $1', [tenant]))?.c === 'real', 15_000);
+    check(true, 'E17 fixture ficticia marcada real por Administration; NO contiene datos de clientes reales');
+    await shot(admin, 'adm-01b-fixture-real-sin-pii');
 
     // -------------------------------------------------------------- dueño en móvil
     say('\n-- E20: alta móvil → Mi marca → página con IA --');
@@ -189,6 +337,12 @@ async function main(): Promise<void> {
     const meta = await sharp(served).metadata();
     check(meta.format === 'webp' && !meta.exif, `la biblioteca sirve WebP ${meta.width}×${meta.height} sin EXIF/GPS`);
     await shot(page, 'own-01b-biblioteca-movil', true);
+    if (BLOCKED_PROVIDERS) {
+      await blockedSubset(browser, page, admin, tenant);
+      check(pageErrors.length === 0, `subconjunto sin errores JavaScript (${pageErrors.length})`);
+      completed = true;
+      return;
+    }
 
     // -------------------------------------------------------------- diseño IA real
     await go(page, '#/ia/pagina');
@@ -196,10 +350,32 @@ async function main(): Promise<void> {
     await page.locator('#ai-design-btn').click();
     await page.getByText('La vista previa está lista').waitFor({ timeout: 300_000 });
     const design = await one<{ result: { proposal_id: string; model: string; images: number; images_blocked: string[]; simulated: boolean } }>(`SELECT result FROM ai_job WHERE tenant_id = $1 AND kind = 'website.design' ORDER BY created_at DESC LIMIT 1`, [tenant]);
-    const dInv = await one<{ model_id: string; cost_usd: string; latency_ms: number; route_version: number; prompt_version: number }>(
-      `SELECT i.model_id, i.cost_usd, i.latency_ms, i.route_version, p.version AS prompt_version FROM ai_invocation i JOIN ai_prompt_revision p ON p.revision_id = i.prompt_revision_id WHERE i.tenant_id = $1 AND i.use_case_id = 'website.initial.design' AND i.status = 'succeeded' ORDER BY i.created_at DESC LIMIT 1`, [tenant]);
-    say(`   diseño: ${dInv?.model_id} r${dInv?.route_version}/p${dInv?.prompt_version} · ${dInv?.latency_ms} ms · USD ${dInv?.cost_usd} · imágenes ${design?.result.images} · bloqueadas ${JSON.stringify(design?.result.images_blocked)}`);
-    check(design?.result.simulated === false && /anthropic|openai/.test(dInv?.model_id ?? ''), 'E05 diseño generado por un modelo real (no simulado) con su ruta y costo trazados');
+    const dInv = await one<{ model_id: string; cost_usd: string; cost_source: string; latency_ms: number; route_version: number; prompt_version: number }>(
+      `SELECT i.model_id, i.cost_usd, i.cost_source, i.latency_ms, i.route_version, p.version AS prompt_version FROM ai_invocation i JOIN ai_prompt_revision p ON p.revision_id = i.prompt_revision_id WHERE i.tenant_id = $1 AND i.use_case_id = 'website.initial.design' AND i.status = 'succeeded' ORDER BY i.created_at DESC LIMIT 1`, [tenant]);
+    say(`   diseño: ${dInv?.model_id} r${dInv?.route_version}/p${dInv?.prompt_version} · ${dInv?.latency_ms} ms · USD ${dInv?.cost_usd} (${dInv?.cost_source}) · imágenes ${design?.result.images} · bloqueadas ${JSON.stringify(design?.result.images_blocked)}`);
+    check(design?.result.simulated === false && DIRECT_TEXT.includes(dInv?.model_id ?? ''), 'E05 diseño directo Anthropic no simulado con ruta y costo estimado trazados');
+    const generated = (await pool.query<{ asset_id: string; bytes: Buffer; sha256: string; width: number; height: number; mime: string; generator_model: string; is_illustration: boolean; alt_text: string; invocation_id: string; kind: string; model_id: string; provider_model: string; status: string; cost_source: string; usage: { images?: number } }>(
+      `SELECT a.asset_id, a.bytes, a.sha256, a.width, a.height, a.mime, a.generator_model, a.is_illustration, a.alt_text,
+              a.invocation_id, p.kind, i.model_id, i.provider_model, i.status, i.cost_source, i.usage
+         FROM media_asset a JOIN ai_invocation i ON i.invocation_id = a.invocation_id AND i.tenant_id = a.tenant_id
+         JOIN ai_provider p ON p.provider_id = i.provider_id
+        WHERE a.tenant_id = $1 AND a.source = 'ai_generated' ORDER BY a.created_at`, [tenant])).rows;
+    check(generated.length > 0 && !design?.result.images_blocked?.length, 'E13/E14 existen imágenes generadas reales; ninguna sustituida silenciosamente por la foto subida');
+    for (const image of generated) {
+      const response = await fetch(`${BASE}/media/${image.asset_id}/original.webp`);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const metadata = await sharp(bytes).metadata();
+      const hash = createHash('sha256').update(bytes).digest('hex');
+      const stats = await sharp(bytes).stats();
+      const ok = response.ok && bytes.equals(image.bytes) && hash === image.sha256 && metadata.format === 'webp'
+        && metadata.width === image.width && metadata.height === image.height && image.width >= 512 && image.height >= 512
+        && image.mime === 'image/webp' && response.headers.get('content-type')?.split(';')[0] === 'image/webp'
+        && !metadata.exif && stats.channels.some((channel) => channel.stdev > 1)
+        && image.kind === 'openai' && image.model_id === DIRECT_IMAGE && image.generator_model === DIRECT_IMAGE
+        && image.provider_model === 'gpt-image-2' && image.status === 'succeeded' && image.usage.images === 1
+        && image.cost_source === 'estimated' && image.is_illustration && Boolean(image.alt_text);
+      check(ok, `E13/E14 bytes verificados ${image.asset_id}: ${bytes.length} B, ${metadata.format} ${metadata.width}×${metadata.height}, MIME=${response.headers.get('content-type')}, SHA256=${hash}, proveedor=${image.kind}, modelo=${image.model_id}/${image.provider_model}, invocación=${image.invocation_id}, ilustración=${image.is_illustration}, costo=${image.cost_source}`);
+    }
     await shot(page, 'own-02-pedido-listo-movil');
     await page.locator('#ai-open-preview').click();
     await page.locator('iframe.site-frame').waitFor({ timeout: 30_000 });
@@ -211,28 +387,20 @@ async function main(): Promise<void> {
     const site = await one<{ slug: string; data: { design?: unknown } }>('SELECT slug, data FROM client_website WHERE tenant_id = $1', [tenant]);
     check(Boolean(site?.data.design), 'E07 la versión 1 publicada lleva el diseño aprobado');
 
-    // -------------------------------------------------------------- sitio local HTTPS real
-    say('\n-- E07: sitio local HTTPS por negocio (CA local, sin -k) --');
-    // Comando de operación (usa sudo internamente para /etc/hosts y lxc para el vhost del LXC).
-    execFileSync('scripts/client-site-provision.sh', [site!.slug], { stdio: 'ignore' });
-    const siteUrl = `https://${site!.slug}.mainspot.local.io/`;
+    // -------------------------------------------------------------- iframe publicado existente
+    say('\n-- E07: snapshot publicado en el iframe existente del panel canónico; sin provisión de infraestructura --');
     for (const [w, h] of [[360, 780], [768, 1024], [1440, 900]] as const) {
-      const sp = await (await browser.newContext({ viewport: { width: w, height: h }, locale: 'es-MX' })).newPage();
-      const errs: string[] = [];
-      sp.on('pageerror', (e) => errs.push(e.message));
-      sp.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
-      const res = await sp.goto(siteUrl);
-      await sp.waitForLoadState('networkidle');
-      const a11y = await sp.evaluate(() => {
+      const { iframe, frame } = await publishedFrame(page, w, h, 1);
+      const a11y = await frame.evaluate(() => {
         const d = (globalThis as unknown as { document: { documentElement: { lang: string; scrollWidth: number; clientWidth: number }; querySelectorAll: (s: string) => ArrayLike<{ alt?: string; naturalWidth?: number }>; querySelector: (s: string) => unknown } }).document;
         const imgs = Array.from(d.querySelectorAll('img'));
         return { lang: d.documentElement.lang, h1: d.querySelectorAll('h1').length, imgs: imgs.length, noAlt: imgs.filter((i) => !i.alt).length, broken: imgs.filter((i) => !i.naturalWidth).length, scripts: d.querySelectorAll('script').length, overflowX: d.documentElement.scrollWidth > d.documentElement.clientWidth };
       });
-      await shot(sp, `site-v1-${w}`, true);
-      const ok = res?.status() === 200 && a11y.lang.startsWith('es') && a11y.h1 === 1 && a11y.noAlt === 0 && a11y.broken === 0 && a11y.scripts === 0 && !a11y.overflowX && errs.length === 0;
-      check(ok, `sitio ${w}px: HTTP ${res?.status()} TLS verificado, lang=${a11y.lang}, h1=${a11y.h1}, ${a11y.imgs} imágenes (${a11y.noAlt} sin ALT, ${a11y.broken} rotas), scripts=${a11y.scripts}, desborde=${a11y.overflowX}${errs.length ? `, errores: ${errs.join(' | ')}` : ''}`);
-      await sp.context().close();
+      await iframe.screenshot({ path: `${SHOTS}/site-v1-${w}.png` });
+      const ok = a11y.lang.startsWith('es') && a11y.h1 === 1 && a11y.noAlt === 0 && a11y.broken === 0 && a11y.scripts === 0 && !a11y.overflowX;
+      check(ok, `iframe publicado ${w}px: TLS canónico verificado, lang=${a11y.lang}, h1=${a11y.h1}, ${a11y.imgs} imágenes (${a11y.noAlt} sin ALT, ${a11y.broken} rotas), scripts=${a11y.scripts}, desborde=${a11y.overflowX}`);
     }
+    await page.setViewportSize({ width: 390, height: 844 });
 
     // -------------------------------------------------------------- edición compleja (Jev decide el alcance)
     say('\n-- E06: edición compleja con tus palabras --');
@@ -252,10 +420,9 @@ async function main(): Promise<void> {
       await until('v2 publicada', async () => (await one<{ v: number }>('SELECT published_version AS v FROM client_website WHERE tenant_id = $1', [tenant]))?.v === 2, 60_000);
       const v2 = await one<{ html: string }>('SELECT html FROM website_content WHERE tenant_id = $1 AND version = 2', [tenant]);
       check(/Preguntas|frecuentes/i.test(v2?.html ?? ''), 'E07 la versión 2 publicada incluye la sección pedida');
-      const sp = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
-      await sp.goto(siteUrl);
-      await shot(sp, 'site-v2-1440', true);
-      await sp.context().close();
+      const publishedV2 = await publishedFrame(page, 1440, 900, 2);
+      await publishedV2.iframe.screenshot({ path: `${SHOTS}/site-v2-1440.png` });
+      await page.setViewportSize({ width: 390, height: 844 });
 
       say('\n-- E07: restaurar el diseño de la versión 1 como versión 3 (vista previa + aprobación) --');
       await go(page, '#/pagina');
@@ -269,8 +436,10 @@ async function main(): Promise<void> {
       await until('v3 publicada', async () => (await one<{ v: number }>('SELECT published_version AS v FROM client_website WHERE tenant_id = $1', [tenant]))?.v === 3, 60_000);
       const rows = (await pool.query<{ version: number; html: string; restored_from_version: number | null }>('SELECT version, html, restored_from_version FROM website_content WHERE tenant_id = $1 ORDER BY version', [tenant])).rows;
       check(rows.length === 3 && rows[2]!.restored_from_version === 1 && rows[2]!.html === rows[0]!.html.replace('versión 1', 'versión 3'), 'E07 v3 = diseño de la v1 (restored_from_version=1); v1 y v2 intactas');
-      const live = await (await fetch(siteUrl)).text();
-      check(live.includes('versión 3') && !/Preguntas frecuentes/.test(live), 'E07 el sitio HTTPS sirve la v3 restaurada (TLS verificado por Node con la CA local)');
+      const restored = await publishedFrame(page, 390, 844, 3);
+      const live = await restored.frame.content();
+      check(live.includes('versión 3') && !/Preguntas frecuentes/.test(live), 'E07 iframe HTTPS canónico sirve la v3 restaurada, igual al snapshot publicado');
+      await page.goto(`${BASE}/panel#/ia/publicar`);
     }
 
     // -------------------------------------------------------------- Facebook generado
@@ -371,48 +540,64 @@ async function main(): Promise<void> {
     const uc = 'social.facebook.post.compose';
     await eng.goto(`${BASE}/ingenieria#/caso/${uc}`);
     await eng.getByText('Prompt Studio').waitFor();
-    const luna = eng.locator('tr', { hasText: 'GPT-6 Luna' }).locator('[data-action="approve"]');
-    if (await luna.count()) { await luna.click(); await eng.getByText('Ruta aprobada').waitFor(); await eng.waitForTimeout(800); }
-    const lunaRoute = await eng.locator('#ro-route option', { hasText: 'GPT-6 Luna' }).getAttribute('value');
-    await eng.locator('#ro-act').selectOption('canary');
-    await eng.locator('#ro-route').selectOption(lunaRoute as string);
-    await eng.locator('#ro-pct').fill('20');
-    await eng.locator('#ro-reason').fill('Comparar Luna con Haiku en 20 % de negocios del laboratorio');
-    await eng.locator('#ro-submit').click();
-    await eng.getByText('Rollout aplicado').waitFor();
-    await eng.waitForTimeout(800);
-    await eng.locator('#ro-act').selectOption('clear_canary');
-    await eng.locator('#ro-reason').fill('Fin de la comparación: se mantiene Haiku');
-    await eng.locator('#ro-submit').click();
-    await eng.getByText('Rollout aplicado').waitFor();
-    await eng.waitForTimeout(1200);
-    await shot(eng, 'eng-03-canary-historial', true);
-    const evs = (await pool.query<{ action: string }>(`SELECT action FROM ai_rollout_event WHERE use_case_id = $1 AND environment = 'lab' ORDER BY at DESC LIMIT 2`, [uc])).rows.map((r) => r.action);
-    check(evs.join(',') === 'clear_canary,canary', 'E04 canary del 20 % y retiro auditados con motivo (sin redeploy)');
+    const baseline = await one<{ active_route_id: string; canary_route_id: string | null; version: string }>('SELECT active_route_id, canary_route_id, version FROM ai_rollout WHERE use_case_id = $1 AND environment = $2', [uc, 'lab']);
+    const alternate = await one<{ route_id: string; model_id: string; run_id: string }>(
+      `SELECT r.route_id, r.model_id, e.run_id FROM ai_route_revision r
+         JOIN ai_eval_run e ON e.run_id = r.tested_eval_run_id AND e.status = 'passed' AND e.real_provider
+         JOIN ai_model m ON m.model_id = r.model_id AND m.status = 'active'
+         JOIN ai_provider p ON p.provider_id = m.provider_id AND p.kind = 'anthropic' AND p.status = 'active'
+        WHERE r.use_case_id = $1 AND r.route_id <> $2 AND r.model_id IN ('an:claude-haiku-5-5','an:claude-sonnet-5-5')
+          AND r.status = 'APPROVED' ORDER BY r.version DESC LIMIT 1`, [uc, baseline?.active_route_id]);
+    if (!baseline?.active_route_id || baseline.canary_route_id || !alternate) {
+      blocked('E04 canary/rollback: no hay alternativa directa previamente evaluada y aprobada, o existe un canary ajeno; no se aprueba, activa ni simula una alternativa');
+    } else {
+      say(`   alternativa directa ${alternate.model_id}, evaluación real ${alternate.run_id}; baseline ${baseline.active_route_id}`);
+      const rollout = async (action: string, reason: string, expectedActive: string, expectedCanary: string | null) => {
+        await eng.locator('#ro-act').selectOption(action);
+        if (action === 'canary') { await eng.locator('#ro-route').selectOption(alternate.route_id); await eng.locator('#ro-pct').fill('20'); }
+        await eng.locator('#ro-reason').fill(reason);
+        await eng.locator('#ro-submit').click();
+        await until(`rollout ${action}`, async () => {
+          const row = await one<{ active_route_id: string; canary_route_id: string | null }>('SELECT active_route_id, canary_route_id FROM ai_rollout WHERE use_case_id = $1 AND environment = $2', [uc, 'lab']);
+          return row?.active_route_id === expectedActive && row.canary_route_id === expectedCanary;
+        }, 20_000);
+        await eng.goto(`${BASE}/ingenieria#/caso/${uc}`);
+        await eng.getByText('Prompt Studio').waitFor();
+      };
+      try {
+        await rollout('canary', 'QS0017 comparar alternativa directa ya evaluada al veinte por ciento', baseline.active_route_id, alternate.route_id);
+        await shot(eng, 'eng-01-canary-directo', true);
+        await rollout('promote', 'QS0017 promover alternativa directa evaluada para demostrar rollback real', alternate.route_id, null);
+        await rollout('rollback', 'QS0017 restaurar ruta directa inicial después del canary', baseline.active_route_id, null);
+      } finally {
+        const current = await one<{ active_route_id: string; canary_route_id: string | null }>('SELECT active_route_id, canary_route_id FROM ai_rollout WHERE use_case_id = $1 AND environment = $2', [uc, 'lab']);
+        if (current?.active_route_id === alternate.route_id) await rollout('rollback', 'QS0017 recuperar baseline directo tras interrupción', baseline.active_route_id, null);
+        else if (current?.canary_route_id === alternate.route_id) await rollout('clear_canary', 'QS0017 retirar canary directo tras interrupción', baseline.active_route_id, null);
+      }
+      await shot(eng, 'eng-03-canary-rollback-historial', true);
+      const evs = (await pool.query<{ action: string }>(`SELECT action FROM ai_rollout_event WHERE use_case_id = $1 AND environment = 'lab' AND rollout_version > $2 ORDER BY rollout_version`, [uc, baseline.version])).rows.map((r) => r.action);
+      check(evs.join(',') === 'canary,promote,rollback', 'E04 canary directo 20 %, promoción y rollback auditados; baseline restaurado sin redeploy');
+    }
+    completed = true;
   } finally {
+    if (!completed) blocked('recorrido interrumpido antes de completar sus comprobaciones; no es un E2E aprobado');
+    check(pageErrors.length === 0, `sin errores de JavaScript en el panel${pageErrors.length ? `: ${pageErrors.join(' | ')}` : ''}`);
     await browser.close();
+    await reportCosts();
+    say(`\n# Resultado: ${failures === 0 ? 'OK' : `BLOCKED/FAIL (${failures} comprobaciones no aprobadas)`}${BLOCKED_PROVIDERS ? ' · solo subconjunto, no aceptación completa' : ''}`);
+    writeFileSync(EVIDENCE, `${transcript.join('\n')}\n`);
+    await pool.end();
+    if (failures) process.exitCode = 1;
   }
 
-  // ---------------------------------------------------------------- costos y cierre
-  const spentAfter = Number((await one<{ s: string }>(`SELECT COALESCE(sum(COALESCE(cost_usd, reserved_usd)),0) AS s FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id WHERE p.kind = 'openrouter'`))?.s ?? 0);
-  const byUc = (await pool.query<{ use_case_id: string; model_id: string; n: number; cost: string; p50: number; p95: number }>(
-    `SELECT use_case_id, model_id, count(*)::int AS n, COALESCE(sum(cost_usd),0) AS cost, percentile_disc(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50, percentile_disc(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95
-       FROM ai_invocation WHERE tenant_id = $1 AND status = 'succeeded' GROUP BY 1,2 ORDER BY 1`, [tenant])).rows;
-  say('\n-- E15: costo y latencia de este recorrido (procedencia: respuesta del proveedor) --');
-  for (const r of byUc) say(`   ${r.use_case_id.padEnd(38)} ${r.model_id.padEnd(34)} n=${r.n} USD ${Number(r.cost).toFixed(6)} p50 ${r.p50} ms p95 ${r.p95} ms`);
-  say(`   OpenRouter este recorrido: USD ${(spentAfter - spentBefore).toFixed(6)} · laboratorio acumulado: USD ${spentAfter.toFixed(6)} de 25`);
-  check(pageErrors.length === 0, `sin errores de JavaScript en el panel${pageErrors.length ? `: ${pageErrors.join(' | ')}` : ''}`);
-  say(`\n# Resultado: ${failures === 0 ? 'OK' : `${failures} comprobaciones fallidas`}`);
-  mkdirSync('evidence/ai-core', { recursive: true });
-  writeFileSync('evidence/ai-core/lab-e2e.txt', `${transcript.join('\n')}\n`);
-  await pool.end();
-  if (failures) process.exitCode = 1;
 }
 
 main().catch(async (err) => {
   const message = (err instanceof Error ? err.message : String(err)).replace(/invitacion#[A-Za-z0-9_-]+/g, 'invitacion#<TOKEN>');
   say(`FAIL escenario interrumpido: ${message}`);
-  writeFileSync('evidence/ai-core/lab-e2e.txt', `${transcript.join('\n')}\n`);
+  await reportCosts().catch((costError) => say(`FAIL no se pudo cerrar el libro: ${costError instanceof Error ? costError.message : String(costError)}`));
+  mkdirSync('evidence/ai-core', { recursive: true });
+  writeFileSync(EVIDENCE, `${transcript.join('\n')}\n`);
   await pool.end().catch(() => undefined);
   process.exit(1);
 });

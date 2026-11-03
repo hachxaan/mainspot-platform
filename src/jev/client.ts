@@ -5,7 +5,8 @@
  * and adapted to MainSpot conventions:
  *  - `src/shared/config.ts` is the ONLY environment reader. The client never
  *    reads process.env: the caller names the provider and passes the key
- *    (no key-based auto-selection, no JEV_BACKEND/OPENROUTER_API_KEY lookup).
+ *    (no key-based auto-selection). Live calls go only to TypeSafe directly
+ *    (DEC-0069: no intermediaries such as OpenRouter).
  *  - `maxAttempts` bounds retries (MainSpot shadow mode uses 1 = no retries).
  *  - `defaultModel` exposes the model ID sent when no per-call override exists.
  *  - Non-2xx responses throw `JevHttpError` carrying the status code.
@@ -22,20 +23,17 @@ import {
   type SystemOneResponse,
 } from "./types.ts";
 
-export type JevProvider = "mock" | "openrouter" | "typesafe";
+export type JevProvider = "mock" | "typesafe";
 
 const ENDPOINTS = {
-  openrouter: "https://openrouter.ai/api/alpha/decisions",
   typesafe: "https://api.typesafe.ai/v1/systemone",
 } as const;
 
 const DEFAULT_MODELS = {
-  openrouter: "~typesafe/jev-latest",
   typesafe: "jev-latest",
 } as const;
 
 const KEY_NAMES = {
-  openrouter: "OPENROUTER_API_KEY",
   typesafe: "TYPESAFE_API_KEY",
 } as const;
 
@@ -132,11 +130,11 @@ export class JevClient {
   calls = 0;
 
   constructor(opts: JevClientOptions) {
-    if (opts.provider !== "mock" && opts.provider !== "typesafe" && opts.provider !== "openrouter") {
-      throw new Error(`Unknown Jev provider "${String(opts.provider)}"; use mock, openrouter, or typesafe.`);
+    if (opts.provider !== "mock" && opts.provider !== "typesafe") {
+      throw new Error(`Unknown Jev provider "${String(opts.provider)}"; use mock or typesafe.`);
     }
     if (opts.apiKey !== undefined && opts.provider === "mock") {
-      throw new Error("apiKey requires an explicit live provider (typesafe or openrouter).");
+      throw new Error("apiKey requires the live provider (typesafe).");
     }
     this.provider = opts.provider;
     this.model = opts.model;

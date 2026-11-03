@@ -1,0 +1,70 @@
+# AI Core — E2E de laboratorio con proveedores reales (2026-11-03T06:19:53.552Z)
+# HEAD d297e8a474d494a5d376848d305ace1241a2dfb6 · origen https://app.mainspot.local.io · Chrome /usr/bin/google-chrome (TLS verificado, sin ignoreHTTPSErrors)
+# fixture ficticia «Café Brisa Lab 420fbf»: sin PII de clientes; modo subconjunto BLOCKED_EXTERNAL
+
+-- Preflight directo (solo lecturas; sin invocaciones ni activaciones) --
+   business.insights.generate: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_auth:insufficient_credit
+BLOCKED BLOCKED_EXTERNAL business.insights.generate: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   conversation.intent.classify: ts:jev-1.14.0 · evaluación real=true · política=allowed
+   conversation.owner.assistant: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_unavailable:bad_request
+BLOCKED BLOCKED_EXTERNAL conversation.owner.assistant: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   editorial.calendar.suggest: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_unavailable:bad_request
+BLOCKED BLOCKED_EXTERNAL editorial.calendar.suggest: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   engagement.facebook.comment.classify: ts:jev-1.14.0 · evaluación real=true · política=allowed
+   engagement.facebook.comment.reply: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_unavailable:bad_request
+BLOCKED BLOCKED_EXTERNAL engagement.facebook.comment.reply: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   engagement.google.review.classify: ts:jev-1.14.0 · evaluación real=true · política=allowed
+   engagement.google.review.reply: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_unavailable:bad_request
+BLOCKED BLOCKED_EXTERNAL engagement.google.review.reply: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   marketing.campaign.creatives: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_unavailable:bad_request
+BLOCKED BLOCKED_EXTERNAL marketing.campaign.creatives: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   marketing.campaign.plan: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_unavailable:bad_request
+BLOCKED BLOCKED_EXTERNAL marketing.campaign.plan: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   social.facebook.image.generate: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_auth:insufficient_credit
+BLOCKED BLOCKED_EXTERNAL social.facebook.image.generate: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   social.facebook.post.compose: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_unavailable:bad_request
+BLOCKED BLOCKED_EXTERNAL social.facebook.post.compose: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   website.edit.complex: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_unavailable:bad_request
+BLOCKED BLOCKED_EXTERNAL website.edit.complex: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   website.edit.simple: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_unavailable:bad_request
+BLOCKED BLOCKED_EXTERNAL website.edit.simple: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   website.image.generate: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_auth:insufficient_credit
+BLOCKED BLOCKED_EXTERNAL website.image.generate: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+   website.initial.design: sin ruta activa · evaluación real=false · política=sin proveedor · último fallo directo=provider_unavailable:bad_request
+BLOCKED BLOCKED_EXTERNAL website.initial.design: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente
+PASS ningún rollout activo/canary apunta a OpenRouter
+
+-- E17/BR-0007: Administration marca el negocio como sintético (motivo + step-up) --
+PASS solo un platform_admin con step-up clasifica el negocio como sintético (sigue activo)
+PASS E17 fixture ficticia marcada real por Administration; NO contiene datos de clientes reales
+
+-- E20: alta móvil → Mi marca → página con IA --
+PASS E01 Brand Studio: datos del alta + marca confirmados con versión
+
+-- E13: biblioteca — foto del dueño con ALT y derechos; EXIF/GPS eliminados --
+PASS la foto de prueba trae EXIF (incluido GPS) antes de subirla
+PASS la biblioteca sirve WebP 1280×960 sin EXIF/GPS
+
+-- Subconjunto alcanzable; NO sustituye la aceptación completa E01–E20 --
+PASS TypeSafe activo y contractualmente verificado para la política de datos reales
+PASS E02 solicitud determinista por API del dueño: HTTP 201 (canal simulado, no generativa)
+PASS E02 TypeSafe real de fixture clasificada real: evaluated / typesafe / jev-1.14.0 / costo estimated
+BLOCKED E04/E05/E06/E07/E08/E09-respuesta/E11/E12/E20 completo: pendientes saldo/cuota generativos y evaluaciones directas; no se ejecutan ni se declaran aprobados
+# Subconjunto: pantallas reales de dueño/Administration/Engineering; Google/Meta/Telegram siguen simulados. Sin canary, rollback, publicación generativa ni imagen fingidos.
+PASS subconjunto sin errores JavaScript (0)
+PASS sin errores de JavaScript en el panel
+
+-- E15: libro generativo acumulado (histórico + directos; reservas pendientes incluidas) --
+   anthropic · fuente=estimated · n=33 · costo=USD 0.000000 · cargo/reserva efectivo USD 0.000000
+   openai · fuente=estimated · n=3 · costo=USD 0.000000 · cargo/reserva efectivo USD 0.000000
+   openrouter · fuente=estimated · n=26 · costo=USD 0.000000 · cargo/reserva efectivo USD 0.000000
+   openrouter · fuente=reported · n=114 · costo=USD 0.096726 · cargo/reserva efectivo USD 0.096726
+   incremento global durante recorrido USD 0.000000 · laboratorio acumulado USD 0.096726 de 25 (TypeSafe excluido)
+PASS E15 techo generativo acumulado USD 25, incluido OpenRouter histórico
+PASS ninguna invocación OpenRouter nueva (antes=150, después=150)
+   TypeSafe DEC-0032 · día UTC 2026-11-03 · USD 0.015011 de 1 · libro independiente (pipeline + evaluaciones + AI Core)
+PASS E15 TypeSafe directo no supera USD 1/día, separado del techo generativo
+PASS ninguna invocación exitosa de la fixture usa un modelo fuera de los directos previstos
+   sin generaciones directas exitosas: no se atribuyen costos ni evidencia de texto/imagen a proveedores bloqueados
+
+# Resultado: BLOCKED/FAIL (14 comprobaciones no aprobadas) · solo subconjunto, no aceptación completa

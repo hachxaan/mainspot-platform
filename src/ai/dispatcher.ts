@@ -11,15 +11,17 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { AppConfig } from '../shared/config.ts';
 import { runAtomic } from '../conversation/state-machine.ts';
+import { JevRepository } from '../conversation/jev-repository.ts';
 import { log } from '../shared/logger.ts';
 import { JevClient, JevHttpError } from '../jev/client.ts';
 import type { Questions, Answer } from '../jev/types.ts';
 import { OUTPUT_SCHEMAS } from './contracts.ts';
-import { checkDataPolicy, DATA_POLICY_VERSION, estimateCost, reserveBudget } from './governance.ts';
+import { checkDataPolicy, DATA_POLICY_VERSION, estimateCost, PAID_PROVIDER_KINDS, reserveBudget } from './governance.ts';
 import { PromptRenderError, renderPrompt } from './prompt.ts';
 import { AiRegistry, type RouteBundle } from './registry.ts';
 import { parseJsonOutput, toModelSchema, validate } from './schema.ts';
-import { OpenRouterAdapter } from './providers/openrouter.ts';
+import { AnthropicAdapter } from './providers/anthropic.ts';
+import { OpenAIAdapter } from './providers/openai.ts';
 import { SimulatedAdapter } from './providers/simulated.ts';
 import { ProviderError, type ChatMessage, type ProviderAdapter, type ToolSpec, type Usage } from './providers/types.ts';
 
@@ -89,15 +91,22 @@ export class AiDispatcher {
     this.fetchImpl = deps.fetchImpl;
   }
 
-  /** Adaptador por proveedor; la clave se lee del entorno por su referencia en cada uso (rotación sin código). */
+  /**
+   * Adaptador por proveedor directo (DEC-0069); la clave se lee del entorno por su referencia en cada
+   * uso (rotación sin código). OpenRouter no tiene adaptador: sus rutas quedaron retiradas.
+   */
   adapterFor(bundle: RouteBundle): ProviderAdapter | null {
     if (bundle.provider.kind === 'simulated') return this.simulated;
-    if (bundle.provider.kind === 'openrouter') {
-      const key = bundle.provider.secret_ref ? process.env[bundle.provider.secret_ref] : undefined;
-      if (!key) return null;
-      return new OpenRouterAdapter({ apiKey: key, baseUrl: bundle.provider.base_url ?? undefined, fetchImpl: this.fetchImpl, appUrl: this.config.publicBaseUrl });
-    }
+    const key = bundle.provider.secret_ref ? process.env[bundle.provider.secret_ref] : undefined;
+    if (!key) return null;
+    const opts = { apiKey: key, baseUrl: bundle.provider.base_url ?? undefined, fetchImpl: this.fetchImpl };
+    if (bundle.provider.kind === 'anthropic') return new AnthropicAdapter(opts);
+    if (bundle.provider.kind === 'openai') return new OpenAIAdapter(opts);
     return null;
+  }
+
+  private static paid(bundle: RouteBundle): boolean {
+    return (PAID_PROVIDER_KINDS as readonly string[]).includes(bundle.provider.kind);
   }
 
   private circuitOpen(providerId: string): boolean {
@@ -180,7 +189,7 @@ export class AiDispatcher {
       return { ok: false, code: 'circuit_open', reason: 'El proveedor falló varias veces seguidas; se reintenta en unos segundos.', invocationId, route: ref, retryable: true };
     }
 
-    const reserve = bundle.provider.kind === 'openrouter' ? Number(bundle.route.max_cost_usd) : 0;
+    const reserve = AiDispatcher.paid(bundle) ? Number(bundle.route.max_cost_usd) : 0;
     const budgetOk = await runAtomic(this.pool, async (client) => {
       if (reserve > 0) {
         const b = await reserveBudget(client, ctx.tenantId, reserve);
@@ -203,14 +212,18 @@ export class AiDispatcher {
     return { invocationId, bundle, ref, started: performance.now(), adapter: this.adapterFor(bundle) };
   }
 
-  private async finish(s: Started, status: 'succeeded' | 'failed', data: { usage: Usage; output?: unknown; validation?: unknown; errorCode?: string | null }): Promise<{ costUsd: number | null; costSource: string; latencyMs: number }> {
+  private async finish(s: Started, status: 'succeeded' | 'failed', data: { usage: Usage; costSource?: string; output?: unknown; validation?: unknown; errorCode?: string | null }): Promise<{ costUsd: number | null; costSource: string; latencyMs: number }> {
     const latencyMs = Math.round(performance.now() - s.started);
     let costUsd: number | null = null;
     let costSource = 'none';
     if (s.bundle.provider.kind === 'simulated') {
       costUsd = 0; costSource = 'none';
+    } else if (status === 'failed' && AiDispatcher.paid(s.bundle) && (data.errorCode === 'timeout' || data.errorCode === 'provider_unavailable')) {
+      // Sin respuesta final no conocemos el cargo, aunque hubiese rondas previas con uso.
+      // Mantener cost_usd NULL conserva la reserva en SPENT_SQL; nunca inventar un costo cero.
+      costSource = 'unknown';
     } else if (data.usage.costUsd !== null && Number.isFinite(data.usage.costUsd)) {
-      costUsd = data.usage.costUsd; costSource = 'reported';
+      costUsd = data.usage.costUsd; costSource = data.costSource ?? 'reported';
     } else {
       const est = estimateCost(s.bundle.model.pricing, data.usage);
       costUsd = est; costSource = est === null ? 'unknown' : 'estimated';
@@ -262,7 +275,7 @@ export class AiDispatcher {
     const s = begun;
     const uc = await this.registry.useCase(useCaseId);
     const schema = uc ? OUTPUT_SCHEMAS[uc.output_schema] : undefined;
-    let usage: Usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, images: 0, costUsd: s.bundle.provider.kind === 'openrouter' ? null : 0 };
+    let usage: Usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, images: 0, costUsd: AiDispatcher.paid(s.bundle) ? null : 0 };
     if (!schema || !s.adapter) {
       const fin = await this.finish(s, 'failed', { usage, errorCode: !schema ? 'render_error' : 'blocked_external' });
       void fin;
@@ -316,7 +329,7 @@ export class AiDispatcher {
     const s = begun;
     const uc = await this.registry.useCase(useCaseId);
     const schema = uc ? OUTPUT_SCHEMAS[uc.output_schema] : undefined;
-    let usage: Usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, images: 0, costUsd: s.bundle.provider.kind === 'openrouter' ? null : 0 };
+    let usage: Usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, images: 0, costUsd: AiDispatcher.paid(s.bundle) ? null : 0 };
     if (!schema || !s.adapter) {
       await this.finish(s, 'failed', { usage, errorCode: 'blocked_external' });
       return { ok: false, code: 'blocked_external', reason: 'secret_missing', invocationId: s.invocationId, route: s.ref, retryable: false };
@@ -395,7 +408,7 @@ export class AiDispatcher {
     if ('replay' in begun) return { ok: false, code: 'in_progress', reason: 'La imagen ya se generó con esta clave; búscala en la biblioteca.', invocationId: String(begun.replay['invocation_id']), route: null, retryable: false };
     if ('ok' in begun) return begun;
     const s = begun;
-    let usage: Usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, images: 0, costUsd: s.bundle.provider.kind === 'openrouter' ? null : 0 };
+    let usage: Usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, images: 0, costUsd: AiDispatcher.paid(s.bundle) ? null : 0 };
     if (!s.adapter) {
       await this.finish(s, 'failed', { usage, errorCode: 'blocked_external' });
       return { ok: false, code: 'blocked_external', reason: 'secret_missing', invocationId: s.invocationId, route: s.ref, retryable: false };
@@ -405,7 +418,7 @@ export class AiDispatcher {
       const prompt = `${s.bundle.prompt.system_text}\n\n${rendered.user}`;
       const p = s.bundle.route.params;
       const res = await s.adapter.image({
-        model: s.bundle.model.provider_model, prompt, aspectRatio: aspect ?? ((p.aspect_ratio as '16:9') ?? '16:9'), resolution: p.resolution ?? null, timeoutMs: this.timeout(s, ctx),
+        model: s.bundle.model.provider_model, prompt, aspectRatio: aspect ?? ((p.aspect_ratio as '16:9') ?? '16:9'), resolution: p.resolution ?? null, quality: p.quality ?? null, timeoutMs: this.timeout(s, ctx),
       });
       usage = this.addUsage(usage, res.usage);
       this.noteSuccess(s.bundle.provider.provider_id);
@@ -445,7 +458,7 @@ export class AiDispatcher {
       const cost = isMock ? 0 : res.meta.cost.amount;
       const u: Usage = { inputTokens: Number(res.usage.input_tokens ?? 0), outputTokens: Number(res.usage.output_tokens ?? 0), reasoningTokens: 0, images: 0, costUsd: cost };
       this.noteSuccess(s.bundle.provider.provider_id);
-      const fin = await this.finish(s, 'succeeded', { usage: u, output: { answers: res.answers, model: res.model } });
+      const fin = await this.finish(s, 'succeeded', { usage: u, costSource: isMock ? 'none' : res.meta.cost.source, output: { answers: res.answers, model: res.model }, validation: { provider_meta: res.meta } });
       return { ok: true, output: { answers: res.answers, model: res.model }, invocationId: s.invocationId, route: s.ref, usage: u, ...fin, replayed: false, simulated: isMock };
     } catch (err) {
       // 429/5xx ya se reintentaron (backoff acotado del cliente); aquí solo se clasifica el fallo final.
@@ -462,16 +475,15 @@ export class AiDispatcher {
   /** DEC-0032: TypeSafe ≤ USD 1/día (clasificaciones del pipeline + semánticas del AI Core). */
   private async jevBudgetAllows(): Promise<boolean> {
     const limit = this.config.jev.mode === 'disabled' ? 1 : this.config.jev.dailyBudgetUsd;
-    const r = await this.pool.query<{ spent: string }>(
-      `SELECT COALESCE((SELECT SUM(i.cost_usd) FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
-                          WHERE p.kind = 'typesafe' AND i.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0)
-            + COALESCE((SELECT SUM(cost_usd) FROM jev_classification WHERE budget_day = (now() AT TIME ZONE 'UTC')::date), 0)
-            + COALESCE((SELECT SUM(cost_usd) FROM jev_evaluation_run WHERE budget_day = (now() AT TIME ZONE 'UTC')::date), 0) AS spent`);
-    return Number(r.rows[0]?.spent ?? 0) < limit;
+    const spent = await new JevRepository(this.pool).spentOn(new Date().toISOString().slice(0, 10));
+    return spent < limit;
   }
 
   /** Respuesta repetida (misma clave o paso de job ya terminado): misma salida y la ruta que la produjo, sin costo nuevo. */
   private async replayResult<T>(row: Record<string, unknown>, useCaseId: string): Promise<InvokeResult<T>> {
+    if (row['output'] === null) {
+      return { ok: false, code: 'invalid_output', reason: 'El contenido de esta solicitud ya fue eliminado por retención; crea una solicitud nueva.', invocationId: String(row['invocation_id']), route: null, retryable: false };
+    }
     const bundle = row['route_id'] ? await this.registry.bundle(String(row['route_id'])) : null;
     if (!bundle || bundle.route.use_case_id !== useCaseId) {
       return { ok: false, code: 'no_active_route', reason: 'La ruta de la respuesta anterior ya no existe.', invocationId: String(row['invocation_id']), route: null, retryable: false };

@@ -239,47 +239,85 @@ test('E14: un job que cae a mitad se reintenta con su lease y reutiliza el paso 
   await t.pool.query(`UPDATE ai_invocation SET status = 'failed', error_code = 'test_cleanup', finished_at = now() WHERE invocation_id = $1`, [fresh]);
 });
 
-test('E15/BR-0007: proveedor real solo con negocio sintético; techo duro con reservas concurrentes', async () => {
+test('E15/BR-0007: datos reales solo con proveedor verificado; techo duro con reservas concurrentes; proveedor retirado no vuelve', async () => {
   const a = await createTenantWithPlan(t, LIMITS, 'client_aig');
   const route = (await t.pool.query<{ route_id: string; max_cost_usd: string }>(
-    `SELECT r.route_id, r.max_cost_usd FROM ai_route_revision r JOIN ai_model m ON m.model_id = r.model_id JOIN ai_provider p ON p.provider_id = m.provider_id
-      WHERE r.use_case_id = 'business.insights.generate' AND p.kind = 'openrouter' AND r.status <> 'RETIRED' ORDER BY r.version LIMIT 1`)).rows[0];
-  assert.ok(route, 'hay una ruta OpenRouter candidata');
+    `SELECT r.route_id, r.max_cost_usd FROM ai_route_revision r WHERE r.use_case_id = 'business.insights.generate' AND r.model_id = 'an:claude-haiku-5-5' ORDER BY r.version LIMIT 1`)).rows[0];
+  assert.ok(route, 'hay una ruta candidata de Anthropic directo');
   let calls = 0;
-  const fake: typeof fetch = async (_url, init) => {
+  const bodies: string[] = [];
+  // Compuerta: la llamada al proveedor queda abierta hasta que la prueba la suelta (sin esperas por reloj).
+  // Forma ejecutora: el tsconfig no incluye es2024 (Promise.withResolvers).
+  let release: () => void = () => undefined;
+  let gate: Promise<void> = Promise.resolve();
+  const fake: typeof fetch = async (url, init) => {
     calls++;
-    await new Promise((r) => setTimeout(r, 150));
-    const body = JSON.parse(String(init?.body ?? '{}')) as { provider?: { data_collection?: string } };
-    assert.equal(body.provider?.data_collection, 'deny', 'nunca se permite retención de datos');
-    return new Response(JSON.stringify({ id: 'gen-test', model: 'fake', choices: [{ message: { content: JSON.stringify({ status: 'abstained', summary: 'Sin datos suficientes.', highlights: [], recommendations: [], abstain_reason: 'pocos días' }) }, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 50, cost: 0.0004 } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    bodies.push(String(init?.body ?? ''));
+    assert.match(String(url), /^https:\/\/api\.anthropic\.com\/v1\/messages$/);
+    await gate;
+    const text = JSON.stringify({ status: 'abstained', summary: 'Sin datos suficientes.', highlights: [], recommendations: [], abstain_reason: 'pocos días' });
+    return new Response(JSON.stringify({ id: 'msg_test', type: 'message', role: 'assistant', model: 'claude-haiku-5-5', content: [{ type: 'text', text }], stop_reason: 'end_turn', usage: { input_tokens: 100, output_tokens: 50 } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
-  const prevKey = process.env.OPENROUTER_API_KEY;
-  process.env.OPENROUTER_API_KEY = 'fake-key-for-tests';
+  const prevKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'fake-key-for-tests';
   const dispatcher = new AiDispatcher({ pool: t.pool, config: { ...t.handle.config, aiRealProviders: true, aiEnvironment: ENV }, fetchImpl: fake });
   const ctx = (key: string) => ({ requestId: key, idempotencyKey: key, tenantId: a.tenant, actorId: a.userId, actorKind: 'tenant_user' as const, origin: 'test', pinnedRouteId: route.route_id });
   const values = { period: '2026-10-24 a 2026-10-30', metrics: { days_with_activity: 1 } };
+  const verified = (await t.pool.query<{ real_data_basis: string; terms_verified_at: Date }>(`SELECT real_data_basis, terms_verified_at FROM ai_provider WHERE provider_id = 'anthropic'`)).rows[0]!;
   try {
-    const real = await dispatcher.invokeStructured('business.insights.generate', ctx(`k-${randomUUID()}`), values);
-    assert.deepEqual([real.ok, !real.ok && real.code], [false, 'blocked_external'], 'negocio con datos reales: bloqueado sin llamar');
+    // Negocio real + proveedor sin cobertura verificada: bloqueado sin llamar (solo ese tratamiento).
+    await t.pool.query(`UPDATE ai_provider SET real_data = 'blocked' WHERE provider_id = 'anthropic'`);
+    const blocked = await dispatcher.invokeStructured('business.insights.generate', ctx(`k-${randomUUID()}`), values);
+    assert.deepEqual([blocked.ok, !blocked.ok && blocked.code, !blocked.ok && blocked.reason], [false, 'blocked_external', 'provider_terms_unverified']);
     assert.equal(calls, 0);
 
-    await t.pool.query(`UPDATE client SET data_classification = 'synthetic' WHERE client_id = $1`, [a.tenant]);
+    // Con la cobertura verificada (DEC-0071) el negocio real usa el proveedor; nada interno viaja.
+    await t.pool.query(`UPDATE ai_provider SET real_data = 'allowed', real_data_basis = $1, terms_verified_at = $2 WHERE provider_id = 'anthropic'`, [verified.real_data_basis, verified.terms_verified_at]);
     await t.pool.query(`INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES ($1,'tenant_day',$2,$3,'test','test')`,
       [`bud_${randomUUID()}`, a.tenant, Number(route.max_cost_usd) * 1.5]);
-    const [x, y] = await Promise.all([
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    const pending = [
       dispatcher.invokeStructured('business.insights.generate', ctx(`k-${randomUUID()}`), values),
       dispatcher.invokeStructured('business.insights.generate', ctx(`k-${randomUUID()}`), values),
-    ]);
+    ] as const;
+    // La que no reserva termina sin llamar mientras la otra sigue retenida por la compuerta.
+    const firstDone = await Promise.race(pending);
+    assert.deepEqual([firstDone.ok, !firstDone.ok && firstDone.code], [false, 'budget_exhausted']);
+    release();
+    const [x, y] = await Promise.all(pending);
     const codes = [x, y].map((r) => (r.ok ? 'ok' : r.code)).sort();
     assert.deepEqual(codes, ['budget_exhausted', 'ok'], 'dos reservas concurrentes no superan el techo');
     assert.equal(calls, 1);
+    assert.ok(!bodies[0]!.includes(a.tenant) && !bodies[0]!.includes(a.userId), 'ni el negocio ni el actor viajan al proveedor');
     const okOne = [x, y].find((r) => r.ok);
-    assert.ok(okOne && okOne.ok && okOne.costUsd === 0.0004 && okOne.costSource === 'reported', 'el costo reportado por el proveedor queda registrado');
+    assert.ok(okOne && okOne.ok && okOne.costSource === 'estimated' && Math.abs((okOne.costUsd ?? 0) - 0.000035) < 1e-9, 'sin cargo informado: uso × precio publicado, marcado como estimado');
+    const policy = (await t.pool.query<{ policy_version: string }>('SELECT policy_version FROM ai_invocation WHERE invocation_id = $1', [okOne!.ok ? okOne!.invocationId : ''])).rows[0];
+    assert.equal(policy?.policy_version, 'ai-data-policy-v2:verified-providers');
     // Con el costo real (menor que la reserva) cabe una llamada más.
     const third = await dispatcher.invokeStructured('business.insights.generate', ctx(`k-${randomUUID()}`), values);
     assert.equal(third.ok, true);
+
+    // Una caída de red no prueba costo cero: retiene la reserva y evita gastar otra vez sobre ella.
+    let uncertainCalls = 0;
+    const uncertain = new AiDispatcher({ pool: t.pool, config: { ...t.handle.config, aiRealProviders: true, aiEnvironment: ENV },
+      fetchImpl: async () => { uncertainCalls++; throw new TypeError('network disconnected after dispatch'); } });
+    const lost = await uncertain.invokeStructured('business.insights.generate', ctx(`k-${randomUUID()}`), values);
+    assert.ok(!lost.ok && lost.code === 'provider_unavailable');
+    const cost = (await t.pool.query<{ cost_usd: string | null; cost_source: string }>(
+      'SELECT cost_usd, cost_source FROM ai_invocation WHERE invocation_id = $1', [lost.invocationId])).rows[0];
+    assert.deepEqual(cost, { cost_usd: null, cost_source: 'unknown' });
+    const held = await uncertain.invokeStructured('business.insights.generate', ctx(`k-${randomUUID()}`), values);
+    assert.ok(!held.ok && held.code === 'budget_exhausted', 'la reserva incierta sigue contando para el techo');
+    assert.equal(uncertainCalls, 1);
+
+    // Un proveedor deshabilitado (como OpenRouter tras DEC-0069) no vuelve a ningún rollout.
+    await t.pool.query(`UPDATE ai_route_revision SET status = 'APPROVED' WHERE route_id = $1`, [route.route_id]);
+    await t.pool.query(`UPDATE ai_provider SET status = 'disabled' WHERE provider_id = 'anthropic'`);
+    await assert.rejects(t.handle.dispatcher.registry.activate('business.insights.generate', 'lab', route.route_id, 'test', 'proveedor retirado'), /deshabilitado/);
   } finally {
-    if (prevKey === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = prevKey;
+    await t.pool.query(`UPDATE ai_provider SET status = 'active' WHERE provider_id = 'anthropic'`);
+    await t.pool.query(`UPDATE ai_route_revision SET status = 'DRAFT' WHERE route_id = $1 AND status = 'APPROVED'`, [route.route_id]);
+    if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prevKey;
   }
 });
 
@@ -442,4 +480,37 @@ test('E11/E12: asistente con datos SOLO del propio negocio; campaña aprobada si
   assert.equal((await call(ro, '/ai/website/design', 'POST', { brief: 'x' })).status, 403);
   assert.equal((await call(ro, '/ai/brand', 'PUT', { changes: [{ key: 'voice', value: 'x' }] })).status, 403);
   assert.equal((await call(ro, '/ai/brand')).status, 200);
+});
+
+test('APR-0003: trazas de más de 90 días pierden contenido, no costos ni aislamiento ni idempotencia', async () => {
+  const a = await createTenantWithPlan(t, LIMITS, 'client_airt');
+  const b = await createTenantWithPlan(t, LIMITS, 'client_airt');
+  const dispatcher = new AiDispatcher({ pool: t.pool, config: t.handle.config });
+  const ctx = (tenant: string, key: string) => ({ tenantId: tenant, requestId: key, idempotencyKey: key,
+    actorId: 'system:retention-test', actorKind: 'system' as const, origin: 'retention-test' });
+  const values = { period: '2026-10', metrics: { days_with_activity: 1 } };
+  const oldCtx = ctx(a.tenant, `old-${randomUUID()}`);
+  const old = await dispatcher.invokeStructured('business.insights.generate', oldCtx, values);
+  const fresh = await dispatcher.invokeStructured('business.insights.generate', ctx(a.tenant, `fresh-${randomUUID()}`), values);
+  const other = await dispatcher.invokeStructured('business.insights.generate', ctx(b.tenant, `other-${randomUUID()}`), values);
+  assert.ok(old.ok && fresh.ok && other.ok);
+  await t.pool.query(`UPDATE ai_invocation SET created_at = now() - interval '91 days', cost_usd = 0.02,
+    validation = '{"private_detail":"contenido de tercero"}' WHERE invocation_id = $1`, [old.invocationId]);
+  await t.pool.query(`UPDATE ai_invocation SET created_at = now() - interval '89 days' WHERE invocation_id = $1`, [fresh.invocationId]);
+  const retention = new RetentionService({ pool: t.pool, sink: new AuditSink(t.pool) });
+  await retention.run({ trigger: 'manual', dryRun: true });
+  assert.ok((await t.pool.query('SELECT output FROM ai_invocation WHERE invocation_id = $1', [old.invocationId])).rows[0]?.output);
+  await retention.run({ trigger: 'manual', dryRun: false });
+  const rows = (await t.pool.query('SELECT invocation_id, output, validation, cost_usd, status FROM ai_invocation WHERE invocation_id = ANY($1)',
+    [[old.invocationId, fresh.invocationId, other.invocationId]])).rows;
+  const purged = rows.find((r) => r.invocation_id === old.invocationId)!;
+  assert.equal(purged.output, null);
+  assert.deepEqual(purged.validation, { content_purged: true });
+  assert.equal(purged.cost_usd, '0.020000');
+  assert.equal(purged.status, 'succeeded');
+  assert.ok(rows.find((r) => r.invocation_id === fresh.invocationId)?.output, '89 días conserva contenido');
+  assert.ok(rows.find((r) => r.invocation_id === other.invocationId)?.output, 'otro tenant no se altera');
+  const replay = await dispatcher.invokeStructured('business.insights.generate', oldCtx, values);
+  assert.ok(!replay.ok && replay.code === 'invalid_output', 'contenido purgado no se devuelve como éxito vacío ni se regenera con la misma clave');
+  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1', [a.tenant]), 2);
 });

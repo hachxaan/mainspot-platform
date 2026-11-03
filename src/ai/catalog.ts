@@ -6,12 +6,13 @@
  * Entornos de rollout:
  *  - `test`: rutas SIMULADAS activas (regresión offline; etiquetadas como simuladas).
  *  - `lab`:  rutas reales candidatas en DRAFT. Ninguna se activa sin evaluación aprobada
- *            (scripts/ai-lab-bootstrap.ts o la consola).
+ *            (la Engineering Console o scripts/ai-eval.ts).
  *
- * Precios: catálogo público de OpenRouter consultado el 2026-10-30 10:29 UTC
- * (GET https://openrouter.ai/api/v1/models y /api/v1/images/models/{id}/endpoints). TypeSafe:
- * precio público observado el 2026-10-20 (JEV_PRICING). Son estimaciones de respaldo: el costo
- * registrado es el que reporta cada respuesta (`usage.cost`).
+ * Proveedores directos (DEC-0069): Anthropic (texto), OpenAI (imágenes `gpt-image-2`; texto solo como
+ * alternativa evaluada), TypeSafe (Jev). OpenRouter quedó retirado (migración 0028) y no se siembra.
+ * Precios publicados consultados el 2026-11-03: https://platform.claude.com/docs/en/about-claude/pricing,
+ * https://developers.openai.com/api/docs/pricing; TypeSafe 2026-10-20 (JEV_PRICING). Ningún proveedor directo
+ * informa el cargo por llamada: el costo registrado es `estimated` (uso × precio de esta tabla).
  */
 
 import type { Pool } from 'pg';
@@ -19,8 +20,16 @@ import { runAtomic } from '../conversation/state-machine.ts';
 import type { PromptVariable } from './prompt.ts';
 import { AiRegistry, type RouteParams } from './registry.ts';
 
-const PRICE_OBSERVED_AT = '2026-10-30T10:29:24Z';
-const OR_SOURCE = 'openrouter_public_catalog';
+const ANTHROPIC_PRICES = { source: 'anthropic_pricing_page', observedAt: '2026-11-03T06:00:00Z' } as const;
+const OPENAI_PRICES = { source: 'openai_pricing_page', observedAt: '2026-11-03T06:00:00Z' } as const;
+const SIM_OBSERVED_AT = '2026-10-30T10:29:24Z';
+
+/**
+ * Verificación única de términos (DEC-0067, DEC-0071): docs/architecture/ai-providers-data-terms.md §4.
+ * Los tres proveedores quedaron COVERED_WITH_CONDITIONS; las condiciones técnicas están en el mismo documento.
+ */
+const TERMS_VERIFIED_AT = '2026-11-03T06:00:00Z';
+const TERMS_BASIS = (dec: string) => `${dec}; docs/architecture/ai-providers-data-terms.md §4 (COVERED_WITH_CONDITIONS)`;
 
 export const SEED_ACTOR = 'system:ai-catalog-seed';
 
@@ -45,29 +54,43 @@ export const USE_CASE_SEEDS: UseCaseSeed[] = [
   { id: 'editorial.calendar.suggest', title: 'Calendario editorial', description: 'Ideas fechadas basadas en hechos aprobados.', modality: 'text', risk: 'low', schema: 'editorial/v1' },
 ];
 
-interface ProviderSeed { id: string; name: string; kind: 'openrouter' | 'typesafe' | 'simulated'; baseUrl: string | null; secretRef: string | null; dataPolicy: string; terms: string | null }
+interface ProviderSeed {
+  id: string; name: string; kind: 'anthropic' | 'openai' | 'typesafe' | 'simulated'; baseUrl: string | null; secretRef: string | null;
+  dataPolicy: string; terms: string | null; realData: { basis: string; verifiedAt: string } | null;
+}
 const PROVIDER_SEEDS: ProviderSeed[] = [
-  { id: 'openrouter', name: 'OpenRouter', kind: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', secretRef: 'OPENROUTER_API_KEY', dataPolicy: 'Solicitudes con provider.data_collection=deny; solo datos sintéticos (BR-0007). Retención del proveedor final según sus términos.', terms: 'https://openrouter.ai/terms' },
-  { id: 'typesafe', name: 'TypeSafe (Jev)', kind: 'typesafe', baseUrl: 'https://api.typesafe.ai/v1/systemone', secretRef: 'TYPESAFE_API_KEY', dataPolicy: 'Solo texto minimizado de negocios sintéticos (DEC-0019, APR-0002); USD 1/día (DEC-0032).', terms: 'https://typesafe.ai' },
-  { id: 'simulated', name: 'Simulador interno', kind: 'simulated', baseUrl: null, secretRef: null, dataPolicy: 'Sin salida de datos. Resultados deterministas etiquetados como simulados.', terms: null },
+  {
+    id: 'anthropic', name: 'Anthropic (Claude API)', kind: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', secretRef: 'ANTHROPIC_API_KEY',
+    dataPolicy: 'Texto generativo (DEC-0069). Commercial Terms + DPA; sin entrenamiento; retención 30 días. Sin Files/Batch con datos reales; esquemas sin datos personales; respuestas automáticas a clientes revelan IA (AUP).',
+    terms: 'https://www.anthropic.com/legal/commercial-terms', realData: { basis: TERMS_BASIS('DEC-0071'), verifiedAt: TERMS_VERIFIED_AT },
+  },
+  {
+    id: 'openai', name: 'OpenAI (API)', kind: 'openai', baseUrl: 'https://api.openai.com/v1', secretRef: 'OPENAI_API_KEY',
+    dataPolicy: 'Imágenes gpt-image-2 (DEC-0069); texto solo como alternativa evaluada con store:false. Services Agreement + DPA; sin entrenamiento; logs de abuso 30 días. Solo prompts de texto, nunca personas reales; imágenes publicadas con revisión humana y etiqueta de IA.',
+    terms: 'https://openai.com/policies/services-agreement', realData: { basis: TERMS_BASIS('DEC-0071'), verifiedAt: TERMS_VERIFIED_AT },
+  },
+  {
+    id: 'typesafe', name: 'TypeSafe (Jev)', kind: 'typesafe', baseUrl: 'https://api.typesafe.ai/v1/systemone', secretRef: 'TYPESAFE_API_KEY',
+    dataPolicy: 'Clasificación semántica (DEC-0066). MCA + DPA; sin entrenamiento; sin plazo de retención publicado y sin ZDR asumido: solo texto minimizado sin identificadores. USD 1/día (DEC-0032).',
+    terms: 'https://typesafe.ai', realData: { basis: TERMS_BASIS('DEC-0067'), verifiedAt: TERMS_VERIFIED_AT },
+  },
+  { id: 'simulated', name: 'Simulador interno', kind: 'simulated', baseUrl: null, secretRef: null, dataPolicy: 'Sin salida de datos. Resultados deterministas etiquetados como simulados.', terms: null, realData: null },
 ];
 
 interface ModelSeed { id: string; provider: string; providerModel: string; name: string; modality: 'text' | 'image' | 'classification'; pricing: Record<string, number>; source: string; observedAt: string; capabilities: Record<string, unknown> }
 const MODEL_SEEDS: ModelSeed[] = [
-  { id: 'or:openai/gpt-6.1-sol', provider: 'openrouter', providerModel: 'openai/gpt-6.1-sol', name: 'GPT-6.1 Sol', modality: 'text', pricing: { input_per_mtok: 2, output_per_mtok: 10 }, source: OR_SOURCE, observedAt: PRICE_OBSERVED_AT, capabilities: { structured_outputs: true, tools: true, temperature: false, context: 1050000, tier: 'high', zdr_providers: ['Azure'] } },
-  { id: 'or:anthropic/claude-sonnet-5.5', provider: 'openrouter', providerModel: 'anthropic/claude-sonnet-5.5', name: 'Claude Sonnet 5.5', modality: 'text', pricing: { input_per_mtok: 2, output_per_mtok: 10 }, source: OR_SOURCE, observedAt: PRICE_OBSERVED_AT, capabilities: { structured_outputs: true, tools: true, temperature: false, context: 1000000, tier: 'high', zdr_providers: ['Amazon Bedrock', 'Google'] } },
-  { id: 'or:google/gemini-4-argon', provider: 'openrouter', providerModel: 'google/gemini-4-argon', name: 'Gemini 4 Argon', modality: 'text', pricing: { input_per_mtok: 2, output_per_mtok: 10 }, source: OR_SOURCE, observedAt: PRICE_OBSERVED_AT, capabilities: { structured_outputs: true, tools: true, temperature: true, context: 1048576, tier: 'high', zdr_providers: ['Google'] } },
-  { id: 'or:openai/gpt-6-luna', provider: 'openrouter', providerModel: 'openai/gpt-6-luna', name: 'GPT-6 Luna', modality: 'text', pricing: { input_per_mtok: 0.1, output_per_mtok: 0.5 }, source: OR_SOURCE, observedAt: PRICE_OBSERVED_AT, capabilities: { structured_outputs: true, tools: true, temperature: false, context: 1050000, tier: 'fast', zdr_providers: ['Azure'] } },
-  { id: 'or:anthropic/claude-haiku-5.5', provider: 'openrouter', providerModel: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5', modality: 'text', pricing: { input_per_mtok: 0.1, output_per_mtok: 0.5 }, source: OR_SOURCE, observedAt: PRICE_OBSERVED_AT, capabilities: { structured_outputs: true, tools: true, temperature: false, context: 1000000, tier: 'fast', zdr_providers: ['Google'] } },
-  { id: 'or:deepseek/deepseek-v4.1-flash', provider: 'openrouter', providerModel: 'deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', modality: 'text', pricing: { input_per_mtok: 0.045, output_per_mtok: 0.5 }, source: OR_SOURCE, observedAt: PRICE_OBSERVED_AT, capabilities: { structured_outputs: true, tools: true, temperature: true, context: 1048576, tier: 'fast' } },
-  { id: 'or:black-forest-labs/flux-3-image-klein', provider: 'openrouter', providerModel: 'black-forest-labs/flux-3-image-klein', name: 'FLUX 3 Image Klein', modality: 'image', pricing: { per_image: 0.009 }, source: `${OR_SOURCE}:images/endpoints (1K)`, observedAt: PRICE_OBSERVED_AT, capabilities: { aspect_ratios: ['16:9', '4:3', '1:1', '3:4', '4:5'], resolution: '1K', zdr_providers: [] } },
-  { id: 'or:bytedance-seed/seedream-5-0-flash', provider: 'openrouter', providerModel: 'bytedance-seed/seedream-5-0-flash', name: 'Seedream 5.0 Flash', modality: 'image', pricing: { per_image: 0.018 }, source: `${OR_SOURCE}:images/endpoints`, observedAt: PRICE_OBSERVED_AT, capabilities: { aspect_ratios: ['16:9', '4:3', '1:1', '3:4', '4:5'], resolution: '1K', zdr_providers: ['Seed'] } },
-  { id: 'or:google/gemini-3.1-flash-lite-image', provider: 'openrouter', providerModel: 'google/gemini-3.1-flash-lite-image', name: 'Gemini 3.1 Flash Lite Image', modality: 'image', pricing: { output_per_mtok: 30 }, source: `${OR_SOURCE}:images/endpoints (0.00003 USD/token de imagen)`, observedAt: PRICE_OBSERVED_AT, capabilities: { aspect_ratios: ['16:9', '4:3', '1:1', '3:4', '4:5'], resolution: '1K', zdr_providers: ['Google'] } },
-  { id: 'or:microsoft/mai-image-2.6-flash', provider: 'openrouter', providerModel: 'microsoft/mai-image-2.6-flash', name: 'MAI Image 2.6 Flash', modality: 'image', pricing: { output_per_mtok: 19 }, source: `${OR_SOURCE}:images/endpoints (0.000019 USD/token de imagen)`, observedAt: PRICE_OBSERVED_AT, capabilities: { aspect_ratios: ['16:9', '4:3', '1:1', '3:4'], zdr_providers: ['Azure'] } },
+  // Claude 5.x: pensamiento adaptativo; rechazan `temperature` distinta de la predeterminada. Haiku: hasta 100k tokens de prompt.
+  { id: 'an:claude-haiku-5-5', provider: 'anthropic', providerModel: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', modality: 'text', pricing: { input_per_mtok: 0.1, output_per_mtok: 0.5 }, ...ANTHROPIC_PRICES, capabilities: { structured_outputs: true, tools: true, temperature: false, forced_tool_choice: true, tier: 'fast' } },
+  { id: 'an:claude-sonnet-5-5', provider: 'anthropic', providerModel: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', modality: 'text', pricing: { input_per_mtok: 2, output_per_mtok: 10 }, ...ANTHROPIC_PRICES, capabilities: { structured_outputs: true, tools: true, temperature: false, forced_tool_choice: false, tier: 'high' } },
+  { id: 'an:claude-opus-5-5', provider: 'anthropic', providerModel: 'claude-opus-5-5', name: 'Claude Opus 5.5', modality: 'text', pricing: { input_per_mtok: 4, output_per_mtok: 20 }, ...ANTHROPIC_PRICES, capabilities: { structured_outputs: true, tools: true, temperature: false, forced_tool_choice: false, tier: 'max' } },
+  // gpt-image-2: USD por millón de tokens (texto de entrada 5, imagen de salida 30); calidad media 1536x1024 ≈ USD 0.041.
+  { id: 'oa:gpt-image-2', provider: 'openai', providerModel: 'gpt-image-2', name: 'GPT Image 2', modality: 'image', pricing: { input_per_mtok: 5, output_per_mtok: 30 }, ...OPENAI_PRICES, capabilities: { aspect_ratios: ['16:9', '4:3', '1:1', '3:4', '4:5'], quality: ['low', 'medium', 'high'], requires_org_verification: true } },
+  // Alternativa de texto evaluable solo donde Anthropic no alcance la calidad (DEC-0069).
+  { id: 'oa:gpt-6-luna', provider: 'openai', providerModel: 'gpt-6-luna', name: 'GPT-6 Luna', modality: 'text', pricing: { input_per_mtok: 0.1, output_per_mtok: 0.5 }, ...OPENAI_PRICES, capabilities: { structured_outputs: true, tools: true, temperature: false, tier: 'fast' } },
   { id: 'ts:jev-1.14.0', provider: 'typesafe', providerModel: 'jev-1.14.0', name: 'Jev 1.14.0 (versión fijada)', modality: 'classification', pricing: { input_per_mtok: 0.042, output_per_mtok: 0 }, source: 'typesafe_public_pricing', observedAt: '2026-10-20T00:00:00Z', capabilities: { question_types: ['choice', 'noul', 'score'] } },
-  { id: 'sim:text', provider: 'simulated', providerModel: 'simulated-text', name: 'Simulador de texto', modality: 'text', pricing: {}, source: 'internal', observedAt: PRICE_OBSERVED_AT, capabilities: { simulated: true } },
-  { id: 'sim:image', provider: 'simulated', providerModel: 'simulated-image', name: 'Simulador de imágenes', modality: 'image', pricing: {}, source: 'internal', observedAt: PRICE_OBSERVED_AT, capabilities: { simulated: true } },
-  { id: 'sim:jev-mock', provider: 'simulated', providerModel: 'jev-mock', name: 'Jev simulado (MockJev)', modality: 'classification', pricing: {}, source: 'internal', observedAt: PRICE_OBSERVED_AT, capabilities: { simulated: true } },
+  { id: 'sim:text', provider: 'simulated', providerModel: 'simulated-text', name: 'Simulador de texto', modality: 'text', pricing: {}, source: 'internal', observedAt: SIM_OBSERVED_AT, capabilities: { simulated: true } },
+  { id: 'sim:image', provider: 'simulated', providerModel: 'simulated-image', name: 'Simulador de imágenes', modality: 'image', pricing: {}, source: 'internal', observedAt: SIM_OBSERVED_AT, capabilities: { simulated: true } },
+  { id: 'sim:jev-mock', provider: 'simulated', providerModel: 'jev-mock', name: 'Jev simulado (MockJev)', modality: 'classification', pricing: {}, source: 'internal', observedAt: SIM_OBSERVED_AT, capabilities: { simulated: true } },
 ];
 
 // ------------------------------------------------------------------ prompts v1
@@ -261,24 +284,25 @@ interface RouteSeed { useCase: string; model: string; params: RouteParams; maxCo
 const TEXT_DEFAULT = { temperature: 0.4, timeout_ms: 90_000, repair_attempts: 1 } as const;
 
 /**
- * Candidatas reales (lab): quedan en DRAFT hasta su evaluación. Indicación del propietario
- * (2026-10-30): «Usa los modelos de Anthropic, siempre cuidando el consumo» ⇒ Anthropic es la
- * familia principal; GPT-6 Luna (Azure, ZDR) queda como comparación de bajo costo. Sonnet 5.5 es la
- * candidata de alta capacidad y hoy la bloquea el guardrail del workspace de OpenRouter. Las
- * candidatas de imagen son las que tienen endpoint ZDR (GET /api/v1/endpoints/zdr, 2026-10-30).
+ * Candidatas reales (lab), en DRAFT hasta su evaluación (DEC-0069): Anthropic primero (Haiku 5.5 por costo,
+ * Sonnet 5.5 donde la tarea pide más capacidad); GPT-6 Luna (OpenAI directo) solo donde Anthropic falló la suite
+ * con OpenRouter (edición, plan y calendario); imágenes con gpt-image-2 en calidad media.
  */
+const HAIKU = 'an:claude-haiku-5-5';
+const SONNET = 'an:claude-sonnet-5-5';
+const LUNA = 'oa:gpt-6-luna';
 export const LAB_CANDIDATES: RouteSeed[] = [
-  ...[['or:anthropic/claude-sonnet-5.5', 'low'], ['or:anthropic/claude-haiku-5.5', 'medium'], ['or:openai/gpt-6-luna', 'medium']].map(([m, effort]) => ({ useCase: 'website.initial.design', model: m as string, params: { ...TEXT_DEFAULT, max_tokens: 9000, timeout_ms: 180_000, reasoning_effort: effort as 'low' | 'medium' }, maxCost: m!.includes('sonnet') ? 0.25 : 0.05, note: m!.includes('sonnet') ? 'Candidata de alta capacidad para diseño inicial' : 'Candidata permitida por el guardrail; razonamiento medio para diseño' })),
-  ...['or:anthropic/claude-haiku-5.5', 'or:openai/gpt-6-luna'].map((m) => ({ useCase: 'website.edit.simple', model: m, params: { ...TEXT_DEFAULT, max_tokens: 3000, timeout_ms: 60_000 }, maxCost: 0.02, note: 'Candidata económica para ediciones simples' })),
-  ...[['or:anthropic/claude-sonnet-5.5', 'low'], ['or:anthropic/claude-haiku-5.5', 'high'], ['or:openai/gpt-6-luna', 'high']].map(([m, effort]) => ({ useCase: 'website.edit.complex', model: m as string, params: { ...TEXT_DEFAULT, max_tokens: 9000, timeout_ms: 180_000, reasoning_effort: effort as 'low' | 'high' }, maxCost: m!.includes('sonnet') ? 0.2 : 0.05, note: 'Candidata para rediseños (más razonamiento que la ruta simple)' })),
-  ...['or:anthropic/claude-haiku-5.5', 'or:openai/gpt-6-luna'].map((m) => ({ useCase: 'social.facebook.post.compose', model: m, params: { ...TEXT_DEFAULT, max_tokens: 2500 }, maxCost: 0.03, note: 'Candidata de copy social' })),
-  ...['or:anthropic/claude-haiku-5.5', 'or:openai/gpt-6-luna'].map((m) => ({ useCase: 'marketing.campaign.creatives', model: m, params: { ...TEXT_DEFAULT, max_tokens: 2500 }, maxCost: 0.03, note: 'Candidata de creatividades' })),
-  ...['or:anthropic/claude-haiku-5.5', 'or:openai/gpt-6-luna'].flatMap((m) => ['engagement.facebook.comment.reply', 'engagement.google.review.reply'].map((uc) => ({ useCase: uc, model: m, params: { ...TEXT_DEFAULT, max_tokens: 800, timeout_ms: 45_000 }, maxCost: 0.01, note: 'Candidata ligera para respuestas' }))),
-  ...['or:anthropic/claude-haiku-5.5', 'or:openai/gpt-6-luna'].map((m) => ({ useCase: 'conversation.owner.assistant', model: m, params: { ...TEXT_DEFAULT, max_tokens: 1500, timeout_ms: 60_000 }, maxCost: 0.03, note: 'Candidata del asistente con herramientas' })),
-  ...[['or:anthropic/claude-haiku-5.5', 'medium'], ['or:openai/gpt-6-luna', 'medium']].map(([m, effort]) => ({ useCase: 'marketing.campaign.plan', model: m as string, params: { ...TEXT_DEFAULT, max_tokens: 3000, timeout_ms: 120_000, reasoning_effort: effort as 'medium' }, maxCost: 0.03, note: 'Candidata de planeación' })),
-  ...['or:anthropic/claude-haiku-5.5', 'or:openai/gpt-6-luna'].map((m) => ({ useCase: 'business.insights.generate', model: m, params: { ...TEXT_DEFAULT, max_tokens: 1500 }, maxCost: 0.02, note: 'Candidata analítica' })),
-  ...['or:anthropic/claude-haiku-5.5', 'or:openai/gpt-6-luna'].map((m) => ({ useCase: 'editorial.calendar.suggest', model: m, params: { ...TEXT_DEFAULT, max_tokens: 2000 }, maxCost: 0.02, note: 'Candidata editorial' })),
-  ...['or:bytedance-seed/seedream-5-0-flash', 'or:google/gemini-3.1-flash-lite-image', 'or:microsoft/mai-image-2.6-flash'].flatMap((m) => ['website.image.generate', 'social.facebook.image.generate'].map((uc) => ({ useCase: uc, model: m, params: { timeout_ms: 180_000, aspect_ratio: uc.startsWith('social') ? '1:1' : '16:9', resolution: m.includes('seedream') ? '1K' : null }, maxCost: 0.06, note: 'Candidata de imagen con endpoint ZDR' }))),
+  ...[[SONNET, 'low', 0.25], [HAIKU, 'medium', 0.05]].map(([m, effort, cost]) => ({ useCase: 'website.initial.design', model: m as string, params: { ...TEXT_DEFAULT, max_tokens: 9000, timeout_ms: 180_000, reasoning_effort: effort as 'low' | 'medium' }, maxCost: cost as number, note: 'Diseño inicial con Anthropic directo' })),
+  ...[HAIKU, LUNA].map((m) => ({ useCase: 'website.edit.simple', model: m, params: { ...TEXT_DEFAULT, max_tokens: 3000, timeout_ms: 60_000 }, maxCost: 0.02, note: m === LUNA ? 'Alternativa directa si Anthropic no pasa la suite' : 'Edición simple con Anthropic directo' })),
+  ...[[SONNET, 'low', 0.2], [HAIKU, 'high', 0.05], [LUNA, 'high', 0.05]].map(([m, effort, cost]) => ({ useCase: 'website.edit.complex', model: m as string, params: { ...TEXT_DEFAULT, max_tokens: 9000, timeout_ms: 180_000, reasoning_effort: effort as 'low' | 'high' }, maxCost: cost as number, note: m === LUNA ? 'Alternativa directa si Anthropic no pasa la suite' : 'Rediseños con Anthropic directo' })),
+  { useCase: 'social.facebook.post.compose', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 2500 }, maxCost: 0.03, note: 'Copy social con Anthropic directo' },
+  { useCase: 'marketing.campaign.creatives', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 2500 }, maxCost: 0.03, note: 'Creatividades con Anthropic directo' },
+  ...['engagement.facebook.comment.reply', 'engagement.google.review.reply'].map((uc) => ({ useCase: uc, model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 800, timeout_ms: 45_000 }, maxCost: 0.01, note: 'Respuestas con Anthropic directo' })),
+  { useCase: 'conversation.owner.assistant', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 1500, timeout_ms: 60_000 }, maxCost: 0.03, note: 'Asistente con herramientas, Anthropic directo' },
+  ...[[SONNET, 0.1], [HAIKU, 0.03], [LUNA, 0.03]].map(([m, cost]) => ({ useCase: 'marketing.campaign.plan', model: m as string, params: { ...TEXT_DEFAULT, max_tokens: 3000, timeout_ms: 120_000, reasoning_effort: 'medium' as const }, maxCost: cost as number, note: m === LUNA ? 'Alternativa directa si Anthropic no pasa la suite' : 'Planeación con Anthropic directo' })),
+  { useCase: 'business.insights.generate', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 1500 }, maxCost: 0.02, note: 'Resumen con Anthropic directo' },
+  ...[[SONNET, 0.08], [HAIKU, 0.02], [LUNA, 0.02]].map(([m, cost]) => ({ useCase: 'editorial.calendar.suggest', model: m as string, params: { ...TEXT_DEFAULT, max_tokens: 2000 }, maxCost: cost as number, note: m === LUNA ? 'Alternativa directa si Anthropic no pasa la suite' : 'Calendario con Anthropic directo' })),
+  ...['website.image.generate', 'social.facebook.image.generate'].map((uc) => ({ useCase: uc, model: 'oa:gpt-image-2', params: { timeout_ms: 180_000, aspect_ratio: uc.startsWith('social') ? '1:1' : '16:9', quality: 'medium' as const }, maxCost: 0.08, note: 'gpt-image-2 directo (DEC-0069), calidad media' })),
   ...['conversation.intent.classify', 'engagement.facebook.comment.classify', 'engagement.google.review.classify'].map((uc) => ({ useCase: uc, model: 'ts:jev-1.14.0', params: { timeout_ms: 15_000 }, maxCost: 0.01, note: 'Jev primario (versión fijada)' })),
 ];
 
@@ -306,9 +330,15 @@ export async function ensureAiCatalog(pool: Pool): Promise<{ created: string[] }
       if (r.rowCount) created.push(`use_case:${uc.id}`);
     }
     for (const p of PROVIDER_SEEDS) {
+      // La verificación de términos registrada en código se aplica si es más reciente que la de la BD.
       const r = await client.query(
-        `INSERT INTO ai_provider (provider_id, display_name, kind, base_url, secret_ref, data_policy, terms_url)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (provider_id) DO NOTHING`, [p.id, p.name, p.kind, p.baseUrl, p.secretRef, p.dataPolicy, p.terms]);
+        `INSERT INTO ai_provider (provider_id, display_name, kind, base_url, secret_ref, data_policy, terms_url, real_data, real_data_basis, terms_verified_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (provider_id) DO UPDATE SET real_data = EXCLUDED.real_data, real_data_basis = EXCLUDED.real_data_basis,
+           terms_verified_at = EXCLUDED.terms_verified_at, data_policy = EXCLUDED.data_policy, updated_at = now()
+         WHERE EXCLUDED.terms_verified_at IS NOT NULL AND ai_provider.terms_verified_at IS DISTINCT FROM EXCLUDED.terms_verified_at
+           AND (ai_provider.terms_verified_at IS NULL OR ai_provider.terms_verified_at < EXCLUDED.terms_verified_at)`,
+        [p.id, p.name, p.kind, p.baseUrl, p.secretRef, p.dataPolicy, p.terms, p.realData ? 'allowed' : 'blocked', p.realData?.basis ?? null, p.realData?.verifiedAt ?? null]);
       if (r.rowCount) created.push(`provider:${p.id}`);
     }
     for (const m of MODEL_SEEDS) {
@@ -322,7 +352,7 @@ export async function ensureAiCatalog(pool: Pool): Promise<{ created: string[] }
     }
     await client.query(
       `INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES
-         ('bud_lab_total', 'lab_total', NULL, 25, 'Autorización del propietario 2026-10-30 (conversación; QS-0016 Q-AI-BUDGET)', $1),
+         ('bud_lab_total', 'lab_total', NULL, 25, 'DEC-0068: USD 25 acumulado de IA generativa, incluido el consumo histórico', $1),
          ('bud_tenant_day_default', 'tenant_day', NULL, 1, 'Propuesta técnica OPS-0001 (por defecto por negocio y día)', $1)
        ON CONFLICT DO NOTHING`, [SEED_ACTOR]);
   });

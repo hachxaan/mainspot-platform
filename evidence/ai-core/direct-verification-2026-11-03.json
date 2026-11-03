@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-03",
+  "scope": "QS-0017 direct-provider cutover; not full generative acceptance",
+  "full_suite_before_final_deadline_and_retention_fixes": {
+    "command": "npm test",
+    "typecheck": "PASS",
+    "unit": { "passed": 167, "failed": 0 },
+    "integration": { "passed": 162, "failed": 0 },
+    "smoke": { "passed": 5, "failed": 0 },
+    "e2e": { "passed": 4, "failed": 0 },
+    "environment": "mainspot_test; persistent local service stopped for E2E then restored"
+  },
+  "final_changed_paths": {
+    "typecheck": "PASS",
+    "direct_adapter_unit_command": "node --test tests/unit/ai-provider-anthropic.test.ts tests/unit/ai-provider-openai.test.ts",
+    "direct_adapter_unit": { "passed": 19, "failed": 0 },
+    "retention_and_ai_core_integration_command": "node scripts/test-prep.ts && node --test --test-concurrency=1 tests/integration/ai-core.test.ts tests/integration/retention.test.ts",
+    "retention_and_ai_core_integration": { "passed": 15, "failed": 0 },
+    "body_deadline_before": "Both adapters still pending at 100 ms with a 25 ms deadline after headers",
+    "body_deadline_after": "Both return timeout while reading body; runtime smoke recorded separately",
+    "retention_before": "91-day-old invocation output remained present; regression failed",
+    "retention_after": "Output and validation content removed, cost/status retained, 89-day/other-tenant rows preserved, no empty-success replay or regeneration with same key",
+    "runtime_smoke": "direct-runtime-smoke-2026-11-03.json"
+  },
+  "real_provider_evaluations": {
+    "intake_jev_gate": { "evaluated": 240, "intent_correct": 236, "final_risk_misses": 0, "passed": true },
+    "ai_core_jev": { "suites_passed": 3, "scope_cases": "8/8", "facebook_exact": "17/20", "google_exact": "17/20", "sentiment_accuracy": 0.9, "risk_misses": 0 },
+    "anthropic_text": "BLOCKED_EXTERNAL: HTTP 400 low credit balance; authenticated model catalog accepted",
+    "openai_images": "BLOCKED_EXTERNAL: HTTP 429 insufficient_quota / credit_balance_exhausted; gpt-image-2 authenticated catalog accepted",
+    "evidence": ["direct-evals-2026-11-03.json", "direct-provider-access-2026-11-03.json", "jev-gate-dev-2026-11-03.json"]
+  },
+  "browser": {
+    "origin": "https://app.mainspot.local.io",
+    "tls_bypass": false,
+    "command": "node scripts/ai-core-lab-e2e.ts --blocked-providers",
+    "exit_code": 1,
+    "verdict": "BLOCKED, intentionally not full E01-E20 PASS",
+    "verified": ["owner onboarding", "brand facts", "uploaded image WebP and EXIF removal", "fictional fixture marked real through Administration", "actual TypeSafe classification", "Engineering direct route/eval screens", "zero new OpenRouter invocations", "separate budgets", "no panel JavaScript errors"],
+    "not_verified": ["direct text generation", "direct image generation", "direct generative canary/rollback", "full generative journeys", "Meta/Google/Telegram authentic external delivery"],
+    "evidence": "direct-e2e-2026-11-03.txt",
+    "updated_console_visual": "direct-screens-2026-11-03/engineering-direct-current.png"
+  },
+  "observed_budget_ledger": {
+    "generative_accumulated_usd": 0.096726,
+    "generative_cap_usd": 25,
+    "generative_direct_successful_charges_usd": 0,
+    "typesafe_utc_day_usd_rounded": 0.015011,
+    "typesafe_daily_limit_usd": 1,
+    "note": "Historical reported OpenRouter spend retained; direct failures do not prove model quality. TypeSafe accounting shares completed spend, not an atomic concurrent reservation."
+  }
+}

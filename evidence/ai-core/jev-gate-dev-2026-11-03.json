@@ -1,0 +1,97 @@
+{
+  "run_id": "jer_8321eea1-51dc-417c-9e10-fdd03dbffcbe",
+  "set": "gate",
+  "opens_gate": true,
+  "policy_version": "intent-classifier-v3",
+  "requested_model": "jev-1.14.0",
+  "dataset_version": "v3",
+  "dataset_sha256": "a0f4a487cfaf1932a141eaa455a8a8e9bf439abc4914387a823ef335ce7041ac",
+  "decision_code_sha256": "05f7ada87b1616ed53566bd831796ba181082c4b3519a3b940edb3854e7688d5",
+  "riskDefinition": "final_outcome",
+  "casesTotal": 240,
+  "casesEvaluated": 240,
+  "intentCorrect": 236,
+  "riskyCases": 90,
+  "riskyMisses": 0,
+  "jevRiskyMisses": 1,
+  "capabilityCorrect": 197,
+  "costUsd": 0.012737843999999988,
+  "resolvedModels": [
+    "jev-1.14.0"
+  ],
+  "decisionRoutes": {
+    "jev/jev_confident": 165,
+    "human_escalation/safety_discrepancy": 63,
+    "jev/low_confidence": 12
+  },
+  "aboveThreshold": {
+    "threshold": 0.7,
+    "cases": 225,
+    "correct": 224
+  },
+  "passed": true,
+  "per_intent": {
+    "query.read_only": {
+      "total": 30,
+      "correct": 30
+    },
+    "content.suggestion": {
+      "total": 30,
+      "correct": 30
+    },
+    "request.needs_clarification": {
+      "total": 30,
+      "correct": 30
+    },
+    "website.edit": {
+      "total": 30,
+      "correct": 30
+    },
+    "change.ambiguous": {
+      "total": 30,
+      "correct": 27
+    },
+    "sensitive.business_decision": {
+      "total": 30,
+      "correct": 30
+    },
+    "rule.prohibited_commercial": {
+      "total": 30,
+      "correct": 29
+    },
+    "capability.unsupported": {
+      "total": 30,
+      "correct": 30
+    }
+  },
+  "confusion": {
+    "query.read_only": {
+      "query.read_only": 30
+    },
+    "content.suggestion": {
+      "content.suggestion": 30
+    },
+    "request.needs_clarification": {
+      "request.needs_clarification": 30
+    },
+    "website.edit": {
+      "website.edit": 30
+    },
+    "change.ambiguous": {
+      "change.ambiguous": 27,
+      "request.needs_clarification": 1,
+      "website.edit": 2
+    },
+    "sensitive.business_decision": {
+      "sensitive.business_decision": 30
+    },
+    "rule.prohibited_commercial": {
+      "rule.prohibited_commercial": 29,
+      "website.edit": 1
+    },
+    "capability.unsupported": {
+      "capability.unsupported": 30
+    }
+  },
+  "spent_today_usd": 0.01273784399999999
+}

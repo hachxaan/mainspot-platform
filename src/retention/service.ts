@@ -34,6 +34,7 @@ import { GoogleContentRetention } from '../google/retention.ts';
 /** Plazos aprobados, como intervalos de PostgreSQL. */
 export const RETENTION_POLICY = {
   conversationContent: { interval: '90 days', decision: 'DEC-0021' },
+  aiTraceContent: { interval: '90 days', decision: 'APR-0003; DAT-0001; OPS-0001' },
   auditEvents: { interval: '2 years', decision: 'DEC-0022' },
   analyticsAggregates: { interval: '2 years', decision: 'DEC-0023' },
   exitGrace: { interval: '30 days', decision: 'DEC-0024' },
@@ -119,6 +120,7 @@ export interface TenantPurgeCounts {
   proposals: number;
   proposalsExpired: number;
   jevBodies: number;
+  aiTraces: number;
   auditEvents: number;
   analyticsRows: number;
 }
@@ -140,7 +142,7 @@ export interface RetentionPreview {
   lastRun: { run_day: string; status: string; finished_at: string | null } | null;
 }
 
-const ZERO: TenantPurgeCounts = { conversations: 0, proposals: 0, proposalsExpired: 0, jevBodies: 0, auditEvents: 0, analyticsRows: 0 };
+const ZERO: TenantPurgeCounts = { conversations: 0, proposals: 0, proposalsExpired: 0, jevBodies: 0, aiTraces: 0, auditEvents: 0, analyticsRows: 0 };
 
 export function tenantSha256(tenantId: string): string {
   return createHash('sha256').update(tenantId).digest('hex');
@@ -197,6 +199,8 @@ export class RetentionService {
       const google = await new GoogleContentRetention(this.deps).purge({ dryRun: opts.dryRun });
       totals.failures += google.failures;
       if (!opts.dryRun) await this.deps.pool.query("DELETE FROM password_reset_token WHERE expires_at < now() - interval '1 day'");
+      // Evaluaciones de plataforma (tenant NULL): misma retención de trazas, sin borrar uso/costos.
+      totals.aiTraces = await runAtomic(this.deps.pool, (client) => this.purgeAiTraces(client, null, opts.dryRun));
       const tenants = await this.deps.pool.query<{ client_id: string }>(
         `SELECT client_id FROM client WHERE status <> 'anonymized' ORDER BY client_id`);
       for (const { client_id: tenantId } of tenants.rows) {
@@ -430,6 +434,7 @@ export class RetentionService {
         proposals: await n(`SELECT count(*) AS n FROM action_proposal WHERE tenant_id = $1 AND content_purged_at IS NULL AND request_id IN (${dueRequests})`, [tenantId, conv]),
         proposalsExpired: await n(`SELECT count(*) AS n FROM action_proposal WHERE tenant_id = $1 AND status = ANY($3) AND request_id IN (${dueRequests})`, [tenantId, conv, OPEN_PROPOSAL_STATES]),
         jevBodies: await n(`SELECT count(*) AS n FROM jev_classification WHERE tenant_id = $1 AND content_purged_at IS NULL AND request_id IN (${dueRequests})`, [tenantId, conv]),
+        aiTraces: await this.purgeAiTraces(client, tenantId, true),
         auditEvents: await n('SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1 AND ts < now() - $2::interval', [tenantId, auditI]),
         analyticsRows: await n('SELECT count(*) AS n FROM analytics_daily_summary WHERE tenant_id = $1 AND day < (now() - $2::interval)::date', [tenantId, analyticsI]),
       };
@@ -447,6 +452,7 @@ export class RetentionService {
     const jev = await client.query(
       `UPDATE jev_classification SET raw_request = NULL, raw_response = NULL, content_purged_at = now()
         WHERE tenant_id = $1 AND request_id = ANY($2) AND content_purged_at IS NULL`, [tenantId, requestIds]);
+    const aiTraces = await this.purgeAiTraces(client, tenantId, false);
     const audit = await client.query('DELETE FROM audit_event WHERE tenant_id = $1 AND ts < now() - $2::interval', [tenantId, auditI]);
     const analytics = await client.query(
       'DELETE FROM analytics_daily_summary WHERE tenant_id = $1 AND day < (now() - $2::interval)::date', [tenantId, analyticsI]);
@@ -455,9 +461,23 @@ export class RetentionService {
       proposals: proposals.rowCount ?? 0,
       proposalsExpired: expired.rowCount ?? 0,
       jevBodies: jev.rowCount ?? 0,
+      aiTraces,
       auditEvents: audit.rowCount ?? 0,
       analyticsRows: analytics.rowCount ?? 0,
     };
+  }
+
+  /** APR-0003/DAT-0001: contenido de trazas a 90 días; ledger e idempotency keys sobreviven. */
+  private async purgeAiTraces(client: PoolClient, tenantId: string | null, dryRun: boolean): Promise<number> {
+    const due = `tenant_id IS NOT DISTINCT FROM $1 AND created_at < now() - $2::interval
+      AND status <> 'running' AND (output IS NOT NULL OR validation <> '{"content_purged":true}'::jsonb)`;
+    const params = [tenantId, RETENTION_POLICY.aiTraceContent.interval];
+    if (dryRun) {
+      const r = await client.query<{ n: string }>(`SELECT count(*) AS n FROM ai_invocation WHERE ${due}`, params);
+      return Number(r.rows[0]?.n ?? 0);
+    }
+    const r = await client.query(`UPDATE ai_invocation SET output = NULL, validation = '{"content_purged":true}' WHERE ${due}`, params);
+    return r.rowCount ?? 0;
   }
 
   /** Datos del tenant para entregarlos antes de la baja (sin credenciales derivadas). */
@@ -563,5 +583,5 @@ function hasChanges(c: TenantPurgeCounts): boolean {
 }
 
 function countsResult(c: TenantPurgeCounts): string {
-  return `conversations:${c.conversations},proposals:${c.proposals},expired:${c.proposalsExpired},jev:${c.jevBodies},audit:${c.auditEvents},analytics:${c.analyticsRows}`;
+  return `conversations:${c.conversations},proposals:${c.proposals},expired:${c.proposalsExpired},jev:${c.jevBodies},ai_traces:${c.aiTraces},audit:${c.auditEvents},analytics:${c.analyticsRows}`;
 }

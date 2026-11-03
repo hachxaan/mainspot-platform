@@ -1,0 +1,68 @@
+{
+  "generated_at": "2026-11-03T06:30:39.764Z",
+  "scope": "Throwaway synthetic record in mainspot_test; actual retention CLI, not a provider generation",
+  "dry_run": {
+    "runId": "ret_782ad8ed-80c2-4aeb-83c7-d12a6c8a9dc0",
+    "trigger": "manual",
+    "dryRun": true,
+    "status": "completed",
+    "totals": {
+      "conversations": 0,
+      "proposals": 0,
+      "proposalsExpired": 0,
+      "jevBodies": 0,
+      "aiTraces": 1,
+      "auditEvents": 0,
+      "analyticsRows": 0,
+      "tenants": 18,
+      "tenantsWithChanges": 0,
+      "tenantsAnonymized": 0,
+      "exitsDue": 0,
+      "registryPruned": 0,
+      "failures": 0
+    }
+  },
+  "applied": {
+    "runId": "ret_46747fc5-a625-40d6-8f48-500486053a88",
+    "trigger": "manual",
+    "dryRun": false,
+    "status": "completed",
+    "totals": {
+      "conversations": 0,
+      "proposals": 0,
+      "proposalsExpired": 0,
+      "jevBodies": 0,
+      "aiTraces": 1,
+      "auditEvents": 0,
+      "analyticsRows": 0,
+      "tenants": 18,
+      "tenantsWithChanges": 0,
+      "tenantsAnonymized": 0,
+      "exitsDue": 0,
+      "registryPruned": 0,
+      "failures": 0
+    }
+  },
+  "retained_ledger": {
+    "status": "succeeded",
+    "output": null,
+    "validation": {
+      "content_purged": true
+    },
+    "cost_usd": "0.123456"
+  },
+  "body_deadline_smoke": [
+    {
+      "adapter": "AnthropicAdapter",
+      "deadline_ms": 25,
+      "elapsed_ms": 64,
+      "result": "timeout"
+    },
+    {
+      "adapter": "OpenAIAdapter",
+      "deadline_ms": 25,
+      "elapsed_ms": 27,
+      "result": "timeout"
+    }
+  ]
+}

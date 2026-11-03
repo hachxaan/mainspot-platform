@@ -75,9 +75,9 @@ esac
 export MAINSPOT_DEV_TELEGRAM="$TELEGRAM_MODE" CHANNEL_PRIMARY TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET="${TELEGRAM_WEBHOOK_SECRET:-}"
 
 # --- AI Core: archivo protegido (opcional) --------------------------------------------------------
-# OPENROUTER_API_KEY, TYPESAFE_API_KEY, PLATFORM_MFA_KEY, AI_REAL_PROVIDERS, AI_ENVIRONMENT. Sin él,
-# las rutas reales responden BLOCKED_EXTERNAL y la consola de plataforma queda deshabilitada.
-# Los proveedores reales solo atienden negocios clasificados `synthetic` (BR-0007).
+# ANTHROPIC_API_KEY, OPENAI_API_KEY, TYPESAFE_API_KEY, PLATFORM_MFA_KEY, AI_REAL_PROVIDERS, AI_ENVIRONMENT
+# (proveedores directos, DEC-0069). Sin él, las rutas reales responden BLOCKED_EXTERNAL y la consola de
+# plataforma queda deshabilitada. Negocios `real`: solo proveedores con términos verificados (DEC-0067/0071).
 AI_ENV_FILE="${MAINSPOT_AI_ENV_FILE:-${XDG_CONFIG_HOME:-${HOME:-/nonexistent}/.config}/mainspot/ai-core.env}"
 if [ -e "$AI_ENV_FILE" ]; then
   perm="$(stat -c '%a' "$AI_ENV_FILE")"
@@ -90,6 +90,8 @@ if [ -e "$AI_ENV_FILE" ]; then
   . "$AI_ENV_FILE"
   set +a
 fi
+# OpenRouter se conserva solo en el historial de la BD, nunca como credencial del runtime (DEC-0069).
+unset OPENROUTER_API_KEY
 
 # PostgreSQL del docker-compose del repo, publicado solo en loopback.
 if ! docker exec mainspot-platform-postgres-1 pg_isready -U "${POSTGRES_USER:-mainspot}" >/dev/null 2>&1; then
@@ -121,7 +123,15 @@ if [[ "$REPUTATION_PROVIDER" != simulated || "$SOCIAL_PROVIDER" != simulated ]];
   : "${CONNECTOR_TOKEN_KEY:?Los conectores reales requieren CONNECTOR_TOKEN_KEY}"
   POLL_INTERVAL=60000
 fi
-export APP_ENV=development JEV_MODE=disabled REPUTATION_PROVIDER SOCIAL_PROVIDER \
+# Jev (TypeSafe directo) es el clasificador primario de todo texto (DEC-0066) y procesa datos reales con la
+# cobertura contractual verificada (DEC-0067, docs/architecture/ai-providers-data-terms.md: modelo versionado
+# y envío mínimo). Sin clave, apagado.
+if [ -n "${TYPESAFE_API_KEY:-}" ]; then
+  export JEV_MODE="${JEV_MODE_DEV:-primary}" JEV_PROVIDER=typesafe JEV_DATA_SCOPE=all JEV_MODEL=jev-1.14.0
+else
+  export JEV_MODE=disabled
+fi
+export APP_ENV=development REPUTATION_PROVIDER SOCIAL_PROVIDER \
   DOMAIN_PROVIDER=simulated PAYMENT_PROVIDER=simulated \
   ENGAGEMENT_WORKER=on ENGAGEMENT_WORKER_INTERVAL_MS="${ENGAGEMENT_WORKER_INTERVAL_MS:-3000}" \
   ENGAGEMENT_POLL_INTERVAL_MS="${ENGAGEMENT_POLL_INTERVAL_MS:-$POLL_INTERVAL}" \
@@ -129,8 +139,8 @@ export APP_ENV=development JEV_MODE=disabled REPUTATION_PROVIDER SOCIAL_PROVIDER
 
 case "${1:-serve}" in
   env)
-    env | grep -E '^(DATABASE_URL|TEST_DATABASE_URL|APP_ENV|PORT|PUBLIC_BASE_URL|JEV_MODE|CHANNEL_PRIMARY|MAINSPOT_DEV_TELEGRAM|TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET|REPUTATION_PROVIDER|SOCIAL_PROVIDER|ENGAGEMENT_|AI_|OPENROUTER_API_KEY|TYPESAFE_API_KEY|PLATFORM_MFA_KEY)=' \
-      | sed -E 's#(://[^:]+:)[^@]+@#\1***@#; s#^(TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET|OPENROUTER_API_KEY|TYPESAFE_API_KEY|PLATFORM_MFA_KEY)=.+#\1=***#'
+    env | grep -E '^(DATABASE_URL|TEST_DATABASE_URL|APP_ENV|PORT|PUBLIC_BASE_URL|JEV_MODE|JEV_DATA_SCOPE|CHANNEL_PRIMARY|MAINSPOT_DEV_TELEGRAM|TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET|REPUTATION_PROVIDER|SOCIAL_PROVIDER|ENGAGEMENT_|AI_|ANTHROPIC_API_KEY|OPENAI_API_KEY|TYPESAFE_API_KEY|PLATFORM_MFA_KEY)=' \
+      | sed -E 's#(://[^:]+:)[^@]+@#\1***@#; s#^(TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET|ANTHROPIC_API_KEY|OPENAI_API_KEY|TYPESAFE_API_KEY|PLATFORM_MFA_KEY)=.+#\1=***#'
     ;;
   invite)
     shift

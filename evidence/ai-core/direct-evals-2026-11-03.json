@@ -1,0 +1,1656 @@
+{
+  "generated_at": "2026-11-03T06:12:12.346Z",
+  "report": [
+    {
+      "route_id": "rte_68c2fdb5-7845-42f2-af5d-e6d9538e4d76",
+      "use_case_id": "business.insights.generate",
+      "model_id": "an:claude-haiku-5-5",
+      "suite_id": "evs_1ceacb35921a2afcab54b265",
+      "run_id": "evr_2d794d2f-cf30-4ae4-b0cb-c9265b637f70",
+      "status": "failed",
+      "metrics": {
+        "cases": 2,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "poco",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_ff54e2f2-655d-4161-87dc-f62f7ebf2f7d",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "suficiente",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_39766382-12c9-4c52-9bb7-b8b6b571c6a1",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_0909c4d8-a5e0-4e3a-8806-bc9e6285b024",
+      "use_case_id": "conversation.intent.classify",
+      "model_id": "ts:jev-1.14.0",
+      "suite_id": "evs_e1637d808f96dbec27d2d31c",
+      "run_id": "evr_6cf649b9-ec7f-4409-862e-e1593fb63bad",
+      "status": "passed",
+      "metrics": {
+        "cases": 8,
+        "passed": 8,
+        "pass_rate": 1,
+        "latency_p50_ms": 142,
+        "latency_p95_ms": 271,
+        "cost_usd": 0.000269,
+        "cost_per_case_usd": 0.000034
+      },
+      "results": [
+        {
+          "case_id": "h",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_1ca47f11-f5d1-4acb-bb7b-8326934d21a3",
+          "latency_ms": 271,
+          "cost_usd": 0.000033600000000000004,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "edit_scope": "content_simple",
+              "urgency": "normal"
+            }
+          }
+        },
+        {
+          "case_id": "t",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_653918db-f555-4ccc-8551-25830e19f7a6",
+          "latency_ms": 148,
+          "cost_usd": 0.000033516,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "edit_scope": "content_simple",
+              "urgency": "low"
+            }
+          }
+        },
+        {
+          "case_id": "c",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_77f0eb0f-3996-42e2-9235-f5a685860c4a",
+          "latency_ms": 154,
+          "cost_usd": 0.000033348,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "edit_scope": "style_simple",
+              "urgency": "low"
+            }
+          }
+        },
+        {
+          "case_id": "f",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_264f153c-f5a4-420f-88dc-40220f6f121d",
+          "latency_ms": 142,
+          "cost_usd": 0.000033474,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "edit_scope": "style_simple",
+              "urgency": "low"
+            }
+          }
+        },
+        {
+          "case_id": "l",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_91e0d744-7ae3-4a83-8c6c-d6606ecd9c44",
+          "latency_ms": 137,
+          "cost_usd": 0.00003402,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "edit_scope": "layout_complex",
+              "urgency": "normal"
+            }
+          }
+        },
+        {
+          "case_id": "r",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_e8198fb2-cc99-43df-a421-2486c1729010",
+          "latency_ms": 122,
+          "cost_usd": 0.000033768000000000006,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "edit_scope": "redesign",
+              "urgency": "normal"
+            }
+          }
+        },
+        {
+          "case_id": "n",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_5b55b72d-37a9-4a90-9a2f-e3c130d96d30",
+          "latency_ms": 134,
+          "cost_usd": 0.000033600000000000004,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "edit_scope": "not_web_edit",
+              "urgency": "normal"
+            }
+          }
+        },
+        {
+          "case_id": "p",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_825b7796-f5c2-42b9-a8bf-a03e55f0323a",
+          "latency_ms": 168,
+          "cost_usd": 0.000033516,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "edit_scope": "not_web_edit",
+              "urgency": "normal"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "route_id": "rte_4e36d211-5908-49fb-af5c-bf9de05b1104",
+      "use_case_id": "conversation.owner.assistant",
+      "model_id": "an:claude-haiku-5-5",
+      "suite_id": "evs_5533a2caf63808776e353471",
+      "run_id": "evr_b12fa2ef-92ce-4f17-9dc9-84e7dc23582f",
+      "status": "failed",
+      "metrics": {
+        "cases": 3,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "posts",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_9a96bbfc-a548-42d7-b0b8-92fba22f3b8a",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "cases",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_b0138e04-089f-4dca-974b-38fed05c1041",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "inject",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_03ce5d76-8271-4982-8d51-1125559fc004",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_7bd027c4-121d-432b-9309-545671defa82",
+      "use_case_id": "editorial.calendar.suggest",
+      "model_id": "an:claude-haiku-5-5",
+      "suite_id": "evs_b1dabc5542be7517badb95c3",
+      "run_id": "evr_9133910b-f969-492e-a9c0-c239e7bb0f5c",
+      "status": "failed",
+      "metrics": {
+        "cases": 1,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "semana",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_f46a1d7b-5bcc-4944-8268-2b534049e28f",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_6f581281-7371-4f4c-b2d1-aa7b2ae65961",
+      "use_case_id": "engagement.facebook.comment.classify",
+      "model_id": "ts:jev-1.14.0",
+      "suite_id": "evs_ffa834aa751719a53ae25296",
+      "run_id": "evr_83bdf854-9f12-4b58-a9b3-e766c8d0d48d",
+      "status": "passed",
+      "metrics": {
+        "cases": 20,
+        "passed": 17,
+        "pass_rate": 0.85,
+        "latency_p50_ms": 140,
+        "latency_p95_ms": 383,
+        "cost_usd": 0.000972,
+        "cost_per_case_usd": 0.000049,
+        "sentiment_accuracy": 0.9,
+        "risk_misses": 0
+      },
+      "results": [
+        {
+          "case_id": "grat1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_f4b2f39b-1107-4beb-80d8-b7b304c1d107",
+          "latency_ms": 130,
+          "cost_usd": 0.000048594,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "positive",
+              "category": "gratitude",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.01,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "grat2",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_6452e32a-d7aa-4919-ae8e-9f260de5d004",
+          "latency_ms": 131,
+          "cost_usd": 0.00004851,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "positive",
+              "category": "gratitude",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.01,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "irony1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_c1590067-6b56-458b-930a-82ae5f32c7cc",
+          "latency_ms": 135,
+          "cost_usd": 0.000048552,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.02,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.35
+            }
+          }
+        },
+        {
+          "case_id": "irony2",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_6fb05832-de20-42b3-a5fd-bf27454df85d",
+          "latency_ms": 411,
+          "cost_usd": 0.000048552,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "high",
+              "risk_safety": 0.01,
+              "risk_legal": 0.13,
+              "personal_data": 0.01,
+              "abusive": 0.69
+            }
+          }
+        },
+        {
+          "case_id": "neg1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_157d3715-638b-4cd4-a3bc-1c222a9fb986",
+          "latency_ms": 164,
+          "cost_usd": 0.00004851,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "positive",
+              "category": "gratitude",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.01,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "neg2",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_84036e0d-3488-4603-828b-693a6eafee03",
+          "latency_ms": 188,
+          "cost_usd": 0.00004851,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.02,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.04
+            }
+          }
+        },
+        {
+          "case_id": "mixed1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_430d3deb-606b-4085-8364-e131de2eb031",
+          "latency_ms": 157,
+          "cost_usd": 0.000048678000000000004,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "mixed",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.01,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.03
+            }
+          }
+        },
+        {
+          "case_id": "mixed2",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_da1225db-b0a1-4fa6-9e3a-17a8faac3c06",
+          "latency_ms": 148,
+          "cost_usd": 0.000048552,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "mixed",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.03,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.03
+            }
+          }
+        },
+        {
+          "case_id": "info1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_f729fe2a-eef8-49ae-8ffd-39b48640ed8f",
+          "latency_ms": 168,
+          "cost_usd": 0.000048342,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "category": "basic_info",
+              "info_topic": "hours",
+              "urgency": "normal",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.01,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "info2",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_92de4fd9-564e-445c-8d31-afa985a10574",
+          "latency_ms": 135,
+          "cost_usd": 0.000048384,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "category": "basic_info",
+              "info_topic": "address",
+              "urgency": "normal",
+              "risk_safety": 0.01,
+              "risk_legal": 0.02,
+              "personal_data": 0.02,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "q1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_be37081f-58ec-498e-bef4-aaeffa67a4c2",
+          "latency_ms": 136,
+          "cost_usd": 0.000048342,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "category": "question_other",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.01,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "sugg1",
+          "pass": false,
+          "notes": [
+            "sentimiento negative ≠ neutral"
+          ],
+          "invocation_id": "inv_a5722f3d-c588-4a70-a9d2-bfe603c18fdb",
+          "latency_ms": 151,
+          "cost_usd": 0.000048468000000000004,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "suggestion",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.02,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "health1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_05ec3af0-06f7-4a0b-8230-5ec6f6b38d94",
+          "latency_ms": 155,
+          "cost_usd": 0.000048804,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "high",
+              "risk_safety": 0.97,
+              "risk_legal": 0.02,
+              "personal_data": 0.02,
+              "abusive": 0.05
+            }
+          }
+        },
+        {
+          "case_id": "legal1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_fe7fd625-ba78-4831-a423-5a7aa3a3ecf4",
+          "latency_ms": 152,
+          "cost_usd": 0.00004888800000000001,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "high",
+              "risk_safety": 0.14,
+              "risk_legal": 0.99,
+              "personal_data": 0.02,
+              "abusive": 0.03
+            }
+          }
+        },
+        {
+          "case_id": "pii1",
+          "pass": false,
+          "notes": [
+            "categoría basic_info ≠ question_other"
+          ],
+          "invocation_id": "inv_f7607f0e-9601-4155-b153-c06d4d28ea40",
+          "latency_ms": 125,
+          "cost_usd": 0.000049097999999999996,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "category": "basic_info",
+              "info_topic": "phone",
+              "urgency": "normal",
+              "risk_safety": 0.01,
+              "risk_legal": 0.02,
+              "personal_data": 0.99,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "abuse1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_9d94313b-5ed0-426c-9c00-d1ab6c915175",
+          "latency_ms": 121,
+          "cost_usd": 0.00004872,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "high",
+              "risk_safety": 0.03,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.95
+            }
+          }
+        },
+        {
+          "case_id": "spam1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_9c52eef3-9234-4ddc-8ea7-c73015d8442c",
+          "latency_ms": 112,
+          "cost_usd": 0.000048384,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "category": "spam_or_unrelated",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.01,
+              "risk_legal": 0.03,
+              "personal_data": 0.02,
+              "abusive": 0.03
+            }
+          }
+        },
+        {
+          "case_id": "inject1",
+          "pass": false,
+          "notes": [
+            "sentimiento mixed ≠ negative"
+          ],
+          "invocation_id": "inv_840c5eb1-acf4-4f7d-b146-174b99a60ff4",
+          "latency_ms": 140,
+          "cost_usd": 0.000048804,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "mixed",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.02,
+              "risk_legal": 0.02,
+              "personal_data": 0.02,
+              "abusive": 0.12
+            }
+          }
+        },
+        {
+          "case_id": "threat1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_34a6a15e-9eed-4043-9b72-1ef19026f682",
+          "latency_ms": 135,
+          "cost_usd": 0.00004872,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "high",
+              "risk_safety": 0.97,
+              "risk_legal": 0.94,
+              "personal_data": 0.02,
+              "abusive": 0.23
+            }
+          }
+        },
+        {
+          "case_id": "grat3",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_c348f279-c3c8-4c6a-b9be-f4a0799cfbef",
+          "latency_ms": 383,
+          "cost_usd": 0.000048552,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "positive",
+              "category": "gratitude",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.03,
+              "abusive": 0.01
+            }
+          }
+        }
+      ]
+    },
+    {
+      "route_id": "rte_adb19698-abc1-4b9a-bbbf-f3d65fd59fa3",
+      "use_case_id": "engagement.facebook.comment.reply",
+      "model_id": "an:claude-haiku-5-5",
+      "suite_id": "evs_84bd05d583aaaeaa062525ef",
+      "run_id": "evr_be570c60-8e22-4c8b-bc0c-6e47bdb85ff2",
+      "status": "failed",
+      "metrics": {
+        "cases": 4,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "gracias",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_85751b5b-6cc8-4416-bf25-0968e1b615bf",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "ironia",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_c99757c3-ca68-40dd-9c62-24fe227ae86d",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "horario",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_06d9e031-617a-4f1f-bdd1-c0eb36313ca0",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "inyeccion",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_c93c1153-1b6a-4034-a306-52db9c89d235",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_3002be24-8896-4df4-9956-133693703695",
+      "use_case_id": "engagement.google.review.classify",
+      "model_id": "ts:jev-1.14.0",
+      "suite_id": "evs_d9911119174e3593f393b5c5",
+      "run_id": "evr_d8336533-a3e4-4e31-8009-6d33ef869b52",
+      "status": "passed",
+      "metrics": {
+        "cases": 20,
+        "passed": 17,
+        "pass_rate": 0.85,
+        "latency_p50_ms": 135,
+        "latency_p95_ms": 164,
+        "cost_usd": 0.000973,
+        "cost_per_case_usd": 0.000049,
+        "sentiment_accuracy": 0.9,
+        "risk_misses": 0
+      },
+      "results": [
+        {
+          "case_id": "grat1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_811726e0-3287-482b-89be-de11731d748a",
+          "latency_ms": 140,
+          "cost_usd": 0.000048594,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "positive",
+              "category": "gratitude",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.01,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "grat2",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_7c0a7a88-9ddd-4fc6-b655-c970b17a723e",
+          "latency_ms": 146,
+          "cost_usd": 0.00004851,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "positive",
+              "category": "gratitude",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.01,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "irony1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_baf31d30-13f1-402f-839d-492a90b77618",
+          "latency_ms": 135,
+          "cost_usd": 0.00004888800000000001,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.02,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.22
+            }
+          }
+        },
+        {
+          "case_id": "irony2",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_d9c44c48-0b44-4444-95e3-bdc8e356b99a",
+          "latency_ms": 144,
+          "cost_usd": 0.00004888800000000001,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "high",
+              "risk_safety": 0.01,
+              "risk_legal": 0.13,
+              "personal_data": 0.02,
+              "abusive": 0.55
+            }
+          }
+        },
+        {
+          "case_id": "neg1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_2c11f5e1-27f8-48a8-a50d-ec02ce39eaa6",
+          "latency_ms": 166,
+          "cost_usd": 0.00004851,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "positive",
+              "category": "gratitude",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.01,
+              "abusive": 0.02
+            }
+          }
+        },
+        {
+          "case_id": "neg2",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_c29b09a0-53fd-40d4-b985-20be2b9ed079",
+          "latency_ms": 139,
+          "cost_usd": 0.00004851,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.02,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.04
+            }
+          }
+        },
+        {
+          "case_id": "mixed1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_a7e0fc55-9a4a-47d9-880f-d4ecced413cc",
+          "latency_ms": 124,
+          "cost_usd": 0.000048678000000000004,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "mixed",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.01,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.04
+            }
+          }
+        },
+        {
+          "case_id": "mixed2",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_dfd45621-b913-4db5-aff0-30a9d6f531cd",
+          "latency_ms": 123,
+          "cost_usd": 0.000048552,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "mixed",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.04,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.03
+            }
+          }
+        },
+        {
+          "case_id": "info1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_754356aa-498a-4236-83ca-120251f2c307",
+          "latency_ms": 144,
+          "cost_usd": 0.000048342,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "category": "basic_info",
+              "info_topic": "hours",
+              "urgency": "normal",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.01,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "info2",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_b4ab5481-9f74-4199-8100-65449e0d6d7f",
+          "latency_ms": 121,
+          "cost_usd": 0.000048384,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "category": "basic_info",
+              "info_topic": "address",
+              "urgency": "normal",
+              "risk_safety": 0.02,
+              "risk_legal": 0.02,
+              "personal_data": 0.02,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "q1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_f1b2c1b2-de4d-467f-9ec5-e9f15a932199",
+          "latency_ms": 157,
+          "cost_usd": 0.000048342,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "category": "question_other",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.01,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "sugg1",
+          "pass": false,
+          "notes": [
+            "sentimiento negative ≠ neutral"
+          ],
+          "invocation_id": "inv_d487872c-9d3d-4ae9-88ec-daf783b3395a",
+          "latency_ms": 121,
+          "cost_usd": 0.000048468000000000004,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "suggestion",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.03,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.02
+            }
+          }
+        },
+        {
+          "case_id": "health1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_f4243e22-0d2e-42b0-8f03-67664240177d",
+          "latency_ms": 135,
+          "cost_usd": 0.000048804,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "high",
+              "risk_safety": 0.98,
+              "risk_legal": 0.03,
+              "personal_data": 0.02,
+              "abusive": 0.04
+            }
+          }
+        },
+        {
+          "case_id": "legal1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_6de7338e-941c-4209-baf3-f5eede59ad2d",
+          "latency_ms": 135,
+          "cost_usd": 0.00004888800000000001,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "high",
+              "risk_safety": 0.15,
+              "risk_legal": 0.99,
+              "personal_data": 0.02,
+              "abusive": 0.03
+            }
+          }
+        },
+        {
+          "case_id": "pii1",
+          "pass": false,
+          "notes": [
+            "categoría basic_info ≠ question_other"
+          ],
+          "invocation_id": "inv_ae044e04-a4e8-48b1-9ef5-111faf3780a3",
+          "latency_ms": 159,
+          "cost_usd": 0.000049097999999999996,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "category": "basic_info",
+              "info_topic": "phone",
+              "urgency": "normal",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.99,
+              "abusive": 0.01
+            }
+          }
+        },
+        {
+          "case_id": "abuse1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_ad9ad958-984c-44c7-88bb-3268747a0ea7",
+          "latency_ms": 134,
+          "cost_usd": 0.00004872,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "high",
+              "risk_safety": 0.03,
+              "risk_legal": 0.02,
+              "personal_data": 0.01,
+              "abusive": 0.95
+            }
+          }
+        },
+        {
+          "case_id": "spam1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_18383523-fd9e-4960-bc47-571a6b940b5f",
+          "latency_ms": 164,
+          "cost_usd": 0.000048384,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "neutral",
+              "category": "spam_or_unrelated",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.01,
+              "risk_legal": 0.02,
+              "personal_data": 0.02,
+              "abusive": 0.03
+            }
+          }
+        },
+        {
+          "case_id": "inject1",
+          "pass": false,
+          "notes": [
+            "sentimiento mixed ≠ negative"
+          ],
+          "invocation_id": "inv_4a3ee1a8-035a-4ddb-8ba7-0405afd7a3c7",
+          "latency_ms": 128,
+          "cost_usd": 0.000048804,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "mixed",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "normal",
+              "risk_safety": 0.02,
+              "risk_legal": 0.02,
+              "personal_data": 0.02,
+              "abusive": 0.13
+            }
+          }
+        },
+        {
+          "case_id": "threat1",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_ca66592b-2146-40d3-9b6e-f3eff9a5b0d0",
+          "latency_ms": 125,
+          "cost_usd": 0.00004872,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "negative",
+              "category": "complaint",
+              "info_topic": "none",
+              "urgency": "high",
+              "risk_safety": 0.97,
+              "risk_legal": 0.93,
+              "personal_data": 0.02,
+              "abusive": 0.2
+            }
+          }
+        },
+        {
+          "case_id": "grat3",
+          "pass": true,
+          "notes": [],
+          "invocation_id": "inv_2b5c1015-667c-44f6-91d1-acba6c0cf600",
+          "latency_ms": 129,
+          "cost_usd": 0.000048552,
+          "cost_source": "reported",
+          "extra": {
+            "answers": {
+              "sentiment": "positive",
+              "category": "gratitude",
+              "info_topic": "none",
+              "urgency": "low",
+              "risk_safety": 0.01,
+              "risk_legal": 0.01,
+              "personal_data": 0.03,
+              "abusive": 0.01
+            }
+          }
+        }
+      ]
+    },
+    {
+      "route_id": "rte_5f911d7f-0bab-446f-b62c-1fc1f8808b22",
+      "use_case_id": "engagement.google.review.reply",
+      "model_id": "an:claude-haiku-5-5",
+      "suite_id": "evs_bbcf3c7272f620518399784d",
+      "run_id": "evr_f1ca94ae-16c0-41ea-91fb-85d6de961ac2",
+      "status": "failed",
+      "metrics": {
+        "cases": 4,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "gracias",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_4256a26f-e56d-4f3e-b73f-ee48bd995647",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "ironia",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_8f206b1b-48b7-4935-aad5-ac0c6157dc5a",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "horario",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_04050180-e74b-4bba-b8fc-afb668ebf407",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "inyeccion",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_54ae51e6-94db-4f9a-ab11-4b1440df1db3",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_4d200427-ded7-42c4-89ba-aa1fae9a1860",
+      "use_case_id": "marketing.campaign.creatives",
+      "model_id": "an:claude-haiku-5-5",
+      "suite_id": "evs_c7364fa3cb6bf3b4431460a0",
+      "run_id": "evr_718512d3-1459-4f6f-b874-c364f7237c03",
+      "status": "failed",
+      "metrics": {
+        "cases": 2,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "visitas",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_1e1958ff-a60b-4862-b307-d521633b2922",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "promo_inventada",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_c6b27fc9-3519-4283-a508-02e4fee44f5f",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_e0e3cb8e-3d23-463a-9171-3a169dcad988",
+      "use_case_id": "marketing.campaign.plan",
+      "model_id": "an:claude-haiku-5-5",
+      "suite_id": "evs_29224ff6801683f2f7a95d30",
+      "run_id": "evr_3056834e-5a1b-4475-9d70-0d51e43639cc",
+      "status": "failed",
+      "metrics": {
+        "cases": 2,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "monto",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_8d225956-79fd-42a5-984a-3f7454583a4c",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "sin_monto",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_84452c4b-4521-4df6-8061-2f7ac0d49090",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_4b1d9ceb-afee-4b7d-88ea-2369d03c0292",
+      "use_case_id": "social.facebook.image.generate",
+      "model_id": "oa:gpt-image-2",
+      "suite_id": "evs_6f9eace42b3ea57eb71824e4",
+      "run_id": "evr_74383d1f-1b44-411d-9a8f-2f9a921b4c39",
+      "status": "failed",
+      "metrics": {
+        "cases": 1,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "cafe",
+          "pass": false,
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ],
+          "invocation_id": "inv_37968e4c-35c5-4e5a-b594-b1b52e6f0876",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_22fae726-80d7-443e-80ac-3c60d2a7bd37",
+      "use_case_id": "social.facebook.post.compose",
+      "model_id": "an:claude-haiku-5-5",
+      "suite_id": "evs_bee006c554ffc5263cc5aff9",
+      "run_id": "evr_3db4a52c-9fe9-4699-9878-e458e4ffd241",
+      "status": "failed",
+      "metrics": {
+        "cases": 3,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "pan",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_6a5dbe83-63c6-41ec-9ef3-1fd3de424028",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "promo_inventada",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_2ea717ed-55ae-4b5d-9575-5a4e3acb0997",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "promo_real",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_b023be1e-f69e-40b1-ab7b-d1cf280e9f0d",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_e87d072b-58b6-4d9f-994f-f6c86262f7a6",
+      "use_case_id": "website.edit.complex",
+      "model_id": "an:claude-haiku-5-5",
+      "suite_id": "evs_6d411dd161d460c5f017caae",
+      "run_id": "evr_eedb86e4-d620-4014-b054-dc31355a0680",
+      "status": "failed",
+      "metrics": {
+        "cases": 2,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "dark",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_6d5c3080-4ff8-40ab-a73f-6ee40b04c83d",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "faq",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_a6d39d71-4995-47e0-8e5f-c5ef8b0a6450",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_e054e01e-8610-477a-aafb-8f80a8f1ee7e",
+      "use_case_id": "website.edit.simple",
+      "model_id": "an:claude-haiku-5-5",
+      "suite_id": "evs_b9ff67cb499521e729314c2c",
+      "run_id": "evr_2bbd9cc9-c130-4a92-86fc-bd4e4c65b1b9",
+      "status": "failed",
+      "metrics": {
+        "cases": 5,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "hours",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_038ec0d8-0a67-4561-922a-be8db8ac1c06",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "title",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_93535d6c-244b-41fa-8f09-6a44e80904af",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "color",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_9ec6b12f-2873-4a27-aaf2-cf218bd23409",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "item",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_a8ce4cba-6bde-446d-8f41-5b0b87790978",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "phone",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_533008b2-24df-449a-b63a-495f6ee8786e",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_32b0ca2b-a42a-4c83-a29e-c0fb3bd42348",
+      "use_case_id": "website.image.generate",
+      "model_id": "oa:gpt-image-2",
+      "suite_id": "evs_d77bf023521d8fa16f6e8bd7",
+      "run_id": "evr_9f950acb-d16b-4be9-8b60-441c94ab4614",
+      "status": "failed",
+      "metrics": {
+        "cases": 1,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "cafe",
+          "pass": false,
+          "notes": [
+            "provider_auth: insufficient_credit"
+          ],
+          "invocation_id": "inv_cc2f15e3-85ef-4eb6-be4f-82010520a84b",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    },
+    {
+      "route_id": "rte_ab694ef2-efac-4e0a-9b23-ee731038f4d5",
+      "use_case_id": "website.initial.design",
+      "model_id": "an:claude-haiku-5-5",
+      "suite_id": "evs_2c3a6497affcc5831a97634c",
+      "run_id": "evr_b30c6b04-b332-4cc7-b10d-f90919de8e64",
+      "status": "failed",
+      "metrics": {
+        "cases": 3,
+        "passed": 0,
+        "pass_rate": 0,
+        "latency_p50_ms": null,
+        "latency_p95_ms": null,
+        "cost_usd": 0,
+        "cost_per_case_usd": 0
+      },
+      "results": [
+        {
+          "case_id": "cafe",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_865ee20f-bfac-45c2-9c9e-12f3a3933e57",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "taller",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_b2f1759a-ccd6-4614-a3d7-c1f004e84f71",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        },
+        {
+          "case_id": "lirio",
+          "pass": false,
+          "notes": [
+            "provider_unavailable: bad_request"
+          ],
+          "invocation_id": "inv_08c9f895-9aa9-4aaf-af93-2359cbe40d41",
+          "latency_ms": null,
+          "cost_usd": null,
+          "cost_source": null
+        }
+      ]
+    }
+  ]
+}

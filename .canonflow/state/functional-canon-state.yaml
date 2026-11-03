@@ -6,6 +6,8 @@ changelog: .canonflow/canon/functional/CHANGELOG.md
 blocking_open:
 - QS-0001
 - QS-0002
-note: v0.1.0 fijada desde la baseline aprobada upstream (DEC-015). El delta de plataforma
-  (items INFERRED + cierre TENTATIVA) requiere decisiones humanas vía HDC antes de
-  REVIEW_CANDIDATE (G-EPI).
+note: >-
+  Baseline global v0.1.0 desde DEC-015; los deltas INFERRED ajenos al AI Core conservan su estado.
+  El subconjunto AI Core (FR-0012..0019, BR-0007, NFR-0006..0008) está DECIDED, versión 0.3.0:
+  APR-0003 aprueba el artefacto 0.2.0 y DEC-0066..0071 incorporan las condiciones de QS-0017.
+  Esta aprobación acotada no declara terminado el canon global.

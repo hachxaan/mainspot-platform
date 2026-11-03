@@ -246,7 +246,7 @@ Flujo implementado (según `INC-002`, AC-004..AC-007, FLOW-001/002/003):
 
 ### 5.1 Jev como clasificador semántico: disabled / shadow / primary (APR-0002)
 
-DEC-0001 (Q-CLASSIFIER = `override`, "Debe ser con TypeSave/Jev") abrió la evaluación de Jev. APR-0002 aprueba la arquitectura `MSP-JEV-CLASSIFIER-MODES v1` (`.canonflow/state/jev-classifier-modes-proposal.md`) con sus puntos de decisión: D1 escalar a aprobación humana (DEC-0028), D2 respaldo determinista (DEC-0029), D3 pedir aclaración (DEC-0030), D4 primary automático al superar la evaluación (DEC-0031) y D5 USD 1/día (DEC-0032). QS-0008 sustituye en parte a DEC-0031: un fallo de riesgo se mide sobre el resultado final del sistema con D1–D3 (DEC-0033) y solo un conjunto reservado v3 nuevo puede abrir primary (DEC-0034); los criterios se corrigen según DEC-0035 y DEC-0036. **DEC-0019 no acepta** enviar mensajes reales de clientes: solo salen textos de tenants sintéticos.
+APR-0002 aprueba `MSP-JEV-CLASSIFIER-MODES v1`: D1 aprobación humana (DEC-0028), D2 respaldo determinista (DEC-0029), D3 aclaración (DEC-0030), D4 primary tras evaluación (DEC-0031/0033…0036) y D5 USD 1/día (DEC-0032). **DEC-0066** amplía Jev primario a los procesos semánticos de texto; **DEC-0067 sustituye DEC-0019** y autoriza datos reales tras la verificación única del MCA/DPA, documentada en [`ai-providers-data-terms.md`](docs/architecture/ai-providers-data-terms.md). No hay aprobación por mensaje ni se presume ZDR.
 
 | Variable | Default | Regla |
 |---|---|---|
@@ -254,9 +254,9 @@ DEC-0001 (Q-CLASSIFIER = `override`, "Debe ser con TypeSave/Jev") abrió la eval
 | `JEV_PROVIDER` | — | Con `shadow`/`primary` debe ser exactamente `typesafe` (explícito, sin fallback; nunca se cambia de proveedor ante un fallo). Otro valor ⇒ el arranque falla. |
 | `TYPESAFE_API_KEY` | — | Requerida (no vacía) con `shadow`/`primary`. Nunca se loguea, audita, persiste ni aparece en mensajes de error. |
 | `JEV_MODEL` | alias del proveedor (`jev-latest`) | Modelo solicitado; cada fila guarda además el modelo versionado que respondió. Se recomienda fijar uno versionado. |
-| `JEV_DATA_SCOPE` | `synthetic` | Único valor válido (DEC-0019). |
-| `JEV_SYNTHETIC_TENANTS` | — | Requerida con `shadow`/`primary`: tenants con datos sintéticos (p. ej. `client_a,client_b`). Los demás se procesan como `disabled` y su auditoría lleva `jev_skipped=data_scope`. |
-| `JEV_DAILY_BUDGET_USD` | `1` | `0 < valor ≤ 1` (DEC-0032). Libro por proceso y día UTC, sembrado desde la BD (clasificaciones + evaluaciones); agotado ⇒ D2. |
+| `JEV_DATA_SCOPE` | `synthetic` | `synthetic` (lista explícita) o `all` (datos reales autorizados, DEC-0067). `dev-panel.sh` usa `all` y modelo fijado `jev-1.14.0` con la clave protegida. |
+| `JEV_SYNTHETIC_TENANTS` | — | Requerida solo con alcance `synthetic`; los demás tenants quedan fuera de Jev en ese alcance. |
+| `JEV_DAILY_BUDGET_USD` | `1` | `0 < valor ≤ 1` (DEC-0032). Día UTC; contabiliza clasificaciones, evaluaciones y TypeSafe del AI Core; agotado ⇒ D2. |
 
 - **Flujo** (`src/conversation/jev-classifier.ts`, cliente en `src/jev/`): una llamada con dos preguntas Choice, `intent` (los 8 intents de `classifier.ts` + `other`) y `capability_target`; `actionClass` se deriva en código con la tabla del determinista. Un intento, deadline 10 s, máx. 16 llamadas simultáneas por proceso, mensajes de hasta 8 KiB.
   - `shadow`: decide `classifyIntent`; Jev se evalúa **sin await** y solo deja evidencia.
@@ -264,20 +264,23 @@ DEC-0001 (Q-CLASSIFIER = `override`, "Debe ser con TypeSave/Jev") abrió la eval
   - El backend conserva identidad, tenant, RBAC, cuotas, preview/confirmación, aprobación humana, bloqueo y auditoría: Jev nunca ejecuta, aprueba ni publica.
 - **Auditoría**: `conversation.classified` añade el origen al `result` (`<intent>:<clase>;source=deterministic|jev|deterministic_fallback|human_escalation`, más `;jev=<motivo>` o `;jev_skipped=data_scope`).
 - **Evaluación (gate D4)**: `jev-intent-eval-set.v1.json` (`dev`) sirve para ajustar los criterios; `jev-intent-eval-set.v3.json` (`gate`, DEC-0034) lo escribió un agente separado sin acceso a v1, v2 ni a sus resultados, no comparte mensajes con ellos y es el único que abre `primary`. `jev-intent-eval-set.v2.json` (gate anterior, 6 fallos con la definición de Jev solo) se conserva solo como evidencia de RUN-0004. Para cada caso la evaluación calcula las reglas deterministas y el resultado final con `decidePrimary`; un **fallo de riesgo** (DEC-0033) es un caso etiquetado prohibited o human_approval_required cuyo resultado final no es bloqueo, aprobación humana ni aclaración (`isContained`). La cifra de Jev solo se guarda como información (`jev_risky_misses`), junto con las rutas de decisión (carga de escalados de D1). El gate exige los bytes exactos del conjunto y de `classifier.ts` + `jev-classifier.ts`: cambiar las reglas, los criterios o la política invalida los aprobados. `npm run jev:evaluate` evalúa el conjunto `gate` con TypeSafe real (presupuesto D5) y guarda métricas por intent, matriz de confusión, rutas de decisión y resultado por caso en `jev_evaluation_run`; si supera los umbrales, `primary` se abre solo. `-- --set=dev` evalúa el conjunto de desarrollo (se guarda, nunca abre el gate). `-- --mock` usa el proveedor simulado, sin red ni persistencia (solo prueba el cableado). Política vigente: `intent-classifier-v3` (v2 más DEC-0035: las preguntas informativas sobre las condiciones de MainSpot son consultas; y DEC-0036: una queja sin petición concreta pide aclaración).
-- **Datos que salen**: solo el **texto del mensaje** de tenants de `JEV_SYNTHETIC_TENANTS` más las preguntas fijas, hacia `https://api.typesafe.ai/v1/systemone`. No se envían tenant, actor, nombres ni tokens. **No se asume ZDR** (zero data retention) del proveedor.
+- **Datos que salen**: solo el texto del mensaje permitido por `JEV_DATA_SCOPE` más preguntas fijas, hacia `https://api.typesafe.ai/v1/systemone`; no se agregan tenant, actor, nombres de cuenta ni tokens. El texto libre puede contener datos personales: no se promete anonimización. Atención minimiza correos/teléfonos antes de clasificar y generar respuestas. **No se asume ZDR ni plazo numérico de retención** de TypeSafe.
 - **Evidencia** (`jev_classification`, tenant-scoped): ver la migración 0012. No guarda más datos sensibles que `conversation_request.raw_message`; la retención de conversaciones (DEC-0021, §10.1) pone sus cuerpos raw a `NULL` a los 90 días.
 - **Apagado**: con Jev habilitado, `SIGTERM`/`SIGINT` esperan las clasificaciones pendientes de persistir. `npm start` no carga `.env` por sí mismo (usar el entorno del proceso, `docker compose` o `node --env-file=.env`).
 
 ### 5.2 AI Core (issue #9) — IA generativa gobernada
 
 Un único despachador (`src/ai/`) con casos de uso, prompts y rutas versionados, rollout por entorno con canary
-y rollback sin redeploy, evaluaciones antes de aprobar, presupuestos con techo duro y trazas con costo del
-proveedor. Sobre él: Mi marca, Biblioteca, página con IA (diseño y edición con vista previa y aprobación),
+y rollback sin redeploy, evaluaciones antes de aprobar, presupuestos con techo duro y trazas con costo
+reportado o estimado identificado. Sobre él: Mi marca, Biblioteca, página con IA (diseño y edición con vista previa y aprobación),
 publicaciones de Facebook, atención con Jev + ledger único de respuestas, asistente con herramientas de solo
 lectura, campañas sin gasto, calendario editorial y resumen. Consolas de plataforma con MFA y step-up:
 `/plataforma` (Administration) y `/ingenieria` (Engineering Console). Proveedores reales solo con
-`AI_REAL_PROVIDERS=on` y negocios clasificados `synthetic`. Operación, rutas activas, estado GO/NO-GO y
-bloqueos: [`docs/architecture/ai-core.md`](docs/architecture/ai-core.md); resultados E01–E20:
+`AI_REAL_PROVIDERS=on`; negocios `real` requieren cobertura contractual verificada por proveedor
+(DEC-0067/0071). TypeSafe directo para semántica, Anthropic directo para texto, OpenAI `gpt-image-2`
+directo para imágenes; OpenRouter retirado, con evidencia/costo históricos intactos. Independiente de OMP.
+Operación, plan aprobado, estado y bloqueos actuales: [`docs/architecture/ai-core.md`](docs/architecture/ai-core.md)
+y [INC-0008](.canonflow/increments/INC-0008.md). Resultados anteriores, solo históricos:
 [`AI-CORE-RESULTS.md`](docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-RESULTS.md).
 
 ## 6. INC-003 — Website administration + dominio subdominio MainSpot (modo simulado)

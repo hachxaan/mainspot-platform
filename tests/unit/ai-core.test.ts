@@ -20,6 +20,7 @@ import { similarity } from '../../src/ai/business.ts';
 import { composeViolations, replyViolations, untracedNumbers, type EditOperation } from '../../src/ai/contracts.ts';
 import { toClassification } from '../../src/engagement/ai-semantics.ts';
 import type { Answer } from '../../src/jev/types.ts';
+import { redactContactData } from '../../src/ai/minimize.ts';
 
 async function simulatedDesign(name: string): Promise<SiteDesign> {
   const res = await new SimulatedAdapter().chat({ model: 'simulated', messages: [], maxTokens: 100, timeoutMs: 1000, simulation: { useCaseId: 'website.initial.design', values: { brand_facts: { name } } } } as unknown as ChatRequest);
@@ -151,4 +152,11 @@ test('atención: lectura Jev → categoría segura solo con tema concreto; riesg
   const risky = toClassification({ ...base, risk_legal: noul(0.8), urgency: ch('high') });
   assert.deepEqual(risky.classification.risk_flags.sort(), ['legal', 'urgent']);
   assert.ok(!JSON.stringify(ok.reading).includes('message'), 'la lectura guardada no contiene el texto');
+});
+
+test('DEC-0067: al proveedor no viajan correos, teléfonos ni tarjetas que escriba el cliente; el resto del texto queda igual', () => {
+  const text = 'Pedí el 2026-11-03 a las 8:30 un café de $35; llámenme al +52 (983) 120-4455 o al 9831204455, escriban a ana.ruiz@correo.mx. Tarjeta 4111 1111 1111 1111.';
+  const out = redactContactData(text);
+  assert.equal(out, 'Pedí el 2026-11-03 a las 8:30 un café de $35; llámenme al [teléfono] o al [teléfono], escriban a [correo]. Tarjeta [número].');
+  assert.equal(redactContactData('Excelente servicio, volveremos el 15/12.'), 'Excelente servicio, volveremos el 15/12.');
 });

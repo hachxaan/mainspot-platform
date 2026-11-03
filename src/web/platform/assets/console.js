@@ -118,12 +118,17 @@
     if (!d) return html + '<div class="skeleton" style="height:240px"></div>';
     if (d.error) return html + '<div class="banner banner-alerta">' + esc(d.error) + '</div>';
     html += '<div class="pc-grid">' +
-      '<section class="card stack"><h2>Gasto de IA (OpenRouter)</h2><dl class="pc-kv"><dt>Hoy</dt><dd>' + money(d.spend.today) + '</dd><dt>Mes</dt><dd>' + money(d.spend.month) + '</dd><dt>Laboratorio total</dt><dd>' + money(d.spend.lab_total) + '</dd></dl>' +
+      '<section class="card stack"><h2>Gasto de IA generativa</h2><p class="tiny">Anthropic y OpenAI directos más el historial de OpenRouter (DEC-0068). TypeSafe tiene su propio límite diario (DEC-0032).</p><dl class="pc-kv"><dt>Hoy</dt><dd>' + money(d.spend.today) + '</dd><dt>Mes</dt><dd>' + money(d.spend.month) + '</dd><dt>Laboratorio acumulado</dt><dd>' + money(d.spend.lab_total) + '</dd></dl>' +
         '<ul>' + d.budgets.map(function (b) { return '<li>' + esc(b.scope) + (b.tenant_id ? ' (' + esc(b.tenant_id) + ')' : '') + ': USD ' + esc(b.limit_usd) + ' <span class="tiny">' + esc(b.source) + '</span></li>'; }).join('') + '</ul></section>' +
       '<section class="card stack"><h2>Jobs (24 h)</h2><ul>' + d.jobs.map(function (j) { return '<li>' + esc(j.status) + ': ' + esc(j.n) + '</li>'; }).join('') + '</ul><p>Atascados (lease vencido): ' + esc(d.jobs_stuck.n) + '</p></section>' +
       '<section class="card stack"><h2>Atención y publicaciones</h2><dl class="pc-kv"><dt>Por clasificar</dt><dd>' + esc(d.engagement_backlog.received) + '</dd><dt>Reintentos</dt><dd>' + esc(d.engagement_backlog.retry) + '</dd><dt>Humanos</dt><dd>' + esc(d.engagement_backlog.human) + '</dd><dt>Publicaciones vencidas</dt><dd>' + esc(d.scheduler_backlog.overdue) + '</dd><dt>Inciertas</dt><dd>' + esc(d.scheduler_backlog.uncertain) + '</dd></dl></section>' +
       '</div><section class="card stack" style="margin-top:16px"><h2>Invocaciones (24 h)</h2><div class="pc-scroll"><table class="pc-table"><thead><tr><th>Proveedor</th><th>Estado</th><th>N</th><th>Promedio ms</th></tr></thead><tbody>' +
       d.invocations_24h.map(function (i) { return '<tr><td>' + esc(i.provider_id) + '</td><td>' + esc(i.status) + '</td><td>' + esc(i.n) + '</td><td>' + esc(i.avg_ms) + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
+    var SOURCE = { reported: 'cargo informado', estimated: 'estimado (uso × precio)', unknown: 'sin precio', none: 'sin costo' };
+    html += '<section class="card stack" style="margin-top:16px"><h2>Proveedores</h2><div class="pc-scroll"><table class="pc-table"><thead><tr><th>Proveedor</th><th>Estado</th><th>Datos de negocios reales</th><th>Base</th></tr></thead><tbody>' +
+      d.providers.map(function (p) { return '<tr><td>' + esc(p.display_name) + '<div class="pc-mono muted">' + esc(p.provider_id) + '</div></td><td>' + tag(p.status === 'active' ? 'activo' : 'retirado', p.status === 'active' ? 'nopal' : 'alerta') + '</td><td>' + (p.real_data === 'allowed' ? tag('permitidos', 'nopal') : tag('bloqueados', 'ocre')) + '</td><td class="tiny">' + esc(p.real_data_basis || '—') + (p.terms_verified_at ? ' · verificado ' + esc(when(p.terms_verified_at)) : '') + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
+    html += '<section class="card stack" style="margin-top:16px"><h2>Costo acumulado por proveedor</h2><div class="pc-scroll"><table class="pc-table"><thead><tr><th>Proveedor</th><th>Procedencia</th><th>Llamadas</th><th>USD</th></tr></thead><tbody>' +
+      d.spend_by_provider.map(function (s) { return '<tr><td>' + esc(s.display_name) + (s.status !== 'active' ? ' <span class="tiny">(historial)</span>' : '') + '</td><td>' + esc(SOURCE[s.cost_source] || s.cost_source) + '</td><td>' + esc(s.n) + '</td><td>' + money(s.usd) + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
     return html;
   }
 
@@ -244,7 +249,7 @@
       ? [['casos', 'Casos de uso'], ['modelos', 'Modelos'], ['trazas', 'Trazas'], ['costos', 'Costos'], ['jobs', 'Jobs']]
       : [['negocios', 'Negocios'], ['salud', 'Salud'], ['auditoria', 'Auditoría']];
     return '<a class="skip-link" href="#main">Saltar al contenido</a><div class="pc"><header class="pc-top"><strong>MainSpot ' + (r.area === 'eng' ? 'Engineering Console' : 'Administration') + '</strong>' +
-      '<span class="pc-env">' + esc(S.env) + (S.real ? ' · proveedores reales (solo datos sintéticos)' : ' · proveedores reales apagados') + '</span>' +
+      '<span class="pc-env">' + esc(S.env) + (S.real ? ' · API directas habilitadas · datos según cobertura' : ' · proveedores reales apagados') + '</span>' +
       '<nav aria-label="Secciones" class="pc-tabs">' + tabs.map(function (t) { return '<a href="#/' + t[0] + '"' + (r.page === t[0] || (t[0] === 'negocios' && r.page === 'negocio') || (t[0] === 'casos' && r.page === 'caso') ? ' aria-current="page"' : '') + '>' + esc(t[1]) + '</a>'; }).join('') + '</nav><span class="grow"></span>' +
       '<a href="' + (r.area === 'eng' ? '/plataforma' : '/ingenieria') + '">' + (r.area === 'eng' ? 'Ir a Administration' : 'Ir a Engineering') + '</a>' +
       '<span>' + esc(S.session.display_name) + ' · ' + esc(S.session.roles.join(', ')) + '</span>' + btn('Salir', { action: 'logout', sm: true, style: 'ghost' }) + '</header><main id="main">' + body + '</main></div>' + stepUpView();

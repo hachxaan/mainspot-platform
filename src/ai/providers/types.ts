@@ -51,6 +51,8 @@ export interface ImageRequest {
   prompt: string;
   aspectRatio: '16:9' | '4:3' | '1:1' | '3:4' | '4:5';
   resolution?: string | null;
+  /** Calidad de render cuando el modelo la admite (OpenAI gpt-image: low | medium | high). */
+  quality?: 'low' | 'medium' | 'high' | null;
   timeoutMs: number;
 }
 
@@ -62,7 +64,7 @@ export interface ImageResult {
 }
 
 export interface ProviderAdapter {
-  readonly kind: 'openrouter' | 'simulated';
+  readonly kind: 'anthropic' | 'openai' | 'simulated';
   chat(req: ChatRequest): Promise<ChatResult>;
   image(req: ImageRequest): Promise<ImageResult>;
   ping(timeoutMs?: number): Promise<{ ok: boolean; detail: string }>;

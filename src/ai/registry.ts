@@ -19,10 +19,10 @@ export interface UseCaseRow {
   use_case_id: string; title: string; description: string; modality: 'text' | 'image' | 'classification';
   risk_level: string; owner: string; output_schema: string; tools: string[]; status: string;
 }
-export interface ProviderRow { provider_id: string; display_name: string; kind: 'openrouter' | 'typesafe' | 'simulated'; base_url: string | null; secret_ref: string | null; data_policy: string; terms_url: string | null; status: string }
+export interface ProviderRow { provider_id: string; display_name: string; kind: 'anthropic' | 'openai' | 'typesafe' | 'simulated' | 'openrouter'; base_url: string | null; secret_ref: string | null; data_policy: string; terms_url: string | null; status: string; real_data: 'blocked' | 'allowed'; real_data_basis: string | null; terms_verified_at: string | null }
 export interface ModelRow { model_id: string; provider_id: string; provider_model: string; display_name: string; modality: string; capabilities: Record<string, unknown>; pricing: Record<string, number>; price_source: string; price_observed_at: string; status: string }
 export interface PromptRevisionRow { revision_id: string; use_case_id: string; version: number; system_text: string; task_template: string; variables: PromptVariable[]; sha256: string; change_note: string; created_by: string; created_at: string; retired_at: string | null }
-export interface RouteParams { temperature?: number | null; max_tokens?: number; timeout_ms?: number; reasoning_effort?: 'low' | 'medium' | 'high' | null; repair_attempts?: number; aspect_ratio?: string; resolution?: string | null; fallback_route_id?: string | null }
+export interface RouteParams { temperature?: number | null; max_tokens?: number; timeout_ms?: number; reasoning_effort?: 'low' | 'medium' | 'high' | null; repair_attempts?: number; aspect_ratio?: string; resolution?: string | null; quality?: 'low' | 'medium' | 'high' | null; fallback_route_id?: string | null }
 export interface RouteRow { route_id: string; use_case_id: string; version: number; model_id: string; prompt_revision_id: string; params: RouteParams; max_cost_usd: string; sha256: string; status: RouteStatus; change_note: string; created_by: string; created_at: string; tested_eval_run_id: string | null; approved_by: string | null; approved_at: string | null }
 export interface RolloutRow { use_case_id: string; environment: string; active_route_id: string | null; canary_route_id: string | null; canary_percent: number; version: string; updated_by: string; updated_at: string }
 export interface RouteBundle { route: RouteRow; prompt: PromptRevisionRow; model: ModelRow; provider: ProviderRow }
@@ -50,7 +50,8 @@ export function validateRouteParams(p: RouteParams, modality: string): string[] 
   if (p.reasoning_effort !== undefined && p.reasoning_effort !== null && !['low', 'medium', 'high'].includes(p.reasoning_effort)) errors.push('reasoning_effort inválido');
   if (p.repair_attempts !== undefined && (!Number.isInteger(p.repair_attempts) || p.repair_attempts < 0 || p.repair_attempts > 1)) errors.push('repair_attempts 0 o 1');
   if (modality === 'image' && p.aspect_ratio !== undefined && !['16:9', '4:3', '1:1', '3:4', '4:5'].includes(p.aspect_ratio)) errors.push('aspect_ratio inválido');
-  const known = new Set(['temperature', 'max_tokens', 'timeout_ms', 'reasoning_effort', 'repair_attempts', 'aspect_ratio', 'resolution', 'fallback_route_id']);
+  if (p.quality !== undefined && p.quality !== null && (modality !== 'image' || !['low', 'medium', 'high'].includes(p.quality))) errors.push('quality (low|medium|high) solo en rutas de imagen');
+  const known = new Set(['temperature', 'max_tokens', 'timeout_ms', 'reasoning_effort', 'repair_attempts', 'aspect_ratio', 'resolution', 'quality', 'fallback_route_id']);
   for (const k of Object.keys(p)) if (!known.has(k)) errors.push(`parámetro desconocido: ${k}`);
   return errors;
 }
@@ -232,6 +233,10 @@ export class AiRegistry {
     if (!['APPROVED', 'CANARY', 'ACTIVE'].includes(r.status)) {
       throw new AppError(409, 'validation_error', 'Solo una ruta evaluada y aprobada puede desplegarse.');
     }
+    // Un modelo o proveedor deshabilitado (p. ej. OpenRouter, DEC-0069) no vuelve a ningún rollout.
+    const live = await client.query(
+      `SELECT 1 FROM ai_model m JOIN ai_provider p ON p.provider_id = m.provider_id WHERE m.model_id = $1 AND m.status = 'active' AND p.status = 'active'`, [r.model_id]);
+    if (!live.rowCount) throw new AppError(409, 'validation_error', 'El modelo o el proveedor de esa ruta está deshabilitado.');
     return r;
   }
 
