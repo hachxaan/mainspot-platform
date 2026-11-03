@@ -134,6 +134,24 @@ Fórmulas:
 
 Ejemplos (ESTIMACIÓN): diseño inicial Haiku (run1) c=0.001847 → T_out≈2052, T_in≈8209 (cotas 18 470 … 3 694 tokens totales); Jev intent c=0.000034 → ≈810 tokens de entrada por mensaje clasificado; Jev comment/review ≈1 160 tokens de entrada por evento. Si los precios reales difieren del catálogo (p. ej. descuentos, cache, precio directo de Anthropic/OpenAI), estas cifras cambian proporcionalmente.
 
+### 4.1 Perfiles de tokens MEDIDOS (añadido 2026-11-03; sustituyen a la hipótesis 4:1)
+
+El integrador exportó `ai_invocation.usage` de la base del laboratorio (`lab-traces.md`, 310 invocaciones, solo columnas numéricas). Esos valores son **MEDICIÓN PROPIA (histórica)** e incluyen los tokens de las reparaciones. Las columnas `tokens_*` del CSV se conservan como ESTIMACIÓN original para trazabilidad; para cálculos usar esta tabla.
+
+| Caso de uso | Haiku 5.5 in / out (OR) | GPT-6 Luna in / out (OR) | Estimación §4 (Haiku, R=4) |
+|---|---|---|---|
+| website.initial.design | 4,029 / 3,396 | 1,608 / 2,033 | 8,209 / 2,052 |
+| website.edit.simple | — (bad_request) | 1,735 / 202 | — |
+| website.edit.complex | — (bad_request) | 2,202 / 958 | — |
+| social.facebook.post.compose | 4,424 / 2,550 | 1,776 / 745 | 7,298 / 1,824 |
+| engagement.facebook.comment.reply | 1,287 / 249 | 621 / 189 | 982 / 246 |
+| conversation.owner.assistant | 4,729 / 427 | 2,096 / 293 | 3,436 / 859 |
+| business.insights.generate | 2,135 / 677 | 712 / 404 | 2,311 / 578 |
+| conversation.intent.classify (Jev) | 804 in | — | 810 in |
+| engagement.*.classify (Jev) | 1,158 in | — | ≈1,160 in |
+
+Lecturas: (1) la hipótesis 4:1 sobreestimó la entrada y subestimó la salida en diseño y compose (ratio real Haiku ≈1.2–1.7:1), y acertó en Jev (precio de salida 0 ⇒ identificable). (2) `lab-traces.md` confirma que OpenRouter aplicó el precio de catálogo 0.10/0.50 USD/MTok a ambos modelos; la diferencia de costo por éxito (§3.2) se explica porque **el mismo prompt consume ~2–2.5× más tokens de entrada en Haiku 5.5 que en Luna** (hallazgo del integrador; causa HIPÓTESIS: tokenizador y traducción del JSON Schema por OpenRouter). (3) Las reparaciones sí ocurrieron y se pagaron (compose 80 %/67 % de éxitos con 2 intentos según `lab-traces.md`), por lo que el `repairs = NA` del CSV queda resuelto en esa fuente, no aquí.
+
 ## 5. Gasto acumulado según evidencia
 
 | Partida | USD | Etiqueta |
@@ -175,6 +193,7 @@ Permite: órdenes de magnitud de costo por éxito vía OpenRouter (texto: 0.0001
 9. `src/ai/catalog.ts` (líneas 11-14, 56-71) — `MODEL_SEEDS` y precios de catálogo usados en las estimaciones.
 10. `scripts/ai-core-lab-e2e.ts` (líneas 117, 201, 397-403) — consultas SQL que generaron las cifras del E2E y significado de `r4/p1`.
 11. `docs/architecture/ai-core.md` (líneas 83-97) y `docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-RESULTS.md` (líneas 45-61) — tablas publicadas por SOL MAIN, contrastadas con los JSON (coinciden salvo la mención «DeepSeek 0/5» sin fila en evidencia).
+12. `research/ai-provider-economics/evidence/lab-traces.md` (integrador, 2026-11-03; líneas 11-16 y 26-58) — tokens reales `usage` por caso de uso×modelo exportados de `ai_invocation`; usados en §4.1. Aclara además que «DeepSeek 0/5» fue `circuit_open` (sin petición) y que los `invalid_output` de Haiku sí costaron (USD 0.002383 calendario, 0.002 plan).
 
 ## Huecos
 
