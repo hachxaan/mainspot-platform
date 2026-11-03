@@ -202,7 +202,7 @@ Presupuesto variable por plan (neto − PSP − infra): MXN 500 → **$21.76**; 
 | MIX-CANON | $0.5776 | $0.7219 | $0.4332 | $1.0043 | $0.5944 | $1.1494 | $23.617 | $19.196 |
 | MIX-OPT | $0.3232 | $0.4040 | $0.2424 | $0.5681 | $0.3349 | $0.6593 | $23.871 | $19.450 |
 
-- **Imágenes ×2 es el factor dominante** (+82–83 % del costo IA en DEV/CANON): cualquier decisión de producto que duplique imágenes (variantes, carruseles) domina cualquier optimización de precio de texto.
+- **Imágenes ×2 es el factor dominante** (+74–82 % del costo IA: DEV +82.4 %, CANON +73.9 % — recalculado del CSV; corrección de revisión 2026-11-03): cualquier decisión de producto que duplique imágenes (variantes, carruseles) domina cualquier optimización de precio de texto.
 - **Precios ±25 %**: ±25 % del costo IA (−0.13/+0.13 USD en plan 500 MEDIO) — irrelevante para el margen.
 - **Reparaciones ×2**: +1.2–2.9 % del costo IA (los tokens medidos ya incluyen las reparaciones actuales; el factor añade `freq × unitario × p_repair`).
 - **FX ±10 %** mueve el margen del plan 500 más que todos los escenarios de IA juntos (−$1.99/+$1.43): el riesgo de cambio pesa más que el riesgo de proveedores. Banda razonable ±4 % observada en 5 días (18.58–18.81).

@@ -2,11 +2,17 @@
 
 Investigación de proveedores, modelos y economía unitaria del MainSpot AI Core (2026-11-03). Cada archivo de evidencia lleva su propia sección `## Fuentes` numerada con lo extraído de cada URL; este índice consolida **todas** las URLs primarias citadas en la investigación, agrupadas por proveedor, e indica en qué archivos se usan.
 
-Etiquetas de uso: los archivos bajo `evidence/` son notas de investigación; los numerados (01–05) son entregables. La fecha de consulta de todas las lecturas web es **2026-11-03** salvo indicación contraria en el archivo fuente.
+Los archivos bajo `evidence/` son notas de investigación; los numerados (01–05) son entregables. La fecha de consulta de todas las lecturas web es **2026-11-03** salvo indicación contraria en el archivo fuente.
 
-Leyenda de confianza: una URL aquí listada fue leída por al menos un agente con `read` o navegador cuando su archivo fuente etiqueta el dato como **HECHO VERIFICADO**; los datos solo vistos en resultados de búsqueda quedan etiquetados **SNIPPET** dentro del archivo que los usa.
+Una URL aquí listada fue leída por al menos un agente con `read` o navegador cuando su archivo fuente etiqueta el dato como **HECHO VERIFICADO**; los datos solo vistos en resultados de búsqueda quedan etiquetados **SNIPPET** dentro del archivo que los usa.
 
 ## Anthropic
+
+### api.anthropic.com
+- https://api.anthropic.com/v1 — usado en: 01-inventory.md
+
+### assets.claude.com
+- https://assets.claude.com/d16e60156ee20e9a1c5cfff5c0cabfba39b7c9bf.pdf — usado en: evidence/anthropic.md
 
 ### platform.claude.com
 - https://platform.claude.com/docs/en/about-claude/model-deprecations — usado en: evidence/anthropic.md
@@ -26,6 +32,9 @@ Leyenda de confianza: una URL aquí listada fue leída por al menos un agente co
 - https://platform.claude.com/docs/en/models/overview — usado en: evidence/anthropic.md
 - https://platform.claude.com/docs/en/models/sonnet-5-5/overview — usado en: evidence/anthropic.md
 
+### privacy.anthropic.com
+- https://privacy.anthropic.com/en/articles/7996862-how-do-i-view-and-sign-your-data-processing-addendum-dpa — usado en: evidence/anthropic.md
+
 ### privacy.claude.com
 - https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data — usado en: evidence/anthropic.md
 - https://privacy.claude.com/en/articles/7996868-is-my-data-used-for-model-training — usado en: evidence/anthropic.md
@@ -40,6 +49,9 @@ Leyenda de confianza: una URL aquí listada fue leída por al menos un agente co
 - https://support.claude.com/en/articles/10366389-how-can-i-get-higher-rate-limits-on-the-claude-api — usado en: evidence/anthropic.md
 - https://support.claude.com/en/articles/16608069-understanding-your-claude-api-invoices — usado en: evidence/anthropic.md
 - https://support.claude.com/en/articles/8977456-how-do-i-pay-for-my-claude-api-usage — usado en: evidence/anthropic.md
+
+### trust.anthropic.com
+- https://trust.anthropic.com/ — usado en: evidence/anthropic.md
 
 ### www.anthropic.com
 - https://www.anthropic.com/claude-haiku-5-5 — usado en: evidence/anthropic.md, evidence/text-models-benchmarks.md
@@ -246,8 +258,20 @@ Leyenda de confianza: una URL aquí listada fue leída por al menos un agente co
 - https://artificialanalysis.ai/models/claude-haiku-5-5-low/providers — usado en: evidence/text-models-benchmarks.md
 - https://artificialanalysis.ai/models/claude-haiku-5-5/providers — usado en: evidence/text-models-benchmarks.md
 
+### gorilla.cs.berkeley.edu
+- https://gorilla.cs.berkeley.edu/leaderboard — usado en: evidence/text-models-benchmarks.md
+
 ### llmbenchmark.ai
 - https://llmbenchmark.ai/benchmarks/lmarena-text-spanish — usado en: evidence/text-models-benchmarks.md
+
+### lmarena.ai
+- https://lmarena.ai/leaderboard/text-to-image — usado en: evidence/image-providers.md
+
+### offscreenspace.com
+- https://offscreenspace.com/benchmarks/lmarena-text-to-image — usado en: evidence/image-providers.md
+
+### raw.githubusercontent.com
+- https://raw.githubusercontent.com/sierra-research/tau2-bench/main/web/leaderboard/public/submissions/manifest.json — usado en: evidence/text-models-benchmarks.md
 
 ## BFL
 
@@ -273,14 +297,23 @@ Leyenda de confianza: una URL aquí listada fue leída por al menos un agente co
 - https://ai.byteplus.com/ark/region:ap-southeast-1/docs/seedream-5-0-pro-editing-guide.md — usado en: evidence/image-providers.md
 - https://ai.byteplus.com/ark/region:ap-southeast-1/docs/seedream-5-0-pro.md — usado en: evidence/image-providers.md
 
+### docs.byteplus.com
+- https://docs.byteplus.com/en/docs/modelark/model-pricing — usado en: evidence/openrouter.md
+
 ## Microsoft/Azure
 
 ### azure.microsoft.com
 - https://azure.microsoft.com/en-us/pricing/details/ai-foundry-models/microsoft/ — usado en: evidence/image-providers.md
 
+### b0.p.awsstatic.com
+- https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/bedrockfoundationmodels/USD/current/{public/48fdab7f-…/51 — usado en: evidence/anthropic.md
+
 ### learn.microsoft.com
 - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability — usado en: evidence/image-providers.md
 - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-mai-image — usado en: evidence/image-providers.md
+
+### microsoft.ai
+- https://microsoft.ai/news/today-were-announcing-3-new-world-class-mai-models-available-in-foundry/ — usado en: evidence/image-providers.md
 
 ## DeepSeek
 
@@ -292,6 +325,19 @@ Leyenda de confianza: una URL aquí listada fue leída por al menos un agente co
 ### cdn.deepseek.com
 - https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html — usado en: evidence/text-models-benchmarks.md
 - https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html — usado en: evidence/text-models-benchmarks.md
+
+## Ideogram
+
+### developer.ideogram.ai
+- https://developer.ideogram.ai/api-reference/images/generate/ideogram-3-character.md — usado en: evidence/image-providers.md
+
+### docs.ideogram.ai
+- https://docs.ideogram.ai/plans-and-billing/ideogram-api.md — usado en: evidence/image-providers.md
+
+## Recraft
+
+### www.recraft.ai
+- https://www.recraft.ai/docs/api-reference/pricing — usado en: evidence/image-providers.md
 
 ## Pagos MX
 
@@ -349,32 +395,49 @@ Leyenda de confianza: una URL aquí listada fue leída por al menos un agente co
 
 ## Mercado
 
+### clientes.mexiserver.com
+- https://clientes.mexiserver.com/domain/pricing — usado en: evidence/business-inputs.md
+
+### metricool.com
+- https://metricool.com/pricing/ — usado en: evidence/business-inputs.md
+
+### mx.computrabajo.com
+- https://mx.computrabajo.com/salarios/agente-de-contact-center — usado en: evidence/business-inputs.md
+
 ### recurly.com
 - https://recurly.com/research/churn-rate-benchmarks/ — usado en: evidence/business-inputs.md
 
 ### www.soyroger.com
 - https://www.soyroger.com/guias/cuanto-cuesta-el-manejo-de-redes-sociales.php — usado en: evidence/business-inputs.md
 
+## Fiscal
+
+### www.contadoresmexico.org.mx
+- https://www.contadoresmexico.org.mx/Boletin/IVA-plataformas-digitales-operaciones-residentes-extranjero — usado en: evidence/business-inputs.md
+
+### www.diputados.gob.mx
+- http://www.diputados.gob.mx/LeyesBiblio/pdf/LIVA.pdf — usado en: evidence/business-inputs.md
+
 ## Archivos de la investigación
 
-| Archivo | Papel | Fuentes internas |
-|---|---|---|
-| `01-inventory.md` | Entregable 01 — inventario de capacidades y snapshot SOL MAIN | 22 entradas numeradas |
-| `02-provider-comparison.md` | Entregable 02 — comparación de proveedores y cuentas | 10 entradas numeradas |
-| `03-quality-benchmarks.md` | Entregable 03 — calidad medida y diseño de benchmark | 10 entradas numeradas |
-| `04-unit-economics.md` | Entregable 04 — modelo económico (con 04-unit-economics.py/.csv) | 9 entradas numeradas |
-| `05-recommendation.md` | Entregable 05 — recomendación por caso de uso | 7 entradas numeradas |
-| `HANDOFF.md` | Encargo (comité de partida) | 0 entradas numeradas |
-| `README.md` | Índice ejecutivo | 0 entradas numeradas |
-| `evidence/anthropic.md` | Evidencia de investigación | 51 entradas numeradas |
-| `evidence/business-inputs.md` | Evidencia de investigación | 40 entradas numeradas |
-| `evidence/image-providers.md` | Evidencia de investigación | 37 entradas numeradas |
-| `evidence/lab-history.md` | Evidencia de investigación | 12 entradas numeradas |
-| `evidence/lab-traces.md` | Evidencia de investigación | 0 entradas numeradas |
-| `evidence/openai.md` | Evidencia de investigación | 39 entradas numeradas |
-| `evidence/openrouter.md` | Evidencia de investigación | 25 entradas numeradas |
-| `evidence/text-models-benchmarks.md` | Evidencia de investigación | 38 entradas numeradas |
-| `evidence/typesafe-jev.md` | Evidencia de investigación | 51 entradas numeradas |
+| Archivo | Papel |
+|---|---|
+| `01-inventory.md` | Entregable 01 — inventario de capacidades y snapshot SOL MAIN |
+| `02-provider-comparison.md` | Entregable 02 — comparación de proveedores y cuentas |
+| `03-quality-benchmarks.md` | Entregable 03 — calidad medida y diseño de benchmark |
+| `04-unit-economics.md` | Entregable 04 — modelo económico (con 04-unit-economics.py/.csv) |
+| `05-recommendation.md` | Entregable 05 — recomendación por caso de uso |
+| `HANDOFF.md` | Encargo (comité de partida) |
+| `README.md` | Índice ejecutivo |
+| `evidence/anthropic.md` | Evidencia de investigación |
+| `evidence/business-inputs.md` | Evidencia de investigación |
+| `evidence/image-providers.md` | Evidencia de investigación |
+| `evidence/lab-history.md` | Evidencia de investigación |
+| `evidence/lab-traces.md` | Evidencia de investigación |
+| `evidence/openai.md` | Evidencia de investigación |
+| `evidence/openrouter.md` | Evidencia de investigación |
+| `evidence/text-models-benchmarks.md` | Evidencia de investigación |
+| `evidence/typesafe-jev.md` | Evidencia de investigación |
 
 ## Huecos de trazabilidad
 
