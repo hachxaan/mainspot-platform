@@ -664,6 +664,13 @@
       "original_path": ".canonflow/decision-state/index.json",
       "sha256": "f365be19ed4e52e36dca88536e71d0e47ad6b0f8c02f51cd0e43eab6635caf0a",
       "snapshot_path": ".canonflow/decision-state/legacy/index.json.f365be19ed4e52e36dca88536e71d0e47ad6b0f8c02f51cd0e43eab6635caf0a.json"
+    },
+    {
+      "bytes": 7294,
+      "captured_at": "2026-11-03T09:18:17Z",
+      "original_path": ".canonflow/decision-state/index.json",
+      "sha256": "0b169ce2d08b06268f8016d202f284dab8a311254c66b1f89dfd6b44c5d61430",
+      "snapshot_path": ".canonflow/decision-state/legacy/index.json.0b169ce2d08b06268f8016d202f284dab8a311254c66b1f89dfd6b44c5d61430.json"
     }
   ],
   "schema_version": 1,

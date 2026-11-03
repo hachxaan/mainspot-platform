@@ -27,7 +27,8 @@
     editorial: function () { return API.get('/ai/editorial'); },
     insights: function () { return API.get('/ai/insights'); },
     campaigns: function () { return API.get('/ai/campaigns'); },
-    jobs: function () { return API.get('/ai/jobs'); }
+    jobs: function () { return API.get('/ai/jobs'); },
+    lab: function () { return API.get('/ai/lab'); }
   };
   A.need = function (key, force) {
     var m = mem();
@@ -35,6 +36,9 @@
     m['loading_' + key] = true;
     LOAD[key]().then(function (r) {
       m['loading_' + key] = false;
+      // 403 con autorización de laboratorio elegida: NUNCA se reintenta sin header (podría ejecutar tráfico normal
+      // y consumir crédito). La selección queda bloqueada con aviso hasta que la persona elija otra o salga.
+      if (!r.ok && r.status === 403 && API.labGrant()) m.labBlocked = r.error.message;
       m[key] = r.ok ? r.data : { error: r.error.message };
       (key === 'jobs' && r.ok ? r.data.jobs : []).forEach(function (j) { if (!A.jobs[j.job_id]) A.jobs[j.job_id] = j; });
       emit();
@@ -47,6 +51,20 @@
     var c = st.capabilities.filter(function (x) { return x.use_case === uc; })[0];
     return c ? c : { active: false, simulated: false };
   };
+  /* ---------- laboratorio manual (DEC-0074): rutas DRAFT solo con autorización explícita elegida aquí ---------- */
+  /** Estado de laboratorio que el servidor confirmó para la autorización elegida (null si no hay o no es válida). */
+  A.lab = function () {
+    var st = mem().status;
+    return st && st.lab && st.lab.grant_id === API.labGrant() && !mem().labBlocked ? st.lab : null;
+  };
+  /** Capacidad de laboratorio para un caso de uso; nunca sustituye a `active` normal. */
+  A.labCap = function (uc) {
+    var lab = A.lab();
+    if (!lab || !lab.capabilities) return null;
+    return lab.capabilities.filter(function (c) { return c.use_case === uc; })[0] || null;
+  };
+  function labExpired(lab) { return !!(lab && lab.expires_at && new Date(lab.expires_at).getTime() <= Date.now()); }
+  function hhmm(ts) { if (!ts) return '—'; var d = new Date(ts); return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }); }
 
   /* ---------- jobs (sondeo mientras haya alguno en curso) ---------- */
   A.trackJob = function (job) { A.jobs[job.job_id] = job; emit(); };
@@ -79,12 +97,13 @@
   var JOB_ERR = {
     no_active_route: 'Esta función todavía no está activa en tu cuenta.',
     blocked_external: 'Está pausada por una autorización externa pendiente (por ejemplo, del proveedor de IA).',
-    budget_exhausted: 'Se alcanzó el presupuesto de IA de hoy.',
+    budget_exhausted: 'Se alcanzó un presupuesto interno de IA. Los créditos del proveedor no amplían ese límite.',
     invalid_output: 'La propuesta no cumplió nuestras reglas de calidad. Intenta describirlo de otra forma.',
     website_missing: 'Todavía no tienes página.',
     provider_unavailable: 'El servicio de IA no respondió. Inténtalo en unos minutos.',
     timeout: 'El servicio de IA tardó demasiado. Inténtalo en unos minutos.',
-    attempts_exhausted: 'Lo intentamos varias veces sin éxito. Inténtalo más tarde.'
+    attempts_exhausted: 'Lo intentamos varias veces sin éxito. Inténtalo más tarde.',
+    lab_grant_invalid: 'La autorización de laboratorio ya no es válida (caducó, fue revocada o no cubre esta función). Pide una nueva al equipo de MainSpot.'
   };
   function jobCard(j, doneHtml) {
     if (!j) return '';
@@ -104,10 +123,34 @@
   }
   function lock(text) { return '<div class="banner banner-lila">' + icon('lock') + '<span>' + esc(text) + '</span></div>'; }
   function simTag(sim) { return sim ? UI.sim('Simulado') : UI.tag('IA', 'nopal'); }
+  /** Capacidad de laboratorio tal como la devuelve /ai/status.lab (model = model_id, provider = provider_id). */
+  function labRouteLine(c) { return esc(c.model_name || c.model || c.route_id) + ' · ' + esc(c.provider_kind || c.provider || '') + ' · ruta <span class="mono">' + esc(c.route_id) + '</span> (' + esc(c.status) + ')'; }
   function inactiveNote(uc) {
-    var a = A.active(uc);
-    if (!a || a.active) return a && a.simulated ? '<p class="tiny">' + UI.sim('Simulado') + ' En este entorno esta función usa el simulador: no es una respuesta real de IA.</p>' : '';
+    var a = A.active(uc), lab = A.labCap(uc);
+    // La ruta de laboratorio se informa aparte: nunca se muestra como «activa» normal.
+    var labNote = lab ? '<p class="tiny">' + UI.tag('Laboratorio', 'lila') + ' Esta pantalla usará la ruta de laboratorio ' + labRouteLine(lab) + ' hasta las ' + esc(hhmm(A.lab().expires_at)) + '. Guarda el ID de invocación de la traza para la aceptación.</p>' : '';
+    if (!a || a.active) return (a && a.simulated ? '<p class="tiny">' + UI.sim('Simulado') + ' En este entorno esta función usa el simulador: no es una respuesta real de IA.</p>' : '') + labNote;
+    if (lab) return labNote;
     return '<div class="banner banner-lila">' + icon('info') + '<span><strong>Todavía no está activa</strong>El equipo de MainSpot la activa cuando termina de probarla.</span></div>';
+  }
+  /** Franja visible mientras hay una autorización de laboratorio elegida. Si el servidor la rechaza, todo queda
+   *  bloqueado con aviso: no hay vuelta silenciosa al tráfico normal; solo «Elegir otra» o «Salir del laboratorio». */
+  function labBanner() {
+    var m = mem(), sel = API.labGrant();
+    if (!sel) return '';
+    var st = m.status, lab = A.lab();
+    var exit = '<span class="btn-row" style="margin-top:6px"><a class="btn btn-secondary btn-sm" href="#/ia/laboratorio"><span>Elegir otra autorización</span></a>' + UI.btn('Salir del laboratorio', { action: 'ai-lab-clear', sm: true, style: 'ghost' }) + '</span>';
+    if (m.labBlocked) {
+      return '<div class="banner banner-ocre" role="alert">' + icon('triangle-alert') + '<span><strong>MainSpot rechazó la autorización de laboratorio elegida</strong>' + esc(m.labBlocked) + ' Las funciones de IA quedan en pausa (no se usa la ruta normal) hasta que elijas otra autorización o salgas del laboratorio.' + exit + '</span></div>';
+    }
+    if (!st) return '';
+    if (!lab || lab.grant_id !== sel || labExpired(lab)) {
+      return '<div class="banner banner-ocre" role="alert">' + icon('triangle-alert') + '<span><strong>La autorización de laboratorio ya no es válida</strong>Caducó, fue revocada o no corresponde a tu sesión. Las funciones de IA quedan en pausa hasta que elijas otra autorización o salgas del laboratorio.' + exit + '</span></div>';
+    }
+    return '<div class="banner banner-lila" role="status">' + icon('flask-conical') + '<span><strong>Rutas de laboratorio en uso hasta las ' + esc(hhmm(lab.expires_at)) + '</strong>' +
+      'Autorización <span class="mono">' + esc(lab.grant_id) + '</span>. Lo que generes es un borrador que revisa el equipo de MainSpot; nada se publica solo.' +
+      '<ul class="tiny" style="margin:6px 0 0 16px">' + (lab.capabilities || []).map(function (c) { return '<li>' + esc(c.use_case) + ': ' + labRouteLine(c) + '</li>'; }).join('') + '</ul>' +
+      '<span class="btn-row" style="margin-top:6px"><a class="btn btn-ghost btn-sm" href="#/ia/laboratorio"><span>Ver laboratorio</span></a>' + UI.btn('Dejar de usar', { action: 'ai-lab-clear', sm: true, style: 'secondary' }) + '</span></span></div>';
   }
   var back = function (tab) { return { tab: tab || 'ia', screen: 'AI', back: '#/ia', backLabel: 'IA de tu negocio' }; };
 
@@ -116,7 +159,7 @@
     A.need('status');
     var m = mem();
     var html = head('IA de tu negocio', 'Pregunta por tu cuenta, crea tu página, escribe publicaciones y planea tus campañas. Nada se publica sin tu aprobación.');
-    html += '<div class="stack-lg">';
+    html += '<div class="stack-lg">' + labBanner();
     if (MS.can('assistant.ask')) {
       html += '<section class="card stack" aria-labelledby="as-t"><h2 id="as-t" style="font-size:var(--fs-lg)">' + icon('sparkles') + ' Pregúntale a MainSpot</h2>' +
         '<form class="stack" data-form="ai-ask"><div class="field"><label for="ai-q">¿Qué quieres saber de tu negocio?</label><textarea class="textarea" id="ai-q" maxlength="1500" rows="2" placeholder="¿Qué comentarios necesitan mi respuesta? ¿Cuántas publicaciones hice esta semana?"></textarea></div>' +
@@ -130,7 +173,9 @@
       ['#/ia/resumen', 'chart-line', 'Resumen de tu negocio', 'Qué pasó y qué te recomendamos, con datos.', MS.can('insights.read')],
       ['#/ia/campanas', 'flask-conical', 'Campañas propuestas', 'Planes sin gastar dinero hasta que tú lo autorices.', MS.can('insights.read')],
       ['#/ia/marca', 'palette', 'Mi marca', 'Los datos que MainSpot usa para hablar como tú.', MS.can('brand.read')],
-      ['#/ia/biblioteca', 'image', 'Biblioteca de imágenes', 'Tus fotos e ilustraciones para la página y redes.', MS.can('media.read')]
+      ['#/ia/biblioteca', 'image', 'Biblioteca de imágenes', 'Tus fotos e ilustraciones para la página y redes.', MS.can('media.read')],
+      // Solo en el entorno de laboratorio: pruebas supervisadas con una autorización explícita del equipo de MainSpot.
+      ['#/ia/laboratorio', 'flask-conical', 'Laboratorio de IA', 'Prueba rutas nuevas con una autorización temporal; todo queda como borrador.', labAllowed() && !!(m.status && (m.status.environment === 'lab' || A.lab()))]
     ];
     html += '<section aria-labelledby="ia-tools"><h2 id="ia-tools" class="sr-only">Herramientas</h2><ul class="list card card-flush">' + tiles.filter(function (t) { return t[4]; }).map(function (t) {
       return '<li><a class="list-row" href="' + t[0] + '">' + icon(t[1]) + '<span class="grow"><span class="title" style="display:block">' + esc(t[2]) + '</span><span class="sub" style="display:block">' + esc(t[3]) + '</span></span>' + icon('chevron-right', 'chev') + '</a></li>';
@@ -159,7 +204,7 @@
     if (!MS.can('ai.generate')) return Object.assign({ title: 'Tu página con IA', html: head('Tu página con IA') + lock('Tu perfil no puede pedir diseños ni cambios a la IA.') }, back());
     var S = MS.S, j = jobOf('website.');
     var html = head('Tu página con IA', 'MainSpot propone; tú ves la vista previa y decides si se publica.');
-    html += '<div class="stack-lg">';
+    html += '<div class="stack-lg">' + labBanner();
     if (!S.website) {
       html += UI.empty('Primero crea tu página', 'Con los datos de tu negocio armamos la base; después la IA la diseña a tu medida.', UI.btn('Crear mi página', { href: '#/pagina/crear' }));
     } else {
@@ -213,8 +258,11 @@
     var m = mem(), j = jobOf('social.compose');
     var pre = m.composePrefill || '';
     var html = head('Publicación para Facebook', 'Te proponemos variantes; eliges una, la ajustas y sigue el camino normal de aprobación.');
-    html += '<div class="stack-lg"><form class="card stack" data-form="ai-compose"><div class="field"><label for="ai-req">¿Qué quieres publicar?</label><textarea class="textarea" id="ai-req" maxlength="1000" rows="3" placeholder="Anuncia que ya tenemos pan de muerto.">' + esc(pre) + '</textarea></div>' +
-      '<label class="row"><input type="checkbox" id="ai-img"' + (A.active('social.facebook.image.generate') && A.active('social.facebook.image.generate').active ? ' checked' : ' disabled') + '> <span>Proponer también una ilustración' + (A.active('social.facebook.image.generate') && !A.active('social.facebook.image.generate').active ? ' (no disponible por ahora)' : '') + '</span></label>' +
+    // La ilustración se habilita por la ruta normal activa o, aparte, por una ruta de laboratorio autorizada (nunca se confunden).
+    var imgNormal = A.active('social.facebook.image.generate'), imgLab = A.labCap('social.facebook.image.generate');
+    var imgOn = !!((imgNormal && imgNormal.active) || imgLab);
+    html += '<div class="stack-lg">' + labBanner() + '<form class="card stack" data-form="ai-compose"><div class="field"><label for="ai-req">¿Qué quieres publicar?</label><textarea class="textarea" id="ai-req" maxlength="1000" rows="3" placeholder="Anuncia que ya tenemos pan de muerto.">' + esc(pre) + '</textarea></div>' +
+      '<label class="row"><input type="checkbox" id="ai-img"' + (imgOn ? ' checked' : ' disabled') + '> <span>Proponer también una ilustración' + (!imgOn && imgNormal ? ' (no disponible por ahora)' : '') + (imgOn && !(imgNormal && imgNormal.active) && imgLab ? ' ' + UI.tag('Laboratorio', 'lila') : '') + '</span></label>' +
       '<div class="btn-row">' + UI.btn('Proponer variantes', { type: 'submit', id: 'ai-compose-btn', icon: 'sparkles' }) + '</div>' + inactiveNote('social.facebook.post.compose') + '</form>';
     if (j) {
       html += '<section aria-labelledby="var-t" class="stack"><h2 id="var-t" style="font-size:var(--fs-lg)">Variantes</h2>' + jobCard(j, function (r) {
@@ -296,7 +344,8 @@
   /* ======================================================== calendario */
   function calendario() {
     var d = A.need('editorial');
-    var html = head('Calendario editorial', 'Ideas fechadas a partir de tu marca. Aceptarlas no publica nada.');
+    A.need('status');
+    var html = head('Calendario editorial', 'Ideas fechadas a partir de tu marca. Aceptarlas no publica nada.') + labBanner();
     if (MS.can('ai.generate')) {
       html += '<form class="card stack" data-form="ai-editorial"><div class="hours-grid" style="grid-template-columns:1fr 1fr"><div class="field"><label for="ed-start">Desde</label><input class="input" type="date" id="ed-start" value="' + new Date(Date.now() + 864e5).toISOString().slice(0, 10) + '"></div>' +
         '<div class="field"><label for="ed-freq">Frecuencia</label><select class="select" id="ed-freq"><option>2 por semana</option><option selected>3 por semana</option><option>5 por semana</option></select></div></div>' +
@@ -315,7 +364,8 @@
   /* ======================================================== resumen */
   function resumen() {
     var m = mem();
-    var html = head('Resumen de tu negocio', 'Con tus datos reales en MainSpot. Si no hay suficientes, te lo decimos en lugar de adivinar.');
+    A.need('status');
+    var html = head('Resumen de tu negocio', 'Con tus datos reales en MainSpot. Si no hay suficientes, te lo decimos en lugar de adivinar.') + labBanner();
     html += '<div class="card stack"><div class="btn-row">' + UI.btn('Últimos 7 días', { action: 'ai-insight', arg: '7', id: 'ins-7' }) + UI.btn('Últimos 30 días', { action: 'ai-insight', arg: '30', style: 'secondary', id: 'ins-30' }) + '</div>' + inactiveNote('business.insights.generate') + '</div>';
     var i = m.insight;
     if (i && i.error) html += '<div class="banner banner-alerta" role="alert">' + icon('triangle-alert') + '<span>' + esc(i.error) + '</span></div>';
@@ -332,7 +382,8 @@
   /* ======================================================== campañas */
   function campanas() {
     var d = A.need('campaigns');
-    var html = head('Campañas propuestas', 'MainSpot prepara el plan. Aprobarlo NO gasta dinero: los anuncios requieren una cuenta publicitaria autorizada por ti.');
+    A.need('status');
+    var html = head('Campañas propuestas', 'MainSpot prepara el plan. Aprobarlo NO gasta dinero: los anuncios requieren una cuenta publicitaria autorizada por ti.') + labBanner();
     html += '<div class="banner banner-lila">' + icon('lock') + '<span><strong>Sin gasto automático</strong>MainSpot no activa anuncios ni cobra publicidad. Hoy no hay cuenta publicitaria autorizada.</span></div>';
     if (MS.can('campaign.plan')) {
       html += '<form class="card stack" data-form="ai-campaign" style="margin-top:12px"><div class="field"><label for="cmp-obj">¿Qué quieres lograr?</label><textarea class="textarea" id="cmp-obj" maxlength="1000" rows="2" placeholder="Que vengan más clientes a desayunar en noviembre."></textarea></div>' +
@@ -356,6 +407,123 @@
     return Object.assign({ title: 'Campañas', html: html }, back());
   }
 
+  /* ======================================================== laboratorio manual (DEC-0074) */
+  // Estilo por omisión exigido por el backend de imágenes de laboratorio (3–200, nunca vacío).
+  var LAB_IMAGE_STYLE = 'Editorial contemporáneo';
+  // Permisos del panel que el servidor exige por capacidad (ai.generate, assistant.ask, insights.read, campaign.plan…):
+  // basta uno para ver el laboratorio; el backend decide qué capacidades puede recibir cada usuario.
+  function labAllowed() { return ['ai.generate', 'assistant.ask', 'insights.read', 'campaign.plan'].some(function (p) { return MS.can(p); }); }
+  // Dónde se ejercita cada capacidad desde el panel (pantallas existentes) o en los formularios directos de abajo.
+  var LAB_SCREEN = {
+    'conversation.owner.assistant': ['Asistente «Pregúntale a MainSpot»', '#/ia'],
+    'website.initial.design': ['Tu página con IA · Diseño a la medida', '#/ia/pagina'],
+    'website.edit.simple': ['Tu página con IA · Pedir un cambio', '#/ia/pagina'],
+    'website.edit.complex': ['Tu página con IA · Pedir un cambio (el clasificador decide si es complejo)', '#/ia/pagina'],
+    'website.image.generate': ['Imagen independiente (formulario de abajo) o Diseño a la medida', '#/ia/pagina'],
+    'social.facebook.post.compose': ['Publicación para Facebook', '#/ia/publicar'],
+    'social.facebook.image.generate': ['Imagen independiente (formulario de abajo) o Publicación con ilustración', '#/ia/publicar'],
+    'engagement.facebook.comment.reply': ['Respuesta propuesta (formulario de abajo)', null],
+    'engagement.google.review.reply': ['Respuesta propuesta (formulario de abajo)', null],
+    'marketing.campaign.plan': ['Campañas propuestas', '#/ia/campanas'],
+    'marketing.campaign.creatives': ['Campañas propuestas (textos del plan)', '#/ia/campanas'],
+    'business.insights.generate': ['Resumen de tu negocio', '#/ia/resumen'],
+    'editorial.calendar.suggest': ['Calendario editorial', '#/ia/calendario']
+  };
+  function grantState(g) {
+    if (g.revoked_at || g.status === 'revoked') return ['Revocada', 'alerta'];
+    if (g.status === 'expired' || (g.expires_at && new Date(g.expires_at).getTime() <= Date.now())) return ['Caducada', 'neutral'];
+    return ['Vigente hasta las ' + hhmm(g.expires_at), 'nopal'];
+  }
+  function grantRoutes(g) { return Array.isArray(g.routes) ? g.routes : []; }
+  /** Datos trazables de cada prueba: la persona los pasa al equipo de MainSpot para la aceptación. */
+  function labResultMeta(r) {
+    var items = [['info', 'ID de invocación', '<span class="mono">' + esc(r.invocation_id || '—') + '</span>']];
+    if (r.classification_invocation_id) items.push(['info', 'ID de clasificación', '<span class="mono">' + esc(r.classification_invocation_id) + '</span>']);
+    items.push(['sparkles', 'Modelo', esc(r.model || '—') + ' · ' + esc(r.provider || '—')]);
+    items.push(['flask-conical', 'Ruta', '<span class="mono">' + esc(r.route_id || '—') + '</span>']);
+    items.push(['chart-line', 'Costo', 'USD ' + esc(r.cost_usd != null ? Number(r.cost_usd).toFixed(6) : '—')]);
+    return UI.facts(items);
+  }
+  function laboratorio() {
+    var st = A.need('status'), d = A.need('lab'), m = mem();
+    var ret = { tab: 'ia', screen: 'AI', back: '#/ia', backLabel: 'IA de tu negocio' };
+    if (!labAllowed()) return Object.assign({ title: 'Laboratorio de IA', html: head('Laboratorio de IA') + lock('Tu perfil no puede usar el laboratorio de IA.') }, ret);
+    var html = head('Laboratorio de IA', 'Pruebas supervisadas de rutas nuevas con una autorización temporal del equipo de MainSpot. Todo queda como borrador: nada se publica.');
+    html += labBanner();
+    if (!d || !st) return Object.assign({ title: 'Laboratorio de IA', html: html + '<div class="skeleton" style="height:240px;border-radius:16px"></div>' }, ret);
+    if (d.error) return Object.assign({ title: 'Laboratorio de IA', html: html + '<div class="banner banner-alerta" role="alert">' + icon('triangle-alert') + '<span>' + esc(d.error) + '</span></div>' }, ret);
+    var sel = API.labGrant(), lab = A.lab();
+    var grants = (d.grants || []).slice();
+    var usable = grants.filter(function (g) { return grantState(g)[1] === 'nopal'; });
+    if (d.environment && d.environment !== 'lab') html += '<div class="banner banner-ocre">' + icon('info') + '<span><strong>Este entorno no es el laboratorio</strong>Aquí no se pueden usar rutas de laboratorio (entorno ' + esc(d.environment) + ').</span></div>';
+    // 1) Elegir la autorización: nunca se activa sola; el ID elegido vive solo en esta pestaña.
+    html += '<section class="card stack" aria-labelledby="lab-g-t"><h2 id="lab-g-t" style="font-size:var(--fs-lg)">' + icon('flask-conical') + ' Autorizaciones para tu cuenta</h2>';
+    if (!grants.length) html += '<p class="muted">No hay autorizaciones de laboratorio para tu usuario. El equipo de MainSpot las emite desde su consola y te avisa.</p>';
+    else {
+      html += '<ul class="list card card-flush">' + grants.map(function (g) {
+        var s = grantState(g), isSel = sel === g.grant_id;
+        return '<li class="list-row static stack" style="align-items:flex-start"><span class="grow"><span class="title" style="display:block">' + UI.tag(s[0], s[1]) + (isSel ? ' ' + UI.tag(lab && lab.grant_id === g.grant_id ? 'En uso' : (m.labBlocked ? 'Rechazada por el servidor' : 'Elegida'), m.labBlocked && !(lab && lab.grant_id === g.grant_id) ? 'ocre' : 'lila') : '') + ' <span class="mono">' + esc(g.grant_id) + '</span></span>' +
+          '<span class="sub" style="display:block">' + esc(g.reason || '') + (g.created_at ? ' · emitida ' + esc(MS.when(g.created_at)) : '') + '</span>' +
+          '<ul class="tiny" style="margin:6px 0 0 16px">' + grantRoutes(g).map(function (r) { return '<li>' + esc(r.use_case_title || r.use_case_id) + ': ' + esc(r.model_name || r.model_id || r.route_id) + ' · ' + esc(r.provider_kind || r.provider_id || '') + ' · v' + esc(r.route_version) + ' <span class="mono">' + esc(r.route_id) + '</span> (' + esc(r.route_status) + ')' + (r.max_cost_usd != null ? ' · máx. USD ' + esc(r.max_cost_usd) + '/llamada' : '') + '</li>'; }).join('') + '</ul></span></li>';
+      }).join('') + '</ul>';
+      html += '<form class="stack" data-form="ai-lab-use"><div class="field"><label for="lab-grant-pick">Autorización que quieres usar</label><select class="select" id="lab-grant-pick">' + usable.map(function (g) { return '<option value="' + esc(g.grant_id) + '"' + ((m.labPick || sel) === g.grant_id ? ' selected' : '') + '>' + esc(g.grant_id) + ' · hasta las ' + esc(hhmm(g.expires_at)) + '</option>'; }).join('') + '</select></div>' +
+        '<p class="hint">Al pulsar el botón, las pantallas de IA usarán las rutas autorizadas hasta su caducidad o hasta que dejes de usarlas. Se olvida al cerrar sesión. Cada prueba consume el presupuesto de laboratorio (y la clasificación, su cuota diaria).</p>' +
+        '<div class="btn-row">' + UI.btn('Usar rutas de laboratorio', { type: 'submit', id: 'lab-use-btn', icon: 'flask-conical' }) + (sel ? UI.btn('Dejar de usar', { action: 'ai-lab-clear', style: 'secondary' }) : '') + '</div>' + (usable.length ? '' : '<p class="tiny">Ninguna autorización está vigente ahora mismo.</p>') + '</form>';
+    }
+    html += '</section>';
+    if (!lab) {
+      html += '<p class="tiny" style="margin-top:12px">Elige una autorización para ver qué pantallas puedes probar y los formularios directos de imagen y respuesta.</p>';
+      return Object.assign({ title: 'Laboratorio de IA', html: html }, ret);
+    }
+    // 2) Dónde probar cada capacidad autorizada (pantallas existentes).
+    html += '<section class="card stack" style="margin-top:12px" aria-labelledby="lab-c-t"><h2 id="lab-c-t" style="font-size:var(--fs-lg)">Qué puedes probar ahora</h2><ul class="list card card-flush">' + (lab.capabilities || []).map(function (c) {
+      var where = LAB_SCREEN[c.use_case] || [c.use_case, null], normal = A.active(c.use_case);
+      var inner = '<span class="grow"><span class="title" style="display:block">' + esc(where[0]) + '</span><span class="sub" style="display:block">' + esc(c.use_case) + ' · ' + labRouteLine(c) + (normal && normal.active ? ' · ' + UI.tag('también tiene ruta normal activa', 'neutral') : '') + '</span></span>';
+      return '<li>' + (where[1] ? '<a class="list-row" href="' + where[1] + '">' + inner + icon('chevron-right', 'chev') + '</a>' : '<div class="list-row static">' + inner + '</div>') + '</li>';
+    }).join('') + '</ul><p class="tiny">Después de cada prueba, el equipo de MainSpot revisa la traza por su ID de invocación y decide si la ruta queda probada. Aquí no se publica nada.</p></section>';
+    var imgCap = A.labCap('website.image.generate') || A.labCap('social.facebook.image.generate');
+    var replyCap = A.labCap('engagement.facebook.comment.reply') || A.labCap('engagement.google.review.reply');
+    // 3) Imagen independiente: resultado = imagen en borrador en tu biblioteca + ID de invocación.
+    if (imgCap) {
+      html += '<form class="card stack" data-form="ai-lab-image" style="margin-top:12px"><h2 style="font-size:var(--fs-lg)">' + icon('image') + ' Imagen independiente</h2>' +
+        '<div class="hours-grid" style="grid-template-columns:1fr 1fr"><div class="field"><label for="li-purpose">Para qué</label><select class="select" id="li-purpose">' + (A.labCap('website.image.generate') ? '<option value="website">Tu página</option>' : '') + (A.labCap('social.facebook.image.generate') ? '<option value="social">Redes sociales</option>' : '') + '</select></div>' +
+        '<div class="field"><label for="li-aspect">Proporción</label><select class="select" id="li-aspect"><option value="1:1">Cuadrada (1:1)</option><option value="4:5">Vertical (4:5)</option><option value="3:4">Vertical (3:4)</option><option value="4:3">Horizontal (4:3)</option><option value="16:9">Panorámica (16:9)</option></select></div></div>' +
+        '<div class="field"><label for="li-subject">¿Qué debe mostrar? (10–400 caracteres)</label><textarea class="textarea" id="li-subject" rows="2" minlength="10" maxlength="400" required placeholder="Pan de muerto recién horneado sobre una mesa de madera"></textarea></div>' +
+        '<div class="field"><label for="li-style">Estilo (3–200 caracteres)</label><input class="input" id="li-style" minlength="3" maxlength="200" required value="' + esc(LAB_IMAGE_STYLE) + '" placeholder="' + esc(LAB_IMAGE_STYLE) + '"></div>' +
+        '<p class="hint">Se guarda como ilustración en borrador en tu biblioteca; no se usa en tu página ni en redes hasta que la apruebes.</p>' +
+        '<div class="btn-row">' + UI.btn('Generar imagen de prueba', { type: 'submit', id: 'lab-img-btn', icon: 'sparkles' }) + '</div></form>';
+      var ir = m.labImage;
+      if (ir && ir.error) html += '<div class="banner banner-alerta" role="alert">' + icon('triangle-alert') + '<span>' + esc(ir.error) + '</span></div>';
+      else if (ir) {
+        var asset = ir.asset || {};
+        html += '<section class="card stack" aria-live="polite"><div class="row" style="justify-content:space-between"><strong>Imagen generada (borrador)</strong>' + simTag(ir.simulated) + '</div>' +
+          (asset.asset_id ? '<figure><img src="' + esc(asset.url || ('/media/' + encodeURIComponent(asset.asset_id) + '/w640.webp')) + '" alt="' + esc(asset.alt || '') + '" style="width:100%;max-width:420px;border-radius:12px"><figcaption class="tiny">' + esc(asset.alt || '') + ' · <span class="mono">' + esc(asset.asset_id) + '</span></figcaption></figure>' : '') +
+          labResultMeta(ir) + '<div class="btn-row"><a class="btn btn-secondary btn-sm" href="#/ia/biblioteca"><span>Ver en la biblioteca</span></a></div></section>';
+      }
+    }
+    // 4) Respuesta propuesta: clasificación normal (TypeSafe) + redacción con la ruta de laboratorio; nunca se publica ni dispara al agente.
+    if (replyCap) {
+      html += '<form class="card stack" data-form="ai-lab-reply" style="margin-top:12px"><h2 style="font-size:var(--fs-lg)">' + icon('send') + ' Respuesta propuesta a un comentario o reseña</h2>' +
+        '<div class="hours-grid" style="grid-template-columns:1fr 1fr"><div class="field"><label for="lr-origin">Origen</label><select class="select" id="lr-origin">' + (A.labCap('engagement.facebook.comment.reply') ? '<option value="facebook_comment">Comentario de Facebook</option>' : '') + (A.labCap('engagement.google.review.reply') ? '<option value="google_review">Reseña de Google</option>' : '') + '</select></div>' +
+        '<div class="field"><label for="lr-rating">Estrellas (solo reseñas, opcional)</label><select class="select" id="lr-rating"><option value="">Sin calificación</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div></div>' +
+        '<div class="field"><label for="lr-message">Mensaje del cliente</label><textarea class="textarea" id="lr-message" rows="3" maxlength="2000" placeholder="¿Tienen pan de muerto de chocolate? ¿A qué hora abren el domingo?"></textarea></div>' +
+        '<p class="hint">Primero se clasifica por la vía normal (consume la cuota diaria de clasificación) y después se redacta con la ruta de laboratorio. Solo ves la propuesta: no se contesta al cliente.</p>' +
+        '<div class="btn-row">' + UI.btn('Proponer respuesta', { type: 'submit', id: 'lab-reply-btn', icon: 'sparkles' }) + '</div></form>';
+      var rr = m.labReply;
+      if (rr && rr.error) html += '<div class="banner banner-alerta" role="alert">' + icon('triangle-alert') + '<span>' + esc(rr.error) + '</span></div>';
+      else if (rr) {
+        var rep = rr.reply || {}, cls = rr.classification || {};
+        html += '<section class="card stack" aria-live="polite"><div class="row" style="justify-content:space-between"><strong>Respuesta propuesta (no enviada)</strong>' + simTag(rr.simulated) + '</div>' +
+          (rep.needs_human ? '<div class="banner banner-ocre">' + icon('info') + '<span><strong>Mejor que conteste una persona</strong>' + esc(rep.reason || '') + '</span></div>' : '') +
+          '<p style="white-space:pre-wrap">' + esc(rep.text || '') + '</p>' +
+          (Object.keys(cls).length ? '<details><summary>Clasificación</summary><ul>' + Object.keys(cls).map(function (k) { return '<li>' + esc(k) + ': ' + esc(typeof cls[k] === 'object' ? JSON.stringify(cls[k]) : cls[k]) + '</li>'; }).join('') + '</ul></details>' : '') +
+          (rep.facts_used && rep.facts_used.length ? '<p class="tiny">Datos de tu marca usados: ' + esc(rep.facts_used.join(', ')) + '</p>' : '') +
+          labResultMeta(rr) + '</section>';
+      }
+    }
+    return Object.assign({ title: 'Laboratorio de IA', html: html }, ret);
+  }
+
   V.ai = function (sub) {
     switch (sub) {
       case undefined: return hub();
@@ -366,6 +534,7 @@
       case 'calendario': return calendario();
       case 'resumen': return resumen();
       case 'campanas': return campanas();
+      case 'laboratorio': return laboratorio();
       default: return Object.assign({ title: 'No encontrado', html: UI.empty('No encontramos esta pantalla', 'Puede que el enlace esté incompleto.', UI.btn('Ir a IA de tu negocio', { href: '#/ia' })) }, back());
     }
   };
@@ -494,6 +663,55 @@
         t.value = '';
         A.need('campaigns', true);
       });
+    },
+    /* ---------- laboratorio manual: activación explícita y pruebas directas ---------- */
+    'ai-lab-use': function () {
+      var pick = document.getElementById('lab-grant-pick');
+      var id = pick ? pick.value : '';
+      if (!id) { toast('No hay una autorización vigente que elegir', 'info'); return; }
+      mem().labPick = id;
+      mem().labBlocked = null;
+      API.setLabGrant(id);
+      var btn = document.getElementById('lab-use-btn');
+      busy(btn, true, 'Comprobando…');
+      // El servidor confirma (o no) la autorización en /ai/status. Si la rechaza, la selección queda bloqueada con
+      // aviso (nunca se vuelve al tráfico normal por sí solo): la persona elige otra o sale del laboratorio.
+      LOAD.status().then(function (r) {
+        busy(btn, false);
+        mem().status = r.ok ? r.data : { error: r.error.message };
+        if (!r.ok) { mem().labBlocked = r.error.message; toast(r.error.message, 'circle-alert'); emit(); return; }
+        if (!A.lab() || A.lab().grant_id !== id) { mem().labBlocked = 'MainSpot no confirmó esa autorización para tu sesión (caducó, fue revocada o no te corresponde).'; toast(mem().labBlocked, 'circle-alert'); emit(); return; }
+        toast('Rutas de laboratorio en uso hasta las ' + hhmm(A.lab().expires_at), 'flask-conical');
+        emit();
+      });
+    },
+    'ai-lab-image': function () {
+      var subj = document.getElementById('li-subject'), v = subj.value.trim();
+      if (v.length < 10 || v.length > 400) { subj.focus(); toast('Describe qué debe mostrar la imagen (entre 10 y 400 caracteres)', 'info'); return; }
+      var styleEl = document.getElementById('li-style'), style = styleEl.value.trim() || LAB_IMAGE_STYLE;
+      if (style.length < 3 || style.length > 200) { styleEl.focus(); toast('El estilo debe tener entre 3 y 200 caracteres', 'info'); return; }
+      var btn = document.getElementById('lab-img-btn');
+      busy(btn, true, 'Generando…');
+      API.post('/ai/lab/images', { purpose: document.getElementById('li-purpose').value, subject: v, style: style, aspect_ratio: document.getElementById('li-aspect').value }, { idempotencyKey: newKey() }).then(function (r) {
+        busy(btn, false);
+        mem().labImage = r.ok ? r.data : { error: r.error.message };
+        if (r.ok) { A.need('media', true); A.need('status', true); }
+        emit();
+      });
+    },
+    'ai-lab-reply': function () {
+      var msg = document.getElementById('lr-message'), v = msg.value.trim();
+      if (!v) { msg.focus(); toast('Escribe el mensaje del cliente', 'info'); return; }
+      var rating = document.getElementById('lr-rating').value;
+      var origin = document.getElementById('lr-origin').value;
+      var btn = document.getElementById('lab-reply-btn');
+      busy(btn, true, 'Clasificando y redactando…');
+      API.post('/ai/lab/replies', { origin: origin, message: v, rating: origin === 'google_review' && rating !== '' ? Number(rating) : null }, { idempotencyKey: newKey() }).then(function (r) {
+        busy(btn, false);
+        mem().labReply = r.ok ? r.data : { error: r.error.message };
+        if (r.ok) A.need('status', true);
+        emit();
+      });
     }
   };
 
@@ -535,6 +753,19 @@
         toast(p[1] === 'approve' ? 'Plan aprobado. No se activó ningún gasto.' : 'Campaña descartada');
         A.need('campaigns', true);
       });
+    },
+    /* Salida explícita del laboratorio (única vía, junto con logout/cambio de sesión, para dejar de enviar el header). */
+    'ai-lab-clear': function () {
+      var m = mem();
+      API.setLabGrant(null);
+      m.labPick = null;
+      m.labImage = null;
+      m.labReply = null;
+      m.labBlocked = null;
+      toast('Saliste del laboratorio: vuelven las funciones normales', 'circle-check');
+      A.need('status', true);
     }
   };
+  // Un redibujo (sondeo de jobs) no restaura <select>: la elección pendiente se recuerda en memoria.
+  document.addEventListener('change', function (e) { if (e.target && e.target.id === 'lab-grant-pick') mem().labPick = e.target.value; });
 })();

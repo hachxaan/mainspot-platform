@@ -4,9 +4,10 @@
  *
  * - platform_admin: negocios, planes, clasificación de datos, salud, presupuestos.
  * - ai_engineer: catálogo, prompts, rutas, evaluaciones, rollout/rollback, trazas y jobs.
+ * - platform_admin | ai_engineer: laboratorio manual (DEC-0074): grants temporales, evidencia y revisión manual.
  * - platform_support: lectura de salud y acceso de soporte con motivo y caducidad (visible al negocio).
- * Acciones con efecto (activar ruta, rollback, cambiar plan, suspender, presupuestos) exigen
- * step-up TOTP reciente. Nunca se exponen contraseñas, secretos, tokens ni contenido de
+ * Acciones con efecto (activar ruta, rollback, cambiar plan, suspender, presupuestos, grants, revisión manual)
+ * exigen step-up TOTP reciente. Nunca se exponen contraseñas, secretos, tokens ni contenido de
  * conversaciones; las trazas muestran ids, hashes, estado, latencia y costo.
  */
 
@@ -19,6 +20,7 @@ import { log } from '../shared/logger.ts';
 import { PlatformAuth, requirePlatform, writePlatformAudit, type PlatformRequest, type PlatformRole, type PlatformSession } from '../platform/auth.ts';
 import type { AiDispatcher } from '../ai/dispatcher.ts';
 import { runEvalSuite } from '../ai/evals.ts';
+import type { AiLab } from '../ai/lab.ts';
 import type { RouteParams } from '../ai/registry.ts';
 import type { SubscriptionRepository } from '../subscriptions/entitlements.ts';
 
@@ -27,6 +29,7 @@ export interface PlatformRouteDeps {
   sink: AuditSink;
   auth: PlatformAuth;
   dispatcher: AiDispatcher;
+  lab: AiLab;
   subscriptions: SubscriptionRepository;
   environment: string;
   realProviders: boolean;
@@ -348,7 +351,7 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
     // Trazas saneadas: sin entrada ni salida (contenido de clientes); hashes, ids y métricas.
     const r = await pool.query(
       `SELECT invocation_id, created_at, tenant_id, origin, use_case_id, route_id, route_version, prompt_sha256, model_id, provider_id, assignment,
-              status, error_code, latency_ms, reserved_usd, cost_usd, cost_source, usage, input_sha256, job_id, eval_run_id, policy_version, brand_version
+              status, error_code, latency_ms, reserved_usd, cost_usd, cost_source, usage, input_sha256, output_sha256, job_id, eval_run_id, lab_grant_id, policy_version, brand_version
          FROM ai_invocation WHERE ($1::text IS NULL OR use_case_id = $1) AND ($2::text IS NULL OR status = $2) ORDER BY created_at DESC LIMIT 100`, [uc, status]);
     res.json({ invocations: r.rows });
   }));
@@ -364,7 +367,7 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
 
   router.get('/ai/jobs', guard(engRead, 'ai.jobs.read'), ah(async (req, res) => {
     const status = typeof req.query['status'] === 'string' ? req.query['status'] : null;
-    const r = await pool.query(`SELECT job_id, tenant_id, kind, status, error_code, attempts, pinned, progress, created_at, finished_at FROM ai_job WHERE ($1::text IS NULL OR status = $1) ORDER BY created_at DESC LIMIT 100`, [status]);
+    const r = await pool.query(`SELECT job_id, tenant_id, kind, status, error_code, attempts, pinned, progress, lab_grant_id, created_at, finished_at FROM ai_job WHERE ($1::text IS NULL OR status = $1) ORDER BY created_at DESC LIMIT 100`, [status]);
     res.json({ jobs: r.rows });
   }));
 
@@ -374,6 +377,51 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
     if (!r.rowCount) throw new AppError(409, 'validation_error', 'Solo se cancelan trabajos en cola (uno en curso termina o vence su lease).');
     await audit(s, req, 'ai.jobs.cancel', `ai_job/${String(req.params['id'])}`, 'cancelled', { tenantId: r.rows[0].tenant_id });
     res.json({ ok: true });
+  }));
+
+  // ------------------------------------------------------------------ Laboratorio manual (DEC-0074, solo AI_ENVIRONMENT=lab)
+  const labRoles: PlatformRole[] = ['platform_admin', 'ai_engineer'];
+  const issuerOf = (s: PlatformSession) => ({ platformUserId: s.platform_user_id, roles: s.roles });
+
+  /** Negocios y usuarios (cuentas administrativas), rutas autorizables y grants: lectura sin llamadas a proveedores. */
+  router.get('/ai/lab', guard(labRoles, 'ai.lab.read'), ah(async (req, res) => {
+    const overview = await deps.lab.overview();
+    await audit(sessionOf(req), req, 'ai.lab.read', 'ai_lab_grant/*', `grants:${overview.grants.length} enabled:${overview.enabled}`);
+    res.json(overview);
+  }));
+
+  router.post('/ai/lab/grants', guard(labRoles, 'ai.lab.grant', true), ah(async (req, res) => {
+    const s = sessionOf(req);
+    const b = (req.body ?? {}) as { tenant_id?: unknown; user_id?: unknown; route_ids?: unknown; minutes?: unknown; reason?: unknown };
+    const grant = await deps.lab.issueGrant({ tenantId: b.tenant_id, userId: b.user_id, routeIds: b.route_ids, minutes: b.minutes, reason: b.reason, issuer: issuerOf(s) });
+    // Visible para el negocio en su propia auditoría: quién autorizó, hasta cuándo y qué rutas (ids), sin motivo íntegro.
+    await deps.sink.write({ tenant_id: grant.tenant_id, actor_id: `platform:${s.login}`, actor_role: s.roles[0] ?? 'platform_admin', action: 'ai.lab.grant_issued', resource: `ai_lab_grant/${grant.grant_id}`, request_id: `plat_${randomUUID()}`, decision: 'allow', result: `user:${grant.user_id} routes:${grant.route_ids.length} expires:${grant.expires_at}`, evidence_ref: grant.reason.slice(0, 120) });
+    await audit(s, req, 'ai.lab.grant', `ai_lab_grant/${grant.grant_id}`, `user:${grant.user_id} routes:${grant.route_ids.join(',')} expires:${grant.expires_at}`, { tenantId: grant.tenant_id, reason: grant.reason });
+    res.status(201).json({ grant });
+  }));
+
+  router.post('/ai/lab/grants/:id/revoke', guard(labRoles, 'ai.lab.revoke', true), ah(async (req, res) => {
+    const s = sessionOf(req);
+    const reason = reasonOf(req.body);
+    const { grant, revoked } = await deps.lab.revokeGrant(req.params['id'] as string, { reason, issuer: issuerOf(s) });
+    if (revoked) await deps.sink.write({ tenant_id: grant.tenant_id, actor_id: `platform:${s.login}`, actor_role: s.roles[0] ?? 'platform_admin', action: 'ai.lab.grant_revoked', resource: `ai_lab_grant/${grant.grant_id}`, request_id: `plat_${randomUUID()}`, decision: 'allow', result: grant.status });
+    await audit(s, req, 'ai.lab.revoke', `ai_lab_grant/${grant.grant_id}`, revoked ? grant.status : 'already_revoked', { tenantId: grant.tenant_id, reason });
+    res.json({ grant });
+  }));
+
+  /** Evidencia manual de una ruta: ids, hashes, proveedor, costo y latencia; nunca entradas ni salidas. */
+  router.get('/ai/routes/:id/manual-evidence', guard(engRead, 'ai.manual_evidence.read'), ah(async (req, res) => {
+    const evidence = await deps.lab.manualEvidence(req.params['id'] as string);
+    res.json({ route: evidence.route, invocations: evidence.invocations, reviews: evidence.reviews });
+  }));
+
+  /** Aceptar marca DRAFT → TESTED (revisión manual, solo lab); aprobar y activar siguen siendo pasos separados con step-up. */
+  router.post('/ai/routes/:id/manual-review', guard(labRoles, 'ai.manual_review', true), ah(async (req, res) => {
+    const s = sessionOf(req);
+    const b = (req.body ?? {}) as { invocation_ids?: unknown; decision?: unknown; notes?: unknown; checklist?: unknown };
+    const out = await deps.lab.manualReview(req.params['id'] as string, { invocationIds: b.invocation_ids, decision: b.decision, notes: b.notes, checklist: b.checklist, actor: issuerOf(s) });
+    await audit(s, req, 'ai.manual_review', `ai_route_revision/${out.route.route_id}`, `${out.review.decision}:${out.route.status} review:${out.review.review_id} invocations:${out.review.invocation_ids.length}`, { reason: out.review.notes });
+    res.status(201).json({ review: out.review, route: out.route });
   }));
 
   return router;

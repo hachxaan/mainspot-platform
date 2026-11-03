@@ -117,6 +117,8 @@ img, svg { display: block; }
 .muted { color: var(--ink-2); }
 .small { font-size: var(--fs-sm); }
 .tiny { font-size: var(--fs-xs); color: var(--ink-2); }
+/* Identificadores (invocación, autorización, ruta) que la persona copia para la aceptación. */
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; word-break: break-all; user-select: all; }
 .stack > * + * { margin-top: var(--s4); }
 .stack-lg > * + * { margin-top: var(--s6); }
 .stack-sm > * + * { margin-top: var(--s2); }

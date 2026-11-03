@@ -10,6 +10,9 @@ note: >-
   Baseline global v0.1.0 desde DEC-015; los deltas INFERRED ajenos al AI Core conservan su estado.
   El subconjunto AI Core (FR-0012..0019, BR-0007, NFR-0006..0008) está DECIDED:
   APR-0003 aprueba 0.2.0 y DEC-0066..0071 incorporan QS-0017 en 0.3.0.
-  Delta 0.4.0: solo BR-0007 cambia por DEC-0073/SRC-0011, OpenAI para generación de DESARROLLO.
+  Delta 0.4.0: solo BR-0007 cambió por DEC-0073/SRC-0011 (OpenAI generativo en DESARROLLO; historia).
+  Delta 0.5.0: FR-0012, FR-0019, NFR-0006 y BR-0007 cambian por DEC-0074/SRC-0012: Anthropic texto/razonamiento,
+  OpenAI solo imágenes, Jev primario; ejecución DRAFT solo en laboratorio con grant explícito y aceptación manual
+  trazable (TESTED por revisión manual, distinto de la suite; aprobar/activar separados; producción exige suite).
   No nueva sesión HDC ni decisión comercial irreversible; otros items conservan versión/estado.
   Esta aprobación acotada no declara terminado el canon global.

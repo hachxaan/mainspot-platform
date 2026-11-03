@@ -8,6 +8,8 @@ blocking_open:
 - QS-0001
 note: >-
   Baseline global 0.1.0 sin reclasificar otros deltas. AI Core DECIDED por APR-0003 y DEC-0066..0071.
-  Delta 0.4.0: ARC-0001 y OPS-0001 cambian por DEC-0073/SRC-0011; DAT-0001 y SEC-0001 quedan en 0.3.0.
-  DESARROLLO usa OpenAI para texto/imágenes, Jev primario, Anthropic técnico no operativo sin fallback.
-  Plan y evidencia pendientes de generación/evaluación real: .canonflow/increments/INC-0008.md.
+  Delta 0.4.0: ARC-0001 y OPS-0001 cambiaron por DEC-0073/SRC-0011 (historia).
+  Delta 0.5.0: ARC-0001, DAT-0001 y OPS-0001 cambian por DEC-0074/SRC-0012; SEC-0001 queda en 0.3.0.
+  DESARROLLO usa Anthropic para texto/razonamiento, OpenAI solo imágenes, Jev primario, sin fallback.
+  Migración 0031: grants de laboratorio, revisión manual, lab_grant_id/output_sha256, assignment manual_lab.
+  Plan y evidencia pendientes (pruebas en runtime por el propietario): .canonflow/increments/INC-0008.md.

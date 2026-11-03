@@ -8,7 +8,7 @@
   'use strict';
   var KEY = 'mainspot.platform.token';
   var app;
-  var S = { session: null, env: null, real: false, data: {}, loading: {}, pending: null, flash: null };
+  var S = { session: null, env: null, real: false, data: {}, loading: {}, pending: null, flash: null, ev: null };
 
   function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function icon(n) { return '<svg class="ic" aria-hidden="true"><use href="#i-' + n + '"></use></svg>'; }
@@ -180,8 +180,12 @@
       d.routes.map(function (r) {
         var ev = r.last_eval || null, m = ev && ev.metrics ? ev.metrics : {};
         var evTxt = ev ? tag(ev.status, ev.status === 'passed' ? 'nopal' : ev.status === 'running' ? 'ocre' : 'alerta') + ' ' + (m.pass_rate != null ? Math.round(m.pass_rate * 100) + '%' : '') + (m.sentiment_accuracy != null ? ' · sent. ' + Math.round(m.sentiment_accuracy * 100) + '%' : '') + (m.latency_p95_ms != null ? ' · p95 ' + m.latency_p95_ms + ' ms' : '') + (m.cost_usd != null ? ' · ' + money(m.cost_usd) : '') + (ev.real_provider ? '' : ' ' + tag('simulado', 'lila')) : '—';
-        var acts = eng ? [r.status === 'DRAFT' || r.status === 'TESTED' ? btn('Evaluar', { action: 'eval', arg: r.route_id, sm: true, style: 'secondary' }) : '', r.status === 'TESTED' ? btn('Aprobar', { action: 'approve', arg: r.route_id, sm: true }) : '', ['DRAFT', 'TESTED', 'APPROVED'].indexOf(r.status) >= 0 ? btn('Retirar', { action: 'retire', arg: r.route_id, sm: true, style: 'ghost' }) : ''].join(' ') : '';
-        return '<tr><td>v' + esc(r.version) + '<div class="pc-mono muted">' + esc(r.route_id) + '</div></td><td>' + esc(r.model.display_name) + '<div class="pc-mono muted">' + esc(r.model.provider_model) + '</div></td><td>v' + esc(r.prompt_version) + '</td><td class="pc-mono">' + esc(JSON.stringify(r.params)) + '</td><td>' + esc(r.max_cost_usd) + '</td><td>' + tag(r.status, r.status === 'ACTIVE' ? 'nopal' : r.status === 'RETIRED' ? 'neutral' : 'ocre') + '</td><td>' + evTxt + '</td><td>' + acts + '</td></tr>';
+        // «Evidencia manual» abre la revisión de trazas de laboratorio; Aprobar/rollout siguen siendo pasos separados con step-up.
+        var acts = eng ? [r.status === 'DRAFT' || r.status === 'TESTED' ? btn('Evaluar', { action: 'eval', arg: r.route_id, sm: true, style: 'secondary' }) : '', ['DRAFT', 'TESTED', 'APPROVED'].indexOf(r.status) >= 0 ? btn('Evidencia manual', { action: 'lab-evidence', arg: r.route_id, sm: true, style: 'secondary' }) : '', r.status === 'TESTED' ? btn('Aprobar', { action: 'approve', arg: r.route_id, sm: true }) : '', ['DRAFT', 'TESTED', 'APPROVED'].indexOf(r.status) >= 0 ? btn('Retirar', { action: 'retire', arg: r.route_id, sm: true, style: 'ghost' }) : ''].join(' ') : '';
+        var lmr = r.last_manual_review || null;
+        var tested = (r.tested_manual_review_id ? ' ' + tag('revisión manual', 'lila') : (r.tested_eval_run_id ? ' ' + tag('suite', 'neutral') : '')) +
+          (lmr ? '<div class="tiny">última revisión: ' + esc(lmr.decision === 'accept' ? 'aceptada' : 'rechazada') + ' · ' + esc(when(lmr.created_at)) + ' · ' + esc(lmr.invocations) + ' inv.</div>' : '');
+        return '<tr><td>v' + esc(r.version) + '<div class="pc-mono muted">' + esc(r.route_id) + '</div></td><td>' + esc(r.model.display_name) + '<div class="pc-mono muted">' + esc(r.model.provider_model) + '</div></td><td>v' + esc(r.prompt_version) + '</td><td class="pc-mono">' + esc(JSON.stringify(r.params)) + '</td><td>' + esc(r.max_cost_usd) + '</td><td>' + tag(r.status, r.status === 'ACTIVE' ? 'nopal' : r.status === 'RETIRED' ? 'neutral' : 'ocre') + tested + '</td><td>' + evTxt + '</td><td>' + acts + '</td></tr>';
       }).join('') + '</tbody></table></div>' +
       (eng && models && models.models ? '<form class="stack" data-form="new-route" data-uc="' + esc(uc) + '" style="margin-top:12px"><h3>Nueva ruta (borrador)</h3><div class="pc-grid"><div class="field"><label for="nr-model">Modelo</label><select class="select" id="nr-model">' + models.models.filter(function (m) { return m.modality === d.use_case.modality && m.status === 'active'; }).map(function (m) { return '<option value="' + esc(m.model_id) + '">' + esc(m.display_name) + ' (' + esc(m.provider.display_name) + ')</option>'; }).join('') + '</select></div>' +
         '<div class="field"><label for="nr-prompt">Versión de prompt</label><select class="select" id="nr-prompt">' + d.prompts.filter(function (p) { return !p.retired_at; }).map(function (p) { return '<option value="' + esc(p.revision_id) + '">v' + esc(p.version) + ' · ' + esc(p.change_note) + '</option>'; }).join('') + '</select></div>' +
@@ -191,9 +195,46 @@
       return '<details><summary>v' + esc(p.version) + ' · ' + esc(p.change_note) + ' · ' + esc(when(p.created_at)) + ' <span class="pc-mono">' + esc(String(p.sha256).slice(0, 12)) + '</span></summary><p><strong>Sistema</strong></p><div class="pc-pre">' + esc(p.system_text) + '</div><p><strong>Tarea</strong></p><div class="pc-pre">' + esc(p.task_template) + '</div><p class="tiny">Variables: ' + esc((p.variables || []).map(function (v) { return v.name + (v.untrusted ? ' (no confiable)' : ''); }).join(', ')) + '</p></details>';
     }).join('') +
       (eng && d.prompts[0] ? '<form class="stack" data-form="new-prompt" data-uc="' + esc(uc) + '"><h3>Nueva versión de prompt (inmutable)</h3><div class="field"><label for="np-system">Sistema</label><textarea class="textarea pc-mono" id="np-system" rows="8">' + esc(d.prompts[0].system_text) + '</textarea></div><div class="field"><label for="np-task">Tarea</label><textarea class="textarea pc-mono" id="np-task" rows="4">' + esc(d.prompts[0].task_template) + '</textarea></div><input type="hidden" id="np-vars" value="' + esc(JSON.stringify(d.prompts[0].variables)) + '"><div class="field"><label for="np-note">Nota de cambio</label><input class="input" id="np-note" maxlength="500" required></div><div class="btn-row">' + btn('Guardar versión', { type: 'submit', style: 'secondary' }) + '</div></form>' : '') + '</section>';
+    html += evidenceSection(uc, byRoute, eng);
     html += '<section class="card stack" style="margin-top:16px"><h2>Evaluaciones</h2><div class="pc-scroll"><table class="pc-table"><thead><tr><th>Cuándo</th><th>Suite</th><th>Ruta</th><th>Estado</th><th>Métricas</th><th>Real</th></tr></thead><tbody>' +
       d.eval_runs.map(function (e) { return '<tr><td>' + esc(when(e.started_at)) + '</td><td>' + esc(e.suite) + '</td><td>' + esc(rl(e.route_id)) + '</td><td>' + tag(e.status, e.status === 'passed' ? 'nopal' : e.status === 'running' ? 'ocre' : 'alerta') + '</td><td>' + esc(metricsText(e.metrics)) + '</td><td>' + (e.real_provider ? 'sí' : 'simulado') + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
     html += '<section class="card stack" style="margin-top:16px"><h2>Historial de rollout</h2><ul>' + d.history.map(function (h) { return '<li>' + esc(when(h.at)) + ' · ' + esc(h.action) + ' · ' + esc(h.actor_id) + ' · ' + esc(h.to_route_id ? rl(h.to_route_id) : '') + (h.canary_percent ? ' (' + esc(h.canary_percent) + '%)' : '') + ' · ' + esc(h.reason || '') + '</li>'; }).join('') + '</ul></section>';
+    return html;
+  }
+
+  /** Evidencia manual (laboratorio) de una ruta: trazas saneadas + revisión con checklist. Aceptar marca DRAFT→TESTED; no crea evaluaciones ni aprueba. */
+  function evidenceSection(uc, byRoute, eng) {
+    var id = S.ev, r = id && byRoute[id];
+    if (!r) return '';
+    var ev = load('ev:' + id, '/ai/routes/' + encodeURIComponent(id) + '/manual-evidence');
+    var html = '<section class="card stack" style="margin-top:16px" id="ev-section"><h2>Evidencia manual · v' + esc(r.version) + ' · ' + esc(r.model.display_name) + '</h2><p class="tiny">Trazas de laboratorio de esta ruta (sin texto de clientes ni salidas; hashes, costo y latencia). Solo cuentan invocaciones exitosas, reales y con asignación <code>manual_lab</code>. Aceptar deja la ruta como TESTED; aprobar y activar siguen siendo pasos separados.</p>' +
+      btn('Actualizar', { action: 'lab-evidence', arg: id, sm: true, style: 'secondary' }) + ' ' + btn('Cerrar', { action: 'lab-evidence-close', sm: true, style: 'ghost' });
+    if (!ev) return html + '<div class="skeleton" style="height:120px"></div></section>';
+    if (ev.error) return html + '<div class="banner banner-alerta">' + esc(ev.error) + '</div></section>';
+    var eligible = function (i) { return i.status === 'succeeded' && i.assignment === 'manual_lab' && i.lab_grant_id; };
+    html += '<form class="stack" data-form="manual-review" data-route="' + esc(id) + '" data-uc="' + esc(uc) + '"><div class="pc-scroll"><table class="pc-table"><thead><tr><th></th><th>Cuándo</th><th>Estado</th><th>Negocio / actor</th><th>Proveedor / modelo</th><th>Costo</th><th>ms</th><th>Salida (sha256)</th><th>Autorización</th><th>Revisiones</th></tr></thead><tbody>' +
+      (ev.invocations.length ? ev.invocations.map(function (i) {
+        var ok = eligible(i);
+        return '<tr><td><input type="checkbox" id="ev-' + esc(i.invocation_id) + '" name="ev-pick" value="' + esc(i.invocation_id) + '"' + (ok ? '' : ' disabled') + ' aria-label="Incluir invocación ' + esc(i.invocation_id) + '"></td><td>' + esc(when(i.created_at)) + '<div class="pc-mono muted">' + esc(i.invocation_id) + '</div></td>' +
+          '<td>' + tag(i.status, i.status === 'succeeded' ? 'nopal' : 'alerta') + ' <span class="tiny">' + esc(i.assignment) + (i.error_code ? ' · ' + esc(i.error_code) : '') + (i.job_id ? ' · job ' + esc(i.job_id) : '') + '</span></td>' +
+          '<td class="pc-mono tiny">' + esc(i.tenant_id) + '<br>' + esc(i.actor_kind || '') + ' ' + esc(i.actor_id) + '</td><td>' + esc(i.provider_kind || i.provider_id) + '<div class="pc-mono muted">' + esc(i.provider_model) + '</div></td>' +
+          '<td>' + money(i.cost_usd) + ' <span class="tiny">' + esc(i.cost_source || '') + '</span></td><td>' + esc(i.latency_ms) + '</td><td class="pc-mono tiny">' + esc(i.output_sha256 || '—') + (i.media_asset_id ? '<br>media ' + esc(i.media_asset_id) : '') + '</td><td class="pc-mono tiny">' + esc(i.lab_grant_id || '—') + '</td><td class="pc-mono tiny">' + esc((i.review_ids || []).join(', ') || '—') + '</td></tr>';
+      }).join('') : '<tr><td colspan="10" class="muted">Sin invocaciones de laboratorio para esta ruta.</td></tr>') + '</tbody></table></div>';
+    if (eng) {
+      html += '<fieldset class="fieldset"><legend>Decisión</legend><label class="row"><input type="radio" name="mr-decision" id="mr-accept" value="accept"> <span>Aceptar: la evidencia seleccionada demuestra que la ruta funciona (DRAFT → TESTED)</span></label><label class="row"><input type="radio" name="mr-decision" id="mr-reject" value="reject" checked> <span>Rechazar: queda registrado, la ruta no avanza</span></label></fieldset>' +
+        '<fieldset class="fieldset"><legend>Lista de comprobación (todas para aceptar)</legend>' +
+        '<label class="row"><input type="checkbox" id="mr-c1"> <span>Revisé el resultado en el panel del negocio (vista previa, borrador o imagen).</span></label>' +
+        '<label class="row"><input type="checkbox" id="mr-c2"> <span>El resultado cumple la tarea del caso de uso.</span></label>' +
+        '<label class="row"><input type="checkbox" id="mr-c3"> <span>Sin problemas de seguridad ni de privacidad (datos de clientes, hechos inventados).</span></label>' +
+        '<label class="row"><input type="checkbox" id="mr-c4"> <span>El costo por llamada es aceptable para operar.</span></label></fieldset>' +
+        '<div class="field"><label for="mr-notes">Notas (10–2000)</label><textarea class="textarea" id="mr-notes" rows="3" minlength="10" maxlength="2000" required placeholder="Qué se probó y qué se observó. Sin nombres ni textos de clientes: referencia los IDs de invocación."></textarea></div>' +
+        '<div class="btn-row">' + btn('Registrar revisión', { type: 'submit', id: 'mr-submit' }) + '</div><p class="tiny">Pide código de verificación. No ejecuta la suite ni crea evaluaciones; no aprueba ni despliega.</p>';
+    }
+    html += '</form>';
+    html += '<h3>Revisiones</h3>' + (ev.reviews.length ? '<ul>' + ev.reviews.map(function (v) {
+      var c = v.checklist || {};
+      return '<li>' + esc(when(v.created_at)) + ' · ' + tag(v.decision === 'accept' ? 'aceptada' : 'rechazada', v.decision === 'accept' ? 'nopal' : 'alerta') + ' · ' + esc(v.actor_id) + ' · ' + esc((v.invocation_ids || []).length) + ' invocación(es) · ' + esc(v.notes) + ' <span class="pc-mono tiny">' + esc(v.review_id) + ' · ' + esc(String(v.snapshot_sha256 || '').slice(0, 12)) + '</span><div class="tiny">' + ['result_reviewed', 'task_fit', 'safety_privacy', 'cost_acceptable'].map(function (k) { return k + ': ' + (c[k] ? 'sí' : 'no'); }).join(' · ') + '</div></li>';
+    }).join('') + '</ul>' : '<p class="muted">Sin revisiones.</p>') + '</section>';
     return html;
   }
 
@@ -235,6 +276,75 @@
       d.jobs.map(function (j) { return '<tr><td>' + esc(when(j.created_at)) + '</td><td>' + esc(j.kind) + '</td><td class="pc-mono">' + esc(j.tenant_id) + '</td><td>' + tag(j.status, j.status === 'succeeded' ? 'nopal' : j.status === 'failed' ? 'alerta' : 'ocre') + (j.error_code ? ' <span class="tiny">' + esc(j.error_code) + '</span>' : '') + '</td><td>' + esc(j.attempts) + '</td><td class="pc-mono">' + esc(JSON.stringify(j.pinned)) + '</td><td>' + (j.status === 'queued' && has('ai_engineer') ? btn('Cancelar', { action: 'cancel-job', arg: j.job_id, sm: true, style: 'ghost' }) : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
   }
 
+  /* ---------- Laboratorio manual (DEC-0074): autorizaciones explícitas para rutas DRAFT en entorno lab ---------- */
+  function grantState(g) {
+    if (g.status === 'revoked' || g.revoked_at) return ['revocada', 'alerta'];
+    if (g.status === 'expired' || (g.expires_at && new Date(g.expires_at).getTime() <= Date.now())) return ['caducada', 'neutral'];
+    return ['vigente', 'nopal'];
+  }
+  /** Última candidata por caso de uso: la versión más alta entre las rutas elegibles que devuelve el servidor (nunca IDs fijos). */
+  function latestByUseCase(routes) {
+    var out = {};
+    routes.forEach(function (r) { if (!out[r.use_case_id] || Number(r.version) > Number(out[r.use_case_id].version)) out[r.use_case_id] = r; });
+    return out;
+  }
+  function labView() {
+    var d = load('lab', '/ai/lab');
+    var costs = load('costs', '/ai/costs');
+    var html = '<h1 tabindex="-1" data-focus>Laboratorio manual</h1><p class="muted">Autoriza a una persona concreta de un negocio a usar rutas en borrador (Anthropic texto, OpenAI imágenes) desde su panel, por un plazo corto y con motivo. Las rutas normales no cambian; la clasificación sigue por TypeSafe. Cada emisión y revocación pide código de verificación y queda en auditoría.</p>';
+    if (!d) return html + '<div class="skeleton" style="height:240px"></div>';
+    if (d.error) return html + '<div class="banner banner-alerta">' + esc(d.error) + '</div>';
+    var canIssue = has('platform_admin') || has('ai_engineer');
+    var panelLink = location.origin + '/panel#/ia/laboratorio';
+    if (d.enabled === false || d.environment !== 'lab') html += '<div class="banner banner-ocre">Este entorno es <strong>' + esc(d.environment) + '</strong>: las autorizaciones de laboratorio solo existen en <code>lab</code>. Aquí solo se consultan.</div>';
+    var byTenant = {};
+    d.tenants.forEach(function (t) { byTenant[t.tenant_id] = t; });
+    var byRoute = {};
+    d.routes.forEach(function (r) { byRoute[r.route_id] = r; });
+    var latest = latestByUseCase(d.routes);
+    // Controles y costos: lo que la persona debe saber antes de autorizar.
+    html += '<div class="pc-grid"><section class="card stack"><h2>Controles</h2><ul class="tiny">' +
+      '<li>Solo entorno <code>lab</code>; solo platform_admin o ai_engineer con verificación reciente; motivo de 10 a 500 caracteres.</li>' +
+      '<li>Plazo de 5 a 120 minutos (60 por omisión). Revocable en cualquier momento. El ID no es un permiso por sí mismo: el servidor revalida tenant, usuario, emisor, ruta y vigencia en cada llamada.</li>' +
+      '<li>La persona debe entrar a su panel y pulsar «Usar rutas de laboratorio» en <a href="' + esc(panelLink) + '" target="_blank" rel="noopener">' + esc(panelLink) + '</a>. Nada se activa solo ni se publica.</li>' +
+      '<li>Cada prueba se cobra al proveedor real y se registra con ID de invocación; la aceptación se hace en el caso de uso (Evidencia manual).</li></ul></section>' +
+      '<section class="card stack"><h2>Presupuestos</h2>' + (costs && costs.budgets ? '<ul>' + costs.budgets.map(function (b) { return '<li>' + esc(b.scope) + ': USD ' + esc(b.limit_usd) + ' <span class="tiny">' + esc(b.source) + '</span></li>'; }).join('') + '</ul>' : (costs && costs.error ? '<p class="tiny">' + esc(costs.error) + '</p>' : '<div class="skeleton" style="height:60px"></div>')) + '<p class="tiny">Costo máximo por llamada según cada ruta (tabla de abajo). El gasto acumulado se ve en <a href="#/costos">Costos</a>.</p></section></div>';
+    // Emisión
+    if (canIssue) {
+      var t0 = d.tenants[0];
+      html += '<section class="card stack" style="margin-top:16px"><h2>Emitir autorización</h2>' +
+        '<form class="stack" data-form="lab-grant"><div class="pc-grid"><div class="field"><label for="lg-tenant">Negocio</label><select class="select" id="lg-tenant" required>' + d.tenants.map(function (t) { return '<option value="' + esc(t.tenant_id) + '">' + esc(t.business_name) + (t.status !== 'active' ? ' (' + esc(t.status) + ')' : '') + (t.data_classification ? ' · ' + esc(t.data_classification) : '') + '</option>'; }).join('') + '</select></div>' +
+        '<div class="field"><label for="lg-user">Usuario</label><select class="select" id="lg-user" required>' + userOptions(t0) + '</select></div>' +
+        '<div class="field"><label for="lg-min">Minutos (5–120)</label><input class="input" id="lg-min" type="number" min="5" max="120" value="60" required></div></div>' +
+        '<fieldset class="fieldset"><legend>Rutas autorizadas (una por capacidad)</legend><div class="btn-row">' + btn('Seleccionar últimas candidatas', { action: 'lab-pick', arg: 'latest', sm: true, style: 'secondary' }) + btn('Ninguna', { action: 'lab-pick', arg: 'none', sm: true, style: 'ghost' }) + '</div>' +
+        '<div class="pc-scroll"><table class="pc-table"><thead><tr><th>Caso de uso</th><th>Ruta</th></tr></thead><tbody>' + Object.keys(latest).sort().map(function (uc) {
+          var rs = d.routes.filter(function (r) { return r.use_case_id === uc; }).sort(function (a, b) { return Number(b.version) - Number(a.version); });
+          var name = 'lg-uc-' + uc;
+          return '<tr><td>' + esc(rs[0].use_case_title || uc) + '<div class="pc-mono muted">' + esc(uc) + ' · ' + esc(rs[0].modality) + '</div></td><td>' +
+            '<label class="row"><input type="radio" name="' + esc(name) + '" id="' + esc(name) + '-none" value=""> <span>Ninguna</span></label>' +
+            rs.map(function (r) { return '<label class="row"><input type="radio" name="' + esc(name) + '" id="lg-r-' + esc(r.route_id) + '" value="' + esc(r.route_id) + '"' + (latest[uc].route_id === r.route_id ? ' checked' : '') + '> <span>v' + esc(r.version) + ' · ' + esc(r.model.display_name) + ' (' + esc(r.provider ? r.provider.display_name : r.model.provider_id) + ') · ' + tag(r.status, r.status === 'ACTIVE' ? 'nopal' : 'ocre') + ' · máx. ' + money(r.max_cost_usd) + '/llamada' + (r.tested_manual_review_id ? ' · ' + tag('revisión manual', 'lila') : '') + ' <span class="pc-mono muted">' + esc(r.route_id) + '</span></span></label>'; }).join('') + '</td></tr>';
+        }).join('') + '</tbody></table></div></fieldset>' +
+        '<div class="field"><label for="lg-reason">Motivo</label><input class="input" id="lg-reason" minlength="10" maxlength="500" required placeholder="Prueba manual de la ruta de publicaciones con el negocio piloto (sin datos personales)"></div>' +
+        '<div class="btn-row">' + btn('Emitir autorización', { type: 'submit', id: 'lg-submit' }) + '</div><p class="tiny">Confirmarás con tu código de verificación. Emitir no ejecuta ninguna llamada a proveedores.</p></form></section>';
+    }
+    // Autorizaciones existentes
+    html += '<section class="card stack" style="margin-top:16px"><h2>Autorizaciones</h2>' + btn('Actualizar', { action: 'reload', arg: 'lab|/ai/lab', sm: true, style: 'secondary' });
+    if (!d.grants.length) html += '<p class="muted">Todavía no hay autorizaciones.</p>';
+    else html += '<div class="pc-scroll"><table class="pc-table"><thead><tr><th>Autorización</th><th>Negocio / usuario</th><th>Rutas</th><th>Vigencia</th><th>Emitida por</th><th>Motivo</th><th></th></tr></thead><tbody>' + d.grants.map(function (g) {
+      var st = grantState(g), t = byTenant[g.tenant_id], u = t && t.users.filter(function (x) { return x.user_id === g.user_id; })[0];
+      return '<tr><td>' + tag(st[0], st[1]) + '<div class="pc-mono muted">' + esc(g.grant_id) + '</div></td><td>' + esc(t ? t.business_name : g.tenant_id) + '<div class="muted">' + esc(u ? u.display_name + ' · ' + u.email + ' · ' + u.role : g.user_id) + '</div></td>' +
+        '<td><ul class="tiny">' + (g.routes || []).map(function (r) { return '<li>' + esc(r.use_case_title || r.use_case_id) + ': v' + esc(r.route_version) + ' ' + esc(r.model_name) + ' (' + esc(r.provider_kind || r.provider_id) + ') ' + esc(r.route_status) + '</li>'; }).join('') + '</ul></td>' +
+        '<td>' + esc(when(g.created_at)) + ' → ' + esc(when(g.expires_at)) + (g.revoked_at ? '<div class="tiny">revocada ' + esc(when(g.revoked_at)) + ' · ' + esc(g.revoke_reason || '') + '</div>' : '') + '</td><td class="pc-mono">' + esc(g.issued_by) + '</td><td>' + esc(g.reason) + '</td>' +
+        '<td>' + (st[0] === 'vigente' && canIssue ? '<form class="stack" data-form="lab-revoke" data-id="' + esc(g.grant_id) + '"><input class="input" id="lv-' + esc(g.grant_id) + '" minlength="10" maxlength="500" required placeholder="Motivo de la revocación" aria-label="Motivo de la revocación">' + btn('Revocar', { type: 'submit', sm: true, style: 'ghost' }) + '</form>' : '') + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+    html += '</section>';
+    return html;
+  }
+  function userOptions(t) {
+    if (!t) return '<option value="">Sin usuarios</option>';
+    return t.users.map(function (u) { return '<option value="' + esc(u.user_id) + '">' + esc(u.display_name) + ' · ' + esc(u.email) + ' · ' + esc(u.role) + (u.status && u.status !== 'active' ? ' (' + esc(u.status) + ')' : '') + '</option>'; }).join('');
+  }
+
   /* ------------------------------------------------------------------ router */
   function route() {
     var h = (location.hash || '').replace(/^#\/?/, '');
@@ -246,7 +356,7 @@
   function shell(body) {
     var r = route();
     var tabs = r.area === 'eng'
-      ? [['casos', 'Casos de uso'], ['modelos', 'Modelos'], ['trazas', 'Trazas'], ['costos', 'Costos'], ['jobs', 'Jobs']]
+      ? [['casos', 'Casos de uso'], ['laboratorio', 'Laboratorio'], ['modelos', 'Modelos'], ['trazas', 'Trazas'], ['costos', 'Costos'], ['jobs', 'Jobs']]
       : [['negocios', 'Negocios'], ['salud', 'Salud'], ['auditoria', 'Auditoría']];
     return '<a class="skip-link" href="#main">Saltar al contenido</a><div class="pc"><header class="pc-top"><strong>MainSpot ' + (r.area === 'eng' ? 'Engineering Console' : 'Administration') + '</strong>' +
       '<span class="pc-env">' + esc(S.env) + (S.real ? ' · API directas habilitadas · datos según cobertura' : ' · proveedores reales apagados') + '</span>' +
@@ -263,6 +373,7 @@
       case 'auditoria': return auditView();
       case 'casos': return useCasesView();
       case 'caso': return useCaseView(r.arg);
+      case 'laboratorio': return labView();
       case 'modelos': return modelsView();
       case 'trazas': return tracesView();
       case 'costos': return costsView();
@@ -278,14 +389,15 @@
     lastRoute = key;
     var focusId = document.activeElement && document.activeElement.id;
     var vals = {};
-    app.querySelectorAll('input[id], textarea[id], select[id]').forEach(function (el) { if (el.type !== 'hidden') vals[el.id] = el.value; });
+    app.querySelectorAll('input[id], textarea[id], select[id]').forEach(function (el) { if (el.type !== 'hidden') vals[el.id] = el.type === 'checkbox' || el.type === 'radio' ? { checked: el.checked } : el.value; });
     app.innerHTML = S.session ? shell(view()) : loginView();
     document.title = 'MainSpot · ' + (location.pathname === '/ingenieria' ? 'Engineering Console' : 'Administration');
-    // Un redibujo (datos que llegan) nunca debe cambiar lo que la persona eligió: también los <select>.
+    // Un redibujo (datos que llegan) nunca debe cambiar lo que la persona eligió: también los <select> y las casillas.
     if (!changed) Object.keys(vals).forEach(function (id) {
       var el = document.getElementById(id);
       if (!el) return;
-      if (el.tagName === 'SELECT') { if (Array.prototype.some.call(el.options, function (o) { return o.value === vals[id]; })) el.value = vals[id]; }
+      if (el.type === 'checkbox' || el.type === 'radio') el.checked = !!vals[id].checked;
+      else if (el.tagName === 'SELECT') { if (Array.prototype.some.call(el.options, function (o) { return o.value === vals[id]; })) el.value = vals[id]; }
       else el.value = vals[id];
     });
     var t = changed ? app.querySelector('[data-focus]') : (focusId && document.getElementById(focusId));
@@ -351,6 +463,47 @@
         if (!r.ok) { toast(r.error.message); return; }
         toast('Acceso concedido por ' + r.data.minutes + ' minutos (visible para el negocio)'); refreshCurrent();
       });
+    },
+    /* ---------- Laboratorio manual ---------- */
+    'lab-grant': function (form) {
+      var routeIds = [];
+      form.querySelectorAll('input[type="radio"][name^="lg-uc-"]:checked').forEach(function (el) { if (el.value) routeIds.push(el.value); });
+      if (!val('lg-tenant') || !val('lg-user')) { toast('Elige negocio y usuario'); return; }
+      if (!routeIds.length) { toast('Selecciona al menos una ruta'); return; }
+      var minutes = Number(val('lg-min'));
+      if (!(minutes >= 5 && minutes <= 120)) { toast('Minutos entre 5 y 120'); document.getElementById('lg-min').focus(); return; }
+      act('POST', '/ai/lab/grants', { tenant_id: val('lg-tenant'), user_id: val('lg-user'), route_ids: routeIds, minutes: minutes, reason: val('lg-reason') }, function (r) {
+        if (!r.ok) { toast(r.error.message); return; }
+        var g = r.data.grant || {};
+        toast('Autorización ' + (g.grant_id || '') + ' emitida hasta ' + when(g.expires_at) + '. La persona la elige en ' + location.origin + '/panel#/ia/laboratorio');
+        reload('lab', '/ai/lab');
+      });
+    },
+    'lab-revoke': function (form) {
+      var input = form.querySelector('input');
+      var reason = input ? input.value.trim() : '';
+      if (reason.length < 10) { toast('Escribe el motivo (10 caracteres como mínimo)'); if (input) input.focus(); return; }
+      act('POST', '/ai/lab/grants/' + encodeURIComponent(form.dataset.id) + '/revoke', { reason: reason }, function (r) {
+        if (!r.ok) { toast(r.error.message); return; }
+        toast('Autorización revocada'); reload('lab', '/ai/lab');
+      });
+    },
+    'manual-review': function (form) {
+      var ids = [];
+      form.querySelectorAll('input[name="ev-pick"]:checked').forEach(function (el) { ids.push(el.value); });
+      var decision = (form.querySelector('input[name="mr-decision"]:checked') || {}).value;
+      var checklist = { result_reviewed: !!document.getElementById('mr-c1').checked, task_fit: !!document.getElementById('mr-c2').checked, safety_privacy: !!document.getElementById('mr-c3').checked, cost_acceptable: !!document.getElementById('mr-c4').checked };
+      if (!ids.length) { toast('Selecciona al menos una invocación'); return; }
+      if (!decision) { toast('Elige aceptar o rechazar'); return; }
+      if (decision === 'accept' && !(checklist.result_reviewed && checklist.task_fit && checklist.safety_privacy && checklist.cost_acceptable)) { toast('Para aceptar, marca toda la lista de comprobación'); return; }
+      if (val('mr-notes').length < 10) { toast('Notas: 10 caracteres como mínimo'); document.getElementById('mr-notes').focus(); return; }
+      act('POST', '/ai/routes/' + encodeURIComponent(form.dataset.route) + '/manual-review', { invocation_ids: ids, decision: decision, notes: val('mr-notes'), checklist: checklist }, function (r) {
+        if (!r.ok) { toast(r.error.message); return; }
+        var route = r.data.route || {};
+        toast(decision === 'accept' ? 'Revisión aceptada: la ruta queda ' + (route.status || 'TESTED') + '. Aprobar y activar son pasos separados.' : 'Revisión registrada como rechazo; la ruta no avanza.');
+        reload('ev:' + form.dataset.route, '/ai/routes/' + encodeURIComponent(form.dataset.route) + '/manual-evidence');
+        refreshCurrent();
+      });
     }
   };
   var ACTIONS = {
@@ -361,8 +514,27 @@
     approve: function (el) { act('POST', '/ai/routes/' + encodeURIComponent(el.dataset.arg) + '/approve', {}, function (r) { if (!r.ok) { toast(r.error.message); return; } toast('Ruta aprobada'); refreshCurrent(); }); },
     retire: function (el) { act('POST', '/ai/routes/' + encodeURIComponent(el.dataset.arg) + '/retire', {}, function (r) { if (!r.ok) { toast(r.error.message); return; } toast('Ruta retirada'); refreshCurrent(); }); },
     'cancel-job': function (el) { act('POST', '/ai/jobs/' + encodeURIComponent(el.dataset.arg) + '/cancel', {}, function (r) { if (!r.ok) { toast(r.error.message); return; } reload('jobs', '/ai/jobs'); }); },
-    'support-view': function (el) { api('GET', '/tenants/' + encodeURIComponent(el.dataset.arg) + '/support-view').then(function (r) { S.data['support:' + el.dataset.arg] = r.ok ? r.data : { error: r.error.message }; render(); }); }
+    'support-view': function (el) { api('GET', '/tenants/' + encodeURIComponent(el.dataset.arg) + '/support-view').then(function (r) { S.data['support:' + el.dataset.arg] = r.ok ? r.data : { error: r.error.message }; render(); }); },
+    /* Laboratorio: la evidencia se carga solo al pedirla (ninguna llamada a proveedores). */
+    'lab-evidence': function (el) { S.ev = el.dataset.arg; reload('ev:' + S.ev, '/ai/routes/' + encodeURIComponent(S.ev) + '/manual-evidence'); render(); var s = document.getElementById('ev-section'); if (s) s.scrollIntoView({ block: 'start' }); },
+    'lab-evidence-close': function () { S.ev = null; render(); },
+    'lab-pick': function (el) {
+      var d = S.data.lab;
+      if (!d || !d.routes) return;
+      var latest = latestByUseCase(d.routes);
+      Object.keys(latest).forEach(function (uc) {
+        var target = document.getElementById(el.dataset.arg === 'latest' ? 'lg-r-' + latest[uc].route_id : 'lg-uc-' + uc + '-none');
+        if (target) target.checked = true;
+      });
+    }
   };
+  // El usuario depende del negocio elegido; se rellena sin redibujar para no perder la selección de rutas.
+  document.addEventListener('change', function (e) {
+    if (!e.target || e.target.id !== 'lg-tenant') return;
+    var d = S.data.lab, u = document.getElementById('lg-user');
+    if (!d || !u) return;
+    u.innerHTML = userOptions(d.tenants.filter(function (t) { return t.tenant_id === e.target.value; })[0]);
+  });
 
   document.addEventListener('submit', function (e) { var f = e.target.closest('[data-form]'); if (!f) return; e.preventDefault(); var fn = FORMS[f.dataset.form]; if (fn) fn(f); });
   document.addEventListener('click', function (e) { var el = e.target.closest('[data-action]'); if (!el) return; var fn = ACTIONS[el.dataset.action]; if (fn) { e.preventDefault(); fn(el); } });
@@ -379,7 +551,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     app = document.getElementById('app');
     // Cada pantalla se abre con datos frescos (consumo, rutas y salud cambian mientras se opera).
-    window.addEventListener('hashchange', function () { S.data = {}; S.loading = {}; render(); });
+    window.addEventListener('hashchange', function () { S.data = {}; S.loading = {}; S.ev = null; render(); });
     boot();
   });
 })();

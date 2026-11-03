@@ -277,18 +277,22 @@ publicaciones de Facebook, atención con Jev + ledger único de respuestas, asis
 lectura, campañas sin gasto, calendario editorial y resumen. Consolas de plataforma con MFA y step-up:
 `/plataforma` (Administration) y `/ingenieria` (Engineering Console). Proveedores reales solo con
 `AI_REAL_PROVIDERS=on`; negocios `real` requieren cobertura contractual verificada por proveedor
-(DEC-0067/0071). DEC-0073 configura **DESARROLLO** con TypeSafe/Jev semántico primario y OpenAI directo
-para todo texto (Responses `store:false`) e imágenes (`gpt-image-2`). Luna (`gpt-6-luna`) eficiente y
-Sol (`gpt-6.1-sol`) para diseño inicial/edición compleja/campañas son candidatas descubiertas con API MainSpot,
-no desde OMP; DRAFT hasta suites reales PASS, sin generación/calidad acreditadas por el catálogo.
-Anthropic conserva adaptador/catálogo técnicamente disponibles, sin rutas activas/canary ni fallback
-automático; OpenRouter deshabilitado, evidencia/costo históricos intactos. Claves API propias, nunca de
-consumidor/OMP. No es elección comercial irreversible de producción; investigación comercial independiente
-en su rama. USD 25 generativos acumulados con historia; TypeSafe USD 1/día; límites sin cambios.
-Evidencia nueva: `evidence/ai-core/openai-development-{catalog,evals,verification}-2026-11-03.json` y
-`openai-development-e2e-2026-11-03.txt`; leer sus resultados antes de afirmar activación.
-Operación, plan aprobado, estado y bloqueos actuales: [`docs/architecture/ai-core.md`](docs/architecture/ai-core.md)
-y [INC-0008](.canonflow/increments/INC-0008.md). Resultados anteriores, solo históricos:
+(DEC-0067/0071). DEC-0074 (directiva humana externa SRC-0012; sustituye solo la asignación generativa de
+DEC-0073, que se conserva como historia) configura **DESARROLLO** con TypeSafe/Jev semántico primario,
+**Anthropic directo** para todo texto y razonamiento (`claude-haiku-5-5` eficiente; `claude-sonnet-5-5` diseño
+inicial/edición compleja/planeación de campañas) y **OpenAI directo solo para imágenes** (`gpt-image-2`). Los
+modelos de texto OpenAI quedan deshabilitados y sus rutas RETIRED; ambos adaptadores siguen disponibles sin
+fallback automático; OpenRouter deshabilitado, evidencia/costo históricos intactos. Claves API propias, nunca de
+consumidor/OMP. Las rutas generativas son DRAFT: **el agente no ejecuta evaluaciones generativas, suites de
+calidad ni llamadas API de prueba**; el propietario las prueba desde el navegador con un grant de laboratorio
+(`/ingenieria#/laboratorio` «Emitir autorización»; `/panel#/ia/laboratorio` «Usar rutas de laboratorio») y las acepta
+manualmente con evidencia por invocación, checklist y «Registrar revisión» (DRAFT → TESTED por revisión manual, distinto de la suite;
+aprobar y activar siguen separados; el despliegue con evidencia solo manual se admite únicamente en `lab`; producción exige suite PASS). Créditos Anthropic/OpenAI
+declarados por el propietario, no verificados; USD 25 generativos acumulados con historia y TypeSafe USD 1/día
+sin cambios. No es elección comercial irreversible de producción; investigación comercial independiente en su rama.
+Procedimiento de prueba del propietario, estado y bloqueos: [`docs/architecture/ai-core.md`](docs/architecture/ai-core.md)
+e [INC-0008](.canonflow/increments/INC-0008.md). Evidencia histórica DEC-0073 (no certifica la configuración
+actual): `evidence/ai-core/openai-development-{catalog,evals,verification}-2026-11-03.json`. Resultados anteriores:
 [`AI-CORE-RESULTS.md`](docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-RESULTS.md).
 
 ## 6. INC-003 — Website administration + dominio subdominio MainSpot (modo simulado)

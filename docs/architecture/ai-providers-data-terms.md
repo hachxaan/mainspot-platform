@@ -2,10 +2,12 @@
 
 Fecha de acceso a todas las fuentes: **2026-11-03**. Autor: agente `ProviderTermsResearch` (investigación; no
 decide). Este documento conserva la verificación «una sola vez» de DEC-0067 y DEC-0071.
-DEC-0073 actualiza solo la configuración de DESARROLLO: OpenAI texto e imágenes, TypeSafe semántico primario;
-Anthropic queda como alternativa técnica no operativa, sin rutas activas/canary ni fallback automático.
-No decide irreversiblemente el proveedor comercial de producción; investigación comercial independiente
-en su rama. No sustituye asesoría legal.
+DEC-0073 (historia) y DEC-0074 (vigente) actualizan solo la configuración de DESARROLLO: con DEC-0074, Anthropic
+directo cubre texto y razonamiento, OpenAI directo solo imágenes y TypeSafe sigue como clasificador semántico
+primario; ambos adaptadores disponibles sin fallback automático. Las rutas generativas se prueban en laboratorio
+bajo grant explícito y se aceptan manualmente con evidencia; ninguna verificación contractual nueva se añade aquí
+(`terms_verified_at` sin cambio). No decide irreversiblemente el proveedor comercial de producción; investigación
+comercial independiente en su rama. No sustituye asesoría legal.
 
 Leyenda:
 
@@ -17,13 +19,13 @@ Leyenda:
 
 ## 0. Qué datos saldrían y hacia qué proveedor
 
-Según la configuración de DESARROLLO vigente (README §5.1, `src/ai/catalog.ts`, DEC-0073/SRC-0011):
+Según la configuración de DESARROLLO vigente (README §5.2, `src/ai/catalog.ts`, DEC-0074/SRC-0012):
 
 | Proveedor | Uso en MainSpot | Datos que salen (reales, tras DEC-0067/0071) | Modelo previsto |
 |---|---|---|---|
 | TypeSafe (Jev, `api.typesafe.ai/v1/systemone`) | Clasificación semántica: intención, sentimiento, categoría, urgencia, riesgo, reseñas/comentarios, comprensión de peticiones de edición | Texto del mensaje/reseña/comentario + preguntas fijas, sin metadata de tenant/actor/cuenta ni credenciales. El intake limita a 8 KiB; atención sustituye contactos reconocibles por marcadores. No equivale a anonimización de todo el texto libre | `jev-1.14.0` fijado (`ts:jev-1.14.0`) |
-| Anthropic (Messages API) | Adaptador y catálogo disponibles como alternativa técnica no operativa, sin rutas activas/canary ni fallback; la investigación contractual de abajo se conserva | Sin envío operativo previsto en la configuración actual; el análisis previo cubre marca, instrucciones, comentarios/reseñas y contenido del sitio | Catálogo técnico Claude conservado; **no** «Covered Models» (ver §2.4) |
-| OpenAI (Responses e Images API) | Todo texto generativo y herramientas del asistente; imágenes web/redes; Responses `store:false` | Texto minimizado: marca, instrucciones, comentarios/reseñas y contenido del sitio según tarea. Imágenes: solo prompt (`ImageRequest.prompt`), no fotos/archivos; el contrato no los admite. Nunca credenciales de consumidor/OMP ni identificadores internos | `gpt-6-luna` eficiente, `gpt-6.1-sol` diseño inicial/edición compleja/campañas; `gpt-image-2` imágenes. API-descubiertos, DRAFT hasta evaluación real; no acreditan generación/calidad |
+| Anthropic (Messages API) | Todo texto generativo, razonamiento y herramientas del asistente: diseño y edición web, publicaciones, respuestas, asistente, campañas, análisis, calendario | Texto minimizado: marca, instrucciones, comentarios/reseñas y contenido del sitio según tarea; esquemas sin datos personales; nunca credenciales de consumidor/OMP ni identificadores internos. Sin Files/Batch | `claude-haiku-5-5` eficiente; `claude-sonnet-5-5` diseño inicial/edición compleja/planeación de campañas. Rutas DRAFT hasta aceptación manual de laboratorio o suite PASS; **no** «Covered Models» (ver §2.4) |
+| OpenAI (Images API) | Solo imágenes web/redes (`gpt-image-2`). Los modelos de texto OpenAI quedan deshabilitados y sus rutas RETIRED (DEC-0073 es historia) | Imágenes: solo prompt (`ImageRequest.prompt`), no fotos/archivos; el contrato no los admite. Nunca credenciales de consumidor/OMP ni identificadores internos | `gpt-image-2`, DRAFT hasta aceptación manual de laboratorio o suite PASS; observación previa de saldo/cuota sin recomprobar |
 
 Jurisdicción de MainSpot: SaaS operado desde México para pymes mexicanas; los titulares de datos son los clientes
 de esos negocios. Los tres proveedores contratan desde EE. UU. (TypeSafe AI, Inc.; Anthropic, PBC; OpenAI OpCo,
@@ -277,7 +279,7 @@ informes (p. ej. SOC 2) bajo solicitud (DPA §F.1). Aviso de brecha «within 48 
 
 ---
 
-## 3. OpenAI (API — todo texto e imágenes en DESARROLLO, DEC-0073)
+## 3. OpenAI (API — solo imágenes en DESARROLLO desde DEC-0074; texto fue DEC-0073, historia)
 
 Fuentes primarias leídas: `https://openai.com/policies/services-agreement/` (OpenAI Services Agreement, «Updated
 December 1, 2025 / Effective January 1, 2026»; `policies/business-terms` redirige a esta página),
@@ -401,7 +403,7 @@ Aviso de brecha «without undue delay» (DPA §2.7, sin plazo en horas).
 | Minimización | Compatible: texto mínimo según tarea, sin identificadores internos/credenciales; imágenes solo prompt, sin fotos de personas. |
 | Gestión de retención | Cubierta con plazo publicado (30 días de logs de abuso; imágenes sin estado; Responses `store:false`). ZDR solo por aprobación, no asumido. |
 | Publicación de contenido generado | Cubierto **a condición** de revisión humana y etiquetado «generado con IA». |
-| Texto actual (DEC-0073) | Cubierto con Responses `store:false` y sin opt-in de datos; sin Files/Batch/Assistants. |
+| Texto (DEC-0073, historia) | Estuvo cubierto con Responses `store:false` y sin opt-in de datos; desde DEC-0074 los modelos de texto OpenAI están deshabilitados y sus rutas RETIRED: no sale texto generativo hacia OpenAI. |
 
 ---
 
@@ -410,8 +412,8 @@ Aviso de brecha «without undue delay» (DPA §2.7, sin plazo en horas).
 | Proveedor | Veredicto | Condiciones técnicas que MainSpot debe aplicar | Acción del propietario |
 |---|---|---|---|
 | **TypeSafe (Jev)** | **COVERED_WITH_CONDITIONS** | Texto mínimo y preguntas; no añadir metadata de identidad ni credenciales. Atención redacta contactos reconocibles; el mensaje libre del dueño sigue siendo el contenido autorizado (no anonimización garantizada). Proveedor directo y versión fijada, claves protegidas, aislamiento y trazas locales. Documentar retención sin plazo numérico y sin ZDR asumido. El DPA dice sensibles «N/A»: no ampliar el producto a expedientes sensibles; no implica prohibir toda queja que mencione salud. Una categoría nueva de tratamiento exigiría revisar cobertura. | Verificación basada en MCA/DPA públicos incorporados por uso; no se ha inspeccionado un acuerdo privado de cuenta. Archivar copia de ese acuerdo si existe y revisar cualquier diferencia material. ZDR opcional, no nuevo bloqueo ni autorización por mensaje. Mantener aviso/base legal aplicable. |
-| **Anthropic (alternativa técnica no operativa)** | **COVERED_WITH_CONDITIONS** (análisis conservado) | Si hubiera una futura selección explícita: API comercial propia; sin Development Partner Mode/feedback real; Messages sin Files/Batch, esquemas sin datos personales; revelación de IA y sin consejo regulado; ZDR no asumido. DEC-0073 no permite rutas activas/canary ni fallback actuales. | No requiere saldo para ejecutar el plan vigente. Catálogo y fallo de saldo anteriores son historia; controles privados no inspeccionados. |
-| **OpenAI (texto e imágenes)** | **COVERED_WITH_CONDITIONS** | Responses `store:false`, texto minimizado; Images solo prompt, sin fotos/reproducción de personas reales; moderación `auto`; revisión humana y etiqueta IA antes de publicar. Sin opt-in de entrenamiento ni Files/Batch/Assistants. | Catálogo API MainSpot autentica y descubre Luna/Sol/gpt-image-2. Última observación previa 2026-11-03: cuota/saldo bloqueaba Images; consultar nueva evidencia `openai-development-*` antes de afirmar estado actual. DPA firmado y ZDR siguen opcionales, no prerrequisitos adicionales. |
+| **Anthropic (texto y razonamiento, DEC-0074)** | **COVERED_WITH_CONDITIONS** | API comercial propia; sin Development Partner Mode/feedback real; Messages sin Files/Batch, esquemas sin datos personales; revelación de IA y sin consejo regulado; ZDR no asumido. Rutas DRAFT ejecutables solo con grant de laboratorio y aceptadas manualmente antes de aprobar/activar; sin fallback. | Créditos promocionales (USD 100) declarados por el propietario, no verificados aquí; un rechazo por saldo se reporta tal cual. Controles privados de cuenta no inspeccionados; `terms_verified_at` sin cambio (no hay verificación nueva). |
+| **OpenAI (solo imágenes, DEC-0074)** | **COVERED_WITH_CONDITIONS** | Images solo prompt, sin fotos/reproducción de personas reales; moderación `auto`; revisión humana y etiqueta IA antes de publicar. Sin opt-in de entrenamiento ni Files/Batch/Assistants. Texto OpenAI retirado. | Saldo declarado por el propietario, no verificado aquí. Observación previa 2026-11-03: cuota/saldo bloqueaba Images; sin recomprobar bajo DEC-0074. `gpt-image-2` puede exigir verificación de organización. DPA firmado y ZDR siguen opcionales, no prerrequisitos adicionales. |
 
 **Ninguna EXCEPTION** que obligue a limitar un tratamiento concreto: en los tres casos el proveedor actúa como
 encargado, no entrena con el contenido por contrato y mantiene medidas de seguridad auditadas. Las condiciones

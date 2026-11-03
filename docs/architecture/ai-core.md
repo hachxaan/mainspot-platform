@@ -2,14 +2,17 @@
 
 Alcance: desarrollo/piloto controlado en `https://app.mainspot.local.io`. Nada aquí es producción.
 Canon: FR-0012…FR-0019, NFR-0006…0008, BR-0007, ARC-0001, DAT-0001, SEC-0001, OPS-0001,
-`DECIDED` por APR-0003 (ANS-0017), delta vigente 0.4.0: DEC-0073 actualiza únicamente BR-0007,
-ARC-0001 y OPS-0001 sobre el delta 0.3.0 (DEC-0066…0072). Plan:
-[`INC-0008`](../../.canonflow/increments/INC-0008.md). DEC-0073 procede de la directiva humana externa
-[`SRC-0011`](../../.canonflow/sources/SRC-0011-openai-development-directive.md), no de otra sesión HDC.
-OpenAI directo cubre **todo texto generativo e imágenes en DESARROLLO**; TypeSafe/Jev sigue como
-clasificador semántico primario. No es una elección comercial irreversible de producción: la investigación
-de proveedores sigue independiente en su propia rama. Se preservan QS/ANS-0017, DEC-0066…0072 y los
-resultados históricos del 30-oct, sin reinterpretarlos como aprobación de esta configuración.
+`DECIDED` por APR-0003 (ANS-0017), delta vigente 0.5.0: DEC-0074 actualiza FR-0012, FR-0019, NFR-0006,
+BR-0007, ARC-0001, DAT-0001 y OPS-0001 sobre los deltas 0.3.0 (DEC-0066…0072) y 0.4.0 (DEC-0073). Plan:
+[`INC-0008`](../../.canonflow/increments/INC-0008.md). DEC-0074 procede de la directiva humana externa
+[`SRC-0012`](../../.canonflow/sources/SRC-0012-anthropic-manual-lab-directive.md), no de otra sesión HDC, y
+sustituye solo la asignación generativa de desarrollo de DEC-0073/SRC-0011 (conservados como historia).
+**Anthropic directo** cubre todo texto y razonamiento, **OpenAI directo** solo imágenes, **TypeSafe/Jev** sigue como
+clasificador semántico primario; ambos adaptadores disponibles sin fallback. Las rutas generativas son DRAFT y
+las prueba **el propietario en runtime** bajo un grant de laboratorio; el agente no ejecuta evaluaciones
+generativas ni llamadas API de prueba. No es una elección comercial irreversible de producción: la investigación
+de proveedores sigue independiente en su propia rama. Se preservan QS/ANS-0017, DEC-0066…0073 y los
+resultados históricos (30-oct y OpenAI 2026-11-03), sin reinterpretarlos como aprobación de esta configuración.
 
 ## 1. Cómo funciona una invocación
 
@@ -17,7 +20,8 @@ resultados históricos del 30-oct, sin reinterpretarlos como aprobación de esta
 flowchart LR
   A[Panel / job / evaluación] --> B{Idempotencia}
   B -- misma clave o paso de job ya pagado --> R[Replay sin costo]
-  B --> C[Ruta: fijada · activa · canary por hash estable]
+  B --> C[Ruta: fijada · activa · canary por hash estable · DRAFT solo con grant de laboratorio válido]
+  C -- grant ausente / caducado / revocado / de otro tenant-usuario-ruta --> L[lab_grant_invalid, sin fallback]
   C --> D{Política de datos BR-0007}
   D -- términos no verificados para datos reales / sin clave / proveedores apagados --> X[BLOCKED_EXTERNAL]
   D --> E{Circuito del proveedor}
@@ -38,11 +42,24 @@ flowchart LR
   `claim_token` (fencing), 3 intentos, rutas fijadas al crear el job (un cambio de rollout no altera un
   job en curso). Cada intento usa su clave, pero un paso que ya terminó bien se reutiliza: no se paga dos veces.
 - **Evaluaciones** (`src/ai/evals.ts`, `scripts/ai-eval.ts`): suites sintéticas por caso de uso con
-  umbrales (NFR-0008). Una ruta solo se aprueba si su última evaluación pasó (`TESTED`).
-- **Proveedores directos** (`src/ai/providers/`): OpenAI Responses (`store:false`, texto estructurado y
-  herramientas) e Images (`gpt-image-2`) para toda generación actual. Jev usa TypeSafe directo.
-  Anthropic Messages y catálogo siguen técnicamente disponibles, pero sin rutas activas/canary ni
-  fallback automático. OpenRouter permanece deshabilitado; su evidencia y costos no se borran.
+  umbrales (NFR-0008). Una ruta solo se aprueba si está `TESTED`: por su última evaluación PASS o, solo en
+  laboratorio, por una revisión manual aceptada (`ai_manual_review`, DEC-0074); ambas vías quedan
+  distinguibles en la ruta y la manual no habilita producción.
+- **Proveedores directos** (`src/ai/providers/`, DEC-0074): Anthropic Messages (texto estructurado,
+  herramientas y razonamiento; `claude-haiku-5-5` eficiente, `claude-sonnet-5-5` diseño inicial/edición
+  compleja/planeación de campañas) para toda generación de texto; OpenAI Images (`gpt-image-2`) para imágenes.
+  Jev usa TypeSafe directo. Los modelos de texto OpenAI (`gpt-6-luna`, `gpt-6.1-sol`) están deshabilitados y
+  sus rutas RETIRED; las rutas Anthropic RETIRED por DEC-0073 no se reviven: las candidatas son revisiones
+  DRAFT nuevas sembradas por `ensureAiCatalog`. Ningún adaptador cae a otro proveedor. OpenRouter permanece
+  deshabilitado; su evidencia y costos no se borran.
+- **Laboratorio manual** (`src/ai/lab.ts`, migración 0031, DEC-0074): grants de laboratorio
+  (`ai_lab_grant` + allowlist inmutable `ai_lab_grant_route`) que permiten ejecutar una ruta DRAFT concreta a un
+  usuario concreto de un negocio concreto, solo con `AI_ENVIRONMENT=lab`, durante 5–120 min, revocables y
+  auditados. El despachador, el worker de jobs y el replay revalidan grant, tenant, usuario, emisor, ruta y
+  proveedor; DRAFT nunca por simple pin ni por cabecera; fallo explícito `lab_grant_invalid`, sin fallback. La
+  invocación registra `assignment=manual_lab`, `lab_grant_id` y `output_sha256`. La clasificación Jev recibe el
+  `labGrantId` solo como contexto (trazabilidad/revocación) pero **siempre** resuelve su ruta normal TypeSafe:
+  un grant nunca autoriza una ruta Jev DRAFT.
 - **Independencia de OMP:** runtime, catálogo, presupuesto, evaluaciones y secretos son de MainSpot.
   No lee configuración/OAuth/modelos de OMP. Disponibilidad en OMP no acredita acceso a la API comercial.
 
@@ -73,15 +90,52 @@ flowchart LR
 ### Cambiar modelo o prompt sin tocar código
 1. *Prompt Studio* → «Nueva versión de prompt» (inmutable, con nota).
 2. *Rutas* → «Nueva ruta» (modelo + versión de prompt + parámetros + costo máximo).
-3. «Evaluar» (suite sintética; proveedores reales solo si `AI_REAL_PROVIDERS=on`).
-4. «Aprobar» (requiere `TESTED`) → *Rollout*: canary % → «Promover» o «Rollback» (con motivo y step-up).
+3. Evidencia para `TESTED`, por una de dos vías distinguibles en la ruta:
+   - «Evaluar» (suite sintética; proveedores reales solo si `AI_REAL_PROVIDERS=on`). Conservada; DEC-0074 no
+     ordena ejecutarla desde el agente.
+   - **Revisión manual de laboratorio** (DEC-0074): detalle del caso de uso → «Evidencia manual» lista las
+     invocaciones reales `manual_lab` (id, negocio, actor, estado, proveedor/modelo, costo, latencia, hash de
+     salida; sin texto de clientes ni salidas crudas); seleccionar invocaciones, notas y checklist
+     (`result_reviewed`, `task_fit`, `safety_privacy`, `cost_acceptable`), «Notas (10–2000)» y decisión «Aceptar»
+     o «Rechazar» (rechazo por omisión) → «Registrar revisión» con step-up. La ruta muestra «revisión manual» o «suite».
+     Aceptar exige evidencia real, exitosa, no simulada, de la misma ruta/prompt/caso de uso y con costo
+     trazable, y marca DRAFT → TESTED guardando `ai_manual_review` (snapshot, hash, actor, notas, fechas) y
+     `tested_manual_review_id`; nunca crea `ai_eval_run` ni un PASS. Rechazar deja DRAFT.
+4. «Aprobar» (requiere `TESTED`; paso separado con step-up) → *Rollout*: canary % → «Promover» o «Rollback»
+   (con motivo y step-up). `APPROVED` es un estado global de la ruta; pero una ruta cuya evidencia es solo la
+   revisión manual únicamente puede desplegarse (canary/activa) en `lab`: fuera de `lab` producción sigue
+   exigiendo suite PASS. Aceptar nunca aprueba ni activa por sí mismo.
+
+### Laboratorio manual: grants (DEC-0074)
+1. `https://app.mainspot.local.io/ingenieria#/laboratorio` (`ai_engineer` o `platform_admin`, step-up): negocio
+   y usuario, ruta(s) DRAFT permitidas (por defecto la candidata objetivo de cada capacidad, leída de los datos:
+   Haiku eficiente, Sonnet complejas, `gpt-image-2`; botón «Seleccionar últimas candidatas»), plazo 5–120 min
+   (60 por defecto), motivo 10–500 caracteres → «Emitir autorización» (`POST /ai/lab/grants`). «Revocar» por fila
+   con motivo (`POST /ai/lab/grants/:id/revoke`). Se muestran costos/controles y el enlace
+   `https://app.mainspot.local.io/panel#/ia/laboratorio`.
+2. En el panel del negocio, `#/ia/laboratorio` (`GET /ai/lab`): el usuario elige el grant y pulsa «Usar rutas
+   de laboratorio»; solo el id se guarda en `sessionStorage`, viaja como cabecera `X-AI-Lab-Grant` en las
+   peticiones de IA autenticadas y se borra al salir/cambiar de sesión. Banner con proveedor/modelo/ruta y
+   caducidad. `/ai/status` añade `lab:{grant_id,expires_at,capabilities[]}` sin alterar `capabilities.active`.
+3. Con el grant activo, las pantallas habituales (`#/ia/pagina`, `#/ia/publicar`, `#/ia`, calendario, resumen,
+   campañas) usan la ruta DRAFT permitida; `#/ia/laboratorio` añade los formularios explícitos «Imagen
+   independiente» («Generar imagen de prueba», `POST /ai/lab/images`) y «Respuesta propuesta a un comentario o
+   reseña» («Proponer respuesta», `POST /ai/lab/replies`). Resultados: solo medios o borradores con «ID de
+   invocación» (y «ID de clasificación»), modelo, ruta y costo; ninguna publicación externa ni agente de fondo.
+   Banner «Rutas de laboratorio en uso hasta las HH:MM»; «Dejar de usar»/«Salir del laboratorio» borra la
+   selección (`sessionStorage` clave `mainspot.lab.grant`, solo el id). Un 403 por autorización rechazada o caducada
+   muestra «Elegir otra autorización», sin reintentar la petición sin cabecera.
+   Ningún usuario de negocio puede autoautorizarse; la cabecera sola no concede nada. Fuera de `AI_ENVIRONMENT=lab`
+   el laboratorio está deshabilitado en el backend: una petición que llegue con grant/cabecera se **rechaza**
+   (`lab_grant_invalid`), sin fallback a la ruta normal ni cabecera ignorada.
 
 ## 4. Configuración y cobertura contractual
 
 - `~/.config/mainspot/ai-core.env` (0600, fuera de Git; lo carga `scripts/dev-panel.sh`):
-  `AI_ENVIRONMENT=lab`, `AI_REAL_PROVIDERS=on`, `OPENAI_API_KEY`, `TYPESAFE_API_KEY`,
-  `PLATFORM_MFA_KEY`. Anthropic no es requisito operativo actual. No usar credenciales de consumidor,
-  de OMP ni de otro proyecto; Responses siempre `store:false`.
+  `AI_ENVIRONMENT=lab`, `AI_REAL_PROVIDERS=on`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `TYPESAFE_API_KEY`,
+  `PLATFORM_MFA_KEY`. No usar credenciales de consumidor, de OMP ni de otro proyecto; Responses/Images y
+  Messages sin retención opt-in. Los créditos declarados por el propietario (USD 100 promocionales Anthropic,
+  saldo OpenAI) no se verifican ni se imprimen desde el repositorio; un rechazo por saldo/cuota se reporta tal cual.
   La clave TypeSafe de `.env` da 403; al ejecutar herramientas, cargar el archivo protegido **después**.
 - Personas de plataforma: `scripts/platform-user.ts`; laboratorio `lab-admin`, `lab-ingenieria`, `carlos`
   con credenciales/TOTP en archivos 0600 separados.
@@ -97,37 +151,42 @@ flowchart LR
   `JEV_MODEL=jev-1.14.0` cuando existe clave. El gate de versión/código/corpus sigue siendo obligatorio;
   permisos y acciones permanecen en el backend.
 - Presupuestos: generativo de laboratorio **USD 25 acumulados**, incluyendo OpenRouter histórico
-  (DEC-0068). Registro actual tras evaluar OpenAI: USD 0.096726; ninguna generación directa exitosa.
-  Las llamadas rechazadas por saldo/cuota no acreditan calidad ni disponibilidad operativa.
-  No es una autorización mensual recurrente ni de Ads. TypeSafe: USD 1/día UTC (DEC-0032),
-  compartido entre `jev_classification`, `jev_evaluation_run` y `ai_invocation` TypeSafe.
+  (DEC-0068). Registro tras las evaluaciones OpenAI de DEC-0073: USD 0.096726; ninguna generación directa
+  exitosa acreditada por el agente. Las invocaciones `manual_lab` bajo grant reservan y descuentan igual; los
+  créditos declarados por el propietario no amplían el techo. Las llamadas rechazadas por saldo/cuota no
+  acreditan calidad ni disponibilidad operativa. No es una autorización mensual recurrente ni de Ads.
+  TypeSafe: USD 1/día UTC (DEC-0032), compartido entre `jev_classification`, `jev_evaluation_run` y
+  `ai_invocation` TypeSafe.
 - Contabilidad: costo directo estimado por uso × precio publicado; TypeSafe conserva la procedencia
   informada por su cliente. Un fallo de red/timeout generativo no acredita costo cero: reserva retenida
   con costo desconocido. Los presupuestos de plataforma/tenant existentes siguen limitando operaciones;
   no constituyen una nueva autorización de gasto del propietario.
 
-## 5. Evaluación directa y rutas actuales (2026-11-03)
+## 5. Rutas actuales y evidencia (2026-11-03, DEC-0074)
 
-Solo pasan a activas las revisiones evaluadas contra **la API directa**. Las rutas generativas anteriores
-de OpenRouter fueron retiradas; no se usan como fallback durante el bloqueo.
+Solo pasan a aprobadas/activas las revisiones `TESTED` contra **la API directa** (suite PASS o, en `lab`,
+revisión manual aceptada). Las rutas generativas de OpenRouter y las de texto OpenAI (DEC-0073) están
+RETIRED; nada se usa como fallback. **El agente no ejecutó ninguna invocación generativa nueva al aplicar
+DEC-0074**; la columna «Resultado observado» de las candidatas refleja solo el estado de catálogo/semilla.
 
 | Capacidad | Modelo directo | Resultado observado | Ruta operativa |
 |---|---|---|---|
-| Intención/capacidad del intake | `jev-1.14.0` | 240/240 evaluados; intención 236/240; 0 fallos finales de riesgo | PRIMARY con gate abierto |
+| Intención/capacidad del intake | `jev-1.14.0` | 240/240 evaluados; intención 236/240; 0 fallos finales de riesgo (histórico, sigue vigente) | PRIMARY con gate abierto |
 | Alcance de edición | `ts:jev-1.14.0` | 8/8 | Activa |
 | Comentarios Facebook | `ts:jev-1.14.0` | 17/20 exactos; sentimiento 90 %; 0 riesgos omitidos | Activa, pasa umbrales |
 | Reseñas Google | `ts:jev-1.14.0` | 17/20 exactos; sentimiento 90 %; 0 riesgos omitidos | Activa, pasa umbrales; conector Google real sigue aparte |
-| Texto eficiente | `gpt-6-luna` | Catálogo autenticado HTTP 200; evaluaciones reales rechazadas con `provider_auth: insufficient_credit` | DRAFT, sin activar |
-| Diseño inicial, edición compleja, planificación de campañas | `gpt-6.1-sol` | Descubierto por la API de MainSpot; mismo rechazo por saldo/cuota en las suites reales | DRAFT, sin activar |
-| Imágenes web/social | `gpt-image-2` | Modelo en catálogo; generación real rechazada por saldo/cuota | DRAFT, sin imagen real acreditada |
+| Texto eficiente (edición simple, copy social, creatividades, respuestas, asistente, análisis, calendario) | `claude-haiku-5-5` | Sin invocación ni evaluación ejecutada por el agente; pendiente de prueba del propietario en runtime | DRAFT, ejecutable solo con grant de laboratorio |
+| Diseño inicial, edición compleja, planeación de campañas | `claude-sonnet-5-5` | Sin invocación ni evaluación ejecutada por el agente; pendiente de prueba del propietario en runtime | DRAFT, ejecutable solo con grant de laboratorio |
+| Imágenes web/social | `gpt-image-2` | Observación previa (DEC-0073): generación rechazada por saldo/cuota; sin nueva comprobación | DRAFT, ejecutable solo con grant de laboratorio; sin imagen real acreditada |
+| Texto OpenAI (`gpt-6-luna`, `gpt-6.1-sol`) | — | Historia DEC-0073: 20 suites / 50 casos rechazados por `insufficient_credit`, sin calidad medida | Modelos deshabilitados; rutas RETIRED (migración 0030) |
 
-Luna: USD 0.1/0.5 por millón de tokens entrada/salida; Sol: USD 2/10, según documentación
-verificada y catálogo fechado. Son modelos descubiertos con credenciales API propias de MainSpot,
-no inferidos de OMP. La nueva selección responde a DEC-0073, no a una comparación de calidad exitosa.
-La observación previa de saldo insuficiente Anthropic (HTTP 400) queda histórica: ya no bloquea este plan.
-Nueva comprobación: **20 suites / 50 casos** contra OpenAI, todos rechazados por saldo/cuota. No son fallos
-de calidad medidos del modelo. Las 13 capacidades generativas tienen candidatas OpenAI DRAFT; ninguna se
-aprobó ni activó. Las 3 rutas TypeSafe siguen activas. La falta de saldo Anthropic no bloquea este plan.
+Precios publicados guardados en el catálogo: Haiku 5.5 USD 0.1/0.5 y Sonnet 5.5 USD 2/10 por millón de tokens
+entrada/salida (fecha de observación en `ai_model.price_observed_at`). La selección responde a DEC-0074, no a
+una comparación de calidad: la calidad la juzga el propietario con la revisión manual de laboratorio. Los
+créditos Anthropic (USD 100 promocionales) y OpenAI son declaraciones del propietario, no verificadas aquí; la
+observación previa de saldo insuficiente Anthropic (HTTP 400 `credit_balance_too_low`, 2026-11-03 06:19 UTC,
+`evidence/ai-core/direct-provider-access-2026-11-03.json`) es anterior a los créditos declarados y no se recomprobó.
+Las 3 rutas TypeSafe siguen activas; ninguna ruta generativa está TESTED, aprobada ni activa.
 
 ## 6. Estado por capacidad y desbloqueos
 
@@ -135,16 +194,19 @@ aprobó ni activó. Las 3 rutas TypeSafe siguen activas. La falta de saldo Anthr
 |---|---|---|
 | Clasificación TypeSafe directa y política de datos reales | LOCAL_REAL_VERIFIED con fixture ficticia marcada `real` | No acredita datos sensibles especiales ni conectores externos |
 | Consolas, alta, marca, biblioteca de fotos propias | Verificación de navegador HTTPS del subconjunto alcanzable | No sustituye aceptación completa E01–E20 |
-| Anthropic texto/herramientas | Alternativa técnica no operativa | Sin rutas activas/canary ni fallback; no es dependencia del plan actual |
-| OpenAI texto e imágenes | IMPLEMENTED / BLOCKED_EXTERNAL por saldo/cuota | Habilitar saldo/cuota API; repetir las suites, aprobar/activar solo revisiones PASS |
-| Diseño/edición/copy/asistente/campañas generativos directos | BLOCKED_EXTERNAL; sin generación nueva acreditada | E2E completo con OpenAI; no reemplazarlo por mocks ni historia |
+| Anthropic texto/razonamiento (DEC-0074) | Configurado en el corte DEC-0074 (migración 0030 + semilla); rutas DRAFT; ninguna invocación ejecutada por el agente | Prueba del propietario en runtime con grant de laboratorio → revisión manual aceptada → aprobar → activar (lab). Créditos declarados, no verificados |
+| OpenAI imágenes (`gpt-image-2`) | Rutas DRAFT; observación previa BLOCKED_EXTERNAL por saldo/cuota, sin recomprobar | Igual que arriba; si la API vuelve a rechazar por saldo/cuota/verificación de organización, se reporta tal cual |
+| OpenAI texto | RETIRED (migración 0030) | Nada; historia DEC-0073 conservada |
+| Diseño/edición/copy/asistente/campañas generativos directos | Sin generación nueva acreditada por el agente | Pruebas en runtime del propietario (INC-0008 «Procedimiento»); no reemplazarlas por mocks ni historia |
+| Laboratorio manual (grants, evidencia, revisión) | Entregado y verificado sin gasto: pruebas locales y recorrido HTTPS emitir → usar → revocar → bloqueo (`manual-lab-verification-2026-11-03.json`) | Primer grant del propietario con generación real y su revisión manual |
 | Datos reales a proveedores verificados | Autorizados con condiciones, DEC-0067/0071 | No repetir HDC; revisar solo incompatibilidad material nueva |
 | Meta/Google/Telegram auténticos | BLOCKED_EXTERNAL | Autorizaciones, credenciales y pruebas/read-back propios de issues #6/#8 |
 | Gasto publicitario | NO-GO por diseño | Autorización específica de cuenta, importe, destino y límites |
 
-No activar rutas por un GET del catálogo ni por pruebas con proveedor falso. Habilitar saldo/cuota no autoriza
-gasto recurrente ni cambia el techo acumulado. Tras desbloqueo: `scripts/ai-eval.ts`, evaluación de calidad,
-aprobar/activar desde Engineering Console, y `scripts/ai-core-lab-e2e.ts` completo.
+No activar rutas por un GET del catálogo, por pruebas con proveedor falso ni por una aceptación manual sin
+invocaciones reales. Los créditos del proveedor no autorizan gasto recurrente ni cambian el techo acumulado. El
+agente no ejecuta `scripts/ai-eval.ts`, suites de calidad ni `scripts/ai-core-lab-e2e.ts` con proveedores
+reales bajo DEC-0074; esas comprobaciones quedan disponibles para el propietario o para una instrucción futura.
 
 ### Limitaciones conocidas
 
@@ -177,9 +239,9 @@ aprobar/activar desde Engineering Console, y `scripts/ai-core-lab-e2e.ts` comple
 - `scripts/ai-core-lab-e2e.ts`: recorrido de proveedores **directos**, sin provisionar infraestructura.
   Con saldo/cuota pendientes, `--blocked-providers` ejercita alta/marca/biblioteca, fixture `real`,
   clasificación TypeSafe auténtica y consolas; **sale con código 1 y estado BLOCKED**, no PASS global.
-  Nuevo informe del recorrido: `evidence/ai-core/openai-development-e2e-2026-11-03.txt`; capturas en
-  `openai-development-screens-2026-11-03/`. Recorrido ejecutado: BLOCKED / exit 1; alta, marca, biblioteca,
-  TypeSafe auténtico en modo primary y consolas verificados. Cero invocaciones nuevas Anthropic/OpenRouter.
+  Último informe (DEC-0073, histórico): `evidence/ai-core/openai-development-e2e-2026-11-03.txt`; capturas en
+  `openai-development-screens-2026-11-03/`. Bajo DEC-0074 el script se adapta a la distribución Anthropic
+  texto / OpenAI imágenes pero **no se ejecuta por el agente**; no certifica la configuración actual.
 - Evidencia nueva de DEC-0073: `evidence/ai-core/openai-development-catalog-2026-11-03.json`,
   `openai-development-evals-2026-11-03.json`, `openai-development-verification-2026-11-03.json`.
   Su existencia no sustituye leer resultados, cuotas, gates y consumo antes de declarar activación.
@@ -189,7 +251,17 @@ aprobar/activar desde Engineering Console, y `scripts/ai-core-lab-e2e.ts` comple
   Suite completa previa a las últimas correcciones: 167 unitarias, 162 integración, 5 smoke, 4 E2E.
   Después: 19 pruebas de adaptadores (incluido deadline durante el cuerpo), 15 de integración AI Core/retención,
   typecheck y smoke del CLI de retención sobre una fixture temporal de `mainspot_test`.
-- Corte DEC-0073 actual: `npm test` pasó **169 unitarias, 164 integración, 5 smoke y 4 E2E**.
+- Corte DEC-0073 (histórico): `npm test` pasó **169 unitarias, 164 integración, 5 smoke y 4 E2E**.
   El contrato de herramientas sin estado pasó otras 10 pruebas del adaptador OpenAI; typecheck y
   sincronización final de semilla verificados. La regresión de migración prueba retirar Anthropic activo y
   canary sin promover OpenAI automáticamente ni modificar costos históricos.
+- Corte DEC-0074 (`evidence/ai-core/manual-lab-verification-2026-11-03.json`): sin claves API en el proceso de
+  prueba y con HTTP externo bloqueado, typecheck + **171 unitarias, 174 integración, 5 smoke y 4 E2E** sin fallos.
+  Nuevas: `ai-manual-lab.test.ts` (grants, dispatcher, jobs con degradación de rol, revisión manual),
+  `ai-lab-business.test.ts` (API del negocio, imágenes con transporte sustituido, replay aislado) y
+  `tests/unit/panel-ai-lab.test.ts` (cambio de sesión y 403 sin reintento). El E2E de interfaz falló una vez en
+  el paso 6 por una aserción probabilística previa (id simulado `sim-` + 12 hex puede contener 10 dígitos
+  seguidos, ≈2–3 %); la repetición pasó los 42 pasos. Navegador por `https://app.mainspot.local.io`: emisión
+  de grant (13 rutas, 15 min), selección en el panel, todas las pantallas IA con la ruta de laboratorio
+  visible, revocación y panel bloqueado sin volver a la ruta normal; 444 invocaciones y USD 0.096726 antes y
+  después. Ninguna prueba generativa, suite de calidad ni E2E pagado ejecutado por el agente (INC-0008).

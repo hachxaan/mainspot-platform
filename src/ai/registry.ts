@@ -2,9 +2,10 @@
  * Registro del AI Core en PostgreSQL (DAT-0001, FR-0019): casos de uso, proveedores, modelos,
  * revisiones inmutables de prompt y ruta, rollout atómico con canary y rollback, historial.
  *
- * Ciclo de vida de una revisión de ruta: DRAFT → TESTED (eval aprobada) → APPROVED (step-up)
- * → CANARY | ACTIVE → RETIRED. Una ruta deja de estar ACTIVE al ser reemplazada (vuelve a
- * APPROVED: puede ser destino de rollback). Toda transición del rollout es atómica y deja un evento.
+ * Ciclo de vida de una revisión de ruta: DRAFT → TESTED (eval aprobada, o revisión manual aceptada SOLO en
+ * el laboratorio: `tested_manual_review_id`) → APPROVED (step-up) → CANARY | ACTIVE → RETIRED. Una ruta deja
+ * de estar ACTIVE al ser reemplazada (vuelve a APPROVED: puede ser destino de rollback). Fuera de `lab`, una
+ * ruta probada solo manualmente no se despliega. Toda transición del rollout es atómica y deja un evento.
  */
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -23,7 +24,7 @@ export interface ProviderRow { provider_id: string; display_name: string; kind: 
 export interface ModelRow { model_id: string; provider_id: string; provider_model: string; display_name: string; modality: string; capabilities: Record<string, unknown>; pricing: Record<string, number>; price_source: string; price_observed_at: string; status: string }
 export interface PromptRevisionRow { revision_id: string; use_case_id: string; version: number; system_text: string; task_template: string; variables: PromptVariable[]; sha256: string; change_note: string; created_by: string; created_at: string; retired_at: string | null }
 export interface RouteParams { temperature?: number | null; max_tokens?: number; timeout_ms?: number; reasoning_effort?: 'low' | 'medium' | 'high' | null; repair_attempts?: number; aspect_ratio?: string; resolution?: string | null; quality?: 'low' | 'medium' | 'high' | null; fallback_route_id?: string | null }
-export interface RouteRow { route_id: string; use_case_id: string; version: number; model_id: string; prompt_revision_id: string; params: RouteParams; max_cost_usd: string; sha256: string; status: RouteStatus; change_note: string; created_by: string; created_at: string; tested_eval_run_id: string | null; approved_by: string | null; approved_at: string | null }
+export interface RouteRow { route_id: string; use_case_id: string; version: number; model_id: string; prompt_revision_id: string; params: RouteParams; max_cost_usd: string; sha256: string; status: RouteStatus; change_note: string; created_by: string; created_at: string; tested_eval_run_id: string | null; tested_manual_review_id: string | null; approved_by: string | null; approved_at: string | null }
 export interface RolloutRow { use_case_id: string; environment: string; active_route_id: string | null; canary_route_id: string | null; canary_percent: number; version: string; updated_by: string; updated_at: string }
 export interface RouteBundle { route: RouteRow; prompt: PromptRevisionRow; model: ModelRow; provider: ProviderRow }
 
@@ -119,11 +120,13 @@ export class AiRegistry {
     return (await this.pool.query<PromptRevisionRow>('SELECT * FROM ai_prompt_revision WHERE use_case_id = $1 ORDER BY version DESC', [useCaseId])).rows;
   }
 
-  async routes(useCaseId: string): Promise<Array<RouteRow & { model: ModelRow; prompt_version: number; last_eval: Record<string, unknown> | null }>> {
-    const r = await this.pool.query<RouteRow & { model: ModelRow; prompt_version: number; last_eval: Record<string, unknown> | null }>(
+  async routes(useCaseId: string): Promise<Array<RouteRow & { model: ModelRow; prompt_version: number; last_eval: Record<string, unknown> | null; last_manual_review: Record<string, unknown> | null }>> {
+    const r = await this.pool.query<RouteRow & { model: ModelRow; prompt_version: number; last_eval: Record<string, unknown> | null; last_manual_review: Record<string, unknown> | null }>(
       `SELECT r.*, to_jsonb(m.*) AS model, p.version AS prompt_version,
               (SELECT jsonb_build_object('run_id', e.run_id, 'status', e.status, 'metrics', e.metrics, 'real_provider', e.real_provider, 'finished_at', e.finished_at)
-                 FROM ai_eval_run e WHERE e.route_id = r.route_id ORDER BY e.started_at DESC LIMIT 1) AS last_eval
+                 FROM ai_eval_run e WHERE e.route_id = r.route_id ORDER BY e.started_at DESC LIMIT 1) AS last_eval,
+              (SELECT jsonb_build_object('review_id', v.review_id, 'decision', v.decision, 'actor_id', v.actor_id, 'created_at', v.created_at, 'invocations', jsonb_array_length(v.invocation_ids))
+                 FROM ai_manual_review v WHERE v.route_id = r.route_id ORDER BY v.created_at DESC LIMIT 1) AS last_manual_review
          FROM ai_route_revision r JOIN ai_model m ON m.model_id = r.model_id JOIN ai_prompt_revision p ON p.revision_id = r.prompt_revision_id
         WHERE r.use_case_id = $1 ORDER BY r.version DESC`, [useCaseId]);
     return r.rows;
@@ -202,7 +205,7 @@ export class AiRegistry {
     const res = await this.pool.query<RouteRow>(
       `UPDATE ai_route_revision SET status = 'APPROVED', approved_by = $2, approved_at = now()
         WHERE route_id = $1 AND status = 'TESTED' RETURNING *`, [routeId, actor]);
-    if (!res.rows[0]) throw new AppError(409, 'validation_error', 'Solo una ruta con evaluación aprobada (TESTED) puede aprobarse.');
+    if (!res.rows[0]) throw new AppError(409, 'validation_error', 'Solo una ruta probada (TESTED: suite aprobada o revisión manual del laboratorio) puede aprobarse.');
     return res.rows[0];
   }
 
@@ -227,11 +230,20 @@ export class AiRegistry {
       [`rev_${randomUUID()}`, e.useCaseId, e.environment, e.action, e.from, e.to, e.percent, e.version, e.actor, e.reason]);
   }
 
-  private async requireDeployable(client: PoolClient, routeId: string, useCaseId: string): Promise<RouteRow> {
+  private async requireDeployable(client: PoolClient, routeId: string, useCaseId: string, environment: string): Promise<RouteRow> {
     const r = await this.route(routeId, client);
     if (!r || r.use_case_id !== useCaseId) throw new AppError(404, 'not_found', 'No existe esa ruta para el caso de uso.');
     if (!['APPROVED', 'CANARY', 'ACTIVE'].includes(r.status)) {
       throw new AppError(409, 'validation_error', 'Solo una ruta evaluada y aprobada puede desplegarse.');
+    }
+    // DEC-0074: la revisión manual solo vale en el laboratorio. Fuera de él, una ruta con revisión manual necesita
+    // que su `tested_eval_run_id` sea una ejecución PASS de la suite para ESTA ruta y, si el proveedor es real, con
+    // proveedor real (un PASS simulado no acredita un modelo real; las rutas simuladas conservan su convención).
+    if (environment !== 'lab' && r.tested_manual_review_id) {
+      const passed = await client.query(
+        `SELECT 1 FROM ai_eval_run e JOIN ai_model m ON m.model_id = $3 JOIN ai_provider p ON p.provider_id = m.provider_id
+          WHERE e.run_id = $2 AND e.route_id = $1 AND e.status = 'passed' AND (p.kind = 'simulated' OR e.real_provider)`, [routeId, r.tested_eval_run_id, r.model_id]);
+      if (!passed.rowCount) throw new AppError(409, 'validation_error', 'Fuera del laboratorio una ruta probada solo manualmente no se despliega: necesita la suite automática aprobada (PASS con proveedor real).');
     }
     // Un modelo o proveedor deshabilitado (p. ej. OpenRouter, DEC-0069) no vuelve a ningún rollout.
     const live = await client.query(
@@ -244,7 +256,7 @@ export class AiRegistry {
   async activate(useCaseId: string, environment: string, routeId: string, actor: string, reason: string, action: 'activate' | 'promote' | 'rollback' | 'seed' = 'activate'): Promise<RolloutRow> {
     return runAtomic(this.pool, async (client) => {
       const current = await this.lockRollout(client, useCaseId, environment);
-      if (action !== 'seed') await this.requireDeployable(client, routeId, useCaseId);
+      if (action !== 'seed') await this.requireDeployable(client, routeId, useCaseId, environment);
       if (current?.active_route_id === routeId && !current.canary_route_id) throw new AppError(409, 'validation_error', 'Esa ruta ya está activa.');
       const version = Number(current?.version ?? 0) + 1;
       if (current?.active_route_id && current.active_route_id !== routeId) {
@@ -271,7 +283,7 @@ export class AiRegistry {
       const current = await this.lockRollout(client, useCaseId, environment);
       if (!current?.active_route_id) throw new AppError(409, 'validation_error', 'Primero activa una ruta; el canary se compara con ella.');
       if (current.active_route_id === routeId) throw new AppError(409, 'validation_error', 'La ruta activa no puede ser su propio canary.');
-      await this.requireDeployable(client, routeId, useCaseId);
+      await this.requireDeployable(client, routeId, useCaseId, environment);
       if (current.canary_route_id && current.canary_route_id !== routeId) {
         await client.query(`UPDATE ai_route_revision SET status = 'APPROVED' WHERE route_id = $1 AND status = 'CANARY'`, [current.canary_route_id]);
       }

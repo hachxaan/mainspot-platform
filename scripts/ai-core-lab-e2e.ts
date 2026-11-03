@@ -1,19 +1,19 @@
 /**
- * AI Core / DEC-0073 — E2E con OpenAI directo (texto e imágenes) y TypeSafe directo.
+ * AI Core / DEC-0074 — recorrido automatizado Anthropic texto, OpenAI imágenes y TypeSafe directo.
  * Solo crea una fixture ficticia: ningún dato corresponde a clientes ni a PII real.
  *
  *   bash -c 'set -a; . ./.env; set +a; node scripts/ai-core-lab-e2e.ts'
  *
- * Modo completo SOLO después de activar las rutas directas; --blocked-providers permite únicamente
- * el subconjunto sin generación cuando falta saldo/cuota. Conserva el recorrido completo E01–E20:
+ * No ejecutar durante la validación manual del propietario (DEC-0074): este guion consume API,
+ * incluso con --blocked-providers (TypeSafe). Se conserva para una autorización posterior explícita.
  * alta móvil → marca → diseño/imagen → iframe publicado (360/768/1440) → edición/restauración
  * → Facebook simulado → Jev/respuesta → asistente → resumen/campaña/calendario → consumo
  * → canary, promoción y rollback de una alternativa directa evaluada (o BLOCKED explícito).
  * La fixture pasa por synthetic y real desde Administration para ejercitar la política contractual;
  * «real» es una clasificación administrativa de prueba, NO datos personales de clientes.
- * Evidencia nueva: evidence/ai-core/openai-development-e2e-2026-11-03.txt
- * y openai-development-screens-2026-11-03/<run>/; conserva los artefactos direct anteriores.
- * No modifica hosts/proxy/certificados ni invoca Anthropic/OpenRouter. Nunca imprime credenciales o tokens.
+ * Evidencia nueva por ejecución en manual-target-e2e-<run>.txt y manual-target-screens/<run>/;
+ * nunca sobrescribe los artefactos direct/openai-development históricos.
+ * No modifica hosts/proxy/certificados ni invoca OpenRouter. Nunca imprime credenciales o tokens.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -32,14 +32,14 @@ tls.setDefaultCACertificates([...tls.getCACertificates('default'), ...tls.getCAC
 
 const BASE = (process.env.E2E_BASE_URL ?? 'https://app.mainspot.local.io').replace(/\/$/, '');
 const CHROME = process.env.CHROME_PATH ?? '/usr/bin/google-chrome';
-const EVIDENCE = 'evidence/ai-core/openai-development-e2e-2026-11-03.txt';
 const RUN = randomUUID().slice(0, 6);
-const SHOTS = `evidence/ai-core/openai-development-screens-2026-11-03/${RUN}`;
+const EVIDENCE = `evidence/ai-core/manual-target-e2e-${RUN}.txt`;
+const SHOTS = `evidence/ai-core/manual-target-screens/${RUN}`;
 const DIRECT_IMAGE = 'oa:gpt-image-2';
 const DIRECT_JEV = 'ts:jev-1.14.0';
 const BLOCKED_PROVIDERS = process.argv.includes('--blocked-providers');
 let tenantForEvidence: string | null = null;
-let forbiddenProvidersBefore: { anthropic: number; openrouter: number } | null = null;
+let forbiddenProvidersBefore: { openrouter: number } | null = null;
 let spentBefore = 0;
 let costsReported = false;
 const BUSINESS = `Café Brisa Lab ${RUN}`;
@@ -53,7 +53,7 @@ interface RegisteredModel {
 }
 function isDirectModel(model: RegisteredModel): boolean {
   if (model.model_status !== 'active' || model.provider_status !== 'active') return false;
-  if (model.model_modality === 'text') return model.kind === 'openai';
+  if (model.model_modality === 'text') return model.kind === 'anthropic';
   if (model.model_modality === 'image') return model.kind === 'openai' && model.model_id === DIRECT_IMAGE;
   return model.model_modality === 'classification' && model.kind === 'typesafe' && model.model_id === DIRECT_JEV;
 }
@@ -82,15 +82,14 @@ async function reportCosts(): Promise<void> {
        FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
       WHERE p.kind IN ('anthropic','openai','openrouter') AND i.status IN ('running','succeeded','failed')
       GROUP BY 1,2 ORDER BY 1,2`)).rows;
-  say('\n-- E15: libro generativo acumulado (histórico Anthropic/OpenRouter + OpenAI directo; reservas pendientes incluidas) --');
+  say('\n-- E15: libro generativo acumulado (Anthropic y OpenAI directos + historial OpenRouter; reservas pendientes incluidas) --');
   for (const g of groups) say(`   ${g.kind} · fuente=${g.cost_source} · n=${g.n} · costo=${g.cost === null ? 'desconocido' : `USD ${Number(g.cost).toFixed(6)}`} · cargo/reserva efectivo USD ${Number(g.effective).toFixed(6)}`);
   say(`   incremento global durante recorrido USD ${(spent - spentBefore).toFixed(6)} · laboratorio acumulado USD ${spent.toFixed(6)} de 25 (TypeSafe excluido)`);
   check(spent <= 25, 'E15 techo generativo acumulado USD 25, incluidos Anthropic/OpenRouter históricos');
-  const forbidden = await one<{ anthropic: number; openrouter: number }>(
-    `SELECT count(*) FILTER (WHERE p.kind = 'anthropic')::int AS anthropic,
-            count(*) FILTER (WHERE p.kind = 'openrouter')::int AS openrouter
+  const forbidden = await one<{ openrouter: number }>(
+    `SELECT count(*) FILTER (WHERE p.kind = 'openrouter')::int AS openrouter
        FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id`);
-  for (const kind of ['anthropic', 'openrouter'] as const) {
+  for (const kind of ['openrouter'] as const) {
     check(forbiddenProvidersBefore !== null && forbidden !== undefined && forbidden[kind] === forbiddenProvidersBefore[kind], `ninguna invocación ${kind} nueva (antes=${forbiddenProvidersBefore?.[kind] ?? 'sin captura'}, después=${forbidden?.[kind] ?? 'sin captura'}); solo historia`);
   }
   const day = new Date().toISOString().slice(0, 10);
@@ -107,9 +106,9 @@ async function reportCosts(): Promise<void> {
        JOIN ai_model m ON m.model_id = i.model_id AND m.provider_id = i.provider_id
       WHERE i.tenant_id = $1 AND i.status = 'succeeded' GROUP BY 1,2,3,4,5,6,7 ORDER BY 1`, [tenantForEvidence])).rows;
   for (const r of byUc) say(`   ${r.use_case_id} · ${r.model_id} · proveedor=${r.kind} · modalidad=${r.model_modality} · n=${r.n} · USD ${r.cost === null ? 'desconocido' : Number(r.cost).toFixed(6)} (${r.cost_source}) · p50=${r.p50} ms p95=${r.p95} ms`);
-  check((BLOCKED_PROVIDERS || byUc.length > 0) && byUc.every(isDirectModel), 'ninguna invocación exitosa de la fixture usa generación fuera de OpenAI directo o clasificación fuera de TypeSafe directo; modelos activos del registro');
-  const generative = byUc.filter((r) => r.kind === 'openai');
-  if (generative.length) check(generative.every((r) => r.cost !== null && r.cost_source === 'estimated'), 'costos directos de OpenAI explícitamente estimados, no reportados por el proveedor');
+  check((BLOCKED_PROVIDERS || byUc.length > 0) && byUc.every(isDirectModel), 'ninguna invocación exitosa de la fixture usa texto fuera de Anthropic, imágenes fuera de OpenAI o clasificación fuera de TypeSafe; modelos activos del registro');
+  const generative = byUc.filter((r) => r.kind === 'openai' || r.kind === 'anthropic');
+  if (generative.length) check(generative.every((r) => r.cost !== null && r.cost_source === 'estimated'), 'costos directos de Anthropic/OpenAI explícitamente estimados, no reportados por el proveedor');
   else say('   sin generaciones directas exitosas: no se atribuyen costos ni evidencia de texto/imagen a proveedores bloqueados');
   if (BLOCKED_PROVIDERS) {
     const started = await one<{ n: number }>(
@@ -147,20 +146,22 @@ async function directPreflight(): Promise<boolean> {
   const rows = (await pool.query<RegisteredModel & { use_case_id: string; modality: string; status: string | null; real_data: string | null; terms_verified_at: string | null; real_data_basis: string | null; passed: boolean; error_code: string | null; detail: string | null }>(
     `SELECT u.use_case_id, u.modality, r.model_id, p.kind, m.modality AS model_modality,
             m.status AS model_status, p.status AS provider_status, r.status, p.real_data, p.terms_verified_at, p.real_data_basis,
-            COALESCE(e.status = 'passed' AND e.real_provider AND e.route_id = r.route_id, false) AS passed,
+            (COALESCE(e.status = 'passed' AND e.real_provider AND e.route_id = r.route_id, false)
+             OR (u.modality <> 'classification' AND mr.review_id IS NOT NULL)) AS passed,
             last_i.error_code, last_i.validation->>'detail' AS detail
        FROM ai_use_case u LEFT JOIN ai_rollout ro ON ro.use_case_id = u.use_case_id AND ro.environment = 'lab'
        LEFT JOIN ai_route_revision r ON r.route_id = ro.active_route_id
        LEFT JOIN ai_model m ON m.model_id = r.model_id
        LEFT JOIN ai_provider p ON p.provider_id = m.provider_id
        LEFT JOIN ai_eval_run e ON e.run_id = r.tested_eval_run_id
+       LEFT JOIN ai_manual_review mr ON mr.review_id = r.tested_manual_review_id AND mr.route_id = r.route_id AND mr.use_case_id = u.use_case_id AND mr.environment = 'lab' AND mr.decision = 'accept'
        LEFT JOIN LATERAL (SELECT i.error_code, i.validation FROM ai_invocation i
           JOIN ai_model im ON im.model_id = i.model_id AND im.provider_id = i.provider_id
           JOIN ai_provider ip ON ip.provider_id = i.provider_id
           WHERE i.use_case_id = u.use_case_id
             AND (i.route_id = r.route_id OR (r.route_id IS NULL AND im.status = 'active' AND ip.status = 'active'
               AND im.modality = u.modality AND (
-                (u.modality = 'text' AND ip.kind = 'openai')
+                (u.modality = 'text' AND ip.kind = 'anthropic')
                 OR (u.modality = 'image' AND ip.kind = 'openai' AND im.model_id = $1)
                 OR (u.modality = 'classification' AND ip.kind = 'typesafe' AND im.model_id = $2))))
           ORDER BY i.created_at DESC LIMIT 1) last_i ON true
@@ -169,12 +170,12 @@ async function directPreflight(): Promise<boolean> {
   for (const r of rows) {
     const direct = r.modality === r.model_modality && isDirectModel(r);
     const ok = direct && r.status === 'ACTIVE' && r.passed && !r.error_code && r.real_data === 'allowed' && Boolean(r.terms_verified_at && r.real_data_basis);
-    say(`   ${r.use_case_id}: ${r.model_id ?? 'sin ruta activa'} · proveedor=${r.kind ?? 'ninguno'} · modalidad=${r.model_modality ?? 'ninguna'} · modelo=${r.model_status ?? 'sin registro'} · evaluación real=${r.passed} · política=${r.real_data ?? 'sin proveedor'}${r.error_code ? ` · último fallo de ruta=${r.error_code}:${r.detail ?? 'sin detalle'}` : ''}`);
-    if (!ok) { ready = false; blocked(`BLOCKED_EXTERNAL ${r.use_case_id}: requiere ruta directa activa, evaluación real aprobada y proveedor verificado; no se activa ni sustituye automáticamente`); }
+    say(`   ${r.use_case_id}: ${r.model_id ?? 'sin ruta activa'} · proveedor=${r.kind ?? 'ninguno'} · modalidad=${r.model_modality ?? 'ninguna'} · modelo=${r.model_status ?? 'sin registro'} · evidencia real aceptada=${r.passed} · política=${r.real_data ?? 'sin proveedor'}${r.error_code ? ` · último fallo de ruta=${r.error_code}:${r.detail ?? 'sin detalle'}` : ''}`);
+    if (!ok) { ready = false; blocked(`BLOCKED_EXTERNAL ${r.use_case_id}: requiere ruta directa activa, evidencia real aceptada y proveedor verificado; no se activa ni sustituye automáticamente`); }
   }
-  const unsafe = await one<{ n: number }>(`SELECT count(*)::int AS n FROM ai_rollout ro JOIN ai_route_revision r ON r.route_id IN (ro.active_route_id,ro.canary_route_id) JOIN ai_model m ON m.model_id = r.model_id JOIN ai_provider p ON p.provider_id = m.provider_id WHERE ro.environment = 'lab' AND (p.kind IN ('anthropic','openrouter') OR r.params->>'fallback_route_id' IS NOT NULL)`);
-  check(unsafe?.n === 0, 'ningún rollout activo/canary apunta a Anthropic/OpenRouter ni tiene fallback automático');
-  if (unsafe?.n !== 0) throw new Error('Preflight inseguro: retirar rutas Anthropic/OpenRouter y fallbacks automáticos antes de ejecutar incluso el subconjunto bloqueado; el escenario no los modifica');
+  const unsafe = await one<{ n: number }>(`SELECT count(*)::int AS n FROM ai_rollout ro JOIN ai_route_revision r ON r.route_id IN (ro.active_route_id,ro.canary_route_id) JOIN ai_model m ON m.model_id = r.model_id JOIN ai_provider p ON p.provider_id = m.provider_id WHERE ro.environment = 'lab' AND (p.kind = 'openrouter' OR (m.modality = 'text' AND p.kind <> 'anthropic') OR (m.modality = 'image' AND p.kind <> 'openai') OR r.params->>'fallback_route_id' IS NOT NULL)`);
+  check(unsafe?.n === 0, 'rollouts: Anthropic texto, OpenAI imágenes, sin OpenRouter ni fallback automático');
+  if (unsafe?.n !== 0) throw new Error('Preflight inseguro: retirar rutas fuera del reparto DEC-0074 y fallbacks antes de ejecutar; el escenario no los modifica');
   return ready && unsafe?.n === 0;
 }
 
@@ -207,7 +208,7 @@ async function blockedSubset(browser: Browser, page: Page, admin: Page, tenant: 
     await eng.getByText('Prompt Studio').waitFor();
     await shot(eng, `blocked-eng-${uc.replaceAll('.', '-')}`, true);
   }
-  blocked('E04/E05/E06/E07/E08/E09-respuesta/E11/E12/E20 completo: pendientes saldo/cuota generativos y evaluaciones directas; no se ejecutan ni se declaran aprobados');
+  blocked('E04/E05/E06/E07/E08/E09-respuesta/E11/E12/E20 completo: faltan rutas directas aceptadas, aprobadas y activas; no se ejecutan ni se declaran aprobados');
   say('# Subconjunto: pantallas reales de dueño/Administration/Engineering; Google/Meta/Telegram siguen simulados. Sin canary, rollback, publicación generativa ni imagen fingidos.');
 }
 
@@ -283,12 +284,11 @@ async function main(): Promise<void> {
   say(`# HEAD ${head} · origen ${BASE} · Chrome ${CHROME} (TLS verificado, sin ignoreHTTPSErrors)`);
   say(`# fixture ficticia «${BUSINESS}»: sin PII de clientes; modo ${BLOCKED_PROVIDERS ? 'subconjunto BLOCKED_EXTERNAL' : 'completo E01–E20'}`);
   spentBefore = Number((await one<{ spent: string }>(SPENT_SQL))?.spent ?? 0);
-  forbiddenProvidersBefore = (await one<{ anthropic: number; openrouter: number }>(
-    `SELECT count(*) FILTER (WHERE p.kind = 'anthropic')::int AS anthropic,
-            count(*) FILTER (WHERE p.kind = 'openrouter')::int AS openrouter
+  forbiddenProvidersBefore = (await one<{ openrouter: number }>(
+    `SELECT count(*) FILTER (WHERE p.kind = 'openrouter')::int AS openrouter
        FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id`)) ?? null;
   const ready = await directPreflight();
-  if (!ready && !BLOCKED_PROVIDERS) throw new Error('BLOCKED_EXTERNAL preflight: faltan rutas/evaluaciones directas. OpenAI requiere saldo/cuota habilitados para texto e imágenes; consultar los fallos reales arriba. Para el subconjunto sin generación: --blocked-providers');
+  if (!ready && !BLOCKED_PROVIDERS) throw new Error('Preflight bloqueado: faltan rutas directas aceptadas, aprobadas y activas. La modalidad manual usa grants DRAFT desde la interfaz; este guion no concede aceptación ni activa rutas');
 
   // ---------------------------------------------------------------- alta por invitación (CLI de operación)
   const inv = JSON.parse(execFileSync(process.execPath, ['scripts/invite-owner.ts', '--business', BUSINESS, '--email', EMAIL, '--base', BASE], { env: { ...process.env, DATABASE_URL: devUrl(), LOG_LEVEL: 'error' } }).toString()) as { tenant_id: string; invitation_link: string };
@@ -393,7 +393,7 @@ async function main(): Promise<void> {
          JOIN ai_provider provider ON provider.provider_id = i.provider_id
         WHERE i.tenant_id = $1 AND i.use_case_id = 'website.initial.design' AND i.status = 'succeeded' ORDER BY i.created_at DESC LIMIT 1`, [tenant]);
     say(`   diseño: ${dInv?.model_id} r${dInv?.route_version}/p${dInv?.prompt_version} · ${dInv?.latency_ms} ms · USD ${dInv?.cost_usd} (${dInv?.cost_source}) · imágenes ${design?.result.images} · bloqueadas ${JSON.stringify(design?.result.images_blocked)}`);
-    check(design?.result.simulated === false && Boolean(dInv && dInv.model_modality === 'text' && isDirectModel(dInv)), 'E05 diseño directo OpenAI no simulado con modelo textual activo del registro, ruta y costo estimado trazados');
+    check(design?.result.simulated === false && Boolean(dInv && dInv.model_modality === 'text' && isDirectModel(dInv)), 'E05 diseño directo Anthropic no simulado con modelo textual activo del registro, ruta y costo estimado trazados');
     const generated = (await pool.query<{ asset_id: string; bytes: Buffer; sha256: string; width: number; height: number; mime: string; generator_model: string; is_illustration: boolean; alt_text: string; invocation_id: string; kind: string; model_id: string; provider_model: string; status: string; cost_source: string; usage: { images?: number } }>(
       `SELECT a.asset_id, a.bytes, a.sha256, a.width, a.height, a.mime, a.generator_model, a.is_illustration, a.alt_text,
               a.invocation_id, p.kind, i.model_id, i.provider_model, i.status, i.cost_source, i.usage
@@ -582,19 +582,21 @@ async function main(): Promise<void> {
     await eng.getByText('Prompt Studio').waitFor();
     const baseline = await one<{ active_route_id: string; canary_route_id: string | null; version: string }>('SELECT active_route_id, canary_route_id, version FROM ai_rollout WHERE use_case_id = $1 AND environment = $2', [uc, 'lab']);
     const alternate = await one<{ route_id: string; model_id: string; run_id: string }>(
-      `SELECT r.route_id, r.model_id, e.run_id FROM ai_route_revision r
-         JOIN ai_eval_run e ON e.run_id = r.tested_eval_run_id AND e.route_id = r.route_id AND e.status = 'passed' AND e.real_provider
+      `SELECT r.route_id, r.model_id, COALESCE(e.run_id,mr.review_id) AS run_id FROM ai_route_revision r
+         LEFT JOIN ai_eval_run e ON e.run_id = r.tested_eval_run_id AND e.route_id = r.route_id AND e.status = 'passed' AND e.real_provider
+         LEFT JOIN ai_manual_review mr ON mr.review_id = r.tested_manual_review_id AND mr.route_id = r.route_id AND mr.environment = 'lab' AND mr.decision = 'accept'
          JOIN ai_model m ON m.model_id = r.model_id AND m.status = 'active' AND m.modality = 'text'
-         JOIN ai_provider p ON p.provider_id = m.provider_id AND p.kind = 'openai' AND p.status = 'active'
+         JOIN ai_provider p ON p.provider_id = m.provider_id AND p.kind = 'anthropic' AND p.status = 'active'
         WHERE r.use_case_id = $1 AND r.route_id <> $2 AND p.real_data = 'allowed'
           AND p.terms_verified_at IS NOT NULL AND p.real_data_basis IS NOT NULL
           AND r.params->>'fallback_route_id' IS NULL
+          AND (e.run_id IS NOT NULL OR mr.review_id IS NOT NULL)
           AND r.status = 'APPROVED' AND r.approved_by IS NOT NULL AND r.approved_at IS NOT NULL
         ORDER BY r.version DESC LIMIT 1`, [uc, baseline?.active_route_id]);
     if (!baseline?.active_route_id || baseline.canary_route_id || !alternate) {
-      blocked('E04 canary/rollback: no hay alternativa textual OpenAI directa previamente evaluada y aprobada, o existe un canary ajeno; no se aprueba, activa ni simula una alternativa');
+      blocked('E04 canary/rollback: no hay alternativa textual Anthropic directa previamente aceptada y aprobada, o existe un canary ajeno; no se aprueba, activa ni simula una alternativa');
     } else {
-      say(`   alternativa OpenAI directa ${alternate.model_id}, evaluación real ${alternate.run_id}; baseline ${baseline.active_route_id}`);
+      say(`   alternativa Anthropic directa ${alternate.model_id}, evidencia real ${alternate.run_id}; baseline ${baseline.active_route_id}`);
       const rollout = async (action: string, reason: string, expectedActive: string, expectedCanary: string | null) => {
         await eng.locator('#ro-act').selectOption(action);
         if (action === 'canary') { await eng.locator('#ro-route').selectOption(alternate.route_id); await eng.locator('#ro-pct').fill('20'); }
@@ -608,18 +610,18 @@ async function main(): Promise<void> {
         await eng.getByText('Prompt Studio').waitFor();
       };
       try {
-        await rollout('canary', 'DEC-0073 comparar alternativa OpenAI directa ya evaluada y aprobada al veinte por ciento', baseline.active_route_id, alternate.route_id);
+        await rollout('canary', 'DEC-0074 comparar alternativa Anthropic directa ya aceptada y aprobada al veinte por ciento', baseline.active_route_id, alternate.route_id);
         await shot(eng, 'eng-01-canary-directo', true);
-        await rollout('promote', 'DEC-0073 promover alternativa OpenAI directa evaluada para demostrar rollback real', alternate.route_id, null);
-        await rollout('rollback', 'DEC-0073 restaurar ruta OpenAI directa inicial después del canary', baseline.active_route_id, null);
+        await rollout('promote', 'DEC-0074 promover alternativa Anthropic directa aceptada para demostrar rollback real', alternate.route_id, null);
+        await rollout('rollback', 'DEC-0074 restaurar ruta Anthropic directa inicial después del canary', baseline.active_route_id, null);
       } finally {
         const current = await one<{ active_route_id: string; canary_route_id: string | null }>('SELECT active_route_id, canary_route_id FROM ai_rollout WHERE use_case_id = $1 AND environment = $2', [uc, 'lab']);
-        if (current?.active_route_id === alternate.route_id) await rollout('rollback', 'DEC-0073 recuperar baseline OpenAI directo tras interrupción', baseline.active_route_id, null);
-        else if (current?.canary_route_id === alternate.route_id) await rollout('clear_canary', 'DEC-0073 retirar canary OpenAI directo tras interrupción', baseline.active_route_id, null);
+        if (current?.active_route_id === alternate.route_id) await rollout('rollback', 'DEC-0074 recuperar baseline Anthropic directo tras interrupción', baseline.active_route_id, null);
+        else if (current?.canary_route_id === alternate.route_id) await rollout('clear_canary', 'DEC-0074 retirar canary Anthropic directo tras interrupción', baseline.active_route_id, null);
       }
       await shot(eng, 'eng-03-canary-rollback-historial', true);
       const evs = (await pool.query<{ action: string }>(`SELECT action FROM ai_rollout_event WHERE use_case_id = $1 AND environment = 'lab' AND rollout_version > $2 ORDER BY rollout_version`, [uc, baseline.version])).rows.map((r) => r.action);
-      check(evs.join(',') === 'canary,promote,rollback', 'E04 canary OpenAI directo 20 %, promoción y rollback auditados; baseline restaurado sin redeploy');
+      check(evs.join(',') === 'canary,promote,rollback', 'E04 canary Anthropic directo 20 %, promoción y rollback auditados; baseline restaurado sin redeploy');
     }
     completed = true;
   } finally {

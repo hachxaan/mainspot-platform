@@ -24,7 +24,7 @@ import {
   type AssistantOutput, type CampaignOutput, type ComposeOutput, type EditorialOutput, type InsightsOutput,
 } from './contracts.ts';
 
-export interface BizActor { tenantId: string; userId: string; role: string | null; requestId: string; permissions: readonly string[] }
+export interface BizActor { tenantId: string; userId: string; role: string | null; requestId: string; permissions: readonly string[]; labGrantId?: string | null }
 
 export const SOCIAL_FACT_KEYS: readonly FactKey[] = ['name', 'category', 'description', 'value_proposition', 'voice', 'audience', 'avoid_tones', 'services', 'address', 'hours', 'cta', 'prices', 'restrictions'];
 const DUPLICATE_SIMILARITY = 0.7;
@@ -45,17 +45,18 @@ export function similarity(a: string, b: string): number {
 }
 
 function ctxFor(a: BizActor, useCase: string, idempotencyKey: string, origin: string, extra: Partial<InvokeContext> = {}): InvokeContext {
-  return { requestId: a.requestId, idempotencyKey: `${useCase}:${idempotencyKey}`, tenantId: a.tenantId, actorId: a.userId, actorKind: 'tenant_user', origin, ...extra };
+  return { requestId: a.requestId, idempotencyKey: `${useCase}:${idempotencyKey}`, tenantId: a.tenantId, actorId: a.userId, actorKind: 'tenant_user', origin, labGrantId: a.labGrantId ?? null, ...extra };
 }
 
 function fail(res: { code: string; reason: string }): AppError {
-  const status = res.code === 'budget_exhausted' ? 429 : res.code === 'blocked_external' || res.code === 'no_active_route' || res.code === 'disabled' ? 503 : res.code === 'in_progress' ? 409 : 502;
-  const message = res.code === 'budget_exhausted' ? 'Se alcanzó el presupuesto de IA de hoy. Inténtalo mañana o pide a soporte que lo revise.'
-    : res.code === 'no_active_route' || res.code === 'disabled' ? 'Esta función de IA todavía no está activa en tu cuenta.'
-      : res.code === 'blocked_external' ? 'Esta función de IA está pausada por una autorización externa pendiente.'
-        : res.code === 'in_progress' ? 'Tu solicitud anterior sigue en proceso.'
-          : 'No pudimos completar la solicitud con la IA. Inténtalo de nuevo en unos minutos.';
-  return new AppError(status, status === 429 ? DENY_CODES.LIMIT_EXCEEDED : 'validation_error', message);
+  const status = res.code === 'lab_grant_invalid' ? 403 : res.code === 'budget_exhausted' ? 429 : res.code === 'blocked_external' || res.code === 'no_active_route' || res.code === 'disabled' ? 503 : res.code === 'in_progress' ? 409 : 502;
+  const message = res.code === 'lab_grant_invalid' ? 'La autorización de laboratorio venció, fue revocada o no permite esta ruta.'
+    : res.code === 'budget_exhausted' ? 'Se alcanzó un presupuesto interno de IA. Revisa el consumo; los créditos del proveedor no amplían este límite.'
+      : res.code === 'no_active_route' || res.code === 'disabled' ? 'Esta función de IA todavía no está activa en tu cuenta.'
+        : res.code === 'blocked_external' ? 'Esta función de IA está pausada por una autorización externa pendiente.'
+          : res.code === 'in_progress' ? 'Tu solicitud anterior sigue en proceso.'
+            : 'No pudimos completar la solicitud con la IA. Inténtalo de nuevo en unos minutos.';
+  return new AppError(status, status === 403 ? 'permission_denied' : status === 429 ? DENY_CODES.LIMIT_EXCEEDED : 'validation_error', message);
 }
 
 export interface AiBusinessDeps {
@@ -82,9 +83,9 @@ export class AiBusinessService {
     const request = typeof input.request === 'string' ? input.request.trim() : '';
     if (!request || request.length > 1000) throw new AppError(400, 'validation_error', 'Cuéntanos qué quieres publicar (hasta 1000 caracteres).');
     return this.deps.jobs.enqueue({
-      tenantId: a.tenantId, kind: 'social.compose', idempotencyKey, createdBy: a.userId,
+      tenantId: a.tenantId, kind: 'social.compose', idempotencyKey, createdBy: a.userId, labGrantId: a.labGrantId ?? null,
       input: { request, with_image: input.with_image === true, editorial_id: typeof input.editorial_id === 'string' ? input.editorial_id : null, actor_role: a.role },
-      useCases: ['social.facebook.post.compose', 'social.facebook.image.generate'],
+      useCases: input.with_image === true ? ['social.facebook.post.compose', 'social.facebook.image.generate'] : ['social.facebook.post.compose'],
     });
   }
 
@@ -99,7 +100,7 @@ export class AiBusinessService {
     const facts = await this.deps.brand.confirmed(job.tenant_id, [...SOCIAL_FACT_KEYS, 'promotions']);
     const promotions = (facts.facts.promotions as Promotion[] | undefined) ?? [];
     const recent = await this.recentPosts(job.tenant_id);
-    const base: InvokeContext = { requestId: `job:${job.job_id}`, idempotencyKey: `job:${job.job_id}:compose:a${job.attempts}`, tenantId: job.tenant_id, actorId: job.created_by, actorKind: 'tenant_user', origin: 'social.compose', brandVersion: facts.version, jobId: job.job_id, pinnedRouteId: job.pinned['social.facebook.post.compose'] ?? null };
+    const base: InvokeContext = { requestId: `job:${job.job_id}`, idempotencyKey: `job:${job.job_id}:compose:a${job.attempts}`, tenantId: job.tenant_id, actorId: job.created_by, actorKind: 'tenant_user', origin: 'social.compose', brandVersion: facts.version, jobId: job.job_id, pinnedRouteId: job.pinned['social.facebook.post.compose'] ?? null, labGrantId: job.lab_grant_id };
     const allowance = { confirmedPriceStrings: await this.deps.brand.allowedPriceStrings(job.tenant_id) };
     const { promotions: _p, ...brandFacts } = facts.facts;
     await jc.progress({ step: 'compose' });

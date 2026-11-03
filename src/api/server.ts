@@ -83,6 +83,8 @@ import { passwordResetRouter } from './password-reset-routes.ts';
 // AI Core (issue #9): registro/despacho de IA, jobs durables, marca, biblioteca, web generativa,
 // capacidades de negocio, atención con Jev y consolas de plataforma (Administration + Engineering).
 import { AiDispatcher } from '../ai/dispatcher.ts';
+import { AiRegistry } from '../ai/registry.ts';
+import { AiLab } from '../ai/lab.ts';
 import { AiJobs } from '../ai/jobs.ts';
 import { AiBusinessService } from '../ai/business.ts';
 import { BrandService } from '../brand/service.ts';
@@ -125,6 +127,7 @@ export interface AppHandle {
   google: GoogleIntegration;
   /** AI Core: despacho versionado, jobs durables, marca, biblioteca y servicios generativos. */
   dispatcher: AiDispatcher;
+  aiLab: AiLab;
   aiJobs: AiJobs;
   brand: BrandService;
   media: MediaService;
@@ -215,8 +218,10 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
     facebook_comment: realMeta ? new MetaCommentReplier(pool, socialProvider) : simulatedReplier,
   });
   // AI Core: un despachador por proceso (ruta fijada por invocación, presupuesto y trazas).
-  const dispatcher = new AiDispatcher({ pool, config });
-  const aiJobs = new AiJobs({ pool, registry: dispatcher.registry, environment: config.aiEnvironment });
+  const registry = new AiRegistry(pool);
+  const aiLab = new AiLab({ pool, registry, environment: config.aiEnvironment });
+  const dispatcher = new AiDispatcher({ pool, config, registry, lab: aiLab });
+  const aiJobs = new AiJobs({ pool, registry, environment: config.aiEnvironment, lab: aiLab });
   const brand = new BrandService({ pool, sink });
   const media = new MediaService({ pool, sink });
   const engagement = new EngagementService({
@@ -291,7 +296,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
 
   // AI Core: imágenes de la biblioteca (capability URL) y API de plataforma (otra sesión/clave/auditoría).
   app.use(mediaRouter(media));
-  app.use('/api/platform', platformRouter({ pool, sink, auth: platformAuth, dispatcher, subscriptions: subscriptionRepo, environment: config.aiEnvironment, realProviders: config.aiRealProviders }));
+  app.use('/api/platform', platformRouter({ pool, sink, auth: platformAuth, dispatcher, subscriptions: subscriptionRepo, environment: config.aiEnvironment, realProviders: config.aiRealProviders, lab: aiLab }));
 
   // Auth (public endpoints: login/logout).
   app.use('/api/auth', authRouter(deps));
@@ -324,7 +329,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   app.use('/api/backoffice', contactRouter({ pool, sink, phones }));
   app.use('/api/backoffice', engagementRouter({ pool, config, sink, engagement, telegram, worker: engagementWorker, gbp, channel }));
   app.use('/api/backoffice', googleConnectionRouter({ pool, sink, service: google.connection, publicBaseUrl: config.publicBaseUrl }));
-  app.use('/api/backoffice', aiRouter({ pool, sink, brand, media, jobs: aiJobs, business: aiBusiness, site: aiSite, registry: dispatcher.registry, environment: config.aiEnvironment, repo: conversationRepo, websiteRepo, phones }));
+  app.use('/api/backoffice', aiRouter({ pool, sink, brand, media, jobs: aiJobs, business: aiBusiness, site: aiSite, registry, dispatcher, lab: aiLab, environment: config.aiEnvironment, repo: conversationRepo, websiteRepo, phones }));
 
   // DEV-E2E-03: interfaz de Claude Design integrada (src/web/panel, adaptada del prototipo
   // docs/ux/claude-design/deliverables). Un solo shell para entrar, invitación y panel; las
@@ -367,7 +372,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
     }
   });
 
-  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones, engagement, engagementWorker, telegram, channel, connections, socialScheduler, mailer, passwordReset, google, dispatcher, aiJobs, brand, media, aiSite, aiBusiness, platformAuth };
+  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones, engagement, engagementWorker, telegram, channel, connections, socialScheduler, mailer, passwordReset, google, dispatcher, aiLab, aiJobs, brand, media, aiSite, aiBusiness, platformAuth };
 }
 
 /** DEC-0005: cada cuánto se cierran las reservas de cuota vencidas (caídas a mitad). */

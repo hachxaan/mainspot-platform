@@ -10,16 +10,30 @@
   'use strict';
   var MS = (window.MS = window.MS || {});
   var TOKEN_KEY = 'mainspot.token';
+  /** Laboratorio manual: solo el ID opaco de la autorización elegida (nunca un token ni un permiso por sí mismo). */
+  var LAB_KEY = 'mainspot.lab.grant';
   var API = (MS.api = {});
 
   API.token = function () {
     try { return window.sessionStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
   };
   API.setToken = function (t) {
+    // Cualquier cambio de sesión (entrar, salir, caducar) olvida la autorización de laboratorio elegida.
+    API.setLabGrant(null);
+    if (MS.ai) { MS.ai.s = {}; MS.ai.jobs = {}; MS.ai.render = {}; }
     try {
       if (t) window.sessionStorage.setItem(TOKEN_KEY, t);
       else window.sessionStorage.removeItem(TOKEN_KEY);
     } catch (e) { /* sin almacenamiento de sesión: el token vive solo en esta carga */ }
+  };
+  API.labGrant = function () {
+    try { return window.sessionStorage.getItem(LAB_KEY); } catch (e) { return null; }
+  };
+  API.setLabGrant = function (id) {
+    try {
+      if (id) window.sessionStorage.setItem(LAB_KEY, String(id));
+      else window.sessionStorage.removeItem(LAB_KEY);
+    } catch (e) { /* sin almacenamiento: no se puede elegir laboratorio en esta carga */ }
   };
 
   /** Clave de idempotencia por acción del usuario (el servidor no duplica si se reintenta). */
@@ -47,11 +61,18 @@
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     var token = API.token();
     if (opts.auth !== false && token) headers.Authorization = 'Bearer ' + token;
+    // Solo las peticiones autenticadas del AI Core llevan la autorización de laboratorio elegida. La lista de
+    // autorizaciones (GET /ai/lab) no ejecuta IA y nunca la lleva: así se puede elegir otra aunque la actual esté rechazada.
+    // Nunca se reintenta una petición sin header tras un 403: eso sería tráfico normal encubierto.
+    var lab = API.labGrant();
+    if (opts.auth !== false && token && lab && path.indexOf('/api/backoffice/ai/') === 0 && !(method === 'GET' && path === '/api/backoffice/ai/lab')) headers['X-AI-Lab-Grant'] = lab;
     if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
     return window.fetch(path, { method: method, headers: headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'same-origin', cache: 'no-store' })
       .then(function (res) {
         return res.text().then(function (txt) {
           var data = null;
+          // Una respuesta de la sesión anterior no puede poblar el panel ni el laboratorio de otro usuario.
+          if (opts.auth !== false && token !== API.token()) return { ok: false, status: 409, data: null, error: { code: 'session_changed', message: 'La sesión cambió mientras se procesaba la solicitud.' }, retryAfter: null };
           try { data = txt ? JSON.parse(txt) : null; } catch (e) { data = null; }
           var out = { ok: res.ok, status: res.status, data: data, error: null, retryAfter: null };
           if (!res.ok) {

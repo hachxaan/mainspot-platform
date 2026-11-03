@@ -6,12 +6,17 @@
  * - Idempotente: cada paso invoca la IA con clave `job:<id>:<paso>`; al reintentar tras una caída,
  *   los pasos terminados se reutilizan (replay) en lugar de pagar otra vez.
  * - Las rutas se FIJAN al crear el job (`pinned`): cambiar el rollout no altera un job en curso.
+ * - Laboratorio (DEC-0074): un job creado con `labGrantId` fija SOLO las capacidades generativas que el grant
+ *   autoriza (clasificación: ruta normal); una generativa fuera del grant queda sin ruta y el dispatcher la
+ *   bloquea (nunca cae al rollout). El worker revalida el grant antes de cada intento: revocado o caducado ⇒ el
+ *   job falla sin gastar.
  */
 
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import { log } from '../shared/logger.ts';
 import { AppError } from '../shared/errors.ts';
+import { AiLab, type LabGrantView } from './lab.ts';
 import type { AiRegistry } from './registry.ts';
 
 export const JOB_LEASE_SECONDS = 600;
@@ -24,7 +29,7 @@ export interface AiJobRow {
   job_id: string; tenant_id: string; kind: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
   idempotency_key: string; input: Record<string, unknown>; pinned: Record<string, string>; progress: Record<string, unknown>;
   result: Record<string, unknown> | null; error_code: string | null; attempts: number; claim_token: string | null;
-  lease_until: string | null; created_by: string; created_at: string; updated_at: string; finished_at: string | null;
+  lease_until: string | null; lab_grant_id: string | null; created_by: string; created_at: string; updated_at: string; finished_at: string | null;
 }
 
 export interface JobContext {
@@ -48,38 +53,57 @@ export class AiJobError extends Error {
 export class AiJobs {
   private readonly pool: Pool;
   private readonly registry: AiRegistry;
+  private readonly lab: AiLab;
   private readonly environment: string;
   private readonly handlers = new Map<string, JobHandler>();
   private timer: NodeJS.Timeout | null = null;
   private running = false;
 
-  constructor(deps: { pool: Pool; registry: AiRegistry; environment: string }) {
+  constructor(deps: { pool: Pool; registry: AiRegistry; environment: string; lab?: AiLab }) {
     this.pool = deps.pool;
     this.registry = deps.registry;
     this.environment = deps.environment;
+    this.lab = deps.lab ?? new AiLab({ pool: deps.pool, registry: deps.registry, environment: deps.environment });
+  }
+
+  private replay(job: AiJobRow, grantId: string | null, userId: string): { job: AiJobRow; created: false } {
+    if ((job.lab_grant_id ?? null) !== grantId || (grantId && job.created_by !== userId)) {
+      throw new AppError(403, 'permission_denied', 'Esta clave pertenece a otra ejecución. Usa la autorización original o inicia una acción nueva.');
+    }
+    return { job, created: false };
   }
 
   register(kind: string, handler: JobHandler): void {
     this.handlers.set(kind, handler);
   }
 
-  /** Crea (o devuelve, por idempotencia) un job; fija la ruta vigente de cada caso de uso. */
-  async enqueue(input: { tenantId: string; kind: string; idempotencyKey: string; input: Record<string, unknown>; useCases: string[]; createdBy: string }): Promise<{ job: AiJobRow; created: boolean }> {
+  /**
+   * Crea (o devuelve, por idempotencia) un job; fija la ruta vigente de cada caso de uso. `useCases` enumera las
+   * ramas POSIBLES del job (no todas se ejecutan). Con grant: valida el grant para el negocio y el usuario creador
+   * (403 si no es válido: sin fallback) y fija solo las generativas autorizadas más la clasificación normal.
+   */
+  async enqueue(input: { tenantId: string; kind: string; idempotencyKey: string; input: Record<string, unknown>; useCases: string[]; createdBy: string; labGrantId?: string | null }): Promise<{ job: AiJobRow; created: boolean }> {
     if (!this.handlers.has(input.kind)) throw new AppError(400, 'validation_error', 'Tipo de trabajo desconocido.');
+    const grant = await this.lab.authorize({ grantId: input.labGrantId ?? null, tenantId: input.tenantId, userId: input.createdBy });
     const existing = await this.pool.query<AiJobRow>('SELECT * FROM ai_job WHERE tenant_id = $1 AND kind = $2 AND idempotency_key = $3', [input.tenantId, input.kind, input.idempotencyKey]);
-    if (existing.rows[0]) return { job: existing.rows[0], created: false };
+    if (existing.rows[0]) return this.replay(existing.rows[0], grant?.grant_id ?? null, input.createdBy);
     const pinned: Record<string, string> = {};
     for (const uc of input.useCases) {
+      if (grant) {
+        const granted = grant.routes.find((r) => r.use_case_id === uc);
+        if (granted) { pinned[uc] = granted.route_id; continue; }
+        if ((await this.registry.useCase(uc))?.modality !== 'classification') continue;
+      }
       const resolved = await this.registry.resolve(uc, this.environment, input.tenantId);
       if (resolved) pinned[uc] = resolved.routeId;
     }
     const r = await this.pool.query<AiJobRow>(
-      `INSERT INTO ai_job (job_id, tenant_id, kind, idempotency_key, input, pinned, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (tenant_id, kind, idempotency_key) DO NOTHING RETURNING *`,
-      [`job_${randomUUID()}`, input.tenantId, input.kind, input.idempotencyKey, JSON.stringify(input.input), JSON.stringify(pinned), input.createdBy]);
+      `INSERT INTO ai_job (job_id, tenant_id, kind, idempotency_key, input, pinned, lab_grant_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (tenant_id, kind, idempotency_key) DO NOTHING RETURNING *`,
+      [`job_${randomUUID()}`, input.tenantId, input.kind, input.idempotencyKey, JSON.stringify(input.input), JSON.stringify(pinned), grant?.grant_id ?? null, input.createdBy]);
     if (r.rows[0]) return { job: r.rows[0], created: true };
     const again = await this.pool.query<AiJobRow>('SELECT * FROM ai_job WHERE tenant_id = $1 AND kind = $2 AND idempotency_key = $3', [input.tenantId, input.kind, input.idempotencyKey]);
-    return { job: again.rows[0] as AiJobRow, created: false };
+    return this.replay(again.rows[0] as AiJobRow, grant?.grant_id ?? null, input.createdBy);
   }
 
   /** Anti-oráculo por negocio. */
@@ -125,6 +149,17 @@ export class AiJobs {
     if (job.attempts > JOB_MAX_ATTEMPTS) {
       await owned(`UPDATE ai_job SET status = 'failed', error_code = COALESCE(error_code, 'attempts_exhausted'), finished_at = now(), updated_at = now() WHERE true`, []);
       return;
+    }
+    if (job.lab_grant_id) {
+      // Revalidación del grant en el worker (vigencia, revocación, negocio, usuario, emisor): un job autorizado
+      // ayer no gasta hoy si la autorización ya no existe. Terminal: no se reintenta. Cada invocación vuelve a
+      // comprobar la ruta fijada contra la allowlist (dispatcher).
+      const check = await this.lab.check({ grantId: job.lab_grant_id, tenantId: job.tenant_id, userId: job.created_by });
+      if (!check.ok) {
+        log.warn('ai.job.lab_grant_invalid', 'job refused: lab grant no longer valid', { job_id: job.job_id, kind: job.kind, reason: check.reason });
+        await owned(`UPDATE ai_job SET status = 'failed', error_code = 'lab_grant_invalid', claim_token = NULL, lease_until = NULL, finished_at = now(), updated_at = now() WHERE true`, []);
+        return;
+      }
     }
     const ctx: JobContext = {
       job,

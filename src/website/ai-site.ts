@@ -28,7 +28,7 @@ export const EDIT_SCOPE_USE_CASE: Record<string, string> = {
   content_simple: 'website.edit.simple', style_simple: 'website.edit.simple', layout_complex: 'website.edit.complex',
 };
 
-export interface Requester { tenantId: string; userId: string; role: string | null; requestId: string }
+export interface Requester { tenantId: string; userId: string; role: string | null; requestId: string; labGrantId?: string | null }
 
 export interface AiSiteDeps {
   pool: Pool;
@@ -72,7 +72,7 @@ export class AiSiteService {
   private ctx(job: JobContext['job'], useCase: string, step: string, brandVersion: number | null): InvokeContext {
     return {
       requestId: `job:${job.job_id}`, idempotencyKey: `job:${job.job_id}:${step}:a${job.attempts}`, tenantId: job.tenant_id, actorId: job.created_by,
-      actorKind: 'tenant_user', origin: job.kind, brandVersion, jobId: job.job_id, pinnedRouteId: job.pinned[useCase] ?? null,
+      actorKind: 'tenant_user', origin: job.kind, brandVersion, jobId: job.job_id, pinnedRouteId: job.pinned[useCase] ?? null, labGrantId: job.lab_grant_id,
     };
   }
 
@@ -82,7 +82,7 @@ export class AiSiteService {
     const site = await this.deps.site.websiteRepo.websiteForTenant(r.tenantId);
     if (!site) throw new AppError(409, 'website_missing', 'Todavía no tienes página. Primero créala con los datos de tu negocio.');
     return this.deps.jobs.enqueue({
-      tenantId: r.tenantId, kind: 'website.design', idempotencyKey, createdBy: r.userId,
+      tenantId: r.tenantId, kind: 'website.design', idempotencyKey, createdBy: r.userId, labGrantId: r.labGrantId ?? null,
       input: { brief: text || 'Una página clara y atractiva que invite a visitarnos.', actor_role: r.role },
       useCases: ['website.initial.design', 'website.image.generate'],
     });
@@ -94,7 +94,7 @@ export class AiSiteService {
     const site = await this.deps.site.websiteRepo.websiteForTenant(r.tenantId);
     if (!site || Number(site.published_version) === 0) throw new AppError(409, 'validation_error', 'Primero publica tu página; después puedes pedir cambios.');
     return this.deps.jobs.enqueue({
-      tenantId: r.tenantId, kind: 'website.edit', idempotencyKey, createdBy: r.userId,
+      tenantId: r.tenantId, kind: 'website.edit', idempotencyKey, createdBy: r.userId, labGrantId: r.labGrantId ?? null,
       input: { instruction: text, actor_role: r.role },
       useCases: ['conversation.intent.classify', 'website.edit.simple', 'website.edit.complex', 'website.initial.design', 'website.image.generate'],
     });

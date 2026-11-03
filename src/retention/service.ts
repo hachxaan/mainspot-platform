@@ -65,6 +65,8 @@ const TENANT_TABLES: ReadonlyArray<{ table: string; key: string; exportSkip?: re
   { table: 'marketing_campaign', key: 'tenant_id' },
   { table: 'ai_insight', key: 'tenant_id' },
   { table: 'ai_job', key: 'tenant_id', exportSkip: ['claim_token'] },
+  { table: 'ai_lab_grant_route', key: 'tenant_id' },
+  { table: 'ai_lab_grant', key: 'tenant_id' },
   { table: 'media_variant', key: 'tenant_id', exportSkip: ['bytes'] },
   { table: 'media_asset', key: 'tenant_id', exportSkip: ['bytes'] },
   { table: 'brand_fact', key: 'tenant_id' },

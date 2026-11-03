@@ -1,10 +1,13 @@
 /**
  * AiDispatcher (ARC-0001 §2): una única puerta para toda invocación de IA.
  *
- * Orden: idempotencia → resolución de ruta (fijada, activa o canary) → política de datos →
- * reserva de presupuesto (misma transacción que la fila `running`) → render estricto →
- * proveedor con deadline → validación (≤ 1 reparación) → registro de uso/costo → resultado.
- * Nunca lanza por fallos del proveedor: devuelve un resultado tipado con código seguro.
+ * Orden: grant de laboratorio (si lo hay, se revalida SIEMPRE antes de replay o gasto) → idempotencia →
+ * resolución de ruta (grant `manual_lab`, fijada, eval o rollout activo/canary) → política de datos →
+ * reserva de presupuesto (misma transacción que la fila `running`) → render estricto → proveedor con
+ * deadline → validación (≤ 1 reparación) → registro de uso/costo → resultado.
+ * Una ruta en borrador (DRAFT/TESTED) nunca se ejecuta por simple pin: solo bajo una evaluación real
+ * existente (`evalRunId`) o un grant válido del laboratorio (DEC-0074). Sin grant válido no hay
+ * fallback al rollout. Nunca lanza por fallos del proveedor: devuelve un resultado tipado con código seguro.
  */
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -18,6 +21,7 @@ import type { Questions, Answer } from '../jev/types.ts';
 import { OUTPUT_SCHEMAS } from './contracts.ts';
 import { checkDataPolicy, DATA_POLICY_VERSION, estimateCost, PAID_PROVIDER_KINDS, reserveBudget } from './governance.ts';
 import { PromptRenderError, renderPrompt } from './prompt.ts';
+import { AiLab, type LabGrantRoute } from './lab.ts';
 import { AiRegistry, type RouteBundle } from './registry.ts';
 import { parseJsonOutput, toModelSchema, validate } from './schema.ts';
 import { AnthropicAdapter } from './providers/anthropic.ts';
@@ -35,15 +39,17 @@ export interface InvokeContext {
   consentRef?: string | null;
   brandVersion?: number | null;
   jobId?: string | null;
-  /** Ruta fijada (job multi-paso o evaluación): ignora el rollout vigente. */
+  /** Ruta fijada (job multi-paso o evaluación): ignora el rollout vigente. Sin grant/eval solo rutas aprobadas. */
   pinnedRouteId?: string | null;
   evalRunId?: string | null;
+  /** Grant del laboratorio (DEC-0074): revalidado en cada invocación; una capacidad generativa fuera de él se bloquea. */
+  labGrantId?: string | null;
   deadlineMs?: number;
 }
 
 export type FailureCode =
   | 'no_active_route' | 'blocked_external' | 'budget_exhausted' | 'provider_unavailable' | 'provider_auth'
-  | 'invalid_output' | 'timeout' | 'render_error' | 'in_progress' | 'disabled' | 'circuit_open';
+  | 'invalid_output' | 'timeout' | 'render_error' | 'in_progress' | 'disabled' | 'circuit_open' | 'lab_grant_invalid';
 
 export interface RouteRef {
   route_id: string; route_version: number; prompt_revision_id: string; prompt_version: number; prompt_sha256: string;
@@ -58,6 +64,10 @@ export interface ImageOutput { bytes: Buffer; mediaType: string }
 export interface ToolDef { spec: ToolSpec; run: (args: Record<string, unknown>) => Promise<unknown> }
 
 interface Started { invocationId: string; bundle: RouteBundle; ref: RouteRef; started: number; adapter: ProviderAdapter | null }
+interface PriorInvocation { invocation_id: string; status: string; output: unknown; route_id: string | null; error_code: string | null; actor_id: string; lab_grant_id: string | null }
+
+/** Estados con los que una ruta fijada sin grant ni evaluación puede ejecutarse (nunca DRAFT/TESTED/RETIRED). */
+const PINNED_DEPLOYED_STATUSES: readonly string[] = ['APPROVED', 'CANARY', 'ACTIVE'];
 
 const CIRCUIT_WINDOW_MS = 60_000;
 const CIRCUIT_FAILURES = 5;
@@ -77,6 +87,7 @@ function refOf(bundle: RouteBundle, assignment: string): RouteRef {
 
 export class AiDispatcher {
   readonly registry: AiRegistry;
+  readonly lab: AiLab;
   private readonly pool: Pool;
   private readonly config: AppConfig;
   private readonly simulated = new SimulatedAdapter();
@@ -84,10 +95,11 @@ export class AiDispatcher {
   private readonly failures = new Map<string, number[]>();
   private readonly openUntil = new Map<string, number>();
 
-  constructor(deps: { pool: Pool; config: AppConfig; fetchImpl?: typeof fetch }) {
+  constructor(deps: { pool: Pool; config: AppConfig; fetchImpl?: typeof fetch; registry?: AiRegistry; lab?: AiLab }) {
     this.pool = deps.pool;
     this.config = deps.config;
-    this.registry = new AiRegistry(deps.pool);
+    this.registry = deps.registry ?? new AiRegistry(deps.pool);
+    this.lab = deps.lab ?? new AiLab({ pool: deps.pool, registry: this.registry, environment: deps.config.aiEnvironment });
     this.fetchImpl = deps.fetchImpl;
   }
 
@@ -129,13 +141,56 @@ export class AiDispatcher {
 
   // ------------------------------------------------------------------ inicio común
 
+  /**
+   * Fila `blocked` sin ruta resuelta (grant inválido): rastro durable sin tocar proveedor ni presupuesto. Si la clave
+   * ya tiene una invocación (replay rechazado), no se duplica: el rechazo queda en el log y en el resultado.
+   */
+  private async blockedWithoutRoute(useCaseId: string, ctx: InvokeContext, inputHash: string, code: FailureCode, detail: string): Promise<string | null> {
+    const invocationId = `inv_${randomUUID()}`;
+    const r = await this.pool.query(
+      `INSERT INTO ai_invocation (invocation_id, request_id, idempotency_key, tenant_id, actor_id, actor_kind, origin, use_case_id, policy_version, consent_ref, brand_version,
+         job_id, eval_run_id, lab_grant_id, status, input_sha256, error_code, validation, trace_id, finished_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'blocked',$15,$16,$17,$18,now())
+       ON CONFLICT ((COALESCE(tenant_id, '-')), use_case_id, idempotency_key) DO NOTHING`,
+      [invocationId, ctx.requestId, ctx.idempotencyKey, ctx.tenantId, ctx.actorId, ctx.actorKind, ctx.origin, useCaseId, DATA_POLICY_VERSION, ctx.consentRef ?? null,
+        ctx.brandVersion ?? null, ctx.jobId ?? null, ctx.evalRunId ?? null, ctx.labGrantId || null, inputHash, code, JSON.stringify({ detail }), ctx.requestId]);
+    return r.rowCount ? invocationId : null;
+  }
+
+  /**
+   * Una respuesta previa solo se reutiliza para la misma identidad de laboratorio: mismo grant (o ninguno) y, si
+   * hubo grant, el mismo usuario. Una petición normal nunca recibe la salida de una ruta en borrador.
+   */
+  private replayIsolated(prev: PriorInvocation, ctx: InvokeContext): boolean {
+    if ((prev.lab_grant_id ?? null) !== (ctx.labGrantId || null)) return false;
+    return !prev.lab_grant_id || prev.actor_id === ctx.actorId;
+  }
+
   private async begin(useCaseId: string, ctx: InvokeContext, inputHash: string): Promise<Started | InvokeResult<never> | { replay: Record<string, unknown> }> {
-    const existing = await this.pool.query<{ invocation_id: string; status: string; output: unknown; route_id: string | null; error_code: string | null }>(
-      `SELECT invocation_id, status, output, route_id, error_code, assignment FROM ai_invocation
+    const uc = await this.registry.useCase(useCaseId);
+    if (!uc) return { ok: false, code: 'disabled', reason: 'Este caso de uso no existe.', invocationId: null, route: null, retryable: false };
+    // Grant del laboratorio: se revalida ANTES de cualquier replay o gasto (también en clasificación y en el worker).
+    // La clasificación sigue su ruta normal (TypeSafe) sin exigir que esté en la allowlist; una capacidad generativa
+    // fuera de la allowlist se bloquea aquí: nunca cae al rollout.
+    let labRoute: LabGrantRoute | null = null;
+    if (ctx.labGrantId) {
+      const generative = uc.modality !== 'classification';
+      const check = await this.lab.check({ grantId: ctx.labGrantId, tenantId: ctx.tenantId, userId: ctx.actorId, useCaseId: generative ? useCaseId : null, routeId: generative ? ctx.pinnedRouteId ?? null : null });
+      if (!check.ok) {
+        const invocationId = await this.blockedWithoutRoute(useCaseId, ctx, inputHash, 'lab_grant_invalid', check.reason);
+        log.warn('ai.lab.grant_rejected', 'lab grant rejected at invocation', { use_case_id: useCaseId, invocation_id: invocationId, reason: check.reason });
+        return { ok: false, code: 'lab_grant_invalid', reason: check.reason, invocationId, route: null, retryable: false };
+      }
+      labRoute = check.route;
+    }
+
+    const existing = await this.pool.query<PriorInvocation>(
+      `SELECT invocation_id, status, output, route_id, error_code, assignment, actor_id, lab_grant_id FROM ai_invocation
         WHERE COALESCE(tenant_id, '-') = COALESCE($1, '-') AND use_case_id = $2 AND idempotency_key = $3`,
       [ctx.tenantId, useCaseId, ctx.idempotencyKey]);
     const prev = existing.rows[0];
     if (prev) {
+      if (!this.replayIsolated(prev, ctx)) return { ok: false, code: 'lab_grant_invalid', reason: 'replay_requires_same_grant', invocationId: prev.invocation_id, route: null, retryable: false };
       if (prev.status === 'succeeded') return { replay: prev as unknown as Record<string, unknown> };
       if (prev.status === 'running') return { ok: false, code: 'in_progress', reason: 'Esta solicitud ya se está procesando.', invocationId: prev.invocation_id, route: null, retryable: true };
       return { ok: false, code: (prev.error_code as FailureCode) ?? 'provider_unavailable', reason: 'La solicitud anterior con la misma clave no terminó; usa una clave nueva para reintentar.', invocationId: prev.invocation_id, route: null, retryable: false };
@@ -143,21 +198,31 @@ export class AiDispatcher {
     // Jobs: cada intento usa su propia clave (un fallo no bloquea el reintento), pero un paso que
     // YA terminó bien con la misma entrada en este job se reutiliza: nunca se paga dos veces.
     if (ctx.jobId) {
-      const done = await this.pool.query<{ invocation_id: string; status: string; output: unknown; route_id: string | null; error_code: string | null }>(
-        `SELECT invocation_id, status, output, route_id, error_code, assignment FROM ai_invocation
-          WHERE job_id = $1 AND use_case_id = $2 AND input_sha256 = $3 AND status = 'succeeded' ORDER BY created_at DESC LIMIT 1`,
-        [ctx.jobId, useCaseId, inputHash]);
-      if (done.rows[0]) return { replay: done.rows[0] as unknown as Record<string, unknown> };
+      const done = await this.pool.query<PriorInvocation>(
+        `SELECT invocation_id, status, output, route_id, error_code, assignment, actor_id, lab_grant_id FROM ai_invocation
+          WHERE job_id = $1 AND use_case_id = $2 AND input_sha256 = $3 AND status = 'succeeded' AND COALESCE(lab_grant_id, '-') = COALESCE($4, '-')
+          ORDER BY created_at DESC LIMIT 1`,
+        [ctx.jobId, useCaseId, inputHash, ctx.labGrantId || null]);
+      if (done.rows[0] && this.replayIsolated(done.rows[0], ctx)) return { replay: done.rows[0] as unknown as Record<string, unknown> };
     }
 
-    const uc = await this.registry.useCase(useCaseId);
-    if (!uc || uc.status !== 'active') return { ok: false, code: 'disabled', reason: 'Este caso de uso no está activo.', invocationId: null, route: null, retryable: false };
+    if (uc.status !== 'active') return { ok: false, code: 'disabled', reason: 'Este caso de uso no está activo.', invocationId: null, route: null, retryable: false };
 
     let routeId: string;
     let assignment: string;
-    if (ctx.pinnedRouteId) {
+    if (labRoute) {
+      routeId = labRoute.route_id;
+      assignment = 'manual_lab';
+    } else if (ctx.pinnedRouteId) {
       routeId = ctx.pinnedRouteId;
-      assignment = ctx.evalRunId ? 'eval' : 'pinned';
+      if (ctx.evalRunId) {
+        // Solo una evaluación real existente (fila creada por runEvalSuite para ESTA ruta) ejecuta borradores.
+        const run = await this.pool.query(`SELECT 1 FROM ai_eval_run WHERE run_id = $1 AND route_id = $2 AND status = 'running'`, [ctx.evalRunId, routeId]);
+        if (!run.rowCount) return { ok: false, code: 'no_active_route', reason: 'eval_run_mismatch', invocationId: null, route: null, retryable: false };
+        assignment = 'eval';
+      } else {
+        assignment = 'pinned';
+      }
     } else {
       const resolved = await this.registry.resolve(useCaseId, this.config.aiEnvironment, ctx.tenantId ?? ctx.idempotencyKey);
       if (!resolved) return { ok: false, code: 'no_active_route', reason: 'No hay una ruta activa para este caso de uso.', invocationId: null, route: null, retryable: false };
@@ -166,6 +231,10 @@ export class AiDispatcher {
     }
     const bundle = await this.registry.bundle(routeId);
     if (!bundle || bundle.route.use_case_id !== useCaseId) return { ok: false, code: 'no_active_route', reason: 'La ruta indicada no existe para este caso de uso.', invocationId: null, route: null, retryable: false };
+    if (assignment === 'pinned' && !PINNED_DEPLOYED_STATUSES.includes(bundle.route.status)) {
+      // Un pin no es permiso: una ruta en borrador o retirada no se ejecuta sin evaluación real ni grant del laboratorio.
+      return { ok: false, code: 'no_active_route', reason: 'pinned_route_not_deployable', invocationId: null, route: null, retryable: false };
+    }
     const ref = refOf(bundle, assignment);
 
     const invocationId = `inv_${randomUUID()}`;
@@ -174,11 +243,11 @@ export class AiDispatcher {
       await this.pool.query(
         `INSERT INTO ai_invocation (invocation_id, request_id, idempotency_key, tenant_id, actor_id, actor_kind, origin, use_case_id, route_id, route_version,
            prompt_revision_id, prompt_sha256, model_id, provider_id, provider_model, assignment, policy_version, consent_ref, brand_version, job_id, eval_run_id,
-           status, input_sha256, error_code, validation, trace_id, finished_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'blocked',$22,$23,$24,$25,now())`,
+           status, input_sha256, error_code, validation, trace_id, lab_grant_id, finished_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'blocked',$22,$23,$24,$25,$26,now())`,
         [invocationId, ctx.requestId, ctx.idempotencyKey, ctx.tenantId, ctx.actorId, ctx.actorKind, ctx.origin, useCaseId, ref.route_id, ref.route_version,
           ref.prompt_revision_id, ref.prompt_sha256, ref.model_id, ref.provider_id, ref.provider_model, assignment, DATA_POLICY_VERSION, ctx.consentRef ?? null,
-          ctx.brandVersion ?? null, ctx.jobId ?? null, ctx.evalRunId ?? null, inputHash, code, JSON.stringify({ detail }), ctx.requestId]);
+          ctx.brandVersion ?? null, ctx.jobId ?? null, ctx.evalRunId ?? null, inputHash, code, JSON.stringify({ detail }), ctx.requestId, ctx.labGrantId || null]);
     };
     if (!policy.allowed) {
       await blockedRow('blocked_external', policy.reason);
@@ -198,11 +267,11 @@ export class AiDispatcher {
       await client.query(
         `INSERT INTO ai_invocation (invocation_id, request_id, idempotency_key, tenant_id, actor_id, actor_kind, origin, use_case_id, route_id, route_version,
            prompt_revision_id, prompt_sha256, model_id, provider_id, provider_model, assignment, policy_version, consent_ref, brand_version, job_id, eval_run_id,
-           status, reserved_usd, input_sha256, trace_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'running',$22,$23,$24)`,
+           status, reserved_usd, input_sha256, trace_id, lab_grant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'running',$22,$23,$24,$25)`,
         [invocationId, ctx.requestId, ctx.idempotencyKey, ctx.tenantId, ctx.actorId, ctx.actorKind, ctx.origin, useCaseId, ref.route_id, ref.route_version,
           ref.prompt_revision_id, ref.prompt_sha256, ref.model_id, ref.provider_id, ref.provider_model, assignment, DATA_POLICY_VERSION, ctx.consentRef ?? null,
-          ctx.brandVersion ?? null, ctx.jobId ?? null, ctx.evalRunId ?? null, reserve, inputHash, ctx.requestId]);
+          ctx.brandVersion ?? null, ctx.jobId ?? null, ctx.evalRunId ?? null, reserve, inputHash, ctx.requestId, ctx.labGrantId || null]);
       return { allowed: true as const, limits: [] };
     });
     if (!budgetOk.allowed) {
@@ -212,7 +281,11 @@ export class AiDispatcher {
     return { invocationId, bundle, ref, started: performance.now(), adapter: this.adapterFor(bundle) };
   }
 
-  private async finish(s: Started, status: 'succeeded' | 'failed', data: { usage: Usage; costSource?: string; output?: unknown; validation?: unknown; errorCode?: string | null }): Promise<{ costUsd: number | null; costSource: string; latencyMs: number }> {
+  /**
+   * Cierra la invocación. `output_sha256` (hash del JSON de salida, o de los bytes si `outputBytes`) queda aunque
+   * la retención purgue el contenido: la evidencia manual aceptada sigue siendo verificable.
+   */
+  private async finish(s: Started, status: 'succeeded' | 'failed', data: { usage: Usage; costSource?: string; output?: unknown; outputBytes?: Buffer; validation?: unknown; errorCode?: string | null }): Promise<{ costUsd: number | null; costSource: string; latencyMs: number }> {
     const latencyMs = Math.round(performance.now() - s.started);
     let costUsd: number | null = null;
     let costSource = 'none';
@@ -228,11 +301,14 @@ export class AiDispatcher {
       const est = estimateCost(s.bundle.model.pricing, data.usage);
       costUsd = est; costSource = est === null ? 'unknown' : 'estimated';
     }
+    const outputSha = status === 'succeeded' && (data.outputBytes || data.output !== undefined)
+      ? (data.outputBytes ? createHash('sha256').update(data.outputBytes).digest('hex') : sha(data.output))
+      : null;
     await this.pool.query(
       `UPDATE ai_invocation SET status = $2, cost_usd = $3, cost_source = $4, usage = $5, latency_ms = $6, output = $7, validation = $8,
-         error_code = $9, finished_at = now() WHERE invocation_id = $1`,
+         error_code = $9, output_sha256 = $10, finished_at = now() WHERE invocation_id = $1`,
       [s.invocationId, status, costUsd, costSource, JSON.stringify(data.usage), latencyMs, data.output === undefined ? null : JSON.stringify(data.output),
-        JSON.stringify(data.validation ?? {}), data.errorCode ?? null]);
+        JSON.stringify(data.validation ?? {}), data.errorCode ?? null, outputSha]);
     return { costUsd, costSource, latencyMs };
   }
 
@@ -422,7 +498,7 @@ export class AiDispatcher {
       });
       usage = this.addUsage(usage, res.usage);
       this.noteSuccess(s.bundle.provider.provider_id);
-      const fin = await this.finish(s, 'succeeded', { usage, output: { media_type: res.mediaType, bytes: res.bytes.length } });
+      const fin = await this.finish(s, 'succeeded', { usage, output: { media_type: res.mediaType, bytes: res.bytes.length }, outputBytes: res.bytes });
       return { ok: true, output: { bytes: res.bytes, mediaType: res.mediaType }, invocationId: s.invocationId, route: s.ref, usage, ...fin, replayed: false, simulated: s.bundle.provider.kind === 'simulated' };
     } catch (err) {
       const f = this.providerFailure(s, err);

@@ -22,6 +22,7 @@ import { AiDispatcher } from '../../src/ai/dispatcher.ts';
 import { AuditSink } from '../../src/audit/sink.ts';
 import { currentStep, totpAt } from '../../src/platform/auth.ts';
 import { RetentionService } from '../../src/retention/service.ts';
+import { AppError } from '../../src/shared/errors.ts';
 
 const DOMAIN = 'mainspot.test';
 const ENV = 'test';
@@ -242,8 +243,8 @@ test('E14: un job que cae a mitad se reintenta con su lease y reutiliza el paso 
 test('E15/BR-0007: datos reales solo con proveedor verificado; techo duro con reservas concurrentes; proveedor retirado no vuelve', async () => {
   const a = await createTenantWithPlan(t, LIMITS, 'client_aig');
   const route = (await t.pool.query<{ route_id: string; max_cost_usd: string }>(
-    `SELECT r.route_id, r.max_cost_usd FROM ai_route_revision r WHERE r.use_case_id = 'business.insights.generate' AND r.model_id = 'oa:gpt-6-luna' ORDER BY r.version DESC LIMIT 1`)).rows[0];
-  assert.ok(route, 'hay una ruta candidata de OpenAI directo');
+    `SELECT r.route_id, r.max_cost_usd FROM ai_route_revision r WHERE r.use_case_id = 'business.insights.generate' AND r.model_id = 'an:claude-haiku-5-5' AND r.status = 'DRAFT' ORDER BY r.version DESC LIMIT 1`)).rows[0];
+  assert.ok(route, 'hay una ruta candidata de Anthropic directo (DEC-0074)');
   let calls = 0;
   const bodies: string[] = [];
   // Compuerta: la llamada al proveedor queda abierta hasta que la prueba la suelta (sin esperas por reloj).
@@ -253,26 +254,32 @@ test('E15/BR-0007: datos reales solo con proveedor verificado; techo duro con re
   const fake: typeof fetch = async (url, init) => {
     calls++;
     bodies.push(String(init?.body ?? ''));
-    assert.match(String(url), /^https:\/\/api\.openai\.com\/v1\/responses$/);
+    assert.match(String(url), /^https:\/\/api\.anthropic\.com\/v1\/messages$/);
     await gate;
     const text = JSON.stringify({ status: 'abstained', summary: 'Sin datos suficientes.', highlights: [], recommendations: [], abstain_reason: 'pocos días' });
-    return new Response(JSON.stringify({ id: 'resp_test', status: 'completed', model: 'gpt-6-luna', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }], usage: { input_tokens: 100, output_tokens: 50 } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ id: 'msg_test', model: 'claude-haiku-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text }], usage: { input_tokens: 100, output_tokens: 50 } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
-  const prevKey = process.env.OPENAI_API_KEY;
-  process.env.OPENAI_API_KEY = 'fake-key-for-tests';
+  const prevKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'fake-key-for-tests';
   const dispatcher = new AiDispatcher({ pool: t.pool, config: { ...t.handle.config, aiRealProviders: true, aiEnvironment: ENV }, fetchImpl: fake });
   const ctx = (key: string) => ({ requestId: key, idempotencyKey: key, tenantId: a.tenant, actorId: a.userId, actorKind: 'tenant_user' as const, origin: 'test', pinnedRouteId: route.route_id });
   const values = { period: '2026-10-24 a 2026-10-30', metrics: { days_with_activity: 1 } };
-  const verified = (await t.pool.query<{ real_data_basis: string; terms_verified_at: Date }>(`SELECT real_data_basis, terms_verified_at FROM ai_provider WHERE provider_id = 'openai'`)).rows[0]!;
+  const verified = (await t.pool.query<{ real_data_basis: string; terms_verified_at: Date }>(`SELECT real_data_basis, terms_verified_at FROM ai_provider WHERE provider_id = 'anthropic'`)).rows[0]!;
+  // DEC-0074: un pin NO ejecuta borradores (eso exige evaluación real o grant del laboratorio); esta prueba
+  // cubre política y presupuesto, así que la candidata se trata como aprobada y se restaura al final.
+  const draftPinned = await dispatcher.invokeStructured('business.insights.generate', ctx(`k-${randomUUID()}`), values);
+  assert.deepEqual([draftPinned.ok, !draftPinned.ok && draftPinned.code, !draftPinned.ok && draftPinned.reason], [false, 'no_active_route', 'pinned_route_not_deployable']);
+  assert.equal(calls, 0, 'un borrador fijado sin grant ni evaluación no llega al proveedor');
+  await t.pool.query(`UPDATE ai_route_revision SET status = 'APPROVED' WHERE route_id = $1`, [route.route_id]);
   try {
     // Negocio real + proveedor sin cobertura verificada: bloqueado sin llamar (solo ese tratamiento).
-    await t.pool.query(`UPDATE ai_provider SET real_data = 'blocked' WHERE provider_id = 'openai'`);
+    await t.pool.query(`UPDATE ai_provider SET real_data = 'blocked' WHERE provider_id = 'anthropic'`);
     const blocked = await dispatcher.invokeStructured('business.insights.generate', ctx(`k-${randomUUID()}`), values);
     assert.deepEqual([blocked.ok, !blocked.ok && blocked.code, !blocked.ok && blocked.reason], [false, 'blocked_external', 'provider_terms_unverified']);
     assert.equal(calls, 0);
 
     // Con la cobertura verificada (DEC-0071) el negocio real usa el proveedor; nada interno viaja.
-    await t.pool.query(`UPDATE ai_provider SET real_data = 'allowed', real_data_basis = $1, terms_verified_at = $2 WHERE provider_id = 'openai'`, [verified.real_data_basis, verified.terms_verified_at]);
+    await t.pool.query(`UPDATE ai_provider SET real_data = 'allowed', real_data_basis = $1, terms_verified_at = $2 WHERE provider_id = 'anthropic'`, [verified.real_data_basis, verified.terms_verified_at]);
     await t.pool.query(`INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES ($1,'tenant_day',$2,$3,'test','test')`,
       [`bud_${randomUUID()}`, a.tenant, Number(route.max_cost_usd) * 1.5]);
     gate = new Promise<void>((resolve) => { release = resolve; });
@@ -311,13 +318,12 @@ test('E15/BR-0007: datos reales solo con proveedor verificado; techo duro con re
     assert.equal(uncertainCalls, 1);
 
     // Un proveedor deshabilitado (como OpenRouter tras DEC-0069) no vuelve a ningún rollout.
-    await t.pool.query(`UPDATE ai_route_revision SET status = 'APPROVED' WHERE route_id = $1`, [route.route_id]);
-    await t.pool.query(`UPDATE ai_provider SET status = 'disabled' WHERE provider_id = 'openai'`);
+    await t.pool.query(`UPDATE ai_provider SET status = 'disabled' WHERE provider_id = 'anthropic'`);
     await assert.rejects(t.handle.dispatcher.registry.activate('business.insights.generate', 'lab', route.route_id, 'test', 'proveedor retirado'), /deshabilitado/);
   } finally {
-    await t.pool.query(`UPDATE ai_provider SET status = 'active' WHERE provider_id = 'openai'`);
+    await t.pool.query(`UPDATE ai_provider SET status = 'active' WHERE provider_id = 'anthropic'`);
     await t.pool.query(`UPDATE ai_route_revision SET status = 'DRAFT' WHERE route_id = $1 AND status = 'APPROVED'`, [route.route_id]);
-    if (prevKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = prevKey;
+    if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prevKey;
   }
 });
 
@@ -519,8 +525,9 @@ test('DEC-0073: el corte retira Anthropic activo/canary sin promover OpenAI ni a
   const client = await t.pool.connect();
   await client.query('BEGIN');
   try {
+    // Plantilla: la candidata DEC-0074 de diseño inicial (Sonnet 5.5, DRAFT); los clones toman modelo y estado propios.
     const template = (await client.query<{ route_id: string }>(
-      `SELECT route_id FROM ai_route_revision WHERE use_case_id = 'website.initial.design' AND model_id = 'oa:gpt-6.1-sol' LIMIT 1`)).rows[0]!;
+      `SELECT route_id FROM ai_route_revision WHERE use_case_id = 'website.initial.design' AND model_id = 'an:claude-sonnet-5-5' ORDER BY version DESC LIMIT 1`)).rows[0]!;
     let version = Number((await client.query(`SELECT max(version) AS v FROM ai_route_revision WHERE use_case_id = 'website.initial.design'`)).rows[0].v);
     const clone = async (model: string, status: string) => {
       const id = `rte_${randomUUID()}`;
@@ -558,4 +565,40 @@ test('DEC-0073: el corte retira Anthropic activo/canary sin promover OpenAI ni a
     await client.query('ROLLBACK');
     client.release();
   }
+});
+
+test('DEC-0074: fuera de AI_ENVIRONMENT=lab el laboratorio manual está cerrado: ningún id de grant abre un borrador ni degrada a la ruta normal', async () => {
+  const a = await createTenantWithPlan(t, LIMITS, 'client_ailab');
+  const lab = t.handle.dispatcher.lab;
+  assert.equal(lab.enabled, false, 'el entorno de regresión no es el laboratorio');
+  assert.deepEqual(await lab.check({ grantId: 'lbg_cualquiera', tenantId: a.tenant, userId: a.userId }), { ok: false, reason: 'lab_disabled' });
+  await assert.rejects(lab.authorize({ grantId: 'lbg_cualquiera', tenantId: a.tenant, userId: a.userId }), (e: unknown) => e instanceof AppError && e.status === 403 && e.code === 'permission_denied');
+  assert.equal(await lab.authorize({ grantId: null, tenantId: a.tenant, userId: a.userId }), null, 'sin cabecera, ruta normal');
+  assert.deepEqual(await lab.grantsForUser(a.tenant, a.userId), []);
+  assert.equal(await lab.statusFor({ grantId: 'lbg_cualquiera', tenantId: a.tenant, userId: a.userId }), null);
+
+  // Dispatcher: con grant en un entorno sin laboratorio no hay fallback a la ruta activa (bloqueo trazado, sin proveedor).
+  const priorCalls = await countRows(t, `SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1 AND status <> 'blocked'`, [a.tenant]);
+  const res = await t.handle.dispatcher.invokeStructured('business.insights.generate',
+    { requestId: 'lab-closed', idempotencyKey: `lab-closed-${randomUUID()}`, tenantId: a.tenant, actorId: a.userId, actorKind: 'tenant_user', origin: 'test', labGrantId: 'lbg_cualquiera' },
+    { period: '2026-10', metrics: { days_with_activity: 1 } });
+  assert.deepEqual([res.ok, !res.ok && res.code, !res.ok && res.reason], [false, 'lab_grant_invalid', 'lab_disabled']);
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1 AND status <> 'blocked'`, [a.tenant]), priorCalls);
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM ai_invocation WHERE invocation_id = $1 AND status = 'blocked' AND error_code = 'lab_grant_invalid' AND lab_grant_id = 'lbg_cualquiera'`, [res.invocationId]), 1, 'rastro durable del rechazo');
+  // Jobs: un grant con el laboratorio cerrado no crea el job.
+  await assert.rejects(t.handle.aiJobs.enqueue({ tenantId: a.tenant, kind: 'social.compose', idempotencyKey: `lab-closed-${randomUUID()}`, input: { request: 'x' }, useCases: ['social.facebook.post.compose'], createdBy: a.userId, labGrantId: 'lbg_cualquiera' }),
+    (e: unknown) => e instanceof AppError && e.status === 403);
+
+  // Consola: lectura posible (enabled=false, sin rutas autorizables), emisión denegada aun con step-up.
+  const auth = t.handle.platformAuth;
+  const sfx = randomUUID().slice(0, 6);
+  const admin = await auth.createUser({ login: `lab-closed-${sfx}`, displayName: 'Admin', password: 'Plataforma-Admin-2026', roles: ['platform_admin'], grantedBy: 'test' });
+  const step = currentStep();
+  const token = (await platform(null, '/auth/login', 'POST', { login: `lab-closed-${sfx}`, password: 'Plataforma-Admin-2026', code: totpAt(admin.totp_secret, step) })).body.token as string;
+  assert.equal((await platform(token, '/auth/step-up', 'POST', { code: totpAt(admin.totp_secret, step + 1) })).status, 200);
+  const overview = await platform(token, '/ai/lab');
+  assert.deepEqual([overview.status, overview.body.enabled, overview.body.environment, overview.body.routes], [200, false, ENV, []]);
+  const issued = await platform(token, '/ai/lab/grants', 'POST', { tenant_id: a.tenant, user_id: a.userId, route_ids: ['rte_cualquiera'], minutes: 30, reason: 'No debería emitirse fuera del laboratorio' });
+  assert.deepEqual([issued.status, issued.body.error.code], [403, 'permission_denied']);
+  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM ai_lab_grant WHERE tenant_id = $1', [a.tenant]), 0, 'ningún grant para el negocio en el entorno de regresión');
 });

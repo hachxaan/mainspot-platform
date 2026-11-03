@@ -1,5 +1,17 @@
 # Functional Canon changelog
 
+## 0.5.0 — 2026-11-03
+- FR-0012, FR-0019, NFR-0006 y BR-0007 cambian por DEC-0074 (directiva humana externa SRC-0012, no nueva
+  respuesta HDC; sustituye solo la asignación generativa de desarrollo de DEC-0073, que se conserva como historia):
+  Anthropic directo para texto/razonamiento, OpenAI directo solo imágenes, Jev primario; ambos adaptadores sin
+  fallback; OpenRouter deshabilitado. No decide proveedor comercial de producción.
+- Ejecución de rutas DRAFT solo en laboratorio con grant explícito (emisor con step-up, tenant+usuario, allowlist
+  de rutas, caducidad, revocación, auditoría, presupuestos vigentes). Aceptación manual del propietario con
+  evidencia real por invocación y checklist marca DRAFT→TESTED en un registro propio, distinto de la suite;
+  aprobar y activar siguen separados; producción exige suite PASS. El agente no ejecuta pruebas generativas.
+- Se conservan byte a byte QS/ANS-0017, DEC-0066..0073, SRC-0011 y el artefacto aprobado. Presupuestos,
+  permisos y gates no se relajan; créditos declarados por el propietario no se registran como verificados.
+
 ## 0.4.0 — 2026-11-03
 - Solo BR-0007 cambia por DEC-0073 (directiva humana externa SRC-0011, no nueva respuesta HDC):
   OpenAI directo para todo texto/imágenes en DESARROLLO, Jev primario; Anthropic técnico no operativo

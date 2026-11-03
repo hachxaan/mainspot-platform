@@ -6,7 +6,28 @@
 **Ejecución:** SOL MAIN / OMP, GPT-6.1 Sol, documentación canónica funcional → técnica → implementación → QA real.  
 **Estado de este documento:** orden de ejecución para desarrollar toda la capacidad; NO certifica que el E2E ya exista ni concede permisos para alterar cuentas, pagar anuncios o enviar datos reales a proveedores nuevos.
 
-### Configuración vigente de DESARROLLO — DEC-0073 (2026-11-03)
+### Configuración vigente de DESARROLLO — DEC-0074 (2026-11-03, sustituye el apartado DEC-0073 siguiente)
+
+La directiva humana externa SRC-0012 (`.canonflow/sources/SRC-0012-anthropic-manual-lab-directive.md`),
+no otra respuesta QS/ANS ni una nueva sesión HDC, actualiza el plan operativo: **Anthropic directo para todo
+texto generativo y razonamiento; OpenAI directo solo imágenes; TypeSafe/Jev primario semántico**. Los modelos
+de texto OpenAI quedan deshabilitados y sus rutas RETIRED; ambos adaptadores siguen disponibles sin fallback;
+OpenRouter deshabilitado. Los apartados DEC-0073 y QS-0017 que siguen conservan la historia; su asignación de
+texto queda sustituida por DEC-0074.
+
+Canon delta 0.5.0: FR-0012, FR-0019, NFR-0006, BR-0007, ARC-0001, DAT-0001 y OPS-0001. Reutilizar el AI Core
+existente. Candidatas DRAFT: `claude-haiku-5-5` eficiente, `claude-sonnet-5-5` diseño inicial/edición
+compleja/planeación de campañas, `gpt-image-2` imágenes. **El agente no ejecuta evaluaciones generativas,
+suites de calidad ni llamadas API de prueba**: el propietario prueba desde la interfaz bajo un grant de
+laboratorio explícito (`/ingenieria#/laboratorio` → `/panel#/ia/laboratorio`), acepta manualmente con evidencia
+por invocación y checklist (DRAFT → TESTED por revisión manual, distinto de la suite) y después aprueba y
+activa en pasos separados, solo en `lab`. Procedimiento: `.canonflow/increments/INC-0008.md`.
+Créditos Anthropic (USD 100 promocionales) y OpenAI: declarados por el propietario, no verificados.
+USD 25 generativos acumulados y TypeSafe USD 1/día sin cambios; claves API propias, nunca de consumidor/OMP.
+No es una elección comercial irreversible de producción. La evidencia `openai-development-*` es historia de
+DEC-0073 y no certifica esta configuración.
+
+### Configuración anterior de DESARROLLO — DEC-0073 (2026-11-03, historia; sustituida por DEC-0074)
 
 La directiva humana externa SRC-0011 (`.canonflow/sources/SRC-0011-openai-development-directive.md`),
 no otra respuesta QS/ANS ni una nueva sesión HDC, actualiza el plan operativo siguiente:

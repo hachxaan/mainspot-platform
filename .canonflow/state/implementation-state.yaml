@@ -35,14 +35,16 @@ increments:
   risk_tier: 4
   evidence: evidence/ai-core/; .canonflow/skill-runs/RUN-0023.skill-report.yaml
   note: >-
-    AI Core existente (878f7de, cf70bc1); canon DECIDED con delta 0.4.0 acotado por DEC-0073/SRC-0011.
-    DESARROLLO selecciona OpenAI directo para texto e imágenes y TypeSafe semántico primario.
-    Anthropic conserva adaptador/catálogo sin rutas activas/canary ni fallback; OpenRouter deshabilitado.
-    Luna/Sol/gpt-image-2 descubiertos por API no acreditan generación/calidad. Rutas DRAFT hasta suites PASS.
-    Evaluaciones actuales: 20 suites/50 casos OpenAI rechazados por saldo/cuota; ninguna activación.
-    Navegador del subconjunto y TypeSafe real primary verificados; pruebas locales pasan (169/164/5/4).
-    Evidencia: evidence/ai-core/openai-development-verification-2026-11-03.json.
-    Plan y criterios de desbloqueo en .canonflow/increments/INC-0008.md.
+    AI Core existente (878f7de, cf70bc1, 1f1c7da); canon DECIDED con delta 0.5.0 acotado por DEC-0074/SRC-0012
+    (sustituye solo la asignación generativa de desarrollo de DEC-0073/SRC-0011, conservados como historia).
+    DESARROLLO: Anthropic directo texto/razonamiento (Haiku 5.5 eficiente, Sonnet 5.5 complejo), OpenAI directo
+    solo imágenes gpt-image-2, TypeSafe semántico primario; ambos adaptadores sin fallback; OpenRouter deshabilitado.
+    Rutas generativas DRAFT: se prueban en runtime por el propietario desde la interfaz bajo grant de laboratorio
+    (migración 0031) y se aceptan manualmente con evidencia por invocación; el agente no ejecuta evaluaciones
+    generativas, suites de calidad ni llamadas API de prueba. Ninguna ruta generativa activada ni TESTED todavía.
+    Créditos Anthropic/OpenAI declarados por el propietario, no verificados; presupuestos internos sin cambio.
+    Evidencia histórica DEC-0073: evidence/ai-core/openai-development-verification-2026-11-03.json (no certifica
+    la configuración actual). Plan, instrucciones de uso y criterios en .canonflow/increments/INC-0008.md.
 note: 'Implementado antes del onboarding canonflow (SRC-0007). Estado IMPLEMENTED
   (no DONE): auditoría independiente formal del método pendiente; remediación PR-01..06
   registrada como revisión interna.'

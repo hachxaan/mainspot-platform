@@ -1,0 +1,97 @@
+{
+  "generated_at": "2026-11-03",
+  "decision": "DEC-0074",
+  "source": "SRC-0012",
+  "base_commit": "1f1c7da773cf57b5a0081356e4f3ab3eaeabe065",
+  "scope": "Verificación técnica sin gasto del corte DEC-0074: distribución de proveedores y laboratorio manual. No acredita calidad ni generación real.",
+  "paid_calls_by_agent": 0,
+  "offline_controls": {
+    "api_keys_in_test_process": false,
+    "external_http": "bloqueado por guardia temporal (solo loopback y app.mainspot.local.io para el E2E de interfaz)"
+  },
+  "local_tests": {
+    "typecheck": "pass",
+    "unit": {
+      "tests": 171,
+      "fail": 0
+    },
+    "integration": {
+      "tests": 174,
+      "fail": 0
+    },
+    "smoke": {
+      "tests": 5,
+      "fail": 0
+    },
+    "e2e": {
+      "tests": 4,
+      "fail": 0,
+      "note": "ui-e2e-03 falló una vez en el paso 6 (aserción probabilística previa sobre id simulado); repetición 42/42 PASS"
+    }
+  },
+  "dev_database_after_restart": {
+    "text_routes": {
+      "an:claude-haiku-5-5": 8,
+      "an:claude-sonnet-5-5": 3,
+      "status": "DRAFT"
+    },
+    "image_routes": {
+      "oa:gpt-image-2": 2,
+      "status": "DRAFT"
+    },
+    "classification_routes_active_lab": 3,
+    "openai_text_models": "disabled",
+    "openai_text_live_routes": 0,
+    "openrouter": "disabled",
+    "generative_routes_active": 0
+  },
+  "spend_and_traffic": {
+    "before": {
+      "invocations": 444,
+      "evaluations": 84,
+      "pending_jobs": 0,
+      "generative_spent": "0.096726",
+      "last_invocation": "2026-11-03 08:14:39.220889+00"
+    },
+    "after": {
+      "invocations": 444,
+      "evaluations": 84,
+      "pending_jobs": 0,
+      "generative_spent": "0.096726",
+      "last_invocation": "2026-11-03 08:14:39.220889+00"
+    }
+  },
+  "browser_smoke": {
+    "origin": "https://app.mainspot.local.io",
+    "tls": "verificado (sin ignore_https_errors)",
+    "grant": {
+      "id": "lbg_a73d7092-aead-4614-911e-16b94ba9af09",
+      "tenant": "client_a (fixture)",
+      "routes": 13,
+      "minutes": 15,
+      "revoked": true
+    },
+    "panel_screens_with_lab_route": [
+      "#/ia",
+      "#/ia/pagina",
+      "#/ia/publicar",
+      "#/ia/campanas",
+      "#/ia/resumen",
+      "#/ia/calendario"
+    ],
+    "after_revoke": "panel bloqueado sin ruta normal; salida explícita limpia la selección",
+    "audit": [
+      "audit_event ai.lab.grant_issued",
+      "audit_event ai.lab.grant_revoked",
+      "platform_audit_event ai.lab.grant",
+      "platform_audit_event ai.lab.revoke"
+    ],
+    "invocations_under_grant": 0,
+    "screenshots": "mostradas en la sesión de verificación; no se guardaron en el repositorio"
+  },
+  "not_verified": [
+    "créditos Anthropic/OpenAI declarados por el propietario",
+    "calidad o disponibilidad de generación real",
+    "evidencia manual real y aceptación (pendientes del propietario)"
+  ]
+}
