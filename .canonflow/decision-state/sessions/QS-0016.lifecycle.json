@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "question_session_id": "QS-0016",
+  "question_sha256": "sha256:2100a49bcc5134547074da7ddfdeb4cacb1034c33a83b44beb15e8eccb0ff85c",
+  "events": [
+    {
+      "state": "INGESTED",
+      "at": "2026-11-03T05:39:57Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0023",
+      "reason": "ANS-0016 closed without effect: superseded by ANS-0017 (RUN-0023)",
+      "answer_session_id": "ANS-0016",
+      "records": [],
+      "outcomes": [
+        {
+          "question_id": "Q-AICORE-CANON",
+          "no_material_change_reason": "ANS-0016 sin efecto normativo: el propietario declaró erróneas estas respuestas y las sustituyó por ANS-0017 (QS-0017, supersedes QS-0016); ANS-0017 Q-NOTES §6 (DEC-0070): «QS-0017 sustituye a QS-0016. ANS-0016 se conserva únicamente como evidencia histórica, sin efecto normativo.»"
+        },
+        {
+          "question_id": "Q-JEV-PRIMARY-SCOPE",
+          "no_material_change_reason": "ANS-0016 sin efecto normativo: el propietario declaró erróneas estas respuestas y las sustituyó por ANS-0017 (QS-0017, supersedes QS-0016); ANS-0017 Q-NOTES §6 (DEC-0070): «QS-0017 sustituye a QS-0016. ANS-0016 se conserva únicamente como evidencia histórica, sin efecto normativo.»"
+        },
+        {
+          "question_id": "Q-JEV-REAL-DATA",
+          "no_material_change_reason": "ANS-0016 sin efecto normativo: el propietario declaró erróneas estas respuestas y las sustituyó por ANS-0017 (QS-0017, supersedes QS-0016); ANS-0017 Q-NOTES §6 (DEC-0070): «QS-0017 sustituye a QS-0016. ANS-0016 se conserva únicamente como evidencia histórica, sin efecto normativo.»"
+        },
+        {
+          "question_id": "Q-AI-BUDGET",
+          "no_material_change_reason": "ANS-0016 sin efecto normativo: el propietario declaró erróneas estas respuestas y las sustituyó por ANS-0017 (QS-0017, supersedes QS-0016); ANS-0017 Q-NOTES §6 (DEC-0070): «QS-0017 sustituye a QS-0016. ANS-0016 se conserva únicamente como evidencia histórica, sin efecto normativo.»"
+        },
+        {
+          "question_id": "Q-NOTES",
+          "no_material_change_reason": "ANS-0016 sin efecto normativo: el propietario declaró erróneas estas respuestas y las sustituyó por ANS-0017 (QS-0017, supersedes QS-0016); ANS-0017 Q-NOTES §6 (DEC-0070): «QS-0017 sustituye a QS-0016. ANS-0016 se conserva únicamente como evidencia histórica, sin efecto normativo.»"
+        }
+      ],
+      "links": [
+        {
+          "from": "ANS-0016",
+          "to": "QS-0016",
+          "type": "DERIVES_FROM",
+          "by": "Carlos Pinacho",
+          "at": "2026-11-03T04:56:44Z"
+        }
+      ]
+    },
+    {
+      "state": "ARCHIVED",
+      "at": "2026-11-03T05:39:58Z",
+      "actor": "omp agent session (anthropic/claude-opus-5-5) RUN-0023",
+      "reason": "ingestion complete (RUN-0023): ANS-0016 without normative effect, superseded by QS-0017/ANS-0017; session closed"
+    }
+  ]
+}

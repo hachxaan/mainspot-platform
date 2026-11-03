@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0069",
+  "kind": "decision",
+  "title": "Política de proveedores del AI Core: TypeSafe directo (Jev), Anthropic directo prioritario para texto, OpenAI directo gpt-image-2 para imágenes; OpenRouter fuera de nuevas ejecuciones y sin fallback",
+  "decision": "Respuesta a Q-NOTES «Notas para el registro», §3 (texto íntegro en DEC-0072): TypeSafe directo para clasificación semántica (Jev); Anthropic directo como proveedor prioritario para conversación, razonamiento, redacción, diseño y edición web, publicaciones, respuestas, campañas y demás tareas generativas de texto; OpenAI directo para imágenes con el modelo `gpt-image-2` (en OMP como `openai-codex/gpt-image-2`), comprobando mecanismo de integración y condiciones de acceso antes de incorporarlo como servicio del backend; la disponibilidad de un modelo en OMP no equivale a credenciales API de producción; OpenRouter no se usa en nuevas ejecuciones, ni como intermediario ni como fallback; se conservan los resultados históricos sin mantener OpenRouter como ruta activa; cada caso de uso conserva configuración independiente de modelo, proveedor, prompt, parámetros, presupuesto y evaluación; si Anthropic no alcanza la calidad o presenta incompatibilidades técnicas se pueden evaluar otros proveedores directos.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-11-03T05:27:00Z",
+  "source": "QS-0017/ANS-0017 Q-NOTES",
+  "source_ref": {
+    "question_session_id": "QS-0017",
+    "answer_session_id": "ANS-0017",
+    "question_ids": [
+      "Q-NOTES"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [],
+  "affected_items": [
+    "ARC-0001",
+    "OPS-0001",
+    "FR-0012",
+    "FR-0019",
+    "src/ai/providers/",
+    "src/ai/catalog.ts",
+    "docs/architecture/ai-core.md"
+  ],
+  "expiry": "",
+  "comment": ""
+}

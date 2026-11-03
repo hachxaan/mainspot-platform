@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0071",
+  "kind": "decision",
+  "title": "Anthropic (texto) y OpenAI (imágenes) pueden procesar datos de negocios reales con las mismas condiciones que TypeSafe en DEC-0067",
+  "decision": "Decisión del propietario en la conversación con el agente del 2026-11-03, al resolver la cuestión abierta que dejaba ANS-0017: §2 autoriza datos reales solo para TypeSafe/Jev y §3 asigna Anthropic y OpenAI, mientras BR-0007 bloqueaba datos de negocios reales hacia proveedores generativos. Pregunta del agente: «¿Pueden Anthropic (texto) y OpenAI (imágenes) recibir datos de negocios reales (marca, instrucciones del dueño y texto de comentarios y reseñas de sus clientes)?». Respuesta literal: «Sí, con las condiciones de TypeSafe». Condiciones (las de DEC-0067): verificar una vez los términos comerciales y el acuerdo de tratamiento de datos de la API de cada proveedor (uso para entrenamiento, retención, subencargados); minimización, aislamiento por negocio, acceso autorizado, protección de credenciales, trazabilidad y retención; si algo no queda cubierto se limita solo ese tratamiento. Se registra en esta ingesta por instrucción del propietario de no abrir otra sesión HDC.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-11-03T05:27:00Z",
+  "source": "QS-0017/ANS-0017 Q-NOTES",
+  "source_ref": {
+    "question_session_id": "QS-0017",
+    "answer_session_id": "ANS-0017",
+    "question_ids": [
+      "Q-NOTES"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [],
+  "affected_items": [
+    "DEC-0067",
+    "DEC-0069",
+    "BR-0007",
+    "SEC-0001",
+    "src/ai/governance.ts"
+  ],
+  "expiry": "",
+  "comment": "Respuesta del propietario en la conversación (2026-11-03): «Sí, con las condiciones de TypeSafe»."
+}

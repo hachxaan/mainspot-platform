@@ -1,0 +1,33 @@
+# Immutable skill run record (method/21). Validate: schemas/skill-run.schema.yaml
+schema: skill-run/v1
+run_id: RUN-0023
+skill_id: canonflow-human-decision-console
+mode: ingest
+executor: "omp agent session (anthropic/claude-opus-5-5) — agent, never a decision owner"
+objective: >-
+  Ingest ANS-0017 (QS-0017, answered by Carlos Pinacho at 2026-11-03T05:27:00Z) as APR-0003 (canon AI Core 0.2.0)
+  and DEC-0066..DEC-0072 (Jev scope, real data to TypeSafe superseding DEC-0019, budget, provider policy, governance,
+  real data to Anthropic/OpenAI decided in the agent conversation, literal notes), after verifying that every answer,
+  the approval comment and the notes are stored whole; close ANS-0016 without normative effect (QS-0017 supersedes
+  QS-0016); archive both sessions. Service stopped during the window (HDC-0006/HDC-0007).
+repo: git@github-hachxaan:hachxaan/mainspot-platform.git
+work_branch: feat/canonflow-implementation
+base_commit: 73271a2
+inputs:
+  - ".canonflow/decision-sessions/answered/QS-0017.answers.json (ANS-0017; local only, ignored)"
+  - ".canonflow/decision-sessions/answered/QS-0016.answers.json (ANS-0016; local only, ignored)"
+  - ".canonflow/decision-sessions/pending/QS-0017.questions.json (sha256 cd21847b1408243406d86b8b63bbed85606998a08cce2be00c5d8811c20949f5)"
+  - ".canonflow/decision-sessions/pending/QS-0016.questions.json (sha256 2100a49bcc5134547074da7ddfdeb4cacb1034c33a83b44beb15e8eccb0ff85c)"
+  - "Owner answer in the agent conversation 2026-11-03 (real data to Anthropic/OpenAI): «Sí, con las condiciones de TypeSafe»"
+expected_outputs:
+  - .canonflow/decision-records/APR-0003, DEC-0066..DEC-0072 (.json + .md)
+  - .canonflow/decision-sessions/archived/QS-0016.questions.json
+  - .canonflow/decision-sessions/archived/QS-0017.questions.json
+  - .canonflow/decision-state/sessions/QS-0016.lifecycle.json
+  - .canonflow/decision-state/sessions/QS-0017.lifecycle.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow/skill-runs/RUN-0023.skill-report.yaml
+created_at: "2026-11-03T05:30:00Z"

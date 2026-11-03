@@ -1,0 +1,70 @@
+# Immutable skill run report (method/21). Validate: schemas/skill-report.schema.yaml
+schema: skill-report/v1
+report_id: SRP-0023
+run_id: RUN-0023
+skill_id: canonflow-human-decision-console
+verdict: PASS_WITH_LIMITATIONS
+scope: >-
+  Ingestion of ANS-0017, closure of ANS-0016 without effect and archival of QS-0016/QS-0017. Canon update and
+  implementation are separate changes.
+created_at: "2026-11-03T05:45:00Z"
+human_summary: |
+  ANS-0017 (Carlos Pinacho, 2026-11-03T05:27:00Z) verified whole and ingested:
+  APR-0003 — canon AI Core 0.2.0 approved (artifact bound by sha256); the owner's approval comment is transcribed literally.
+  DEC-0066 — Jev primary semantic classifier for every text process, quality gates per capability and version.
+  DEC-0067 — Jev may process real data in development and production after a one-time contractual coverage check; SUPERSEDES DEC-0019.
+  DEC-0068 — generative AI lab cap USD 25 cumulative including history; no monthly budget, no ad spend; TypeSafe stays under DEC-0032.
+  DEC-0069 — providers: TypeSafe direct (Jev), Anthropic direct for text, OpenAI direct gpt-image-2 for images; no OpenRouter, no fallback.
+  DEC-0070 — proportional governance, escalate only material exceptions; Meta/Google/ads keep their own authorizations.
+  DEC-0071 — Anthropic and OpenAI may process real business data under the DEC-0067 conditions (owner answer in the agent conversation).
+  DEC-0072 — Q-NOTES transcribed literally.
+  ANS-0016 closed with a no-material-change outcome per question; QS-0017 SUPERSEDES QS-0016.
+claims:
+  - class: VERIFIED
+    statement: "ANS-0017 validates (answer-session v2), binds QS-0017 by question_sha256, answers every question once; payload_sha256 recomputed with the HDC normalizer equals the stored one; approval comment 1230 chars (sha256 c4c2670c…) and notes 5961 chars with sections 1-6 (sha256 abb85948…) end with their final sentences."
+    evidence: [.canonflow/skill-runs/RUN-0023/evidence/EV-0001-answers-integrity.json]
+    refs: [ANS-0017, QS-0017]
+  - class: VERIFIED
+    statement: "APR-0003 and DEC-0066..DEC-0072 validate as decision-record v2; APR-0003.artifact_binding equals the question binding; APR-0003.comment and DEC-0072.comment are byte-equal to the ANS-0017 texts on disk and as served by the HDC API; links validate."
+    evidence: [.canonflow/skill-runs/RUN-0023/evidence/publish-ingestion-QS-0017.input.json, .canonflow/skill-runs/RUN-0023/evidence/EV-0005-hdc-live-sessions.json]
+    refs: [APR-0003, DEC-0066, DEC-0067, DEC-0068, DEC-0069, DEC-0070, DEC-0071, DEC-0072]
+  - class: VERIFIED
+    statement: "publish-ingestion (QS-0017, QS-0016) and mark-session ARCHIVED (both) returned 0 with the service stopped; both QS moved to archived/ with unchanged sha256; counters qs 17 · ans 17 · dec 72 · apr 3; pending_human [QS-0015]; writes_enabled=true (generation 108), HTTPS 200; live API QS-0016/QS-0017 ARCHIVED."
+    evidence: [.canonflow/skill-runs/RUN-0023/evidence/EV-0002-publish-ingestion-and-archive.txt, .canonflow/skill-runs/RUN-0023/evidence/EV-0003-compat-views.txt, .canonflow/skill-runs/RUN-0023/evidence/EV-0004-ready-after-restart.json, .canonflow/skill-runs/RUN-0023/evidence/EV-0005-hdc-live-sessions.json]
+    refs: [QS-0016, QS-0017]
+findings:
+  - id: FND-0001
+    severity: NOTE
+    description: >-
+      DEC-0071 does not come from an ANS: it records the owner's answer to a question the agent raised in the
+      conversation (ANS-0017 authorized real data only for TypeSafe while assigning text and images to Anthropic and
+      OpenAI). It is published within this ingestion, with source_ref QS-0017/ANS-0017 Q-NOTES and the literal answer
+      in comment, because the owner instructed not to open another HDC session.
+  - id: FND-0002
+    severity: NOTE
+    description: >-
+      DECLARED_STATE_CONFLICT WARN persists for v2 sessions (HDC-0008) until the pin is updated; the archival needed a
+      second compatibility-view pass after moving the files (recorded in HDC-0006).
+limitations:
+  - "The answer files stay local (answered/ is ignored)."
+evidence:
+  - .canonflow/skill-runs/RUN-0023/evidence/EV-0001-answers-integrity.json
+  - .canonflow/skill-runs/RUN-0023/evidence/EV-0002-publish-ingestion-and-archive.txt
+  - .canonflow/skill-runs/RUN-0023/evidence/EV-0003-compat-views.txt
+  - .canonflow/skill-runs/RUN-0023/evidence/EV-0004-ready-after-restart.json
+  - .canonflow/skill-runs/RUN-0023/evidence/EV-0005-hdc-live-sessions.json
+outputs:
+  - .canonflow/decision-records/APR-0003, DEC-0066..DEC-0072 (.json + .md)
+  - .canonflow/decision-sessions/archived/QS-0016.questions.json
+  - .canonflow/decision-sessions/archived/QS-0017.questions.json
+  - .canonflow/decision-state/sessions/QS-0016.lifecycle.json
+  - .canonflow/decision-state/sessions/QS-0017.lifecycle.json
+  - .canonflow/decision-state/index.json
+  - .canonflow/decision-state/latest.json
+  - .canonflow/traceability/links.yaml
+  - .canonflow/state/method-state.yaml (pending_human)
+  - .canonflow-updates/HDC-0006-vistas-compatibilidad-tras-ingestion.md (reapplication record)
+gates_checked:
+  - {gate: G-REPO, status: PASS, evidence: "tree at 73271a2 carried only the HDC submission's compatibility-view writes for ANS-0017"}
+blockers: []
+next_pointer: "Canon AI Core to APPROVED with DEC-0066..DEC-0071; contractual coverage check (DEC-0067, DEC-0071); direct providers (DEC-0069)"

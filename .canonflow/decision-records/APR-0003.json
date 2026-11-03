@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "record_id": "APR-0003",
+  "kind": "approval",
+  "title": "Canon MainSpot AI Core 0.2.0 aprobado como base de implementación y evolución del producto",
+  "decision": "Respuesta a Q-AICORE-CANON «¿Apruebas el canon AI Core 0.2.0 (FR-0012..FR-0019, NFR-0006..NFR-0008, BR-0007, ARC-0001, DAT-0001, SEC-0001, OPS-0001) como base de implementación?»: `approve`, ligada al artefacto exacto AI-CORE-CANON-PROPOSAL 0.2.0 (docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-CANON-PROPOSAL.md, sha256 f129b92b2b6e7926babd6790d01e5b75dbdb4cea7e0d374405c6d60c3642f6a7). El comentario del propietario (transcrito íntegro en comment) forma parte de la aprobación: implementación orientada desde desarrollo a comportamiento equivalente a producción con proveedores reales y E2E; gobernanza proporcional al riesgo, sin aprobaciones humanas redundantes; las operaciones dentro de autorizaciones vigentes se ejecutan de forma autónoma con controles técnicos, presupuestos y trazabilidad; las decisiones de datos reales, proveedores y presupuesto de esta sesión (DEC-0067, DEC-0068, DEC-0069, DEC-0071) complementan la aprobación y se incorporan al canon sin alterar retroactivamente registros existentes.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-11-03T05:27:00Z",
+  "source": "QS-0017/ANS-0017 Q-AICORE-CANON",
+  "source_ref": {
+    "question_session_id": "QS-0017",
+    "answer_session_id": "ANS-0017",
+    "question_ids": [
+      "Q-AICORE-CANON"
+    ]
+  },
+  "artifact_ref": "AI-CORE-CANON-PROPOSAL 0.2.0",
+  "options_rejected": [],
+  "affected_items": [
+    "FR-0012",
+    "FR-0013",
+    "FR-0014",
+    "FR-0015",
+    "FR-0016",
+    "FR-0017",
+    "FR-0018",
+    "FR-0019",
+    "NFR-0006",
+    "NFR-0007",
+    "NFR-0008",
+    "BR-0007",
+    "ARC-0001",
+    "DAT-0001",
+    "SEC-0001",
+    "OPS-0001",
+    "docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-CANON-PROPOSAL.md"
+  ],
+  "expiry": "",
+  "comment": "Apruebo el canon funcional y técnico MainSpot AI Core 0.2.0 como base de implementación y evolución del producto.\n\nLa aprobación comprende la arquitectura de un asistente unificado, Jev como clasificador semántico primario, catálogo granular de capacidades, prompts y rutas versionadas, consolas administrativas, generación de contenido, diseño web, gestión de redes sociales, atención automatizada y controles de gobernanza.\n\nLa implementación debe orientarse desde desarrollo a un comportamiento equivalente al de producción, utilizando proveedores reales y pruebas E2E.\n\nLa gobernanza debe ser proporcional al riesgo y no introducir aprobaciones humanas redundantes. Las operaciones comprendidas en autorizaciones vigentes deben ejecutarse autónomamente, con controles técnicos, presupuestos y trazabilidad.\n\nLas decisiones específicas de esta sesión sobre tratamiento de datos reales, proveedores y presupuesto complementan esta aprobación y deberán incorporarse mediante la actualización canónica correspondiente, sin alterar retroactivamente los registros existentes.\n\nAutorizo continuar la implementación integral y las mejoras técnicas ordinarias sin solicitar nuevas aprobaciones cuando estén dentro del alcance aprobado.",
+  "artifact_binding": {
+    "artifact_ref": "AI-CORE-CANON-PROPOSAL 0.2.0",
+    "path": "docs/handoffs/mainspot-ai-core-2026-10-30/AI-CORE-CANON-PROPOSAL.md",
+    "sha256": "f129b92b2b6e7926babd6790d01e5b75dbdb4cea7e0d374405c6d60c3642f6a7"
+  }
+}

@@ -246,6 +246,26 @@ Estado vigente, actualizado el 2026-10-24 tras RUN-0016:
     contadores `qs 14 · ans 15 · dec 65 · apr 2`. Tras arrancar,
     `writes_enabled: true` (loopback y HTTPS, `generation` 91).
   - **Evidencia:** `.canonflow/skill-runs/RUN-0016/evidence/EV-0001..EV-0005`.
+- **Reaplicaciones en `RUN-0020`, `RUN-0021` y `RUN-0022`** (publicación de
+  QS-0015, QS-0016 y QS-0017; esta última es la corrección de QS-0016 con
+  `supersedes_question_session_id`): `publish-session` con el envoltorio de
+  HDC-0009 y script general con `--run`, con el servicio detenido. Resultado
+  tras `RUN-0022`: QS-0015 y QS-0017 `PENDING`, QS-0016 `ANSWERED`, contadores
+  `qs 17 · ans 16 · dec 65 · apr 2`. Evidencia en `RUN-0020..0022/evidence/`.
+- **Reaplicación en `RUN-0023`** (ingestión de ANS-0017 y cierre sin efecto de
+  ANS-0016), entre 05:39:56Z y 05:40:35Z (2026-11-03), con el servicio detenido:
+  1. `publish-ingestion` de QS-0017 (APR-0003, DEC-0066..DEC-0072) y de QS-0016
+     (sin registros: una `no_material_change_reason` por pregunta) y
+     `mark-session ARCHIVED` de ambas.
+  2. Script general con `--run RUN-0023` y `pending_human` sin QS-0016/QS-0017.
+  3. `mv` de ambas a `archived/` (bytes y hashes iguales) y script general otra
+     vez: el primer pase dejó `QS_FOLDER_MISMATCH` porque la mudanza va después
+     del archivado.
+  4. Arranque del servicio.
+  - **Resultado:** QS-0016 y QS-0017 `ARCHIVED`, QS-0015 `PENDING`, `latest` =
+    QS-0017 `ARCHIVED`, contadores `qs 17 · ans 17 · dec 72 · apr 3`. Tras
+    arrancar, `writes_enabled: true` (`generation` 108), HTTPS 200.
+  - **Evidencia:** `.canonflow/skill-runs/RUN-0023/evidence/EV-0001..EV-0005`.
 - `index.json` registra en `reconstructed.by` la ejecución que lo regeneró (`--run`).
 - La API HTTPS muestra los mismos estados.
 - Persisten catorce `DECLARED_STATE_CONFLICT` WARN (QS-0001..0014).

@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0066",
+  "kind": "decision",
+  "title": "Jev (TypeSafe) es el clasificador semántico primario de todo mensaje y evento de texto de MainSpot, con evaluación por capacidad y versión",
+  "decision": "Respuesta a Q-JEV-PRIMARY-SCOPE «¿Qué alcance tiene Jev como clasificador semántico primario?»: todo_texto_con_gate — Primario para todo mensaje y evento de texto (dueño, comentarios, reseñas, alcance de edición), con gate de evaluación por pregunta y solo para negocios autorizados en datos. Precisiones de Q-NOTES §1: alcance que incluye intención, sentimiento, categoría, urgencia, riesgo, clasificación de comentarios y reseñas y comprensión de solicitudes de edición web, entre otros casos compatibles; Jev determina la interpretación semántica y el backend conserva la autoridad sobre identidad, permisos, validaciones, aprobaciones y ejecución; los controles deterministas complementan seguridad y autorización sin sustituir a Jev; las evaluaciones de calidad son por capacidad y versión, no aprobaciones humanas por invocación. Amplía el alcance de APR-0002; el gate de DEC-0031/DEC-0033 sigue rigiendo la intención del dueño.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-11-03T05:27:00Z",
+  "source": "QS-0017/ANS-0017 Q-JEV-PRIMARY-SCOPE Q-NOTES",
+  "source_ref": {
+    "question_session_id": "QS-0017",
+    "answer_session_id": "ANS-0017",
+    "question_ids": [
+      "Q-JEV-PRIMARY-SCOPE",
+      "Q-NOTES"
+    ]
+  },
+  "artifact_ref": "",
+  "options_rejected": [
+    "solo_intencion_dueno — Mantener el alcance de APR-0002: solo intención/capacidad de mensajes del dueño",
+    "otro_en_notas — Otro alcance (descríbelo en las notas)"
+  ],
+  "affected_items": [
+    "APR-0002",
+    "DEC-0031",
+    "DEC-0033",
+    "FR-0016",
+    "ARC-0001",
+    "src/engagement/ai-semantics.ts",
+    "src/conversation/jev-classifier.ts"
+  ],
+  "expiry": "",
+  "comment": ""
+}

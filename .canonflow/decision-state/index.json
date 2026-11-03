@@ -216,7 +216,7 @@
     },
     {
       "question_session_id": "QS-0016",
-      "state": "ANSWERED",
+      "state": "ARCHIVED",
       "generated_at": "2026-10-30T14:32:11Z",
       "records": [],
       "answered_at": "2026-11-03T04:56:44Z",
@@ -225,23 +225,34 @@
     },
     {
       "question_session_id": "QS-0017",
-      "state": "PENDING",
+      "state": "ARCHIVED",
       "generated_at": "2026-11-03T05:03:37Z",
-      "records": [],
-      "session_label": "Corrección de QS-0016: AI Core, Jev primario, datos reales y presupuesto de IA"
+      "records": [
+        "APR-0003",
+        "DEC-0066",
+        "DEC-0067",
+        "DEC-0068",
+        "DEC-0069",
+        "DEC-0070",
+        "DEC-0071",
+        "DEC-0072"
+      ],
+      "answered_at": "2026-11-03T05:27:00Z",
+      "session_label": "Corrección de QS-0016: AI Core, Jev primario, datos reales y presupuesto de IA",
+      "answer_session_id": "ANS-0017"
     }
   ],
   "counters": {
     "qs": 17,
-    "ans": 16,
-    "dec": 65,
-    "apr": 2,
+    "ans": 17,
+    "dec": 72,
+    "apr": 3,
     "rsk": 0
   },
   "latest": "QS-0017",
   "reconstructed": {
-    "at": "2026-11-03T05:05:00Z",
-    "by": "RUN-0022 (canonflow-human-decision-console)",
+    "at": "2026-11-03T05:40:27Z",
+    "by": "RUN-0023 (canonflow-human-decision-console)",
     "source": "artifacts+lifecycle+legacy-snapshots; state = evidence-derived effective state",
     "preserved": true
   }
