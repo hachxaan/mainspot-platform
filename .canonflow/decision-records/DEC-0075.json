@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "record_id": "DEC-0075",
+  "kind": "decision",
+  "title": "Catálogo de planes versionado: mantenimiento en Engineering con permisos explícitos, publicación como configuración operativa sin aprobación comercial, suscripciones fijadas a su revisión, mecanismo periódico sin activar y asignación exclusiva de Administration",
+  "decision": "Las respuestas explícitas del propietario en SRC-0013 a siete preguntas del agente deciden, para el catálogo de planes versionado de MainSpot: (1) authority, «Ingeniería con permisos explícitos»: el catálogo se mantiene en la pestaña Planes de la Engineering Console (/ingenieria) con permisos de plataforma explícitos: plans.read para ai_engineer, platform_admin y platform_support; plans.edit (crear, clonar, editar borradores y confirmar valores) para ai_engineer y platform_admin; plans.publish (publicar, rollback y habilitar/deshabilitar, con step-up y motivo) para ai_engineer y platform_admin; asignar planes a negocios sigue solo en MainSpot Administration (/plataforma, platform_admin); esto modifica la matriz de roles de BR-0007. (2) publish_meaning, «Configuración operativa»: publicar una revisión aplica sus límites al enforcement, pero no aprueba nombres, precios ni paquetes comerciales; cada plan muestra «Sin aprobación comercial» y sigue sin precio ni cobro. (3) revision_policy, «Fijadas a su revisión»: cada suscripción queda fijada a la revisión con la que se asignó y publicar no cambia a los clientes vigentes; migrarlas es una acción explícita con vista previa de afectados, step-up y motivo; los tenants actuales quedan en la revisión 1, con los valores actuales. (4) periodic, «Mecanismo sin activar»: se implementa y prueba el mecanismo de cuota periódica (ciclo mensual anclado al inicio de la suscripción, UTC, reserva/commit/liberación, sin rollover), pero ningún plan real lo usa hasta HDC-MSP-06; las seis capacidades conservan su semántica actual (acumulada). (5) self_assign, «Retirarla»: la ruta del negocio POST /api/backoffice/subscriptions/assign responde 403; asignar queda exclusivo de platform_admin en Administration con step-up, motivo e historial; el panel del negocio conserva plan y consumo en solo lectura. (6) scope, selección múltiple sin ninguna opción seleccionada: ningún parámetro nuevo entra en este incremento. (7) registration, «SRC + DEC»: se registra como directiva explícita del propietario (SRC-0013 literal con sha256, esta DEC-0075 y deltas de BR-0007, FR-0010, FR-0018 y FR-0019) con el precedente de DEC-0073/DEC-0074. Consecuencia de las respuestas 1, 3 y 5: migrar suscripciones cambia la revisión asignada a un negocio, por lo que solo la ejecuta platform_admin, igual que la asignación. No decide: precios, nombres comerciales, paquetes publicados ni límites comerciales comprometidos con clientes (Q-004 sigue pospuesta en lo comercial por DEC-0010; los límites publicados son configuración operativa); ciclo, rollover, excedentes, cambios de plan ni políticas de consumo periódico de los planes reales (reservados a HDC-MSP-06 por DEC-0010; la forma del mecanismo periódico no los fija); Trial (DEC-0018 sigue vigente, sin cambios y pendiente de implementación); el significado ni el enforcement de la capacidad agents (diferidos por DEC-0006 y DEC-0017); ni fija valor numérico nuevo alguno.",
+  "owner": "Carlos Pinacho",
+  "decided_at": "2026-11-04T19:04:34Z",
+  "source": "SRC-0013 — respuestas explícitas del propietario a preguntas del agente en conversación OMP",
+  "artifact_ref": ".canonflow/sources/SRC-0013-plan-catalog-directive.md",
+  "options_rejected": [
+    "authority: «Igual, con cuatro ojos» — como la opción elegida, pero quien publica no puede ser quien editó por última vez el borrador",
+    "authority: «Solo platform_admin» — platform_admin edita y publica; ai_engineer y soporte solo lectura",
+    "publish_meaning: «Requiere DEC por publicación» — toda publicación que cambie límites queda pendiente de una decisión explícita del propietario registrada en canon",
+    "revision_policy: «Siguen la publicada» — las suscripciones usan siempre la revisión publicada y el impacto se reconoce al publicar",
+    "periodic: «Decidir ciclo ahora» — fijar ya el ciclo mensual anclado al inicio de la suscripción (UTC, sin rollover ni excedentes) para parámetros nuevos",
+    "self_assign: «Mantener restringida» — conservar la autoasignación del negocio solo hacia planes habilitados con revisión publicada y con historial",
+    "registration: «Sesión HDC» — preparar una sesión HDC (QS) y dejar el canon sin cambios hasta su ingesta"
+  ],
+  "affected_items": [
+    "BR-0007",
+    "FR-0010",
+    "FR-0018",
+    "FR-0019",
+    "DEC-0010",
+    "DEC-0018",
+    "INC-0006",
+    "migrations/0034_plan_policy_catalog.sql",
+    "src/plans/registry.ts",
+    "src/plans/policy.ts",
+    "src/plans/catalog.ts",
+    "src/plans/assignment.ts",
+    "src/platform/permissions.ts",
+    "src/api/plan-catalog-routes.ts (/api/platform/plan-catalog/*)",
+    "src/api/platform-routes.ts (POST /api/platform/tenants/:id/plan, GET /api/platform/tenants/:id, GET /api/platform/plans)",
+    "src/api/subscription-routes.ts (POST /api/backoffice/subscriptions/assign retirada con 403; GET /api/backoffice/subscriptions/entitlements y /plans)",
+    "src/subscriptions/quota.ts",
+    "src/subscriptions/entitlements.ts",
+    "src/retention/service.ts (subscription_history)"
+  ],
+  "expiry": "",
+  "comment": "Origen humano externo al HDC. source_ref se omite porque el esquema v2 lo permite como campo opcional y solo admite QS/ANS cuando está presente; no se inventa una sesión. Fuente literal registrada en SRC-0013 (sha256 4fb1bd5472b4ae373c16ab8d950929074ac54563151ee0890d8b0a03ba0b9fa4): siete preguntas que el agente formuló con la herramienta ask en la conversación OMP del 2026-11-04 y las respuestas que seleccionó el propietario; el texto de preguntas y opciones es del agente y la selección es del propietario. La respuesta 7 («SRC + DEC») ordena este registro. La fecha es la del registro en esta conversación; no un timestamp aportado por el propietario. options_rejected recoge solo las opciones no elegidas de las preguntas de respuesta única; las cuatro opciones de la pregunta 6 (Biblioteca de medios, Elegibilidad de IA, Plan Trial (DEC-0018), Techo de autorrespuestas) no se rechazan ni se aprueban: solo quedan fuera de este incremento. No sustituye ninguna decisión: DEC-0005, DEC-0006, DEC-0007, DEC-0010, DEC-0017, DEC-0018, DEC-0039, los QS/ANS previos, SRC-0011/DEC-0073 y SRC-0012/DEC-0074 permanecen intactos. Es un registro de decisión, no una aprobación (APR): no liga por sha256 ningún artefacto (diseño, modelo de datos ni migración 0034)."
+}

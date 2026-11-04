@@ -1,0 +1,86 @@
+# Ejecuciones finales de pruebas — catálogo de planes (DEC-0075)
+# Fecha: 2026-11-04T22:48:57Z · base 95f9436 + cambios del incremento (árbol de trabajo, antes del commit)
+# Entorno: BD de pruebas aislada (127.0.0.1:55432), proveedores simulados, sin claves de IA ni de conectores, JEV deshabilitado.
+# E2E: origen https://app.mainspot.local.io (proxy HTTPS, TLS verificado); mainspot-local detenido solo durante el E2E y rearrancado.
+
+$ npx tsc --noEmit
+exit 0
+
+$ npm run test:unit
+ℹ tests 185
+ℹ pass 185
+ℹ fail 0
+ℹ duration_ms 16662.740336
+
+$ npm run test:integration
+ℹ tests 220
+ℹ pass 220
+ℹ fail 0
+ℹ duration_ms 174921.760861
+
+$ npm run test:smoke
+ℹ tests 5
+ℹ pass 5
+ℹ fail 0
+ℹ duration_ms 2317.08388
+
+$ EVIDENCE_SCREENSHOTS=1 npm run test:e2e
+ℹ tests 5
+ℹ pass 5
+ℹ fail 0
+ℹ duration_ms 106277.553235
+
+## Integración: pruebas de nivel superior del catálogo, la migración 0034 y las semánticas de cuota (todas ✔)
+- NFR-0001: plan assignment (subscription.plan_assigned) is rolled back, history included, when its audit cannot be written
+- 0034: backfill exacto de planes, valores, suscripciones, historial y reservas; mismas decisiones de cuota
+- 0034 aborta sin pérdida si plan_limit tiene una capacidad fuera del registro
+- 0034 aborta sin pérdida si plan_limit tiene un valor por encima del techo de sistema
+- 0034 aplicada pero no registrada (caída del runner antes de schema_migrations) se re-ejecuta sin error, duplicados ni cambios
+- BD: TRUNCATE no vacía el historial de suscripciones, los eventos del catálogo, los valores, las revisiones ni el legado
+- BD: escribir un valor y publicar a la vez se serializa; nunca queda PUBLISHED un valor sin confirmar ni con otra huella
+- BD: una suscripción escrita durante la publicación de su plan queda fijada a la revisión nueva
+- reversión: vuelve al esquema previo a 0034 con los valores publicados vigentes, aborta ante capacidades ajenas a 0014 y 0034 se reaplica
+- autorización: plans.read para admin, ingeniería y soporte; escribir exige plans.edit/plans.publish y step-up; asignar y migrar solo platform_admin; token de negocio 401; denegaciones auditadas y sin efectos
+- mínimo privilegio (BR-0007): sin tenants.read (ai_engineer) el catálogo solo muestra recuentos por revisión, sin ids ni nombres de negocios, y la vista previa de migración y los negocios se deniegan (403 auditado); admin y soporte sí los ven y cada lectura con identidades queda auditada sin ids
+- crear plan: nace deshabilitado con borrador v1 sugerido SIN confirmar; publicar exige confirmar uno a uno; cambiar un valor le quita la confirmación (también en BD); checksum = plan_revision_checksum(); solo habilitado se asigna; clonar copia sin confirmar
+- edición: un borrador por plan; lock_version desfasado ⇒ 409 stale_version sin cambios; diff y motivo en plan_catalog_event; v2 reemplaza a v1 sin mover a los clientes; vista previa con uso sobre el nuevo límite; migración explícita con expected_count; downgrade sin borrados
+- rollback: revisión nueva PUBLICADA con los valores de la elegida (origen rollback) y el historial completo; con borrador abierto ⇒ 409; solo hacia revisiones reemplazadas; descartar libera el borrador
+- descartar el único borrador de un plan nunca publicado ⇒ 409: el plan no queda sin borrador ni revisión publicada
+- BD: publicadas y reemplazadas inmutables (valores y revisión); ninguna revisión ni valor se borra; publicar por SQL exige todo confirmado y huella correcta; nunca dos publicadas; plan_catalog_event y subscription_history append-only
+- espejo del registro: si plan_parameter_definition difiere del registro, toda escritura del catálogo da 503 sin efectos; lecturas y enforcement siguen; /plan-catalog/parameters informa la diferencia
+- concurrencia: publicaciones simultáneas del mismo borrador ⇒ gana una; PATCH simultáneos con el mismo lock_version ⇒ gana uno; borradores simultáneos ⇒ uno; nunca dos PUBLISHED del mismo plan
+- concurrencia: clonar mientras se publica el plan de origen copia la revisión que quedó publicada
+- concurrencia de suscripciones: asignar mientras se publica fija la revisión publicada al confirmar (sin error); migraciones simultáneas del mismo negocio ⇒ una gana, con un solo historial y un solo evento
+- concurrencia: asignar mientras se confirma la baja del negocio espera a la baja y se rechaza (409); la suscripción queda cancelada
+- asignación de Administration: alta, repetición sin cambios (auditada como noop), reactivación que conserva la revisión, migración de revisión y cambio de plan quedan en el historial con su tipo, actor y motivo, y en ambas auditorías; el mismo plan en una revisión anterior ⇒ 409 (se migra con vista previa); negocio inexistente ⇒ 404; plan inexistente ⇒ 409
+- validación: valores fuera de tipo, rango o registro ⇒ 400 sin tocar el borrador; motivo de 10 a 500 caracteres; nombre repetido ⇒ 409; revisiones de otro plan no son destino de rollback ni de migración
+- textos: motivo, nombre y descripción se miden en caracteres reales y no admiten caracteres de control ni de formato; los del catálogo y de la asignación tampoco correos ni ids de negocio (400, nada cambia); al límite se guardan íntegros, también en la auditoría de plataforma
+- borrador sin la fila de un parámetro (creado por SQL): guardar ese valor inserta la fila, el diff solo lista lo guardado y el borrador se puede publicar
+- escritura permitida sin cambio: habilitar un plan ya habilitado responde 200, no toca el plan ni su historial y queda en la auditoría de plataforma como noop
+- panel del negocio: entitlements refleja la revisión fijada y su uso (un borrador o una publicación nueva no lo cambian); /subscriptions/plans y /plans solo listan planes habilitados con revisión publicada
+- step-up: 5 códigos incorrectos en 15 min ⇒ 429 auditado; mientras dura, tampoco se acepta un código válido; el límite es por operador
+- retención (DEC-0027): una denegación de plataforma guarda el patrón de la ruta (con el request_id del servidor), nunca el id del negocio; después, ese negocio se anonimiza sin error
+- retención (DEC-0027): migrar con la cabecera X-Request-Id no la guarda en ninguna auditoría; cada negocio deja su fila de plataforma con tenant y motivo y el lote un resumen sin motivo ni ids; después, cada negocio migrado se anonimiza sin error
+- reconciliación de cuotas: informa el uso por encima del límite fijado en los parámetros que se aplican, nunca en `agents` (no se aplica)
+- periódica: consume hasta el límite; el deny no deja rastro; ni el replay ni un create fallido consumen
+- periódica: una reserva viva cuenta; la liberada y la vencida no (y su commit tardío no consume)
+- ventana móvil: consume hasta el límite; el deny no deja rastro; ni el replay ni un create fallido consumen
+- ventana móvil: una reserva viva cuenta; la liberada y la vencida no (y su commit tardío no consume)
+- periódica: solo cuentan las unidades del ciclo mensual vigente (UTC, anclado al inicio de la suscripción)
+- ventana móvil: solo cuentan las unidades confirmadas en los últimos 3600 s; el cupo reabre al salir de la ventana
+- stock: cuentan los recursos activos; archivar libera una unidad y reactivar vuelve a comprobar el límite
+- elegibilidad: true pasa; false ⇒ 403 prohibited; ausente en la revisión fijada ⇒ deny; no consume nada
+- concurrencia (periódica): 12 consumos simultáneos en 12 conexiones con límite 3 ⇒ exactamente 3 éxitos
+- concurrencia (ventana móvil): 12 consumos simultáneos en 12 conexiones con límite 3 ⇒ exactamente 3 éxitos
+- concurrencia (stock): 12 consumos simultáneos en 12 conexiones con límite 2 ⇒ exactamente 2 éxitos
+- concurrencia: la misma clave en 12 conexiones a la vez consume una sola vez (en uno y en dos pasos)
+- aislamiento: otro negocio no comparte cupo, claves ni candado
+- sin suscripción activa ⇒ 403 subscription_required al consumir, reservar o comprobar elegibilidad; nada se consume
+- una suscripción fijada a una revisión SUPERSEDED sigue resolviendo y aplicando sus valores
+
+## E2E (todas ✔)
+- E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram → caída/reinicio → aislamiento
+- E2E INC-002/INC-003: mensaje simulado → clasificación → confirmación → preview → aprobación → publicación idempotente → auditoría
+- E2E INC-004/005/006: reseña → humanos → publica una vez; post → preview → publicado; plan → límite deny
+- E2E Planes: catálogo versionado por permisos, confirmación explícita, publicación, asignación fijada, migración y rollback
+- E2E DEV-E2E-03: interfaz de Claude Design en navegador contra servidor, worker y PostgreSQL reales

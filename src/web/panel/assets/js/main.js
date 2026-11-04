@@ -875,7 +875,11 @@
       history.replaceState(null, '', '/panel#/restablecer');
     }
     MS.on(function () { render(false); });
-    window.addEventListener('hashchange', function () { UI.closeSheet(true); render(true); });
+    window.addEventListener('hashchange', function () {
+      UI.closeSheet(true); render(true);
+      // «Mi plan» muestra uso contra límites: se actualiza al entrar (MS.refresh solo redibuja si algo cambió).
+      if (location.hash === '#/negocio/plan') MS.refresh(['ent']);
+    });
     // Solo se vuelve a dibujar si cambia la presencia del chat lateral (≥1280 px).
     var wasWide = window.matchMedia('(min-width: 1280px)').matches, resizeT;
     window.addEventListener('resize', function () {

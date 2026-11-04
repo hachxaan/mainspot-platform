@@ -97,3 +97,4 @@ links:
   - {from: "DEC-0073", to: "DEC-0069", type: "SUPERSEDES", by: "Carlos Pinacho", at: "2026-11-03T08:06:53.691164Z"}
   - {from: "DEC-0074", to: "SRC-0012", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-03T09:16:52Z"}
   - {from: "DEC-0074", to: "DEC-0073", type: "SUPERSEDES", by: "Carlos Pinacho", at: "2026-11-03T09:16:52Z"}
+  - {from: "DEC-0075", to: "SRC-0013", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-04T19:04:34Z"}

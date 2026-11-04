@@ -15,4 +15,22 @@
 .pc-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; word-break: break-all; }
 .pc-pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--paper-2, #f6f3ee); padding: 10px; border-radius: 10px; max-height: 320px; overflow: auto; }
 .pc-env { font-size: 12px; padding: 4px 8px; border-radius: 6px; background: #fff3cd; color: #5c4400; }
+/* Planes: editor de parámetros por categoría (una fila por parámetro; en móvil se apila). */
+.pc-fieldset { border: 1px solid var(--line, #e5e1da); border-radius: 12px; padding: 8px 14px 4px; margin: 0; }
+.pc-fieldset > legend { font-weight: 700; padding: 0 6px; }
+.pc-param { padding: 10px 0; border-bottom: 1px solid var(--line, #e5e1da); }
+.pc-param:last-child { border-bottom: 0; }
+.pc-param-head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.pc-param-inputs { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.pc-param-inputs .input { max-width: 14ch; }
+.pc-param .field-error[hidden], [data-form-error][hidden] { display: none; }
+.input[aria-invalid="true"] { border-color: var(--alerta, #b42318); box-shadow: 0 0 0 1px var(--alerta, #b42318); }
+[data-form-error]:not([hidden]) { padding: 8px 10px; border-radius: 8px; background: #fdecea; color: #7a1610; }
+.pc-danger { border: 1px solid #f1c2bd; border-radius: 12px; padding: 8px 14px; }
+.pc-danger > summary { cursor: pointer; font-weight: 600; color: #7a1610; }
+.pc-danger[open] > summary { margin-bottom: 10px; }
+/* Auditoría: el motivo y el detalle se parten en líneas en vez de forzar desplazamiento lateral. */
+.pc-wrap td { overflow-wrap: anywhere; }
+.btn[disabled], form[aria-busy="true"] .btn { opacity: .55; cursor: not-allowed; }
+@media (max-width: 560px) { .pc-param-inputs .input { max-width: none; width: 100%; } }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }

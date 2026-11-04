@@ -321,7 +321,7 @@
     if (R.ent !== undefined) {
       S.plan = R.ent ? R.ent.plan : null;
       S.trial = R.ent && R.ent.subscription && R.ent.subscription.status === 'active' ? 'active' : 'expired';
-      S.limits = R.ent ? R.ent.limits : {};
+      S.planParams = R.ent && R.ent.parameters ? R.ent.parameters : [];
     }
     // Sitio
     var w = R.website ? R.website.website : null;

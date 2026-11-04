@@ -60,8 +60,13 @@ export class OnboardingService {
     await runAtomic(this.pool, async (client) => {
       await client.query(`INSERT INTO client (client_id, business_name, status, contact_email, metadata) VALUES ($1,$2,'active',$3,'{}')`, [tenantId, name, email]);
       await client.query(`INSERT INTO tenant_context (tenant_context_id, client_id, config, status) VALUES ($1,$2,'{}','active')`, [`tc_${tenantId}`, tenantId]);
+      // Pinned a la revisión publicada vigente del plan (trigger 0034), con actor y motivo en el historial.
+      const planId = input.planId ?? 'plan_piloto_1';
+      const assignable = await client.query(`SELECT 1 FROM plan p JOIN plan_revision r ON r.plan_id = p.plan_id AND r.status = 'PUBLISHED' WHERE p.plan_id = $1 AND p.active`, [planId]);
+      if (!assignable.rowCount) throw new AppError(409, 'validation_error', 'Ese plan no está habilitado o no tiene una revisión publicada.');
+      await client.query(`SELECT set_config('mainspot.actor', $1, true), set_config('mainspot.reason', 'Alta asistida del negocio (plan inicial).', true)`, [input.createdBy]);
       await client.query(`INSERT INTO subscription (subscription_id, tenant_id, plan_id, status) VALUES ($1,$2,$3,'active')`,
-        [`sub_${tenantId}`, tenantId, input.planId ?? 'plan_piloto_1']);
+        [`sub_${tenantId}`, tenantId, planId]);
       await client.query(
         `INSERT INTO owner_invitation (invitation_id, tenant_id, email, token_hash, expires_at, created_by) VALUES ($1,$2,$3,$4,$5,$6)`,
         [invitationId, tenantId, email, hashToken(token), expires, input.createdBy]);

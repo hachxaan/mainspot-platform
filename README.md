@@ -195,14 +195,16 @@ Rutas INC-005 (social):
 | `POST /api/backoffice/social/process-due` | `social.schedule` | Tick manual del worker: publica programaciones vencidas (idempotente) |
 | `POST /api/backoffice/social/campaigns/advanced` | `social.campaign_advanced` | **BLOQUEADO** (campañas avanzadas fuera del MVP; 403 + audit deny) |
 
-Rutas INC-006 (suscripciones):
+Rutas INC-006 (suscripciones; solo lectura para el negocio, DEC-0075):
 
 | Ruta | Protegida | Acción |
 |---|---|---|
-| `POST /api/backoffice/subscriptions/assign` | `subscription.admin` | Asignar plan (una suscripción activa por tenant; idempotente) |
-| `GET /api/backoffice/subscriptions/entitlements` | `subscription.read` | Plan + límites del cliente |
-| `GET /api/backoffice/subscriptions/plans` | `subscription.read` | Catálogo de planes (configurable en BD) |
+| `POST /api/backoffice/subscriptions/assign` | — | **Retirada** (SRC-0013): 403 `permission_denied` auditado para todo rol. Asigna MainSpot Administration |
+| `GET /api/backoffice/subscriptions/entitlements` | `subscription.read` | Plan, revisión fijada, límites y uso que cuenta para cada límite |
+| `GET /api/backoffice/subscriptions/plans` | `subscription.read` | Planes asignables (habilitados con revisión publicada; nunca borradores) |
 | `POST /api/backoffice/subscriptions/invoice` | `subscription.admin` | Facturar; **PROHIBITED** si el plan no tiene precio (piloto sin cobro) |
+
+Catálogo de planes (plataforma, `/api/platform`, permisos explícitos de `src/platform/permissions.ts`; toda escritura con step-up TOTP y motivo): ver [`docs/architecture/plan-catalog.md`](docs/architecture/plan-catalog.md).
 
 Rutas INC-007 base (analítica):
 
@@ -317,17 +319,19 @@ actual): `evidence/ai-core/openai-development-{catalog,evals,verification}-2026-
 - **Gate de aprobación (PR-01, Reviewer)**: el tick SOLO publica filas con evidencia de aprobación (propuesta `published`/`approved_for_publish` + fila de `publication`); sin aprobación marca la fila `blocked` con auditoría deny (`social.published`/`not_approved`) y NUNCA publica. `updateStatus()` impide llegar a `published` desde un estado no aprobado (exige `scheduled`). Endpoints `approve` con rate limiting (PR-06).
 - **Fuera del MVP**: campañas avanzadas e Instagram (permiso `social.campaign_advanced` deny para todos; intento ⇒ 403 + audit deny).
 
-## 9. INC-006 — Suscripciones y límites (CAP-012, DEC-024)
+## 9. INC-006 — Suscripciones y límites (CAP-012, DEC-024; catálogo versionado DEC-0075)
 
-- **Catálogo CONFIGURABLE en BD** (`plan`, `plan_limit`, `subscription`): plan **"Piloto 1"** único sin precio + planes opcionales sin precio (RULE-006). Una suscripción activa por tenant (seed para los 2 tenants).
-- **EntitlementService** (`src/subscriptions/entitlements.ts`): asignar plan (admin), consultar entitlements (los 3 perfiles), conteo de uso por capacidad y mensajes de límite.
-- **QuotaLedger** (`src/subscriptions/quota.ts`, DEC-0005 + NFR-0001): la comprobación y el consumo de cuota son **atómicos por tenant**. Uso = filas de dominio + unidades reservadas vigentes, leído bajo `pg_advisory_xact_lock(tenant, capacidad)`: las operaciones concurrentes del mismo tenant y capacidad se serializan y nunca superan el límite; los demás tenants no comparten candado ni filas. Exceso ⇒ **403 `limit_exceeded`**; sin plan activo ⇒ 403 `subscription_required` (fail-closed; la ruta audita el deny).
+- **Catálogo versionado en BD** (migración `0034_plan_policy_catalog.sql`, diseño en [`docs/architecture/plan-catalog.md`](docs/architecture/plan-catalog.md)): registro tipado de parámetros (`src/plans/registry.ts`, espejo `plan_parameter_definition`), revisiones inmutables `plan_revision` (DRAFT → PUBLISHED → SUPERSEDED), valores confirmados uno a uno `plan_parameter_value`, auditoría `plan_catalog_event`. Sin precios ni cobro (RULE-006). `plan_limit` quedó como `plan_limit_legacy_0009` de solo lectura para la reversión (`scripts/plan-catalog-rollback.sql`).
+- **Suscripción fijada a su revisión** (`subscription.plan_revision_id`): publicar una revisión no cambia a los clientes vigentes; la migración es explícita desde Administration con vista previa. Historial append-only `subscription_history` (también para SQL directo, vía trigger).
+- **Mantenimiento** en la Engineering Console (`/ingenieria#/planes`): ai_engineer y platform_admin crean, clonan, editan, confirman, publican y revierten; platform_support solo lee. La asignación a negocios es exclusiva de Administration (`/plataforma`, platform_admin). Publicar es configuración operativa, **no** aprobación comercial (Q-004 sigue pospuesta).
+- **EntitlementService** (`src/subscriptions/entitlements.ts`): vista de solo lectura (plan, revisión, límites y uso efectivos) y facturación PROHIBITED sin precio. El negocio no asigna planes.
+- **QuotaLedger** (`src/subscriptions/quota.ts`, DEC-0005 + NFR-0001): la comprobación y el consumo de cuota son **atómicos por tenant**. Límite = valor de la revisión fijada (`src/plans/policy.ts`, acotado por el techo de sistema); uso según la semántica del parámetro (hoy las seis capacidades son **acumuladas**: filas de dominio + unidades reservadas vigentes), leído bajo `pg_advisory_xact_lock(tenant, capacidad)`: las operaciones concurrentes del mismo tenant y capacidad se serializan y nunca superan el límite; los demás tenants no comparten candado ni filas. Exceso o parámetro ausente ⇒ **403 `limit_exceeded`** (el mensaje dice uso, máximo, unidad y periodo); sin plan activo ⇒ 403 `subscription_required` (fail-closed; la ruta audita el deny). Las semánticas `stock`, `periodic` (ciclo mensual de la suscripción, UTC), `rate_window` y `eligibility` están implementadas y probadas, sin ningún parámetro real que las use (periódicas: hasta HDC-MSP-06).
   - **Un paso** (`consumeInTx`): candado, comprobación, creación del recurso, fila `committed` y evento `quota.consumed` en la MISMA transacción (si la auditoría falla, no queda ni el recurso ni el consumo).
-  - **Dos pasos** (`reserve` → `commitInTx` | `release`) cuando hay trabajo externo en medio (clasificación Jev): la reserva aparta la unidad 120 s (`quota.reserved`); se confirma con la solicitud persistida o se devuelve (`quota.released`). Si el proceso cae a mitad, la reserva deja de contar al vencer y la **reconciliación** (cada 60 s en el servidor; `quota.expired`, actor `system:quota-reconciler`) la cierra e informa del uso por encima del límite (p. ej. tras un cambio de plan), sin borrar nada.
+  - **Dos pasos** (`reserve` → `commitInTx` | `release`) cuando hay trabajo externo en medio (clasificación Jev): la reserva aparta la unidad 120 s (`quota.reserved`); se confirma con la solicitud persistida o se devuelve (`quota.released`). Si el proceso cae a mitad, la reserva deja de contar al vencer y la **reconciliación** (cada 60 s en el servidor; `quota.expired`, actor `system:quota-reconciler`) la cierra e informa del uso por encima del límite de la revisión fijada (p. ej. tras un downgrade), sin borrar nada.
   - **Idempotencia**: cabecera opcional `Idempotency-Key` (1–128 caracteres `A-Za-z0-9._:-`) en `POST /conversation/messages`, `POST /website` y `POST /social/posts`. Repetir la clave devuelve el resultado original con **200 `replayed: true`** sin consumir otra vez (los mensajes no se reenvían por el canal); repetirla mientras la primera sigue en curso ⇒ **409 `request_in_progress`**; tras un fallo la misma clave puede reintentarse. Sin cabecera, la clave es el `request_id` (sin deduplicación). Las claves son por tenant.
 - **Enforcement por capacidad**:
   - `conversations` — reserva en `pipeline.ingest()` antes de clasificar; consumo en la transacción que persiste la solicitud.
-  - `website` — `POST /website`: un paso; un sitio por tenant (UNIQUE) + 409 si ya existe (revierte también el consumo). La provisión de dominio/publicación NO cuenta como creación.
+  - `website` — `POST /website`: un paso; techo técnico 1 por negocio (UNIQUE): la segunda página ⇒ 403 `limit_exceeded`. La provisión de dominio/publicación NO cuenta como creación.
   - `social_posts`/`social_ads` — `social.createDraft`: un paso.
   - `reviews_managed` — `reputation.sync`: el lote se mide y se consume entero bajo el candado, en la transacción de las inserciones (sin estado parcial).
   - `agents` — SIN enforcement (DEC-0006: no existe creación de agentes todavía). Ver §15.
@@ -442,6 +446,7 @@ La salida real queda en `evidence/` (00-14): environment, typecheck, permission 
 | **INC-004** (DEC-011/023) | `reputation/` + `publishing/reputation` + preview/aprobación INC-002 | `tests/integration/reputation-inc004.test.ts`, `tests/unit/reputation.test.ts` |
 | **INC-005** (DEC-017/026) | `social/` + `publishing/social` + cola `scheduled_post` (gate PR-01) | `tests/integration/social-inc005.test.ts`, `tests/unit/social.test.ts` |
 | **INC-006** (DEC-024) | `subscriptions/` (planes/límites/pago simulado) + enforcement conversaciones/sitios (PR-02) | `tests/integration/subscriptions-inc006.test.ts`, `tests/unit/subscriptions.test.ts` |
+| **DEC-0075** catálogo de planes versionado (BR-0007, FR-0010, FR-0018, FR-0019) | `plans/` (registro, política, catálogo, asignación) + `platform/permissions.ts` + `api/plan-catalog-routes.ts` + migración 0034 (+ `scripts/plan-catalog-rollback.sql`) + Planes en `/ingenieria` y «Plan y consumo» en `/plataforma` | `tests/integration/plan-catalog.test.ts`, `tests/integration/plan-catalog-migration.test.ts`, `tests/integration/quota-semantics.test.ts`, `tests/unit/plan-policy.test.ts`, `tests/e2e/plan-catalog-ui.test.ts`; cierre en `evidence/plan-catalog/CIERRE.md` |
 | **INC-007 base** (DEC-025) | `analytics/` (export/summary) | `tests/integration/analytics-inc007.test.ts`, `tests/unit/analytics.test.ts` |
 | **QS-0006** retención, baja y anonimización (DEC-0021..0027) | `retention/service.ts` + `scripts/retention-run.ts` + `scripts/tenant-exit.ts` + ejecución diaria en `api/server.ts` + migración 0015 | `tests/integration/retention.test.ts` (plazos y límites, dry-run, NFR-0001 por tenant, programación diaria concurrente, baja con export, anonimización sin rastros, reversión si queda un rastro, re-aplicación tras restaurar y caducidad del registro) |
 | **DEC-0005** cuotas atómicas + **NFR-0001** | `subscriptions/quota.ts` (`QuotaLedger`) + rutas y servicios que consumen cuota + migración 0014 | `tests/integration/quota-toctou.test.ts`, `tests/integration/nfr-0001-atomicity.test.ts` |

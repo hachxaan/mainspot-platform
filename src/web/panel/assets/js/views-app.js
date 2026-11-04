@@ -240,7 +240,6 @@
       '</form></section>';
   }
 
-  var CAP_LABELS = { website: 'Páginas web', social_posts: 'Publicaciones en Facebook', social_ads: 'Anuncios', reviews_managed: 'Reseñas atendidas', agents: 'Usuarios del panel', conversations: 'Mensajes al asistente' };
   V.plan = function () {
     var S = MS.S, p = S.plan;
     var html = head('Mi plan') + '<div class="stack">';
@@ -252,11 +251,16 @@
         (p.description ? '<p class="muted">' + esc(p.description) + '</p>' : '') +
         (active ? '<p>Con tu plan puedes pedir cambios, revisarlos y publicar tu página.</p>' : '<div class="banner banner-alerta">' + icon('lock') + '<span><strong>Tu plan no está activo</strong>Puedes ver tu información, pero para hacer cambios contacta a MainSpot.</span></div>' + UI.btn('Contactar a MainSpot', { action: 'contact' })) +
         '</section>';
-      var keys = Object.keys(S.limits || {});
-      if (keys.length) {
-        html += '<section class="card"><h3>Lo que incluye</h3><ul class="list" style="margin-top:8px">' + keys.map(function (k) {
-          return '<li class="list-row static" style="padding-left:0">' + icon('check') + '<span class="grow">' + esc(CAP_LABELS[k] || k) + '</span><strong>' + esc(S.limits[k]) + '</strong></li>';
-        }).join('') + '</ul>' + UI.note('Sin cobros: el plan piloto no tiene precio aprobado.') + '</section>';
+      // Solo lectura (DEC-0075): uso que cuenta para cada límite de la revisión de tu plan.
+      var params = (S.planParams || []).filter(function (x) { return x.value !== null; });
+      if (params.length) {
+        html += '<section class="card"><h3>Lo que incluye</h3><ul class="list" style="margin-top:8px">' + params.map(function (x) {
+          var used = x.enforced && x.usage !== null;
+          // Por encima: el límite bajó después de crear lo existente; se conserva y solo se bloquean nuevas creaciones.
+          var over = used && x.usage > x.value, full = used && x.value > 0 && x.usage === x.value;
+          var n = function (v) { return Number(v).toLocaleString('es-MX'); };
+          return '<li class="list-row static" style="padding-left:0">' + icon(x.value > 0 ? 'check' : 'lock') + '<span class="grow">' + esc(x.label) + '<span class="muted small" style="display:block">' + (x.value > 0 ? esc(x.period) : 'No incluido en tu plan') + (x.enforced ? '' : ' · Este límite todavía no se aplica.') + (over ? ' · Lo que ya tienes se conserva; no puedes crear más hasta bajar del límite.' : '') + '</span></span><strong>' + (used ? esc(n(x.usage)) + ' de ' : '') + esc(n(x.value)) + ' ' + esc(x.unit) + '</strong>' + (over ? ' ' + UI.tag('Por encima del límite', 'alerta') : full ? ' ' + UI.tag('Completo', 'ocre') : '') + '</li>';
+        }).join('') + '</ul>' + UI.note('Sin cobros: tu plan no tiene precio aprobado. Para cambiarlo, escribe a MainSpot.') + '</section>';
       }
     }
     html += '</div>';

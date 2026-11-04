@@ -5,14 +5,18 @@
  * - Contraseña (pgcrypto bcrypt) + TOTP (RFC 6238, SHA-1, 30 s, 6 dígitos, ventana ±1) con
  *   anti-replay del paso usado. El secreto TOTP se guarda cifrado (SecretBox, AAD propia).
  * - Sesión corta (PLATFORM_SESSION_TTL_MINUTES) revocable; step-up = TOTP reciente (10 min) para
- *   acciones de alto impacto.
- * - Toda decisión (allow/deny) queda en platform_audit_event (append-only).
+ *   acciones de alto impacto. Login (por IP + login) y step-up (por platform_user_id): 5 fallos en
+ *   15 min ⇒ 429 y no se acepta ningún código hasta que venzan.
+ * - Toda decisión (allow/deny) queda en platform_audit_event (append-only) con el request_id del
+ *   servidor (nunca una cabecera del cliente) y, en las denegaciones, el PATRÓN de la ruta: una fila
+ *   sin tenant no puede llevar ids de negocios (la anonimización no la re-etiqueta, DEC-0027).
  */
 
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import type { Pool, PoolClient } from 'pg';
 import { SecretBox } from '../connectors/secret-box.ts';
+import { getRequestContext } from '../shared/context.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
 
@@ -122,13 +126,52 @@ export interface PlatformSession {
   issued_at: string; expires_at: string; mfa_at: string; step_up_at: string | null;
 }
 
-export interface PlatformAuditInput { actorId: string; actorRoles: string[]; action: string; resource?: string | null; tenantId?: string | null; decision: 'allow' | 'deny'; result?: string | null; reason?: string | null; requestId?: string | null }
+export interface PlatformAuditInput {
+  actorId: string; actorRoles: string[]; action: string; resource?: string | null; tenantId?: string | null;
+  decision: 'allow' | 'deny'; result?: string | null; reason?: string | null;
+  /** Por omisión, el request_id del servidor de la petición en curso (`serverRequestId`). */
+  requestId?: string | null;
+}
+
+/** request_id que generó el servidor para la petición en curso (middleware `requestContext`); nunca una cabecera del cliente. */
+export function serverRequestId(req?: Request): string | null {
+  return getRequestContext()?.request_id ?? (req as (Request & { request_id?: string }) | undefined)?.request_id ?? null;
+}
+
+/** Longitud en caracteres reales (puntos de código), la misma que cuenta `length()` en PostgreSQL. */
+export function charLength(text: string): number {
+  return [...text].length;
+}
+
+/** Recorta a `max` caracteres reales: nunca parte un carácter en dos mitades. */
+function clip(text: string | null | undefined, max: number): string | null {
+  return text === null || text === undefined ? null : [...text].slice(0, max).join('');
+}
+
+const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u;
+
+/** Caracteres de control o de formato (U+0000, saltos, espacios de ancho cero, marcas bidi…): invisibles o engañosos. */
+export function hasControlOrFormat(text: string): boolean {
+  return CONTROL_OR_FORMAT.test(text);
+}
+
+/** Motivo de una acción de plataforma: de 10 a 500 caracteres reales, sin caracteres de control ni de formato. */
+export function assertPlatformReason(reason: unknown): string {
+  const r = typeof reason === 'string' ? reason.trim() : '';
+  const length = charLength(r);
+  if (length < 10 || length > 500) throw new AppError(400, 'validation_error', 'Escribe el motivo (10 a 500 caracteres).');
+  if (hasControlOrFormat(r)) {
+    throw new AppError(400, 'validation_error', 'El motivo tiene caracteres invisibles o de control. Escríbelo de nuevo sin pegarlo de otro documento.');
+  }
+  return r;
+}
 
 export async function writePlatformAudit(db: Pool | PoolClient, e: PlatformAuditInput): Promise<void> {
   await db.query(
     `INSERT INTO platform_audit_event (event_id, actor_id, actor_roles, action, resource, tenant_id, decision, result, reason, request_id)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [`pae_${randomUUID()}`, e.actorId, e.actorRoles, e.action, e.resource ?? null, e.tenantId ?? null, e.decision, e.result?.slice(0, 200) ?? null, e.reason?.slice(0, 500) ?? null, e.requestId ?? null]);
+    [`pae_${randomUUID()}`, e.actorId, e.actorRoles, e.action, e.resource ?? null, e.tenantId ?? null, e.decision,
+      clip(e.result, 200), clip(e.reason, 500), e.requestId ?? serverRequestId()]);
 }
 
 export class PlatformAuth {
@@ -250,18 +293,29 @@ export class PlatformAuth {
     return s && s.platform_user_id === claims.uid ? s : null;
   }
 
+  /** TOTP reciente para acciones de alto impacto. 5 fallos en 15 min ⇒ 429 (auditado) y no se acepta ningún código. */
   async stepUp(session: PlatformSession, code: string): Promise<void> {
     const box = this.requireBox();
+    const key = `step_up:${session.platform_user_id}`;
+    const audit = (decision: 'allow' | 'deny', result: string) =>
+      writePlatformAudit(this.pool, { actorId: session.platform_user_id, actorRoles: session.roles, action: 'platform.step_up', decision, result });
+    if (this.limited(key)) {
+      await audit('deny', 'too_many_attempts');
+      throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
+    }
+    // El intento cuenta ANTES de verificar (y se borra al acertar): una ráfaga simultánea tampoco pasa de 5.
+    this.fail(key);
     const r = await this.pool.query<{ totp_box: Buffer; totp_last_step: string }>('SELECT totp_box, totp_last_step FROM platform_user WHERE platform_user_id = $1', [session.platform_user_id]);
     const row = r.rows[0];
     const step = row ? verifyTotp(box.open(row.totp_box, this.ctx(session.platform_user_id)), code, Number(row.totp_last_step)) : null;
     const upd = step === null ? null : await this.pool.query('UPDATE platform_user SET totp_last_step = $2 WHERE platform_user_id = $1 AND totp_last_step < $2', [session.platform_user_id, step]);
     if (!upd?.rowCount) {
-      await writePlatformAudit(this.pool, { actorId: session.platform_user_id, actorRoles: session.roles, action: 'platform.step_up', decision: 'deny', result: 'bad_totp' });
+      await audit('deny', 'bad_totp');
       throw new AppError(401, 'invalid_credentials', 'Código incorrecto.');
     }
+    this.attempts.delete(key);
     await this.pool.query('UPDATE platform_session SET step_up_at = now() WHERE session_id = $1', [session.session_id]);
-    await writePlatformAudit(this.pool, { actorId: session.platform_user_id, actorRoles: session.roles, action: 'platform.step_up', decision: 'allow', result: 'ok' });
+    await audit('allow', 'ok');
   }
 
   async logout(session: PlatformSession): Promise<void> {
@@ -275,7 +329,13 @@ export interface PlatformRequest extends Request {
   requestId?: string;
 }
 
-/** Middleware: sesión de plataforma válida + rol + (opcional) step-up reciente. Deny auditado. */
+/** Patrón de la ruta (`/api/platform/tenants/:id/plan`): una denegación nunca guarda ids de negocios sin tenant (DEC-0027). */
+function routePattern(req: Request): string | null {
+  const path = (req.route as { path?: unknown } | undefined)?.path;
+  return typeof path === 'string' ? `${req.baseUrl}${path}` : null;
+}
+
+/** Middleware: sesión de plataforma válida + rol + (opcional) step-up reciente. Deny auditado con el patrón de la ruta. */
 export function requirePlatform(auth: PlatformAuth, pool: Pool, roles: PlatformRole[], opts: { stepUp?: boolean; action: string }) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -287,12 +347,12 @@ export function requirePlatform(auth: PlatformAuth, pool: Pool, roles: PlatformR
       }
       preq.platform = session;
       if (!session.roles.some((r) => roles.includes(r))) {
-        await writePlatformAudit(pool, { actorId: session.platform_user_id, actorRoles: session.roles, action: opts.action, decision: 'deny', result: 'role_denied', resource: req.path });
+        await writePlatformAudit(pool, { actorId: session.platform_user_id, actorRoles: session.roles, action: opts.action, decision: 'deny', result: 'role_denied', resource: routePattern(req) });
         res.status(403).json({ error: { code: 'permission_denied', message: 'Tu rol de plataforma no permite esta acción.' } });
         return;
       }
       if (opts.stepUp && (!session.step_up_at || Date.now() - new Date(session.step_up_at).getTime() > STEP_UP_WINDOW_MS)) {
-        await writePlatformAudit(pool, { actorId: session.platform_user_id, actorRoles: session.roles, action: opts.action, decision: 'deny', result: 'step_up_required', resource: req.path });
+        await writePlatformAudit(pool, { actorId: session.platform_user_id, actorRoles: session.roles, action: opts.action, decision: 'deny', result: 'step_up_required', resource: routePattern(req) });
         res.status(403).json({ error: { code: 'step_up_required', message: 'Confirma con tu código de verificación para continuar.' } });
         return;
       }

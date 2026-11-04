@@ -107,6 +107,8 @@ const TENANT_TABLES: ReadonlyArray<{ table: string; key: string; exportSkip?: re
   { table: 'client_domain', key: 'tenant_id' },
   { table: 'client_website', key: 'tenant_id' },
   { table: 'quota_reservation', key: 'tenant_id' },
+  // DEC-0075: historial append-only de asignaciones; solo se borra en esta anonimización (migración 0034).
+  { table: 'subscription_history', key: 'tenant_id' },
   { table: 'subscription', key: 'tenant_id' },
   { table: 'session_context', key: 'tenant_id' },
   { table: 'user_role', key: 'tenant_id' },
@@ -311,6 +313,7 @@ export class RetentionService {
          VALUES ($1, now(), $2, $3, now() + $4::interval) RETURNING anonymize_after`,
         [input.tenantId, input.confirmedBy, exportSha256, RETENTION_POLICY.exitGrace.interval]);
       await db.query(`UPDATE client SET status = 'exiting', updated_at = now() WHERE client_id = $1`, [input.tenantId]);
+      await db.query(`SELECT set_config('mainspot.actor', $1, true), set_config('mainspot.reason', 'Baja confirmada del negocio.', true)`, [input.confirmedBy]);
       await db.query(`UPDATE subscription SET status = 'cancelled', updated_at = now() WHERE tenant_id = $1`, [input.tenantId]);
       const after = new Date(res.rows[0]?.anonymize_after ?? '').toISOString();
       await this.deps.sink.write({
@@ -363,12 +366,13 @@ export class RetentionService {
         `UPDATE platform_audit_event SET tenant_id = $2, reason = NULL, request_id = NULL,
             resource = CASE WHEN resource IS NULL THEN NULL ELSE regexp_replace(resource, '[/:].*$', '') END
           WHERE tenant_id = $1`, [tenantId, anonymousId]);
-      await client.query(`SELECT set_config('mainspot.anonymizing_tenant', '', true)`);
+      // La misma variable autoriza borrar subscription_history de ESTE negocio (append-only salvo aquí).
       const deleted: Record<string, number> = {};
       for (const { table, key } of TENANT_TABLES) {
         const res = await client.query(`DELETE FROM ${table} WHERE ${key} = $1`, [tenantId]);
         deleted[table] = res.rowCount ?? 0;
       }
+      await client.query(`SELECT set_config('mainspot.anonymizing_tenant', '', true)`);
       // Un correo compartido conserva su recuperación para los otros negocios.
       await client.query(
         `DELETE FROM password_reset_token p WHERE login=ANY($1::text[])

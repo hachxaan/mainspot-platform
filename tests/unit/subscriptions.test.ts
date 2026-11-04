@@ -5,7 +5,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fitsLimit, KNOWN_CAPABILITIES } from '../../src/subscriptions/entitlements.ts';
+import { fitsLimit } from '../../src/plans/policy.ts';
+import { KNOWN_CAPABILITIES } from '../../src/plans/registry.ts';
 import { SimulatedPaymentProvider } from '../../src/subscriptions/payment.ts';
 import { authorize } from '../../src/rbac/engine.ts';
 

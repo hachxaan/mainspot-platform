@@ -1,5 +1,26 @@
 # Functional Canon changelog
 
+## 0.6.0 — 2026-11-04
+- BR-0007, FR-0010, FR-0018 y FR-0019 cambian por DEC-0075 (directiva humana externa SRC-0013: respuestas del
+  propietario a siete preguntas del agente en conversación OMP; no nueva respuesta HDC ni sustitución de decisiones):
+  catálogo de planes versionado en la sección Planes de Engineering con `plans.read`/`plans.edit`/`plans.publish`
+  (publicar, rollback y habilitar/deshabilitar con step-up y motivo); asignar planes y migrar suscripciones solo
+  `platform_admin` (autoridad de Administration); la autoasignación del negocio se retira (403) y su panel queda en
+  solo lectura.
+- FR-0010: revisiones inmutables, confirmación explícita de cada valor, publicar = configuración operativa sin
+  aprobación comercial, suscripción fijada a su revisión con migración explícita y vista previa, ausencia ⇒ deny,
+  mecanismo periódico sin activar hasta HDC-MSP-06, y bajar un límite efectivo nunca borra recursos.
+  Ningún parámetro nuevo; los planes existentes pasan a la revisión 1 con sus valores vigentes.
+- FR-0019 (AC-19011): salvaguarda de mínimo privilegio derivada de BR-0007, no decisión nueva: en Planes, los
+  nombres de los negocios y la vista previa de migración exigen `tenants.read` (`platform_admin`,
+  `platform_support`); el `ai_engineer` ve solo recuentos por revisión.
+- FR-0019: cambiar nombre o descripción de un plan exige `plans.publish` + step-up, igual que publicar, porque los
+  negocios lo ven al instante. Es una aplicación de «publicar = configuración operativa» (DEC-0075), no una decisión nueva.
+- No decide precios, nombres ni paquetes comerciales (Q-004, DEC-0010), ciclo/rollover/excedentes/cambios de plan
+  (HDC-MSP-06), Trial (DEC-0018, pendiente de implementación) ni `agents` (DEC-0006/DEC-0017). Se conservan byte a
+  byte los registros DEC/APR, QS/ANS y SRC previos; el canon técnico no cambia. En FR-0010 se corrige además la
+  sangría del segundo enlace del front matter (YAML válido), sin cambio de contenido.
+
 ## 0.5.0 — 2026-11-03
 - FR-0012, FR-0019, NFR-0006 y BR-0007 cambian por DEC-0074 (directiva humana externa SRC-0012, no nueva
   respuesta HDC; sustituye solo la asignación generativa de desarrollo de DEC-0073, que se conserva como historia):
