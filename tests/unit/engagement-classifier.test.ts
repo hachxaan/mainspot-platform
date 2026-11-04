@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { autoReplyText, classify, decide, humanDrafts, type PolicySnapshot } from '../../src/engagement/classifier.ts';
+import { autoReplyText, classify, decide, enforceReviewRatingGate, humanDrafts, type PolicySnapshot } from '../../src/engagement/classifier.ts';
 
 const AUTO: PolicySnapshot = { policy_id: 'pol_1', version: 3, mode: 'safe_auto_reply', max_auto_replies_per_hour: 2 };
 const REVIEW: PolicySnapshot = { ...AUTO, mode: 'review_required' };
@@ -28,6 +28,30 @@ test('la calificación sola no basta: 5★ sin señales de texto o con queja va 
   assert.equal(decide({ classification: mixed, policy: AUTO, autoRepliesLastHour: 0, verifiedAnswer: null }).decision, 'human_review');
   const low = classify({ body: 'Gracias, excelente', rating: 3, origin: 'google_review' });
   assert.notEqual(low.category, 'gratitude', 'una reseña ≤3★ nunca es agradecimiento automático');
+});
+
+test('rating guard: Jev may infer gratitude but 1–3★ Google reviews always need a person', () => {
+  // Simulate the most dangerous semantic override: Jev classifies a low-rated
+  // review as entirely safe gratitude, and the configured policy would auto-reply.
+  const semantic = { category: 'gratitude' as const, risk_flags: [], confidence: 0.99, sentiment: 'positive' as const, info_topic: null };
+  const wouldAuto = decide({ classification: semantic, policy: AUTO, autoRepliesLastHour: 0, verifiedAnswer: null });
+  assert.equal(wouldAuto.decision, 'auto_reply', 'precondition: policy would approve');
+  for (const stars of [1, 2, 3]) {
+    assert.deepEqual(enforceReviewRatingGate('google_review', stars, wouldAuto), {
+      decision: 'human_review', reason: 'google_rating_requires_human',
+    }, `${stars}★ must never be automatic`);
+  }
+  for (const stars of [4, 5]) {
+    assert.deepEqual(enforceReviewRatingGate('google_review', stars, wouldAuto), wouldAuto);
+  }
+  for (const invalid of [null, 0, 6, 3.5, Number.NaN]) {
+    assert.equal(enforceReviewRatingGate('google_review', invalid, wouldAuto).decision, 'human_review');
+  }
+  assert.deepEqual(enforceReviewRatingGate('facebook_comment', null, wouldAuto), wouldAuto);
+
+  // The guard never converts an unsafe high-rated review into automatic publication.
+  const human = { decision: 'human_review' as const, reason: 'risk:compensation' };
+  assert.deepEqual(enforceReviewRatingGate('google_review', 5, human), human);
 });
 
 test('riesgo (salud, compensación, legal, amenaza, datos privados) → humano aunque haya política', () => {
