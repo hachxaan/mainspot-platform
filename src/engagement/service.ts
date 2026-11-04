@@ -21,7 +21,7 @@ import { formatInternational, type ContactPhoneService, type PhoneChannel } from
 import { runAtomic } from '../conversation/state-machine.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
-import { autoReplyText, classify, decide, humanDrafts, type Classification, type Decision, type EngagementCategory, type EngagementOrigin, type InfoTopic, type PolicySnapshot } from './classifier.ts';
+import { autoReplyText, classify, decide, enforceReviewRatingGate, humanDrafts, type Classification, type Decision, type EngagementCategory, type EngagementOrigin, type InfoTopic, type PolicySnapshot } from './classifier.ts';
 import type { EngagementSemantics } from './ai-semantics.ts';
 import { consumeSimFault, type EngagementReplier, type ReplyResult } from './providers.ts';
 
@@ -283,10 +283,13 @@ export class EngagementService {
       `SELECT count(*) AS n FROM engagement_case
         WHERE tenant_id = $1 AND origin = $2 AND decision = 'auto_reply' AND classified_at > now() - interval '1 hour'`,
       [row.tenant_id, row.origin]);
-    let decision: Decision = semanticSource === 'blocked_external' || semanticSource === 'unavailable'
+    const policyDecision: Decision = semanticSource === 'blocked_external' || semanticSource === 'unavailable'
       // Con el AI Core desplegado y sin lectura semántica, nada se publica solo.
       ? { decision: 'human_review', reason: `semantic_${semanticSource}` }
       : decide({ classification, policy, autoRepliesLastHour: Number(rate.rows[0]?.n ?? 0), verifiedAnswer: verified });
+    // Safety invariant AFTER semantic interpretation: a low/invalid Google rating
+    // is always human-reviewed, even if Jev interpreted the text as gratitude.
+    let decision: Decision = enforceReviewRatingGate(row.origin, row.rating, policyDecision);
     const author = row.author_label;
     // Respuesta redactada con hechos verificados (el teléfono lo inserta el servidor, nunca el modelo).
     const generated = semanticSource === 'jev' && this.deps.semantics && !(classification.category === 'basic_info' && classification.info_topic === 'phone')

@@ -87,6 +87,22 @@ export type Decision =
   | { decision: 'auto_reply'; reason: string }
   | { decision: 'human_review'; reason: string };
 
+/**
+ * Final, non-overridable rating gate. The rating is an authority boundary,
+ * not a semantic signal: Jev/AI can identify gratitude but never override
+ * a 1–3★ Google review into automatic publication.
+ * Invalid or absent Google ratings also require human review (fail-closed).
+ */
+export function enforceReviewRatingGate(
+  origin: EngagementOrigin, rating: number | null, decision: Decision,
+): Decision {
+  if (origin !== 'google_review') return decision;
+  if (rating === null || !Number.isInteger(rating) || rating < 4 || rating > 5) {
+    return { decision: 'human_review', reason: 'google_rating_requires_human' };
+  }
+  return decision;
+}
+
 export const MIN_AUTO_CONFIDENCE = 0.8;
 
 export function decide(input: DecisionInput): Decision {
