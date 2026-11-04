@@ -1,6 +1,6 @@
 # MainSpot Landing · QA de desarrollo
 
-Fecha: 2026-10-29/30 · Entorno: Chromium headless con Playwright, assets inyectados desde archivos locales.
+Fecha: 2026-11-03 · Entorno: Chromium headless con Playwright, assets inyectados desde archivos locales.
 
 ## Resultados observados
 
@@ -11,8 +11,8 @@ Fecha: 2026-10-29/30 · Entorno: Chromium headless con Playwright, assets inyect
 | CSS cargado | PASS | PASS |
 | Menú móvil abre/cierra | No aplica | PASS |
 | Vista previa de cambio | PASS | PASS |
-| Reseña negativa -> 3 respuestas | PASS | PASS |
-| Elegir tercera respuesta | PASS | PASS |
+| 2★ queja -> 3 borradores y aprobación | PASS | PASS |
+| 5★ petición comercial -> 3 borradores y aprobación | PASS | PASS |
 | Acción demostrativa sin publicación | PASS | PASS |
 | Validación y preparación de solicitud | PASS | PASS |
 | Ausencia de scroll horizontal | PASS | PASS |
@@ -35,3 +35,12 @@ El entorno de Chromium bloqueó por política la navegación directa a `localhos
 ## Riesgo de promesas comerciales
 
 La demo solo simula casos con nombres ficticios. No hay respuesta automática real, publicaciones ni captación en backend. El formulario no incluye `fetch()`, `XMLHttpRequest` ni almacenamiento persistente. El usuario recibe una declaración clara antes y después de usarlo.
+
+## Verificación de la actualización v3 — política de respuestas
+
+- Chromium/Playwright, `page.set_content`, tres viewports: **1440, 390 y 320 px**, todos PASS.
+- Escenarios `positive` (5★) y `fourStar` (4★): mensaje de respuesta automática simulada visible, botón individual de aprobación **oculto**.
+- Escenarios `question` (5★ con solicitud de descuento) y `complaint` (2★): ruta humana visible, **3 borradores** y acción demostrativa de aprobación.
+- Reset de escenario, selección de segunda opción, estado de aprobación y ausencia de desbordamiento horizontal: PASS.
+- Sin excepciones JavaScript en el navegador.
+- Esta verificación **no prueba** proveedores reales ni configuración de políticas del backend.
