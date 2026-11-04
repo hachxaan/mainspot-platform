@@ -15,12 +15,12 @@ También abre `index.html` directamente para revisar los ejemplos básicos (el c
 ## Contenido y diseño
 
 - Mensaje: **«Tu negocio, en todas partes. Sin que tengas que estar en todo.»**
-- Marca: familia cromática del producto actual (magenta, cálidos y lila); composición editorial de comercialización propia.
+- Marca: logo MainSpot proporcionado por el propietario, azul marino/cian, favicon derivado y versión webp optimizada; composición editorial propia.
 - Páginas, Google, Facebook y atención de comentarios explicados como experiencias **en desarrollo** y sujetos a disponibilidad.
-- Ejemplos de conversación y reseñas funcionan **localmente** con datos ficticios y nunca ejecutan acciones externas.
+- La demostración de reseñas incluye 5★ y 4★ agradecimientos automáticos bajo política previa; 5★ con solicitud comercial y 2★ con queja se escalan a aprobación individual. Los cuatro escenarios funcionan localmente con datos ficticios; nunca ejecutan acciones externas.
 - El formulario valida los cuatro campos y prepara un texto para copiar. **No transmite, registra ni guarda datos**: falta un canal comercial verificado.
 - Planes, precios, testimonios, clientes, métricas y resultados reales deliberadamente ausentes.
-- Recursos visuales propios SVG; sin recursos externos, fuentes remotas, cookies, analytics ni tracking.
+- Logo suministrado por el propietario, favicon PNG, gráficos de ejemplo con SVG inline; sin fuentes remotas, cookies, analítica ni seguimiento.
 
 ## Estado de publicación
 
@@ -39,4 +39,4 @@ También abre `index.html` directamente para revisar los ejemplos básicos (el c
 - No hay integración comercial real con Google/Meta/Telegram ni base de datos de leads; la landing **no afirma lo contrario**.
 - El formulario no constituye un servicio de captación hasta conectar un endpoint verificado.
 - El soporte `navigator.clipboard` requiere HTTPS o localhost; fuera de eso se selecciona el texto para copiar manualmente.
-- Los recursos OG son SVG; algunos distribuidores sociales requieren PNG/JPEG al publicar. Preparar entonces una versión rasterizada y un dominio absoluto.
+- El Open Graph del HTML utiliza el logo local; al publicar preparar un arte de portada con URL absoluta y verificar el preview en redes.
