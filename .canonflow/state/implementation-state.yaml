@@ -26,6 +26,12 @@ increments:
   state: IMPLEMENTED
   risk_tier: 3
   evidence: evidence/14-e2e-inc004-006.txt; PR-02/PR-03 (348676e)
+  note: >-
+    Evolución por DEC-0075/SRC-0013 (canon 0.6.0 de BR-0007, FR-0010, FR-0018 y FR-0019): catálogo de planes
+    versionado (migración 0034, src/plans/, permisos plans.* y subscriptions.assign, API /api/platform/plan-catalog,
+    sección Planes en /ingenieria), suscripciones fijadas a su revisión, asignación exclusiva de Administration y
+    autoasignación del negocio retirada (403). Código en la rama feat/plan-policy-catalog-impl-20261104 (base 95f9436);
+    su verificación y evidencia se registran al integrarlo, no en este registro. Estado y evidencia de la base sin cambio.
 - increment_id: INC-0007
   state: IMPLEMENTED
   risk_tier: 2

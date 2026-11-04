@@ -114,3 +114,16 @@ sources:
     Sustituye solo la asignación generativa de desarrollo de SRC-0011/DEC-0073 (texto a Anthropic,
     imágenes OpenAI) y autoriza ejecución DRAFT solo en laboratorio con grant explícito y aceptación manual.
     Créditos declarados por el propietario, no verificados; presupuestos internos, gates y QS-0017 sin cambios.
+- id: SRC-0013
+  title: Instrucción explícita del propietario — catálogo de planes versionado (respuestas a preguntas del agente)
+  kind: document
+  location: .canonflow/sources/SRC-0013-plan-catalog-directive.md
+  fingerprint: sha256:4fb1bd5472b4ae373c16ab8d950929074ac54563151ee0890d8b0a03ba0b9fa4
+  reliability: authoritative
+  registered_at: '2026-11-04'
+  notes: >-
+    Fuente humana literal externa al HDC; registrada como DEC-0075 sin inventar QS/ANS.
+    Siete preguntas y opciones redactadas por el agente (herramienta ask); respuestas seleccionadas por el propietario.
+    Catálogo en Engineering con permisos explícitos; publicar = configuración operativa sin aprobación comercial;
+    suscripciones fijadas a su revisión; mecanismo periódico sin activar; autoasignación del negocio retirada;
+    respuesta 6 vacía (ningún parámetro nuevo). No sustituye decisiones; Q-004, HDC-MSP-06 y DEC-0018 sin cambios.
