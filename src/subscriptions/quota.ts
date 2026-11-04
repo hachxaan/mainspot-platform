@@ -7,7 +7,13 @@
  * concurrentes del mismo tenant y capacidad se serializan y nunca superan el
  * límite; otros tenants no comparten candado ni filas.
  *
- * Uso = filas de dominio (`countCapabilityUsage`) + unidades reservadas vigentes.
+ * Límite = valor de la revisión de plan FIJADA en la suscripción (src/plans/policy.ts), acotado por
+ * el techo de sistema del registro (src/plans/registry.ts). Uso según la semántica del parámetro:
+ *  - cumulative / stock: filas de dominio del tenant (SQL del registro) + reservas vigentes;
+ *  - periodic: unidades confirmadas en el ciclo mensual de la suscripción (UTC) + reservas vigentes;
+ *  - rate_window: unidades confirmadas en la ventana móvil + reservas vigentes;
+ *  - eligibility: sin uso; `assertEligible` comprueba que el plan la incluye.
+ * Hoy solo existen parámetros `cumulative` (SRC-0013); las demás semánticas son mecanismo probado.
  *
  * Dos formas de consumir:
  *  - En un paso (`consumeInTx`), dentro de la transacción que crea el recurso:
@@ -32,13 +38,18 @@ import { runAtomic } from '../conversation/state-machine.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
 import {
-  KNOWN_CAPABILITIES,
-  SUBSCRIPTION_REQUIRED_MESSAGE,
-  countCapabilityUsage,
+  DEFAULT_DEFINITIONS,
+  effectiveValue,
   fitsLimit,
   limitExceededMessage,
-  type CapabilityName,
-} from './entitlements.ts';
+  loadPinnedPolicy,
+  missingParameterMessage,
+  monthlyCycle,
+  notInPlanMessage,
+  resolveEffectivePolicy,
+  type EffectivePolicy,
+} from '../plans/policy.ts';
+import type { CapabilityName, PlanParameterDefinition } from '../plans/registry.ts';
 
 /** Vigencia de una reserva en dos pasos: cubre la llamada a Jev (10 s) con margen. */
 export const QUOTA_RESERVATION_TTL_MS = 120_000;
@@ -81,8 +92,18 @@ export type QuotaClaim =
 
 export interface QuotaReconcileReport {
   expired: Array<Pick<QuotaReservationRow, 'reservation_id' | 'tenant_id' | 'capability' | 'units'>>;
-  /** Uso por encima del límite del plan (p. ej. tras cambiar de plan): solo informe, nunca borra. */
-  overLimit: Array<{ tenant_id: string; capability: CapabilityName; usage: number; max: number }>;
+  /** Uso por encima del límite de la revisión fijada (p. ej. tras un downgrade), solo de parámetros que se aplican: informe, nunca borra. */
+  overLimit: Array<{ tenant_id: string; capability: string; usage: number; max: number }>;
+}
+
+/** Uso y límite efectivos de una capacidad, con la misma cuenta que aplica el enforcement. */
+export interface CapacityStatus {
+  capability: string;
+  parameter_key: string;
+  limit: number | null;
+  usage: number;
+  capped_by_system: boolean;
+  window: { start: string; end: string } | null;
 }
 
 /**
@@ -105,17 +126,6 @@ export function resourceIdOf(resourceRef: string | null): string {
   return id;
 }
 
-function assertValidRequest(req: QuotaRequest): void {
-  if (!req.tenantId || !req.actorId || !req.requestId) {
-    throw new Error('FAIL-CLOSED: quota requires tenant, actor and request ids');
-  }
-  if (!(KNOWN_CAPABILITIES as readonly string[]).includes(req.capability)) {
-    throw new AppError(400, 'validation_error', 'La capacidad consultada no está definida en el catálogo de límites.');
-  }
-  if (!Number.isInteger(req.units) || req.units < 1) throw new Error('FAIL-CLOSED: quota units must be a positive integer');
-  if (!IDEMPOTENCY_KEY_PATTERN.test(req.idempotencyKey)) throw new Error('FAIL-CLOSED: invalid idempotency key');
-}
-
 const inProgress = () => new AppError(409, DENY_CODES.REQUEST_IN_PROGRESS,
   'Esta solicitud ya se está procesando. Espera un momento y consulta el resultado antes de repetirla.');
 
@@ -123,6 +133,8 @@ export interface QuotaLedgerDeps {
   pool: Pool;
   sink: AuditSink;
   reservationTtlMs?: number;
+  /** Registro de parámetros (por defecto, el del producto). Los tests del mecanismo inyectan otro. */
+  definitions?: readonly PlanParameterDefinition[];
 }
 
 export class QuotaLedger {
@@ -136,33 +148,116 @@ export class QuotaLedger {
     return this.deps.reservationTtlMs ?? QUOTA_RESERVATION_TTL_MS;
   }
 
+  private get definitions(): readonly PlanParameterDefinition[] {
+    return this.deps.definitions ?? DEFAULT_DEFINITIONS;
+  }
+
+  /** Definición con libro de cuotas de la capacidad; 400 si no existe (nada fuera del registro cuenta). */
+  private quotaDefinition(capability: string): PlanParameterDefinition {
+    const def = this.definitions.find((d) => d.capability === capability && d.semantics !== 'eligibility');
+    if (!def) throw new AppError(400, 'validation_error', 'La capacidad consultada no está definida en el catálogo de límites.');
+    return def;
+  }
+
+  private assertValidRequest(req: QuotaRequest): void {
+    if (!req.tenantId || !req.actorId || !req.requestId) {
+      throw new Error('FAIL-CLOSED: quota requires tenant, actor and request ids');
+    }
+    this.quotaDefinition(req.capability);
+    if (!Number.isInteger(req.units) || req.units < 1) throw new Error('FAIL-CLOSED: quota units must be a positive integer');
+    if (!IDEMPOTENCY_KEY_PATTERN.test(req.idempotencyKey)) throw new Error('FAIL-CLOSED: invalid idempotency key');
+  }
+
   /** Candado de (tenant, capacidad) hasta el final de la transacción de `client`. */
-  async lock(client: PoolClient, tenantId: string, capability: CapabilityName): Promise<void> {
+  async lock(client: PoolClient, tenantId: string, capability: string): Promise<void> {
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`quota:${tenantId}:${capability}`]);
+  }
+
+  /**
+   * Unidades de las reservas vigentes del tenant por capacidad, en UNA consulta (reloj de la BD);
+   * `capability` la acota a esa capacidad (comprobación bajo su candado).
+   */
+  private async liveReservations(db: Pool | PoolClient, tenantId: string, capability: string | null = null): Promise<ReadonlyMap<string, number>> {
+    const r = await db.query<{ capability: string; n: string }>(
+      `SELECT capability, SUM(units)::text AS n FROM quota_reservation
+        WHERE tenant_id = $1 AND state = 'reserved' AND expires_at > clock_timestamp() AND ($2::text IS NULL OR capability = $2)
+        GROUP BY capability`,
+      [tenantId, capability]);
+    return new Map(r.rows.map((row) => [row.capability, Number(row.n)]));
+  }
+
+  /** Uso de la capacidad según su semántica, más `live` (sus reservas vigentes), con el reloj de la BD. */
+  private async usage(db: Pool | PoolClient, policy: EffectivePolicy, def: PlanParameterDefinition, live: number): Promise<{ usage: number; window: { start: Date; end: Date } | null }> {
+    const tenantId = policy.subscription.tenant_id;
+    if (def.semantics === 'cumulative' || def.semantics === 'stock') {
+      if (!def.usageSql) throw new Error(`FAIL-CLOSED: parameter ${def.key} has no usage query`);
+      const r = await db.query<{ n: string }>(def.usageSql, [tenantId]);
+      return { usage: Number(r.rows[0]?.n ?? 0) + live, window: null };
+    }
+    const now = (await db.query<{ now: Date }>('SELECT clock_timestamp() AS now')).rows[0]?.now ?? new Date();
+    let window: { start: Date; end: Date | null };
+    if (def.semantics === 'periodic') window = monthlyCycle(new Date(policy.subscription.started_at), now);
+    else if (def.period.kind === 'sliding_window') window = { start: new Date(now.getTime() - def.period.seconds * 1000), end: null };
+    else throw new Error(`FAIL-CLOSED: parameter ${def.key} has no countable usage`);
+    const committed = await db.query<{ n: string }>(
+      `SELECT COALESCE(SUM(units), 0)::text AS n FROM quota_reservation
+        WHERE tenant_id = $1 AND capability = $2 AND state = 'committed'
+          AND settled_at >= $3 AND ($4::timestamptz IS NULL OR settled_at < $4)`,
+      [tenantId, def.capability, window.start, window.end]);
+    return { usage: Number(committed.rows[0]?.n ?? 0) + live, window: { start: window.start, end: window.end ?? now } };
   }
 
   /**
    * Con el candado tomado: falla si el tenant no tiene suscripción activa
    * (subscription_required) o si `units` no caben en el límite (limit_exceeded).
+   * Un parámetro ausente en la revisión fijada también deniega (limit_exceeded, auditado por el llamador).
    */
-  async assertCapacity(client: PoolClient, tenantId: string, capability: CapabilityName, units: number): Promise<void> {
-    const sub = await client.query<{ plan_id: string; status: string }>(
-      'SELECT plan_id, status FROM subscription WHERE tenant_id = $1 ORDER BY started_at DESC LIMIT 1', [tenantId]);
-    const subscription = sub.rows[0];
-    if (!subscription || subscription.status !== 'active') {
-      throw new AppError(403, DENY_CODES.SUBSCRIPTION_REQUIRED, SUBSCRIPTION_REQUIRED_MESSAGE);
+  async assertCapacity(client: PoolClient, tenantId: string, capability: string, units: number): Promise<void> {
+    const def = this.quotaDefinition(capability);
+    const policy = await resolveEffectivePolicy(client, tenantId);
+    const limit = effectiveValue(policy, def);
+    if (!limit || typeof limit.value !== 'number') {
+      // `parameter`, no `parameter_key`: el logger rechaza (lanza) cualquier campo terminado en `_key`.
+      log.error('quota.parameter_missing', 'pinned plan revision does not define the parameter', {
+        tenant_id: tenantId, parameter: def.key, revision_id: policy.revision.revision_id,
+      });
+      throw new AppError(403, DENY_CODES.LIMIT_EXCEEDED, missingParameterMessage(def));
     }
-    const limit = await client.query<{ max_value: number }>(
-      'SELECT max_value FROM plan_limit WHERE plan_id = $1 AND capability = $2', [subscription.plan_id, capability]);
-    const max = limit.rows[0]?.max_value ?? null;
-    const reserved = await client.query<{ n: string }>(
-      `SELECT COALESCE(SUM(units), 0)::text AS n FROM quota_reservation
-        WHERE tenant_id = $1 AND capability = $2 AND state = 'reserved' AND expires_at > clock_timestamp()`,
-      [tenantId, capability]);
-    const usage = await countCapabilityUsage(client, tenantId, capability) + Number(reserved.rows[0]?.n ?? 0);
-    if (!fitsLimit(max, usage, units)) {
-      throw new AppError(403, DENY_CODES.LIMIT_EXCEEDED, limitExceededMessage(capability, max));
+    const live = (await this.liveReservations(client, tenantId, capability)).get(capability) ?? 0;
+    const { usage } = await this.usage(client, policy, def, live);
+    if (!fitsLimit(limit.value, usage, units)) {
+      throw new AppError(403, DENY_CODES.LIMIT_EXCEEDED, limitExceededMessage(def, usage, limit.value));
     }
+  }
+
+  /**
+   * Elegibilidad (semántica `eligibility`): el plan incluye la función. Sin suscripción ⇒
+   * subscription_required; valor ausente o `false` ⇒ 403 prohibited. No consume nada.
+   */
+  async assertEligible(db: Pool | PoolClient, tenantId: string, parameterKey: string): Promise<void> {
+    const def = this.definitions.find((d) => d.key === parameterKey && d.semantics === 'eligibility');
+    if (!def) throw new Error(`FAIL-CLOSED: ${parameterKey} is not an eligibility parameter`);
+    const policy = await resolveEffectivePolicy(db, tenantId);
+    const value = effectiveValue(policy, def);
+    if (!value) throw new AppError(403, DENY_CODES.PROHIBITED, missingParameterMessage(def));
+    if (value.value !== true) throw new AppError(403, DENY_CODES.PROHIBITED, notInPlanMessage(def));
+  }
+
+  /** Límite y uso efectivos de cada capacidad del tenant (lectura para paneles y consolas). */
+  async capacityStatus(db: Pool | PoolClient, policy: EffectivePolicy): Promise<CapacityStatus[]> {
+    const out: CapacityStatus[] = [];
+    const live = await this.liveReservations(db, policy.subscription.tenant_id);
+    for (const def of this.definitions) {
+      if (!def.capability || def.semantics === 'eligibility') continue;
+      const limit = effectiveValue(policy, def);
+      const { usage, window } = await this.usage(db, policy, def, live.get(def.capability) ?? 0);
+      out.push({
+        capability: def.capability, parameter_key: def.key, limit: typeof limit?.value === 'number' ? limit.value : null,
+        usage, capped_by_system: limit?.cappedBySystem ?? false,
+        window: window ? { start: window.start.toISOString(), end: window.end.toISOString() } : null,
+      });
+    }
+    return out;
   }
 
   /**
@@ -175,7 +270,7 @@ export class QuotaLedger {
     req: QuotaRequest,
     create: () => Promise<{ resourceRef: string; value: T }>,
   ): Promise<{ kind: 'replay'; reservation: QuotaReservationRow } | { kind: 'consumed'; reservation: QuotaReservationRow; value: T }> {
-    assertValidRequest(req);
+    this.assertValidRequest(req);
     await this.lock(client, req.tenantId, req.capability);
     const existing = await this.findByKey(client, req);
     if (existing?.state === 'committed') return { kind: 'replay', reservation: existing };
@@ -189,7 +284,7 @@ export class QuotaLedger {
 
   /** Paso 1 de 2: aparta `units` en su propia transacción (con su evento `quota.reserved`). */
   async reserve(req: QuotaRequest): Promise<QuotaClaim> {
-    assertValidRequest(req);
+    this.assertValidRequest(req);
     return runAtomic(this.deps.pool, async (client) => {
       await this.lock(client, req.tenantId, req.capability);
       const existing = await this.findByKey(client, req);
@@ -247,8 +342,8 @@ export class QuotaLedger {
   }
 
   /**
-   * Reconciliación: cierra como `expired` las reservas vencidas (con su evento, en
-   * una transacción) e informa del uso por encima del límite del plan.
+   * Reconciliación: cierra como `expired` las reservas vencidas (con su evento, en una transacción) e
+   * informa del uso por encima del límite de la revisión fijada en los parámetros que se aplican.
    */
   async reconcile(): Promise<QuotaReconcileReport> {
     const runId = `quota_reconcile_${randomUUID()}`;
@@ -265,14 +360,19 @@ export class QuotaLedger {
       }
       return res.rows;
     });
-    const limits = await this.deps.pool.query<{ tenant_id: string; capability: CapabilityName; max_value: number }>(
-      `SELECT s.tenant_id, l.capability, l.max_value FROM subscription s
-         JOIN plan_limit l ON l.plan_id = s.plan_id WHERE s.status = 'active' ORDER BY s.tenant_id, l.capability`);
+    const tenants = await this.deps.pool.query<{ tenant_id: string }>(
+      `SELECT tenant_id FROM subscription WHERE status = 'active' ORDER BY tenant_id`);
+    // Un parámetro que no se aplica (`agents`, DEC-0006/DEC-0017) no es un exceso que reportar.
+    const enforced = new Set(this.definitions.filter((d) => d.enforcement.state === 'enforced').map((d) => d.key));
     const overLimit: QuotaReconcileReport['overLimit'] = [];
-    for (const l of limits.rows) {
-      if (!(KNOWN_CAPABILITIES as readonly string[]).includes(l.capability)) continue;
-      const usage = await countCapabilityUsage(this.deps.pool, l.tenant_id, l.capability);
-      if (usage > l.max_value) overLimit.push({ tenant_id: l.tenant_id, capability: l.capability, usage, max: l.max_value });
+    for (const { tenant_id: tenantId } of tenants.rows) {
+      const policy = await loadPinnedPolicy(this.deps.pool, tenantId);
+      if (!policy) continue;
+      for (const s of await this.capacityStatus(this.deps.pool, policy)) {
+        if (enforced.has(s.parameter_key) && s.limit !== null && s.window === null && s.usage > s.limit) {
+          overLimit.push({ tenant_id: tenantId, capability: s.capability, usage: s.usage, max: s.limit });
+        }
+      }
     }
     const report: QuotaReconcileReport = {
       expired: expired.map((r) => ({ reservation_id: r.reservation_id, tenant_id: r.tenant_id, capability: r.capability, units: r.units })),

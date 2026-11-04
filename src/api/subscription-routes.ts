@@ -1,9 +1,10 @@
 /**
- * API interna de suscripciones/planes (INC-006, CAP-012, DEC-024).
+ * API del negocio sobre su plan (INC-006, CAP-012, DEC-024; DEC-0075/SRC-0013), SOLO LECTURA.
  *
- * - POST /subscriptions/assign   (subscription.admin) asigna el plan del
- *   cliente (EL tenant de la sesión: aislamiento por cliente).
- * - GET  /subscriptions/entitlements (subscription.read) consulta plan+límites.
+ * - POST /subscriptions/assign   RETIRADA: responde 403 permission_denied auditado. La asignación
+ *   es exclusiva de MainSpot Administration (platform_admin, step-up, motivo, historial).
+ * - GET  /subscriptions/entitlements (subscription.read) plan, revisión fijada, límites y uso.
+ * - GET  /subscriptions/plans (subscription.read) planes asignables (nunca borradores).
  * - POST /subscriptions/invoice  (subscription.admin) PROHIBITED si el plan no
  *   tiene precio (piloto sin cobro).
  * Fail-closed INC-001: tenant de la sesión + auditoría con request_id.
@@ -15,7 +16,6 @@ import type { AppConfig } from '../shared/config.ts';
 import { getRequestContext, type SessionSummary } from '../shared/context.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import type { AuditSink } from '../audit/sink.ts';
-import { auditedOperation } from '../audit/sink.ts';
 import type { EntitlementService, SubscriptionRepository } from '../subscriptions/entitlements.ts';
 import { denyAndRespond, type LooseRequest } from '../boundary/middleware.ts';
 import { requirePermission } from '../boundary/middleware.ts';
@@ -57,25 +57,11 @@ async function handleDomainDeny(req: Request, res: Response, lreq: LooseRequest,
 export function subscriptionRouter(deps: SubscriptionRouteDeps): Router {
   const router = Router();
 
-  // Asignar plan al cliente (admin; el tenant es el de la sesión).
-  router.post('/subscriptions/assign', requirePermission('subscription.admin', deps.sink, deps.pool), ah(async (req, res) => {
+  // RETIRADA (SRC-0013 self_assign): el negocio no se asigna planes. Deny auditado para cualquier rol.
+  router.post('/subscriptions/assign', requirePermission('subscription.read', deps.sink, deps.pool), ah(async (req, res) => {
     const lreq = req as LooseRequest;
-    const rc = rcOf(lreq);
-    const session = sessionOf(lreq);
-    const { plan_id } = (req.body ?? {}) as { plan_id?: string };
-    if (!plan_id) {
-      return res.status(400).json({ error: { code: 'validation_error', message: 'Indica el plan a asignar (plan_id).' } });
-    }
-    const subscription = await auditedOperation(deps.sink, deps.pool, {
-      request_id: rc.request_id,
-      tenant_id: session.tenant_id,
-      actor_id: session.user_id,
-      actor_role: session.role_name,
-      action: 'subscription.assigned',
-      resource: `subscription/plan:${plan_id}`,
-    }, (db) => deps.subscriptionRepo.assign(session.tenant_id, plan_id, db));
-    const view = await deps.entitlements.getEntitlements(session.tenant_id);
-    return res.json({ subscription, entitlements: view, message: 'Plan asignado al cliente.' });
+    await denyAndRespond(req, res, lreq, new AppError(403, DENY_CODES.PERMISSION_DENIED,
+      'El plan lo asigna MainSpot. Tu panel muestra tu plan y su consumo; para cambiarlo, escríbenos.'), deps.pool);
   }));
 
   // Consultar entitlements (los 3 perfiles leen; subscription.read).
@@ -100,7 +86,7 @@ export function subscriptionRouter(deps: SubscriptionRouteDeps): Router {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
-    const plans = await deps.subscriptionRepo.listPlans();
+    const plans = await deps.subscriptionRepo.listAssignablePlans();
     await deps.sink.write({
       tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
       action: 'subscription.read', resource: 'subscription/plans', request_id: rc.request_id,

@@ -6,10 +6,11 @@
 
 import { randomUUID } from 'node:crypto';
 import { login, type TestApi } from './testdb.ts';
+import { createPublishedPlan } from './plans.ts';
 
 const PASSWORD = 'Fixture-Admin-2026!';
 
-/** Tenant activo con un usuario de administración y un plan con los límites dados. */
+/** Tenant activo con un usuario de administración y un plan publicado con los límites dados (resto = 0). */
 export async function createTenantWithPlan(
   t: TestApi, limits: Record<string, number>, prefix = 'client_t',
 ): Promise<{ tenant: string; token: string; userId: string; login: string; plan: string }> {
@@ -25,11 +26,7 @@ export async function createTenantWithPlan(
      VALUES ($1, $2, $3, 'active', $4, crypt($5, gen_salt('bf', 4)))`,
     [userId, `Persona ${tenant}`, loginName, tenant, PASSWORD]);
   await t.pool.query(`INSERT INTO user_role (user_id, role_id, tenant_id) VALUES ($1, 'administration', $2)`, [userId, tenant]);
-  await t.pool.query(`INSERT INTO plan (plan_id, name, description, price_cents, currency, is_pilot, active) VALUES ($1, $1, 'test', NULL, NULL, false, true)`, [plan]);
-  for (const [capability, max] of Object.entries(limits)) {
-    await t.pool.query('INSERT INTO plan_limit (limit_id, plan_id, capability, max_value) VALUES ($1, $2, $3, $4)',
-      [`${plan}_${capability}`, plan, capability, max]);
-  }
+  await createPublishedPlan(t.pool, plan, limits);
   await t.pool.query(`INSERT INTO subscription (subscription_id, tenant_id, plan_id, status) VALUES ($1, $2, $3, 'active')`,
     [`sub_${tenant}`, tenant, plan]);
   const { token } = await login(t.baseUrl, loginName, PASSWORD, tenant);

@@ -14,7 +14,9 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { bootApi, login, authHeaders, api, SEED, type TestApi } from '../helpers/testdb.ts';
+import { currentStep, totpAt } from '../../src/platform/auth.ts';
 
 let t: TestApi;
 const transcript: string[] = [];
@@ -28,7 +30,7 @@ function resultLine(ok: boolean, label: string): void {
 }
 
 before(async () => {
-  t = await bootApi();
+  t = await bootApi({ platformMfaKey: randomBytes(32).toString('base64') });
 });
 
 after(async () => {
@@ -129,11 +131,23 @@ test('E2E INC-004/005/006: reseña → humanos → publica una vez; post → pre
   resultLine(Number(pubsSocial.rows[0]?.n ?? 0) === 1, '15. UNA sola publicación social');
 
   // ---------- 3) INC-006: plan → límite excedido deny + audit ----------
-  say('\n-- INC-006: suscripciones y límites (catálogo configurable, DEC-024) --');
-  const assign = await api(t.baseUrl, '/api/backoffice/subscriptions/assign', {
+  say('\n-- INC-006: suscripciones y límites (catálogo versionado, DEC-024/DEC-0075) --');
+  const selfAssign = await api(t.baseUrl, '/api/backoffice/subscriptions/assign', {
     method: 'POST', headers: authHeaders(admin.token), body: JSON.stringify({ plan_id: 'plan_basico' }),
   });
-  resultLine(assign.status === 200 && assign.body.entitlements.plan.plan_id === 'plan_basico', '16. plan Básico asignado (sin precio)');
+  resultLine(selfAssign.status === 403, '16a. el negocio ya no se asigna planes (403, SRC-0013)');
+  // Administration (platform_admin + TOTP + step-up + motivo) asigna Básico: fija su revisión publicada.
+  const sfx = randomUUID().slice(0, 6);
+  const staff = await t.handle.platformAuth.createUser({ login: `adm-e2e-${sfx}`, displayName: 'Admin E2E', password: 'Plataforma-E2E-Admin-2026', roles: ['platform_admin'], grantedBy: 'test' });
+  const step = currentStep();
+  const platformApi = (path: string, body?: unknown, token?: string) => api(t.baseUrl, `/api/platform${path}`, {
+    method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const staffToken = (await platformApi('/auth/login', { login: `adm-e2e-${sfx}`, password: 'Plataforma-E2E-Admin-2026', code: totpAt(staff.totp_secret, step) })).body.token as string;
+  await platformApi('/auth/step-up', { code: totpAt(staff.totp_secret, step + 1) }, staffToken);
+  const assign = await platformApi(`/tenants/${SEED.a.tenant}/plan`, { plan_id: 'plan_basico', reason: 'E2E INC-006: asignar plan Básico' }, staffToken);
+  resultLine(assign.status === 200 && assign.body.subscription.plan_revision_id === 'prv_plan_basico_v1', '16. plan Básico asignado por Administration, fijado a su revisión v1 (sin precio)');
 
   const entitlements = await api(t.baseUrl, '/api/backoffice/subscriptions/entitlements', { headers: authHeaders(ops.token) });
   resultLine(entitlements.body.entitlements.limits.social_posts === 3, '17. límite social_posts = 3 visibile para operación');
@@ -157,9 +171,7 @@ test('E2E INC-004/005/006: reseña → humanos → publica una vez; post → pre
   resultLine(denyAudit.rowCount === 1, '19. exceso auditado como deny/limit_exceeded');
 
   // Restaurar el plan piloto (no afectar otros flujos del run E2E).
-  await api(t.baseUrl, '/api/backoffice/subscriptions/assign', {
-    method: 'POST', headers: authHeaders(admin.token), body: JSON.stringify({ plan_id: 'plan_piloto_1' }),
-  });
+  await platformApi(`/tenants/${SEED.a.tenant}/plan`, { plan_id: 'plan_piloto_1', reason: 'E2E INC-006: restaurar plan piloto' }, staffToken);
 
   say('\n=== Resumen E2E INC-004/005/006 ===');
   say(`review escalada y publicada: ${negative.review_id} (proposal ${proposalId})`);

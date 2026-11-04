@@ -10,6 +10,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { bootApi, authHeaders, api, type TestApi } from '../helpers/testdb.ts';
 import { createTenantWithPlan, countRows, failAuditFor } from '../helpers/tenants.ts';
+import { createPublishedPlan } from '../helpers/plans.ts';
+import { SubscriptionAssignment } from '../../src/plans/assignment.ts';
 
 let t: TestApi;
 
@@ -156,15 +158,20 @@ test('NFR-0001: user creation (user.manage) is rolled back when its audit cannot
   assert.equal(await countRows(t, 'SELECT count(*) AS n FROM internal_user WHERE login = $1 AND tenant_id = $2', [login, tenant]), 0);
 });
 
-test('NFR-0001: plan assignment (subscription.assigned) is rolled back when its audit cannot be written', async () => {
-  const { tenant, token, plan } = await createTenantWithPlan(t, {});
+test('NFR-0001: plan assignment (subscription.plan_assigned) is rolled back, history included, when its audit cannot be written', async () => {
+  const { tenant, plan } = await createTenantWithPlan(t, {});
   const otherPlan = `plan_other_${tenant}`;
-  await t.pool.query(`INSERT INTO plan (plan_id, name, description, price_cents, currency, is_pilot, active) VALUES ($1, $1, 'test', NULL, NULL, false, true)`, [otherPlan]);
-  const restore = await failAuditFor(t, tenant, 'subscription.assigned');
+  await createPublishedPlan(t.pool, otherPlan, {});
+  const historyBefore = await countRows(t, 'SELECT count(*) AS n FROM subscription_history WHERE tenant_id = $1', [tenant]);
+  const restore = await failAuditFor(t, tenant, 'subscription.plan_assigned');
   try {
-    const res = await post(token, '/subscriptions/assign', { plan_id: otherPlan });
-    assert.deepEqual([res.status, res.body.error?.code], [500, 'audit_failed']);
+    const assignment = new SubscriptionAssignment({ pool: t.pool, sink: t.handle.sink });
+    await assert.rejects(assignment.assign({
+      tenantId: tenant, planId: otherPlan, reason: 'Asignación con auditoría rota',
+      actor: { platformUserId: 'pu_nfr', login: 'nfr', roles: ['platform_admin'], requestId: null },
+    }), (err: Error & { code?: string }) => err.code === 'audit_failed');
   } finally { await restore(); }
   const subs = await t.pool.query<{ plan_id: string; status: string }>('SELECT plan_id, status FROM subscription WHERE tenant_id = $1', [tenant]);
   assert.deepEqual(subs.rows.map((r) => [r.plan_id, r.status]), [[plan, 'active']]);
+  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM subscription_history WHERE tenant_id = $1', [tenant]), historyBefore, 'sin historial huérfano');
 });

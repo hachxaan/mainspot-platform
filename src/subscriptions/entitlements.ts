@@ -1,24 +1,24 @@
 /**
- * EntitlementService (INC-006, CAP-012, REQ-019, DEC-024).
+ * EntitlementService (INC-006, CAP-012, REQ-019, DEC-024; catálogo versionado DEC-0075).
  *
- * Catálogo de planes CONFIGURABLE en BD (seed idempotente), SIN precios reales.
- * Un cliente tiene UNA suscripción activa. El consumo de cuota en el punto de
- * creación (website/social/reputation/conversaciones) lo hace `QuotaLedger`
- * (quota.ts): comprobación y consumo atómicos por tenant (DEC-0005) con
- * auditoría en la misma transacción (NFR-0001). Este módulo aporta las piezas
- * compartidas: límites del plan, conteo de uso y mensajes.
+ * Catálogo de planes en BD SIN precios reales. Un cliente tiene UNA suscripción, FIJADA a la revisión
+ * publicada con la que se asignó (src/plans/assignment.ts). Este módulo expone la vista de solo lectura
+ * del negocio (plan, revisión, límites y uso efectivos con la misma cuenta que aplica QuotaLedger) y la
+ * facturación, que sigue PROHIBITED sin precio (RULE-006/DEC-024). El negocio nunca asigna planes.
  *
- * Fail-closed: sin suscripción activa no hay entitlements (deny
- * 'subscription_required'); un plan sin precio NO se puede facturar
- * ('prohibited', RULE-006/DEC-024).
+ * Fail-closed: sin suscripción no hay entitlements; un valor ausente en la revisión se muestra sin
+ * límite (null) y el enforcement lo deniega.
  */
 
-import type { Pool, PoolClient } from 'pg';
+import type { Pool } from 'pg';
 import type { AuditSink } from '../audit/sink.ts';
 import { AppError, DENY_CODES, type DenyCode } from '../shared/errors.ts';
+import { effectiveValue, loadPinnedPolicy, type PolicySubscription } from '../plans/policy.ts';
+import { PLAN_PARAMETERS, periodLabel } from '../plans/registry.ts';
+import { QuotaLedger } from './quota.ts';
 import { SimulatedPaymentProvider, type PaymentProvider } from './payment.ts';
 
-export type SubscriptionStatus = 'active' | 'suspended' | 'cancelled';
+export type { SubscriptionStatus } from '../plans/policy.ts';
 
 export interface PlanRow {
   plan_id: string;
@@ -31,61 +31,30 @@ export interface PlanRow {
   created_at: string;
 }
 
-export interface PlanLimitRow {
-  limit_id: string;
-  plan_id: string;
-  capability: string;
-  max_value: number;
-}
+export type SubscriptionRow = PolicySubscription;
 
-export interface SubscriptionRow {
-  subscription_id: string;
-  tenant_id: string;
-  plan_id: string;
-  status: SubscriptionStatus;
-  started_at: string;
-  updated_at: string;
+export interface EntitlementParameter {
+  key: string;
+  capability: string | null;
+  label: string;
+  unit: string;
+  semantics: string;
+  period: string;
+  value: number | boolean | null;
+  usage: number | null;
+  enforced: boolean;
 }
 
 export interface EntitlementView {
   tenant_id: string;
   subscription: SubscriptionRow;
   plan: PlanRow;
+  revision: { revision_id: string; version: number; status: string; published_at: Date };
+  /** Límite efectivo por capacidad (contrato del panel: capacidad → máximo). */
   limits: Record<string, number>;
-}
-
-/** Capacidades conocidas del catálogo (espejo de dec-024/seed). */
-export const KNOWN_CAPABILITIES = ['website', 'social_posts', 'social_ads', 'reviews_managed', 'agents', 'conversations'] as const;
-export type CapabilityName = (typeof KNOWN_CAPABILITIES)[number];
-
-/** Función pura del límite: ¿caben `units` más sobre `usage`? Sin límite configurado ⇒ no (fail-closed). */
-export function fitsLimit(limit: number | null, usage: number, units = 1): boolean {
-  if (limit === null) return false;
-  return usage + units <= limit;
-}
-
-export const SUBSCRIPTION_REQUIRED_MESSAGE =
-  'Este cliente no tiene un plan activo. Consulta con el administrador del plan de MainSpot.';
-
-export function limitExceededMessage(capability: CapabilityName, max: number | null): string {
-  return `Se alcanzó el límite del plan para ${capabilityLabel(capability)} (${max ?? 0} de ${max ?? 0}). El plan Piloto puede ajustarse según las necesidades del negocio.`;
-}
-
-/**
- * Uso actual de una capacidad = filas de dominio del tenant. Recibe la conexión de la
- * transacción del llamador para contar dentro del candado de cuota (DEC-0005).
- */
-export async function countCapabilityUsage(db: Pool | PoolClient, tenantId: string, capability: CapabilityName): Promise<number> {
-  const sql: Record<CapabilityName, string> = {
-    website: 'SELECT count(*) AS n FROM client_website WHERE tenant_id = $1',
-    social_posts: "SELECT count(*) AS n FROM social_post WHERE tenant_id = $1 AND content_type = 'post'",
-    social_ads: "SELECT count(*) AS n FROM social_post WHERE tenant_id = $1 AND content_type = 'ad'",
-    reviews_managed: 'SELECT count(*) AS n FROM review WHERE tenant_id = $1',
-    agents: 'SELECT count(*) AS n FROM internal_user WHERE tenant_id = $1',
-    conversations: 'SELECT count(*) AS n FROM conversation_request WHERE tenant_id = $1',
-  };
-  const res = await db.query<{ n: string }>(sql[capability], [tenantId]);
-  return Number(res.rows[0]?.n ?? 0);
+  /** Uso que cuenta para el límite, por capacidad (misma cuenta que el enforcement). */
+  usage: Record<string, number>;
+  parameters: EntitlementParameter[];
 }
 
 export class SubscriptionRepository {
@@ -95,45 +64,18 @@ export class SubscriptionRepository {
     this.pool = pool;
   }
 
-  async findByTenant(tenantId: string): Promise<SubscriptionRow | null> {
-    const res = await this.pool.query<SubscriptionRow>(
-      `SELECT * FROM subscription WHERE tenant_id = $1 ORDER BY started_at DESC LIMIT 1`,
-      [tenantId],
-    );
-    return res.rows[0] ?? null;
-  }
-
-  async assign(tenantId: string, planId: string, db: Pool | PoolClient = this.pool): Promise<SubscriptionRow> {
-    const res = await db.query<SubscriptionRow>(
-      `INSERT INTO subscription (subscription_id, tenant_id, plan_id, status)
-       VALUES ($1,$2,$3,'active')
-       ON CONFLICT (tenant_id) DO UPDATE SET plan_id = EXCLUDED.plan_id, status = 'active', updated_at = now()
-       RETURNING *`,
-      [`sub_${crypto.randomUUID()}`, tenantId, planId],
-    );
-    return res.rows[0] as SubscriptionRow;
-  }
-
   async plan(planId: string): Promise<PlanRow | null> {
-    const res = await this.pool.query<PlanRow>('SELECT * FROM plan WHERE plan_id = $1', [planId]);
+    const res = await this.pool.query<PlanRow>(
+      'SELECT plan_id, name, description, price_cents, currency, is_pilot, active, created_at FROM plan WHERE plan_id = $1', [planId]);
     return res.rows[0] ?? null;
   }
 
-  async limits(planId: string): Promise<PlanLimitRow[]> {
-    const res = await this.pool.query<PlanLimitRow>('SELECT * FROM plan_limit WHERE plan_id = $1', [planId]);
-    return res.rows;
-  }
-
-  async limitFor(planId: string, capability: string): Promise<PlanLimitRow | null> {
-    const res = await this.pool.query<PlanLimitRow>(
-      'SELECT * FROM plan_limit WHERE plan_id = $1 AND capability = $2',
-      [planId, capability],
-    );
-    return res.rows[0] ?? null;
-  }
-
-  async listPlans(): Promise<PlanRow[]> {
-    const res = await this.pool.query<PlanRow>('SELECT * FROM plan ORDER BY is_pilot DESC, name');
+  /** Planes asignables (habilitados con revisión publicada); nunca borradores ni deshabilitados. */
+  async listAssignablePlans(): Promise<PlanRow[]> {
+    const res = await this.pool.query<PlanRow>(
+      `SELECT p.plan_id, p.name, p.description, p.price_cents, p.currency, p.is_pilot, p.active, p.created_at
+         FROM plan p WHERE p.active AND EXISTS (SELECT 1 FROM plan_revision r WHERE r.plan_id = p.plan_id AND r.status = 'PUBLISHED')
+        ORDER BY p.is_pilot DESC, p.name`);
     return res.rows;
   }
 }
@@ -146,29 +88,44 @@ export interface EntitlementServiceDeps {
 
 export class EntitlementService {
   private readonly deps: EntitlementServiceDeps;
+  private readonly repo: SubscriptionRepository;
+  private readonly quota: QuotaLedger;
 
   constructor(deps: EntitlementServiceDeps) {
     this.deps = deps;
-  }
-
-  private get repo(): SubscriptionRepository {
-    return new SubscriptionRepository(this.deps.pool);
+    this.repo = new SubscriptionRepository(deps.pool);
+    this.quota = new QuotaLedger({ pool: deps.pool, sink: deps.sink });
   }
 
   private get payment(): PaymentProvider {
     return this.deps.paymentProvider ?? new SimulatedPaymentProvider();
   }
 
-  /** Entitlements del tenant (plan + límites por capacidad). */
+  /** Entitlements del tenant: plan, revisión fijada, límites y uso efectivos (solo lectura). */
   async getEntitlements(tenantId: string): Promise<EntitlementView | null> {
-    const subscription = await this.repo.findByTenant(tenantId);
-    if (!subscription) return null;
-    const plan = await this.repo.plan(subscription.plan_id);
+    const policy = await loadPinnedPolicy(this.deps.pool, tenantId);
+    if (!policy) return null;
+    const plan = await this.repo.plan(policy.subscription.plan_id);
     if (!plan) return null;
-    const limitRows = await this.repo.limits(subscription.plan_id);
+    const status = new Map((await this.quota.capacityStatus(this.deps.pool, policy)).map((s) => [s.parameter_key, s]));
     const limits: Record<string, number> = {};
-    for (const l of limitRows) limits[l.capability] = l.max_value;
-    return { tenant_id: tenantId, subscription, plan, limits };
+    const usage: Record<string, number> = {};
+    const parameters: EntitlementParameter[] = [];
+    for (const def of PLAN_PARAMETERS) {
+      const value = effectiveValue(policy, def)?.value ?? null;
+      const used = status.get(def.key)?.usage ?? null;
+      if (def.capability && typeof value === 'number') limits[def.capability] = value;
+      if (def.capability && used !== null) usage[def.capability] = used;
+      parameters.push({
+        key: def.key, capability: def.capability, label: def.label, unit: def.unit, semantics: def.semantics,
+        period: periodLabel(def), value, usage: used, enforced: def.enforcement.state === 'enforced',
+      });
+    }
+    const { revision_id, version, status: revStatus, published_at } = policy.revision;
+    return {
+      tenant_id: tenantId, subscription: policy.subscription, plan,
+      revision: { revision_id, version, status: revStatus, published_at }, limits, usage, parameters,
+    };
   }
 
   /**
@@ -176,7 +133,8 @@ export class EntitlementService {
    * (DEC-024/RULE-006). Con precio futuro usaría PaymentProvider (simulado).
    */
   async invoice(tenantId: string, actorId: string, requestId: string): Promise<{ ok: boolean; result: string; evidence_ref: string | null }> {
-    const subscription = await this.repo.findByTenant(tenantId);
+    const subscription = (await this.deps.pool.query<SubscriptionRow>(
+      'SELECT subscription_id, tenant_id, plan_id, plan_revision_id, status, started_at, updated_at FROM subscription WHERE tenant_id = $1', [tenantId])).rows[0];
     if (!subscription || subscription.status !== 'active') {
       await this.deps.sink.write({
         tenant_id: tenantId, actor_id: actorId, actor_role: null,
@@ -217,16 +175,4 @@ export class EntitlementService {
     err.audited = true;
     return err;
   }
-}
-
-function capabilityLabel(capability: CapabilityName): string {
-  const labels: Record<CapabilityName, string> = {
-    website: 'páginas web',
-    social_posts: 'publicaciones en redes',
-    social_ads: 'anuncios en redes',
-    reviews_managed: 'reseñas gestionadas',
-    agents: 'agentes',
-    conversations: 'conversaciones',
-  };
-  return labels[capability];
 }

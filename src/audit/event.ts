@@ -45,9 +45,10 @@ export const SENSITIVE_ACTIONS = new Set<string>([
   'conversation.publish_attempt',
   'conversation.rejected',
   'website.provisioned',
-  // INC-006 (DEC-024): asignar plan/facturar son acciones de configuración
-  // contractual/administrativa sensibles (fail-closed con auditoría atómica).
-  'subscription.assigned',
+  // INC-006 (DEC-024) + DEC-0075: asignar plan, migrar la revisión fijada y facturar son acciones de
+  // configuración contractual/administrativa sensibles (fail-closed con auditoría atómica).
+  'subscription.plan_assigned',
+  'subscription.revision_migrated',
   'subscription.invoice',
   // QS-0006 (DEC-0021..0027) + NFR-0001: la retención redacta o borra datos, y la baja
   // y la anonimización eliminan un tenant: el evento debe ser confiable (fail-closed).

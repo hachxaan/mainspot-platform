@@ -1,11 +1,12 @@
 /**
  * MainSpot Administration (FR-0018) y Engineering Console (FR-0019): API de plataforma, separada
  * del panel del negocio (otra sesión, otra clave, otra auditoría).
- *
- * - platform_admin: negocios, planes, clasificación de datos, salud, presupuestos.
+ * - platform_admin: negocios, asignación de planes (fija la revisión publicada), clasificación de datos, salud, presupuestos.
  * - ai_engineer: catálogo, prompts, rutas, evaluaciones, rollout/rollback, trazas y jobs.
  * - platform_admin | ai_engineer: laboratorio manual (DEC-0074): grants temporales, evidencia y revisión manual.
- * - platform_support: lectura de salud y acceso de soporte con motivo y caducidad (visible al negocio).
+ * - Planes (DEC-0075): permisos explícitos plans.read/edit/publish y subscriptions.assign (src/platform/permissions.ts,
+ *   rutas en plan-catalog-routes.ts).
+ * - platform_support: lectura de salud, del catálogo de planes y acceso de soporte con motivo y caducidad (visible al negocio).
  * Acciones con efecto (activar ruta, rollback, cambiar plan, suspender, presupuestos, grants, revisión manual)
  * exigen step-up TOTP reciente. Nunca se exponen contraseñas, secretos, tokens ni contenido de
  * conversaciones; las trazas muestran ids, hashes, estado, latencia y costo.
@@ -17,12 +18,19 @@ import { randomUUID } from 'node:crypto';
 import type { AuditSink } from '../audit/sink.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
-import { PlatformAuth, requirePlatform, writePlatformAudit, type PlatformRequest, type PlatformRole, type PlatformSession } from '../platform/auth.ts';
+import { PlatformAuth, assertPlatformReason, requirePlatform, serverRequestId, writePlatformAudit, type PlatformRequest, type PlatformRole, type PlatformSession } from '../platform/auth.ts';
 import type { AiDispatcher } from '../ai/dispatcher.ts';
 import { runEvalSuite } from '../ai/evals.ts';
 import type { AiLab } from '../ai/lab.ts';
 import type { RouteParams } from '../ai/registry.ts';
 import type { SubscriptionRepository } from '../subscriptions/entitlements.ts';
+import { QuotaLedger } from '../subscriptions/quota.ts';
+import { SubscriptionAssignment } from '../plans/assignment.ts';
+import { assertReason } from '../plans/catalog.ts';
+import { loadPinnedPolicy } from '../plans/policy.ts';
+import { PLAN_PARAMETERS, periodLabel } from '../plans/registry.ts';
+import { permissionsOf, requirePlatformPermission } from '../platform/permissions.ts';
+import { planCatalogRouter } from './plan-catalog-routes.ts';
 
 export interface PlatformRouteDeps {
   pool: Pool;
@@ -51,13 +59,11 @@ function sessionOf(req: Request): PlatformSession {
 }
 
 function sessionView(s: PlatformSession): Record<string, unknown> {
-  return { login: s.login, display_name: s.display_name, roles: s.roles, expires_at: s.expires_at, step_up_at: s.step_up_at };
+  return { login: s.login, display_name: s.display_name, roles: s.roles, permissions: permissionsOf(s.roles), expires_at: s.expires_at, step_up_at: s.step_up_at };
 }
 
 function reasonOf(body: unknown): string {
-  const r = typeof (body as { reason?: unknown } | null)?.reason === 'string' ? ((body as { reason: string }).reason).trim() : '';
-  if (r.length < 10 || r.length > 500) throw new AppError(400, 'validation_error', 'Escribe el motivo (10 a 500 caracteres).');
-  return r;
+  return assertPlatformReason((body as { reason?: unknown } | null)?.reason);
 }
 
 export function platformRouter(deps: PlatformRouteDeps): Router {
@@ -65,7 +71,9 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
   const { pool } = deps;
   const guard = (roles: PlatformRole[], action: string, stepUp = false) => requirePlatform(deps.auth, pool, roles, { action, stepUp });
   const audit = (s: PlatformSession, req: Request, action: string, resource: string | null, result: string, extra: { tenantId?: string | null; reason?: string | null } = {}) =>
-    writePlatformAudit(pool, { actorId: s.platform_user_id, actorRoles: s.roles, action, resource, tenantId: extra.tenantId ?? null, decision: 'allow', result, reason: extra.reason ?? null, requestId: (req.get('x-request-id') ?? null) });
+    writePlatformAudit(pool, { actorId: s.platform_user_id, actorRoles: s.roles, action, resource, tenantId: extra.tenantId ?? null, decision: 'allow', result, reason: extra.reason ?? null, requestId: serverRequestId(req) });
+  const quota = new QuotaLedger({ pool, sink: deps.sink });
+  const assignment = new SubscriptionAssignment({ pool, sink: deps.sink });
 
   // ------------------------------------------------------------------ sesión
   router.post('/auth/login', ah(async (req, res) => {
@@ -91,7 +99,7 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
   // ------------------------------------------------------------------ Administration
   const anyRole: PlatformRole[] = ['platform_admin', 'ai_engineer', 'platform_support'];
 
-  router.get('/tenants', guard(['platform_admin', 'platform_support'], 'platform.tenants.read'), ah(async (req, res) => {
+  router.get('/tenants', requirePlatformPermission(deps.auth, pool, 'tenants.read'), ah(async (req, res) => {
     const r = await pool.query(
       `SELECT c.client_id, c.business_name, c.status, c.data_classification, c.created_at,
               p.name AS plan, s.status AS subscription_status, w.published_version, w.status AS website_status,
@@ -108,19 +116,27 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
     res.json({ tenants: r.rows });
   }));
 
-  router.get('/tenants/:id', guard(['platform_admin', 'platform_support'], 'platform.tenant.read'), ah(async (req, res) => {
+  router.get('/tenants/:id', requirePlatformPermission(deps.auth, pool, 'tenants.read'), ah(async (req, res) => {
     const id = req.params['id'] as string;
-    const c = await pool.query(`SELECT c.client_id, c.business_name, c.status, c.data_classification, c.created_at, p.plan_id, p.name AS plan, s.status AS subscription_status
-                                  FROM client c LEFT JOIN subscription s ON s.tenant_id = c.client_id LEFT JOIN plan p ON p.plan_id = s.plan_id WHERE c.client_id = $1`, [id]);
+    const c = await pool.query(`SELECT c.client_id, c.business_name, c.status, c.data_classification, c.created_at, p.plan_id, p.name AS plan, s.status AS subscription_status,
+                                       r.revision_id AS plan_revision_id, r.version AS plan_revision_version, r.status AS plan_revision_status
+                                  FROM client c LEFT JOIN subscription s ON s.tenant_id = c.client_id LEFT JOIN plan p ON p.plan_id = s.plan_id
+                                  LEFT JOIN plan_revision r ON r.revision_id = s.plan_revision_id WHERE c.client_id = $1`, [id]);
     if (!c.rows[0]) return res.status(404).json({ error: { code: 'not_found', message: 'No existe ese negocio.' } });
-    const usage = await pool.query(`SELECT capability, sum(units) AS units FROM quota_reservation WHERE tenant_id = $1 AND state = 'committed' AND created_at > date_trunc('month', now()) GROUP BY capability`, [id]);
+    // Uso que cuenta para el límite (misma cuenta que el enforcement) frente a la revisión fijada.
+    const policy = await loadPinnedPolicy(pool, id);
+    const byKey = new Map((policy ? await quota.capacityStatus(pool, policy) : []).map((st) => [st.parameter_key, st]));
+    const planUsage = PLAN_PARAMETERS.map((def) => ({
+      key: def.key, capability: def.capability, label: def.label, unit: def.unit, period: periodLabel(def),
+      enforced: def.enforcement.state === 'enforced', limit: byKey.get(def.key)?.limit ?? null, usage: byKey.get(def.key)?.usage ?? null,
+    }));
     const ai = await pool.query(`SELECT use_case_id, count(*) AS calls, count(*) FILTER (WHERE status IN ('failed','blocked')) AS failed, COALESCE(sum(cost_usd), 0) AS cost_usd
                                    FROM ai_invocation WHERE tenant_id = $1 AND created_at > now() - interval '30 days' GROUP BY use_case_id ORDER BY 2 DESC`, [id]);
     const conns = await pool.query(`SELECT provider, status, last_error_code, last_verified_at FROM provider_connection WHERE tenant_id = $1`, [id]);
     const support = await pool.query(`SELECT a.access_id, u.login, a.reason, a.granted_at, a.expires_at, a.revoked_at FROM platform_support_access a JOIN platform_user u ON u.platform_user_id = a.platform_user_id WHERE a.tenant_id = $1 ORDER BY a.granted_at DESC LIMIT 20`, [id]);
     const jobs = await pool.query(`SELECT kind, status, error_code, count(*) AS n FROM ai_job WHERE tenant_id = $1 AND created_at > now() - interval '30 days' GROUP BY 1,2,3 ORDER BY 4 DESC`, [id]);
     await audit(sessionOf(req), req, 'platform.tenant.read', `client/${id}`, 'ok', { tenantId: id });
-    return res.json({ tenant: c.rows[0], usage_month: usage.rows, ai_30d: ai.rows, connections: conns.rows, support_access: support.rows, jobs_30d: jobs.rows });
+    return res.json({ tenant: c.rows[0], plan_usage: planUsage, ai_30d: ai.rows, connections: conns.rows, support_access: support.rows, jobs_30d: jobs.rows });
   }));
 
   router.post('/tenants/:id/status', guard(['platform_admin'], 'platform.tenant.status', true), ah(async (req, res) => {
@@ -136,17 +152,17 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
     res.json({ ok: true, status });
   }));
 
-  router.post('/tenants/:id/plan', guard(['platform_admin'], 'platform.tenant.plan', true), ah(async (req, res) => {
+  /** Asignación exclusiva de Administration (SRC-0013): fija la revisión publicada vigente, con historial. */
+  router.post('/tenants/:id/plan', requirePlatformPermission(deps.auth, pool, 'subscriptions.assign', { stepUp: true }), ah(async (req, res) => {
     const s = sessionOf(req);
-    const id = req.params['id'] as string;
-    const planId = String((req.body ?? {})['plan_id'] ?? '');
-    const reason = reasonOf(req.body);
-    const plan = await pool.query('SELECT plan_id FROM plan WHERE plan_id = $1 AND active', [planId]);
-    if (!plan.rowCount) throw new AppError(400, 'validation_error', 'Ese plan no existe o no está activo.');
-    const sub = await deps.subscriptions.assign(id, planId);
-    await deps.sink.write({ tenant_id: id, actor_id: `platform:${s.platform_user_id}`, actor_role: 'platform_admin', action: 'platform.tenant.plan', resource: `subscription/${sub.subscription_id}`, request_id: `plat_${randomUUID()}`, decision: 'allow', result: planId });
-    await audit(s, req, 'platform.tenant.plan', `client/${id}`, planId, { tenantId: id, reason });
-    res.json({ subscription: sub });
+    // El motivo queda en subscription_history y en la auditoría de plataforma: sin datos de otros negocios, que
+    // bloquearían su anonimización (mismas reglas que el catálogo).
+    const reason = assertReason((req.body as { reason?: unknown } | null)?.reason);
+    const out = await assignment.assign({
+      tenantId: req.params['id'] as string, planId: String((req.body ?? {})['plan_id'] ?? ''), reason,
+      actor: { platformUserId: s.platform_user_id, login: s.login, roles: s.roles, requestId: serverRequestId(req) },
+    });
+    res.json({ subscription: out.subscription, changed: out.changed });
   }));
 
   /** Solo negocios de laboratorio pueden marcarse `synthetic` (habilita proveedores reales de IA). */
@@ -197,9 +213,14 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
     return res.json({ website: website.rows[0] ?? null, posts: posts.rows, cases: cases.rows, jobs: jobs.rows });
   }));
 
-  router.get('/plans', guard(['platform_admin', 'platform_support'], 'platform.plans.read'), ah(async (_req, res) => {
-    const r = await pool.query(`SELECT p.plan_id, p.name, p.description, p.active, COALESCE(json_agg(json_build_object('capability', l.capability, 'max', l.max_value)) FILTER (WHERE l.limit_id IS NOT NULL), '[]') AS limits
-                                  FROM plan p LEFT JOIN plan_limit l ON l.plan_id = p.plan_id GROUP BY p.plan_id ORDER BY p.plan_id`);
+  /** Planes ASIGNABLES (habilitados con revisión publicada) y sus valores publicados, para Administration. */
+  router.get('/plans', requirePlatformPermission(deps.auth, pool, 'plans.read'), ah(async (_req, res) => {
+    const r = await pool.query(
+      `SELECT p.plan_id, p.name, p.description, p.active, r.revision_id, r.version,
+              COALESCE(json_agg(json_build_object('key', v.parameter_key, 'capability', d.capability, 'value', COALESCE(v.value_int::text, v.value_bool::text)) ORDER BY d.sort_order), '[]') AS values
+         FROM plan p JOIN plan_revision r ON r.plan_id = p.plan_id AND r.status = 'PUBLISHED'
+         JOIN plan_parameter_value v ON v.revision_id = r.revision_id JOIN plan_parameter_definition d ON d.parameter_key = v.parameter_key
+        WHERE p.active GROUP BY p.plan_id, r.revision_id ORDER BY p.is_pilot DESC, p.name`);
     res.json({ plans: r.rows });
   }));
 
@@ -423,6 +444,9 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
     await audit(s, req, 'ai.manual_review', `ai_route_revision/${out.route.route_id}`, `${out.review.decision}:${out.route.status} review:${out.review.review_id} invocations:${out.review.invocation_ids.length}`, { reason: out.review.notes });
     res.status(201).json({ review: out.review, route: out.route });
   }));
+
+  // Engineering Console · Planes (DEC-0075): catálogo versionado con permisos explícitos.
+  router.use(planCatalogRouter({ pool, sink: deps.sink, auth: deps.auth }));
 
   return router;
 }
