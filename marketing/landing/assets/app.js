@@ -27,19 +27,39 @@
     previewButton.firstChild.textContent = isOpen ? 'Ver cómo revisaría un cambio ' : 'Ocultar vista previa ';
   });
 
+  // La demo NO realiza ninguna petición externa y nunca atribuye publicaciones reales.
+  // Calificación y contenido son filtros independientes; la autonomía exige consentimiento previo.
   const scenarios = {
     positive: {
-      name: 'José M.', stars: 5,
+      name: 'José M.', initials: 'JM', stars: 5, mode: 'auto',
       review: '“El café delicioso y me atendieron con mucha amabilidad. ¡Volveremos!”',
-      heading: 'Una buena experiencia merece respuesta',
-      explain: 'Preparé una respuesta amable para agradecer la visita. Tú puedes revisarla antes de publicarla.',
-      replies: ['¡Muchas gracias por visitarnos, José! Nos alegra que hayas disfrutado el café. Será un gusto recibirte otra vez.']
+      heading: 'MainSpot respondió automáticamente',
+      explain: 'Detectó un agradecimiento sencillo de 5 estrellas, sin riesgo. La categoría ya estaba autorizada por el dueño del negocio.',
+      reply: '¡Muchas gracias por visitarnos, José! Nos alegra que hayas disfrutado el café. Será un gusto recibirte otra vez.'
+    },
+    fourStar: {
+      name: 'Lucía G.', initials: 'LG', stars: 4, mode: 'auto',
+      review: '“Muy buena atención. Nos gustó mucho el lugar y sin duda volveremos.”',
+      heading: 'MainSpot respondió automáticamente',
+      explain: 'Una reseña de 4 estrellas con contenido positivo y seguro. No fue necesario interrumpir al propietario.',
+      reply: '¡Gracias por compartir tu experiencia, Lucía! Nos da mucho gusto saber que disfrutaste tu visita. Te esperamos pronto.'
+    },
+    question: {
+      name: 'Andrea C.', initials: 'AC', stars: 5, mode: 'human',
+      review: '“¡Excelente café! ¿Me pueden ofrecer un descuento especial para un evento de 40 personas?”',
+      heading: 'Cinco estrellas, pero requiere tu decisión',
+      explain: 'Aunque la reseña es positiva, solicita una condición comercial que MainSpot no puede prometer. Te propone cómo responder sin comprometer al negocio.',
+      replies: [
+        '¡Gracias por tu comentario, Andrea! Para conocer las opciones disponibles para tu evento, escríbenos por mensaje privado.',
+        'Nos alegra que hayas disfrutado el café, Andrea. Con gusto podemos revisar los detalles de tu evento por nuestros canales de contacto.',
+        '¡Muchas gracias, Andrea! Envíanos un mensaje con los detalles de tu evento y nuestro equipo podrá orientarte.'
+      ]
     },
     complaint: {
-      name: 'Mariana R.', stars: 2,
+      name: 'Mariana R.', initials: 'MR', stars: 2, mode: 'human',
       review: '“Fui ayer por la tarde y mi pedido no estaba listo. Me fui sin poder comprar.”',
-      heading: 'Esto necesita tu atención',
-      explain: 'Detecté una queja. No responderé por mi cuenta: aquí tienes tres alternativas para que elijas o ajustes.',
+      heading: 'Una reseña de 2 estrellas necesita tu atención',
+      explain: 'Las reseñas de 1 a 3 estrellas pasan a revisión humana, aunque parezcan sencillas. Aquí puedes elegir o ajustar una respuesta.',
       replies: [
         'Mariana, sentimos que tu visita no haya salido como esperabas. Nos gustaría conocer más detalles para atenderte personalmente.',
         'Gracias por contarnos lo ocurrido, Mariana. Lamentamos la molestia y queremos revisar tu experiencia directamente contigo.',
@@ -53,17 +73,25 @@
   const replyOptions = $('#reply-options');
   function renderDemo() {
     const data = scenarios[activeScenario];
+    const isAuto = data.mode === 'auto';
     $('#review-name').textContent = data.name;
+    $('#review-avatar').textContent = data.initials;
     $('#review-stars').textContent = '★'.repeat(data.stars) + '☆'.repeat(5 - data.stars);
     $('#review-stars').setAttribute('aria-label', `${data.stars} de 5 estrellas`);
     $('#review-text').textContent = data.review;
     $('#assistant-heading').textContent = data.heading;
     $('#assistant-explainer').textContent = data.explain;
-    $$('.scenario').forEach(b => {
-      const active = b.dataset.scenario === activeScenario;
-      b.classList.toggle('active', active);
-      b.setAttribute('aria-pressed', String(active));
+    $$('.scenario').forEach(button => {
+      const active = button.dataset.scenario === activeScenario;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
     });
+    $('#demo-auto-result').hidden = !isAuto;
+    $('#demo-human-result').hidden = isAuto;
+    if (isAuto) {
+      $('#demo-auto-text').textContent = data.reply;
+      return;
+    }
     replyOptions.replaceChildren(...data.replies.map((reply, index) => {
       const button = document.createElement('button');
       button.type = 'button';
@@ -85,10 +113,12 @@
     }));
     $('#demo-approve').disabled = finished;
     $('#demo-approve').style.opacity = finished ? '.55' : '1';
-    $('#decision-status').textContent = finished ? 'Ejemplo completado. No se envió ni publicó ninguna respuesta.' : 'Aquí no se publica nada en cuentas reales.';
+    $('#decision-status').textContent = finished
+      ? 'Ejemplo aprobado en esta pantalla. No se envió nada a Google.'
+      : 'Pendiente de tu decisión · no se ha publicado.';
   }
-  $$('.scenario').forEach(b => b.addEventListener('click', () => {
-    activeScenario = b.dataset.scenario;
+  $$('.scenario').forEach(button => button.addEventListener('click', () => {
+    activeScenario = button.dataset.scenario;
     chosenReply = 0;
     finished = false;
     renderDemo();
@@ -99,8 +129,17 @@
     chosenReply = Number(button.dataset.reply);
     renderDemo();
   });
-  $('#demo-approve').addEventListener('click', () => { finished = true; renderDemo(); });
-  $('#demo-reset').addEventListener('click', () => { activeScenario = 'positive'; chosenReply = 0; finished = false; renderDemo(); });
+  $('#demo-approve').addEventListener('click', () => {
+    if (scenarios[activeScenario].mode !== 'human' || finished) return;
+    finished = true;
+    renderDemo();
+  });
+  $('#demo-reset').addEventListener('click', () => {
+    activeScenario = 'positive';
+    chosenReply = 0;
+    finished = false;
+    renderDemo();
+  });
   renderDemo();
 
   const form = $('#interest-form');
