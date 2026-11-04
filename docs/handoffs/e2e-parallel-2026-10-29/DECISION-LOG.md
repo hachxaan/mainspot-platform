@@ -89,3 +89,11 @@ Este registro **no** es HDC/DEC ni pretende modificar documentos históricos. Un
 - **Verificación y estados:** suite y smoke reales de navegador/proceso en [HANDOFF-2-RESULTS.md](HANDOFF-2-RESULTS.md); proveedores falsos identificados. KVM bloqueado por SSH `publickey`, bot/correo/Google/Meta autorizados ausentes; reinicio de host sin ventana, no verificado.
 - **Decisión:** GO para pruebas locales controladas; NO-GO para producción o para afirmar DEV-E2E-04 externo completo. Se documentan faltantes, sin HDC ni aprobaciones intermedias de ingeniería. Continuación exclusivamente GPT-6.1 Sol; ningún servicio ajeno, respaldo, Gate 7, QS-0015 ni checkout de CanonFlow modificado.
 
+
+## 2026-11-03 · Regla final de calificación: 1–3★ nunca se responden automáticamente
+
+- **Problema:** el motor determinista clasifica una reseña Google de 1–3★ como no apta para `gratitude`, pero la clasificación Jev puede sustituir esa categoría. Antes de este ajuste, la puntuación no se verificaba nuevamente en el decisor posterior a Jev.
+- **Decisión de seguridad en DEV:** una reseña Google de 1, 2 o 3 estrellas, o sin calificación válida, **siempre** requiere revisión humana. La regla se impone después de la clasificación semántica y antes de programar cualquier respuesta pública, incluso si Jev detecta un agradecimiento seguro.
+- **4–5★:** no bastan por sí solas para publicar. Solo se automatizan categorías `gratitude` o `basic_info` bajo consentimiento explícito vigente, confianza suficiente, ausencia de riesgos, datos verificados y límite de frecuencia. Quejas, ambigüedades o solicitudes comerciales escalan también con 5★.
+- **Implementación:** `enforceReviewRatingGate()` en `src/engagement/classifier.ts` aplicada desde `src/engagement/service.ts`; regresiones en `tests/unit/engagement-classifier.test.ts`. Sin cambios en producción ni en las APIs externas.
+- **Verificación pendiente:** ejecutar `npm test` completo y pruebas E2E de casos semánticos integrados en el entorno PostgreSQL de desarrollo. La reconciliación de `DEC-011`/`BR-0003` y del modelo de delegación antes de producción sigue abierta: este registro no altera las decisiones históricas.
