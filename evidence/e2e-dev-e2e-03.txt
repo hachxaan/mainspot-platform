@@ -1,5 +1,5 @@
-# E2E DEV-E2E-03 — navegador real + servidor real + PostgreSQL (run 2026-11-04T12:20:55.952Z)
-# HEAD: 95f9436084fccd4c3ae83b0dbde62bcdbaa1274b (+ cambios sin commit en src/tests/scripts)
+# E2E DEV-E2E-03 — navegador real + servidor real + PostgreSQL (run 2026-11-05T07:30:37.114Z)
+# HEAD: 0cf90bf233be9687336a0d85481362329e8960ce (+ cambios sin commit en src/tests/scripts)
 # origen: https://app.mainspot.local.io (proxy HTTPS LXC webserver → upstream :3100; TLS verificado, sin ignoreHTTPSErrors)
 # navegador: /usr/bin/google-chrome (headless) · servidor: node src/api/server.ts (worker en proceso, ciclo 1 s)
 # proveedores: simulated (Google, Meta, Telegram); ningún resultado es real

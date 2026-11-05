@@ -357,12 +357,24 @@
     },
     'gbp-pick-location': function (el) {
       var parts = el.dataset.arg.split('|');
-      connectionRequest(el, 'google', 'location', { account: parts[0], location: parts[1] });
+      connectionRequest(el, 'google', 'location', { account: parts[0], location: parts[1] }).then(function (r) {
+        if (!r.ok) return;
+        MS.mem.gbpLocations = null;
+        toast('Elegiste la ubicación de tu negocio en Google.', 'circle-check');
+        go('#/google');
+      });
     },
     'gbp-verify-conn': function (el) { connectionRequest(el, 'google', 'verify'); },
     'gbp-disconnect': function (el) {
       UI.sheet({ title: '¿Desconectar Google?', body: 'MainSpot dejará de leer y responder reseñas y borrará las credenciales de este negocio.', actions: [
-        { label: 'Desconectar', style: 'danger', fn: function () { connectionRequest(el, 'google', 'disconnect'); } },
+        { label: 'Desconectar', style: 'danger', fn: function () {
+          connectionRequest(el, 'google', 'disconnect').then(function (r) {
+            if (!r.ok) return;
+            MS.mem.gbpLocations = null;
+            toast('Desconectaste Google. MainSpot ya no lee ni responde tus reseñas.', 'circle-check');
+            go('#/google');
+          });
+        } },
         { label: 'Cancelar', style: 'secondary' }] });
     },
     'meta-connect': function (el) {
@@ -374,11 +386,29 @@
         MS.mem.metaPages = r.data.pages; MS.emit();
       });
     },
-    'meta-pick-page': function (el) { connectionRequest(el, 'meta', 'select', { page_id: el.dataset.arg }); },
-    'meta-verify': function (el) { connectionRequest(el, 'meta', 'verify'); },
+    'meta-pick-page': function (el) {
+      connectionRequest(el, 'meta', 'select', { page_id: el.dataset.arg }).then(function (r) {
+        if (!r.ok) return;
+        MS.mem.metaPages = null;
+        toast(r.data.message, r.data.status === 'connected' ? 'circle-check' : 'info');
+        go('#/facebook');
+      });
+    },
+    'meta-verify': function (el) {
+      connectionRequest(el, 'meta', 'verify').then(function (r) {
+        if (r.ok) toast(r.data.status === 'connected' ? 'Tu página de Facebook está conectada y verificada.' : 'Facebook no confirmó la conexión. Revisa el estado de la tarjeta.', r.data.status === 'connected' ? 'circle-check' : 'info');
+      });
+    },
     'meta-disconnect': function (el) {
       UI.sheet({ title: '¿Desconectar Facebook?', body: 'MainSpot dejará de publicar y responder en esta página y borrará las credenciales del negocio.', actions: [
-        { label: 'Desconectar', style: 'danger', fn: function () { connectionRequest(el, 'meta', 'disconnect'); } },
+        { label: 'Desconectar', style: 'danger', fn: function () {
+          connectionRequest(el, 'meta', 'disconnect').then(function (r) {
+            if (!r.ok) return;
+            MS.mem.metaPages = null;
+            toast('Desconectaste tu página de Facebook. MainSpot ya no publica ni responde en ella.', 'circle-check');
+            go('#/facebook');
+          });
+        } },
         { label: 'Cancelar', style: 'secondary' }] });
     },
     /* --- Ficha Google (estado de sincronización suministrado por la API) --- */

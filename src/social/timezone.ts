@@ -75,3 +75,36 @@ export function formatInZone(date: Date, tz: string): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${p.year}-${pad(p.month)}-${pad(p.day)} ${pad(p.hour)}:${pad(p.minute)}`;
 }
+
+const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+const WEEKDAY_ES = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'] as const;
+const MONTH_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'] as const;
+
+/** Fecha legible en español en la zona del negocio («jue 6 nov, 11:00»). */
+export function labelInZone(date: Date, tz: string): string {
+  const p = partsInZone(date, tz);
+  const weekday = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay();
+  return `${WEEKDAY_ES[weekday]} ${p.day} ${MONTH_ES[p.month - 1]}, ${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
+}
+
+/**
+ * Próxima ocurrencia de «día de la semana a tal hora» en la zona del negocio, al menos `leadMinutes` después de
+ * `now` (p. ej. la franja sugerida por la redacción con IA). `local` es la hora de pared para programar y `label`
+ * su versión legible («jue 6 nov, 11:00»). null si el día o la hora no son válidos.
+ */
+export function nextWeeklySlot(weekday: string, hour: number, tz: string, now = new Date(), leadMinutes = 15): { local: string; at: Date; label: string } | null {
+  const target = (WEEKDAYS as readonly string[]).indexOf(weekday);
+  if (target < 0 || !Number.isInteger(hour) || hour < 0 || hour > 23) return null;
+  const today = partsInZone(now, tz);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  for (let d = 0; d <= 7; d += 1) {
+    const day = new Date(Date.UTC(today.year, today.month - 1, today.day + d));
+    if (day.getUTCDay() !== target) continue;
+    const local = `${day.getUTCFullYear()}-${pad(day.getUTCMonth() + 1)}-${pad(day.getUTCDate())}T${pad(hour)}:00`;
+    const at = wallTimeToUtc(local, tz);
+    if (at && at.getTime() > now.getTime() + leadMinutes * 60_000) {
+      return { local, at, label: labelInZone(at, tz) };
+    }
+  }
+  return null;
+}

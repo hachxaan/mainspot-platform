@@ -79,12 +79,19 @@ export class AiBusinessService {
 
   // ------------------------------------------------------------------ social (FR-0015)
 
-  async requestCompose(a: BizActor, input: { request?: unknown; with_image?: unknown; editorial_id?: unknown }, idempotencyKey: string) {
+  /**
+   * Propuestas de publicación con IA. `conversation_request_id` liga el job a la solicitud del chat que lo pidió (p. ej.
+   * Telegram), para avisar allí al terminar.
+   */
+  async requestCompose(a: BizActor, input: { request?: unknown; with_image?: unknown; editorial_id?: unknown; conversation_request_id?: unknown }, idempotencyKey: string) {
     const request = typeof input.request === 'string' ? input.request.trim() : '';
     if (!request || request.length > 1000) throw new AppError(400, 'validation_error', 'Cuéntanos qué quieres publicar (hasta 1000 caracteres).');
     return this.deps.jobs.enqueue({
       tenantId: a.tenantId, kind: 'social.compose', idempotencyKey, createdBy: a.userId, labGrantId: a.labGrantId ?? null,
-      input: { request, with_image: input.with_image === true, editorial_id: typeof input.editorial_id === 'string' ? input.editorial_id : null, actor_role: a.role },
+      input: {
+        request, with_image: input.with_image === true, editorial_id: typeof input.editorial_id === 'string' ? input.editorial_id : null, actor_role: a.role,
+        ...(typeof input.conversation_request_id === 'string' ? { conversation_request_id: input.conversation_request_id } : {}),
+      },
       useCases: input.with_image === true ? ['social.facebook.post.compose', 'social.facebook.image.generate'] : ['social.facebook.post.compose'],
     });
   }

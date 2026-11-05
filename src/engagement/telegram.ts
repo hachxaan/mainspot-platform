@@ -29,18 +29,24 @@ import { plainMessage, type ChannelAdapter, type OutgoingMessage } from '../chan
 import type { RoleName } from '../identity/entities.ts';
 import { MATRIX, type ActionName } from '../rbac/matrix.ts';
 import { AppError } from '../shared/errors.ts';
-import type { AiJobRow } from '../ai/jobs.ts';
+import type { AiJobRow, AiJobs } from '../ai/jobs.ts';
 import type { AiLab } from '../ai/lab.ts';
+import type { AiBusinessService } from '../ai/business.ts';
 import type { ConversationPipeline } from '../conversation/pipeline.ts';
 import type { IngestOutcome } from '../conversation/intents.ts';
 import type { ActionProposalRow } from '../conversation/repositories.ts';
 import { approveAndPublish, confirmAndPreparePreview, rejectProposal, type StateMachineDeps } from '../conversation/state-machine.ts';
+import type { SocialPostRow, SocialService } from '../social/service.ts';
+import type { SocialOutcome } from '../social/scheduler.ts';
+import { labelInZone, nextWeeklySlot } from '../social/timezone.ts';
 import { parseNoticeCode } from './notice-offer.ts';
 import type { CaseRow, EngagementService } from './service.ts';
 import {
   aiEditStartedMessage, answerWithPending, caseResolvedMessage, helpMessage, invalidCodeMessage, labInvalidMessage, labNoneMessage,
   labOffMessage, labOnMessage, linkedMessage, parseAction, pendingCaseItem, pendingMessage, pendingProposalItem, proposalMessage,
-  unlinkedMessage, type CaseContext, type LabState, type PendingItem, type TelegramAction,
+  socialComposingMessage, socialDeclinedMessage, socialDroppedMessage, socialHintMessage, socialOfferMessage, socialPostMessage,
+  socialVariantsMessage, unlinkedMessage,
+  type CaseContext, type ComposeResultView, type LabState, type PendingItem, type SocialContext, type TelegramAction,
 } from './telegram-ui.ts';
 
 /** Identificador de caso de los avisos anteriores a los códigos (`/aprobar <case_id> N`). */
@@ -81,6 +87,22 @@ function normalized(text: string): string {
   return text.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/^[¡¿/]+/, '').replace(/[.!¡¿?]+$/g, '').trim();
 }
 
+/** Resultado de `social.compose` tal como lo guarda el job, reducido a lo que muestra la tarjeta. */
+function composeView(result: Record<string, unknown>): ComposeResultView {
+  const variants = Array.isArray(result['variants']) ? result['variants'] as Array<Record<string, unknown>> : [];
+  const image = result['image'] && typeof result['image'] === 'object' ? result['image'] as ComposeResultView['image'] : null;
+  return {
+    variants: variants.map((v) => ({
+      text: String(v['text'] ?? ''),
+      hashtags: Array.isArray(v['hashtags']) ? v['hashtags'].map(String) : [],
+      duplicate_of: typeof v['duplicate_of'] === 'string' ? v['duplicate_of'] : null,
+    })),
+    image,
+    warnings: Array.isArray(result['warnings']) ? result['warnings'].map(String) : [],
+    simulated: result['simulated'] === true,
+  };
+}
+
 export interface TelegramUpdateLike {
   update_id?: number;
   message?: { chat?: { id?: number | string }; text?: string };
@@ -100,6 +122,17 @@ export interface TelegramLinkView {
   chat_hint: string | null;
 }
 
+/** Publicaciones de Facebook desde el chat: redacción con IA, borrador, aprobación y programación (mismos servicios del panel). */
+export interface TelegramSocialDeps {
+  business: Pick<AiBusinessService, 'requestCompose' | 'draftFromCompose'>;
+  posts: Pick<SocialService, 'approvePost' | 'schedule' | 'reject'>;
+  jobs: Pick<AiJobs, 'get'>;
+  /** Nombre de la Página conectada del negocio; null si no hay ninguna. */
+  page: (tenantId: string) => Promise<string | null>;
+  /** Zona horaria del negocio para programar (SOCIAL_SCHEDULER_TIMEZONE). */
+  timezone: string;
+}
+
 /** Conversación con MainSpot desde Telegram (pipeline del panel + decisiones de propuestas). */
 export interface TelegramConversationDeps {
   pipeline: Pick<ConversationPipeline, 'ingest'>;
@@ -107,6 +140,8 @@ export interface TelegramConversationDeps {
   lab: Pick<AiLab, 'grantsForUser' | 'check'>;
   /** URL del panel para enlazar la vista previa (`…/panel`). */
   panelUrl: string;
+  /** Publicaciones de Facebook pedidas por el chat; ausente = el chat no las ofrece. */
+  social?: TelegramSocialDeps;
 }
 
 interface LinkedActor { tenant_id: string; user_id: string; role: RoleName | null; lab_grant_id: string | null; tenant_status: string }
@@ -298,7 +333,7 @@ export class TelegramLinkService {
     if (command === '/aprobar' || command === '/rechazar') return this.decideByCommand(chatId, linked, command, args, requestId);
     const word = normalized(text);
     if (word === 'start' || word === 'ayuda' || word === 'help' || word === 'menu') {
-      await this.send(chatId, helpMessage(await this.labState(linked)));
+      await this.send(chatId, helpMessage(await this.labState(linked), { social: this.socialAllowed(linked) }));
       return { handled: 'help' };
     }
     if (LOOSE_DECISION.test(word)) {
@@ -347,6 +382,7 @@ export class TelegramLinkService {
       }
       if (action.kind === 'lab') return await this.labToggle(press, linked, action.on, requestId);
       if (action.kind === 'proposal') return await this.proposalAction(press, linked, action, requestId);
+      if (action.kind === 'social') return await this.socialAction(press, linked, action, requestId);
       if (action.kind === 'legacy_case') return await this.legacyCaseButton(press, linked, action.id, requestId);
       return await this.caseView(press, linked, action.id, requestId);
     } catch (err) {
@@ -598,6 +634,11 @@ export class TelegramLinkService {
       const p = await this.ownProposal(linked, outcome.proposalId);
       if (p) return proposalMessage(p, { panelUrl: this.conv().panelUrl });
     }
+    // Pedir una publicación de redes no es algo que el asistente haga solo: se ofrece prepararla con un botón (la
+    // pulsación es la confirmación); sin ese canal habilitado queda la explicación del pipeline.
+    if (outcome.intent === 'capability.unsupported' && outcome.capabilityTarget === 'social' && this.socialAllowed(linked)) {
+      return socialOfferMessage(outcome.requestId, await this.socialContext(linked));
+    }
     if (outcome.requestStatus === 'needs_clarification') return answerWithPending(outcome.responseText, await this.pendingItems(linked));
     return plainMessage(outcome.responseText);
   }
@@ -651,17 +692,19 @@ export class TelegramLinkService {
   // ----------------------------------------------------------------------------- avisos de la IA
 
   /**
-   * Fin de una edición con IA pedida desde Telegram: avisa en el chat de quien la pidió (vista previa lista con
-   * botones, pregunta de aclaración o motivo del fallo). Pedidas desde el panel no se reenvían.
+   * Fin de un job de IA pedido desde Telegram (edición de la web o propuestas de publicación): avisa en el chat de quien
+   * lo pidió con su tarjeta (vista previa o variantes con botones), la pregunta de aclaración o el motivo del fallo.
+   * Los pedidos desde el panel no se reenvían.
    */
   async notifyAiJob(job: AiJobRow): Promise<void> {
-    if (!this.conversation || (job.kind !== 'website.edit' && job.kind !== 'website.design')) return;
+    const social = job.kind === 'social.compose';
+    if (!this.conversation || (job.kind !== 'website.edit' && job.kind !== 'website.design' && !social)) return;
     const requestId = job.input['conversation_request_id'];
     if (typeof requestId !== 'string') return;
     const req = await this.pool.query<{ channel: string; actor_id: string; proposal_id: string | null }>(
       'SELECT channel, actor_id, proposal_id FROM conversation_request WHERE tenant_id = $1 AND request_id = $2', [job.tenant_id, requestId]);
     const row = req.rows[0];
-    if (!row || row.channel !== 'telegram') return;
+    if (!row || row.channel !== 'telegram' || row.actor_id !== job.created_by) return;
     const chatId = await this.chatFor(job.tenant_id, row.actor_id);
     const linked = chatId ? await this.linkedActor(chatId) : null;
     if (!chatId || !linked) return;
@@ -672,11 +715,15 @@ export class TelegramLinkService {
       const reason = typeof job.progress['image_reason'] === 'string' ? ` (${job.progress['image_reason']})` : '';
       if (code === 'no_active_route' || code === 'lab_grant_invalid') {
         message = labInvalidMessage(AI_JOB_FAILURE[code] ?? '', (await this.labState({ ...linked, lab_grant_id: null })).available);
+      } else if (social) {
+        message = plainMessage(AI_JOB_FAILURE[code] ?? `No pude preparar las propuestas de publicación (${code}). No se publicó nada.`);
       } else {
         message = plainMessage(code.startsWith('image_') && code !== 'image_not_in_library'
           ? `No pude obtener la imagen${reason || ` (${code.slice(6)})`}. No preparé ninguna propuesta: puedes subir una foto a tu biblioteca en el panel y pedirme que la use.`
           : AI_JOB_FAILURE[code] ?? `No se pudo preparar el cambio (${code}). Tu página no cambió.`);
       }
+    } else if (social) {
+      message = socialVariantsMessage(job.job_id, composeView(result), await this.socialContext(linked));
     } else if (row.proposal_id) {
       const p = await this.ownProposal(linked, row.proposal_id);
       message = p ? proposalMessage(p, { panelUrl: this.conversation.panelUrl }) : plainMessage('La propuesta está lista en tu panel.');
@@ -686,6 +733,155 @@ export class TelegramLinkService {
       message = plainMessage(typeof result['message'] === 'string' ? result['message'] : 'No preparé ningún cambio.');
     }
     await this.send(chatId, message);
+  }
+
+  // ------------------------------------------------------------------------- publicaciones de Facebook
+
+  /** ¿El chat puede ofrecer publicaciones? Canal habilitado y rol que redacta con IA y crea publicaciones. */
+  private socialAllowed(linked: LinkedActor): boolean {
+    return !!this.conversation?.social && !!linked.role && MATRIX[linked.role].includes('social.create') && MATRIX[linked.role].includes('ai.generate');
+  }
+
+  private async socialContext(linked: LinkedActor): Promise<SocialContext> {
+    const social = this.conversation?.social;
+    return { pageName: social ? await social.page(linked.tenant_id) : null };
+  }
+
+  /** Franja sugerida por la redacción con IA para esta publicación (próxima ocurrencia en la zona del negocio). */
+  private async suggestedSlot(social: TelegramSocialDeps, post: SocialPostRow): Promise<{ local: string; label: string } | null> {
+    const g = await this.pool.query<{ job_id: string | null }>(`SELECT generation->>'job_id' AS job_id FROM social_post WHERE tenant_id = $1 AND post_id = $2`, [post.tenant_id, post.post_id]);
+    const jobId = g.rows[0]?.job_id;
+    const job = jobId ? await social.jobs.get(post.tenant_id, jobId) : null;
+    const slot = job?.result?.['suggested_slot'] as { weekday?: unknown; hour?: unknown } | null | undefined;
+    if (!slot || typeof slot.weekday !== 'string' || typeof slot.hour !== 'number') return null;
+    return nextWeeklySlot(slot.weekday, slot.hour, social.timezone);
+  }
+
+  /** Tarjeta de la publicación con lo que se puede decidir ahora (o lo que ya pasó). */
+  private async postCard(social: TelegramSocialDeps, linked: LinkedActor, post: SocialPostRow): Promise<OutgoingMessage> {
+    const ctx = await this.socialContext(linked);
+    const slot = post.status === 'draft' ? await this.suggestedSlot(social, post) : null;
+    const future = post.scheduled_at && new Date(post.scheduled_at).getTime() > Date.now() + 60_000 ? new Date(post.scheduled_at) : null;
+    return socialPostMessage(post, { ...ctx, slotLabel: slot?.label ?? null, scheduledLabel: future ? labelInZone(future, social.timezone) : null });
+  }
+
+  /** Publicación de ESTA persona y negocio (las demás no existen para el chat). */
+  private async ownPost(linked: LinkedActor, postId: string): Promise<SocialPostRow | null> {
+    const r = await this.pool.query<SocialPostRow>('SELECT * FROM social_post WHERE tenant_id = $1 AND post_id = $2 AND created_by = $3', [linked.tenant_id, postId, linked.user_id]);
+    return r.rows[0] ?? null;
+  }
+
+  /**
+   * Botones de una publicación: ofrecer → redactar con IA (job) → elegir variante (borrador con cuota) → publicar ahora,
+   * programar en la franja sugerida o descartar. Publicar sigue la misma aprobación del panel (aprobar la publicación,
+   * confirmar y aprobar la propuesta) con los permisos del rol; la salida a Facebook la hace el programador.
+   */
+  private async socialAction(press: Press, linked: LinkedActor, action: Extract<TelegramAction, { kind: 'social' }>, requestId: string): Promise<TelegramUpdateResult> {
+    const social = this.conversation?.social;
+    if (!social || !this.socialAllowed(linked)) {
+      press.notice = 'Las publicaciones de Facebook se preparan desde tu panel.';
+      return { handled: 'social_unavailable' };
+    }
+    const actor = { tenantId: linked.tenant_id, userId: linked.user_id, role: linked.role, requestId, permissions: linked.role ? MATRIX[linked.role] : [], labGrantId: linked.lab_grant_id };
+    if (action.op === 'hint') {
+      await this.send(press.chatId, socialHintMessage());
+      return { handled: 'social_hint' };
+    }
+    if (action.op === 'decline' || action.op === 'drop') {
+      await this.show(press, action.op === 'decline' ? socialDeclinedMessage() : socialDroppedMessage());
+      return { handled: action.op === 'decline' ? 'social_declined' : 'social_dropped' };
+    }
+    if (action.op === 'offer') {
+      const req = await this.pool.query<{ request_id: string; raw_message: string }>(
+        `SELECT request_id, raw_message FROM conversation_request WHERE tenant_id = $1 AND request_id = $2 AND actor_id = $3 AND channel = 'telegram' AND capability_target = 'social'`,
+        [linked.tenant_id, action.id, linked.user_id]);
+      const row = req.rows[0];
+      if (!row) {
+        press.notice = 'No encontré ese mensaje.';
+        return { handled: 'not_found' };
+      }
+      const { job, created } = await social.business.requestCompose(actor, { request: row.raw_message, with_image: action.image, conversation_request_id: row.request_id }, `tg:${row.request_id}:${action.image ? 'img' : 'txt'}`);
+      await this.show(press, socialComposingMessage(action.image, []));
+      return { handled: created ? 'social_compose_started' : `social_compose_${job.status}` };
+    }
+    if (action.op === 'pick') {
+      const job = await social.jobs.get(linked.tenant_id, action.id);
+      if (!job || job.kind !== 'social.compose' || job.created_by !== linked.user_id) {
+        press.notice = 'No encontré esas propuestas.';
+        return { handled: 'not_found' };
+      }
+      const out = await social.business.draftFromCompose(actor, job.job_id, action.variant, null, true);
+      await this.show(press, await this.postCard(social, linked, out.post));
+      return { handled: out.replayed ? 'social_draft_repeat' : 'social_draft_created' };
+    }
+    const post = await this.ownPost(linked, action.id);
+    if (!post) {
+      press.notice = 'No encontré esa publicación.';
+      return { handled: 'not_found' };
+    }
+    const needs: ActionName[] = action.op === 'discard' ? ['social.schedule']
+      : ['social.approve', 'conversation.confirm', 'operation.approve', ...(action.op === 'schedule' ? ['social.schedule' as const] : [])];
+    for (const permission of needs) {
+      if (!await this.permitted(linked, permission, requestId)) {
+        press.notice = action.op === 'discard' ? 'Tu perfil no permite descartar publicaciones.' : 'Tu perfil no permite publicar en Facebook. Quien administra tu negocio decide si se publica.';
+        return { handled: 'permission_denied' };
+      }
+    }
+    if (action.op === 'discard') {
+      if (post.status !== 'draft' && post.status !== 'awaiting_approval') {
+        await this.show(press, await this.postCard(social, linked, post));
+        press.notice = 'Esta publicación ya no puede descartarse.';
+        return { handled: 'stale_action' };
+      }
+      const rejected = await social.posts.reject(linked.tenant_id, linked.user_id, requestId, post.post_id);
+      await this.show(press, await this.postCard(social, linked, rejected));
+      press.notice = 'Publicación descartada.';
+      return { handled: 'social_discarded' };
+    }
+    if (post.status !== 'draft') {
+      await this.show(press, await this.postCard(social, linked, post));
+      press.notice = 'Esta publicación ya no está en borrador.';
+      return { handled: 'stale_action' };
+    }
+    if (action.op === 'schedule') {
+      const slot = await this.suggestedSlot(social, post);
+      if (!slot) {
+        press.notice = 'No hay una hora sugerida para programarla; publícala ahora o prográmala desde tu panel.';
+        return { handled: 'social_no_slot' };
+      }
+      await social.posts.schedule(linked.tenant_id, linked.user_id, requestId, post.post_id, { local: slot.local });
+    }
+    const { proposalId } = await social.posts.approvePost(linked.tenant_id, linked.user_id, requestId, post.post_id);
+    const ref = { tenantId: linked.tenant_id, proposalId, actorId: linked.user_id, requestId };
+    await confirmAndPreparePreview(this.conv().machine, ref);
+    const out = await approveAndPublish(this.conv().machine, { ...ref, source: 'telegram', actorRole: linked.role });
+    const now = await this.ownPost(linked, post.post_id) ?? post;
+    await this.show(press, await this.postCard(social, linked, now));
+    if (!out.published) {
+      press.notice = 'No se pudo enviar a Facebook; no se publicó nada.';
+      return { handled: 'social_publish_failed' };
+    }
+    press.notice = now.status === 'published' ? 'Publicado en Facebook.' : action.op === 'schedule' ? 'Programada. Te aviso cuando se publique.' : 'Enviada a Facebook. Te aviso cuando la confirme.';
+    return { handled: now.status === 'published' ? 'social_published' : action.op === 'schedule' ? 'social_scheduled' : 'social_queued' };
+  }
+
+  /**
+   * Resultado final del programador (publicada o fallida): avisa a quien la aprobó desde Telegram, con su enlace. Las
+   * aprobadas en el panel no se reenvían al chat.
+   */
+  async notifySocialOutcome(outcome: SocialOutcome): Promise<void> {
+    const social = this.conversation?.social;
+    if (!social) return;
+    const r = await this.pool.query<SocialPostRow & { approver: string }>(
+      `SELECT p.*, pub.published_by AS approver FROM social_post p
+         JOIN publication pub ON pub.proposal_id = p.proposal_id AND pub.tenant_id = p.tenant_id AND pub.source = 'telegram'
+        WHERE p.tenant_id = $1 AND p.post_id = $2 ORDER BY pub.published_at DESC LIMIT 1`, [outcome.tenantId, outcome.postId]);
+    const post = r.rows[0];
+    if (!post) return;
+    const chatId = await this.chatFor(outcome.tenantId, post.approver);
+    const linked = chatId ? await this.linkedActor(chatId) : null;
+    if (!chatId || !linked) return;
+    await this.send(chatId, await this.postCard(social, linked, post));
   }
 
   // --------------------------------------------------------------------------------------- vínculo

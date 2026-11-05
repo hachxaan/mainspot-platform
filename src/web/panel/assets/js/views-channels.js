@@ -14,7 +14,8 @@
   function head(title, sub, extra) {
     return '<div class="page-head"><h1 tabindex="-1" data-focus>' + esc(title) + '</h1>' + (sub ? '<p>' + esc(sub) + '</p>' : '') + (extra || '') + '</div>';
   }
-  function simTag(mode) { return UI.sim(mode === 'not_verified' ? 'Conexión real no verificada' : 'Simulación'); }
+  /** Etiqueta de entorno: nada cuando el canal es real; «Simulación» o «no verificada» en los demás casos. */
+  function simTag(mode) { return mode === 'real' ? '' : UI.sim(mode === 'not_verified' ? 'Conexión real no verificada' : 'Simulación'); }
   function stars(n) {
     if (!n) return '';
     var s = '';
@@ -209,19 +210,23 @@
     var m = S().metaConn;
     if (!m) return '';
     var c = m.connection, status = c ? c.status : 'disconnected';
+    // Una conexión desconectada (fila sin tokens) equivale a no tener conexión: solo se ofrece conectar.
+    var linked = !!c && status !== 'disconnected';
     var labels = { connected: 'Página conectada', needs_authorization: 'Falta autorizar o elegir página', permission_missing: 'Faltan permisos de Facebook',
       disconnected: 'Página de Facebook sin conectar', failed: 'La conexión falló', provider_unavailable: 'Facebook no responde' };
     var html = '<section class="card stack"><h2>Página de Facebook</h2><p class="muted small">Conecta la página de tu negocio para publicar y responder comentarios desde MainSpot. Es una autorización de tu página; no cambia cómo entras a MainSpot.</p><p>' + UI.tag(labels[status] || status, status === 'connected' ? 'nopal' : 'neutral') + '</p>';
-    var res = q && q.conexion ? META_CONN_MSG[q.conexion] : null;
+    // El aviso del retorno de Facebook solo vale mientras coincide con el estado real (p. ej. no tras desconectar).
+    var choosing = linked && status !== 'connected';
+    var res = q && q.conexion && (q.conexion !== 'elegir_pagina' || choosing) ? META_CONN_MSG[q.conexion] : null;
     if (res) html += '<div class="banner banner-' + res[0] + '" role="status">' + icon(res[0] === 'nopal' ? 'circle-check' : 'circle-alert') + '<span>' + esc(res[1]) + '</span></div>';
-    if (c && c.page_name) html += '<p>Página: <strong>' + esc(c.page_name) + '</strong></p>';
+    if (linked && c.page_name) html += '<p>Página: <strong>' + esc(c.page_name) + '</strong></p>';
     if (!m.enabled || !m.oauth_configured) html += '<p class="muted small">La conexión real todavía no está disponible en este entorno: falta la configuración de la app de Meta (la prepara el equipo de MainSpot).</p>';
     if (MS.can('editData')) {
       var ready = m.enabled && m.oauth_configured;
-      html += '<div class="btn-row">' + (ready ? UI.btn(c ? 'Volver a conectar' : 'Conectar página de Facebook', { action: 'meta-connect', style: c && status === 'connected' ? 'secondary' : 'primary' }) : '') +
-        (ready && c && status !== 'connected' ? UI.btn('Elegir página', { action: 'meta-pages', style: 'secondary' }) : '') +
-        (ready && c ? UI.btn('Comprobar', { action: 'meta-verify', style: 'secondary' }) + UI.btn('Desconectar', { action: 'meta-disconnect', style: 'danger' }) : '') + '</div>';
-      if (MS.mem.metaPages) html += '<ul class="list">' + MS.mem.metaPages.map(function (p) {
+      html += '<div class="btn-row">' + (ready ? UI.btn(linked ? 'Volver a conectar' : 'Conectar página de Facebook', { action: 'meta-connect', style: status === 'connected' ? 'secondary' : 'primary' }) : '') +
+        (ready && choosing ? UI.btn('Elegir página', { action: 'meta-pages', style: 'secondary' }) : '') +
+        (ready && linked ? UI.btn('Comprobar', { action: 'meta-verify', style: 'secondary' }) + UI.btn('Desconectar', { action: 'meta-disconnect', style: 'danger' }) : '') + '</div>';
+      if (choosing && MS.mem.metaPages) html += '<ul class="list">' + MS.mem.metaPages.map(function (p) {
         return '<li class="list-row static"><span class="grow">' + esc(p.name) + '</span>' + UI.btn('Usar esta página', { action: 'meta-pick-page', arg: p.page_id, style: 'secondary', sm: true }) + '</li>';
       }).join('') + '</ul>';
     }

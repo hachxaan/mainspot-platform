@@ -250,14 +250,21 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   const jev = createJevClassifier(config.jev, new JevRepository(pool));
   const aiSite = new AiSiteService({ pool, dispatcher, jobs: aiJobs, brand, media, site: { pool, sink, repo: conversationRepo, machine, websiteRepo, phones } });
   const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo, quota, jev, phones, aiEdit: aiSite });
-  // Telegram: avisos y decisiones de atención + conversación con el mismo pipeline del panel. Una edición con IA pedida
-  // desde el chat avisa ahí al terminar.
+  const aiBusiness = new AiBusinessService({ pool, sink, dispatcher, jobs: aiJobs, brand, media, social: socialService });
+  // Telegram: avisos y decisiones de atención + conversación con el mismo pipeline del panel. Una edición con IA o unas
+  // propuestas de publicación pedidas desde el chat avisan ahí al terminar; también el resultado final en Facebook.
   const telegram = new TelegramLinkService({
     pool, sink, channel, engagement,
-    conversation: { pipeline, machine, lab: aiLab, panelUrl: `${config.publicBaseUrl}/panel` },
+    conversation: {
+      pipeline, machine, lab: aiLab, panelUrl: `${config.publicBaseUrl}/panel`,
+      social: {
+        business: aiBusiness, posts: socialService, jobs: aiJobs, timezone: config.socialSchedulerTimezone,
+        page: (tenantId) => socialProvider.getPage(tenantId).then((p) => p.page_name, () => null),
+      },
+    },
   });
   aiJobs.onSettled((job) => telegram.notifyAiJob(job));
-  const aiBusiness = new AiBusinessService({ pool, sink, dispatcher, jobs: aiJobs, brand, media, social: socialService });
+  socialScheduler.onOutcome((outcome) => telegram.notifySocialOutcome(outcome));
   const platformAuth = new PlatformAuth({ pool, mfaKey: config.platformMfaKey, jwtSecret: config.jwtSecret, ttlMinutes: config.platformSessionTtlMinutes });
   const approvalRateLimiter = new ActionRateLimiter(
     config.approvalRateLimitMax,

@@ -19,13 +19,18 @@ test('cada acción de botón cabe en callback_data y se lee de vuelta igual; lo 
     ...(['confirm', 'publish', 'discard', 'view'] as const).map((op) => ({ kind: 'proposal' as const, op, id: proposalId })),
     { kind: 'case', op: 'view', id: caseId },
     { kind: 'lab', on: true }, { kind: 'lab', on: false }, { kind: 'pending' },
+    // Publicaciones: ids reales más largos (solicitud del chat, job de IA, publicación).
+    { kind: 'social', op: 'offer', id: `tg_${randomUUID()}`, image: true }, { kind: 'social', op: 'offer', id: 'tg_83549212', image: false },
+    { kind: 'social', op: 'decline', id: `tg_${randomUUID()}` }, { kind: 'social', op: 'pick', id: `job_${randomUUID()}`, variant: 2 },
+    { kind: 'social', op: 'drop', id: `job_${randomUUID()}` }, { kind: 'social', op: 'hint' },
+    ...(['publish', 'schedule', 'discard'] as const).map((op) => ({ kind: 'social' as const, op, id: `post_${randomUUID()}` })),
   ];
   for (const a of actions) {
     const data = encodeAction(a);
     assert.ok(Buffer.byteLength(data) <= MAX_ACTION_BYTES, data);
     assert.deepEqual(parseAction(data), a);
   }
-  for (const bad of ['', 'pp:', 'ca:case_x:3', 'ca:case_x', 'cs:case_x:-1', 'pp:prop x', 'lab:maybe', `pp:${'a'.repeat(57)}`, '/aprobar case_x 1']) {
+  for (const bad of ['', 'pp:', 'ca:case_x:3', 'ca:case_x', 'cs:case_x:-1', 'pp:prop x', 'lab:maybe', `pp:${'a'.repeat(57)}`, '/aprobar case_x 1', 'sv:job_x:7', 'sz:post_x']) {
     assert.equal(parseAction(bad), null, bad);
   }
 });

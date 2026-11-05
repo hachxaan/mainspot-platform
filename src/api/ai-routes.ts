@@ -313,7 +313,9 @@ export function aiRouter(deps: AiRouteDeps): Router {
   // ------------------------------------------------------------------ social (FR-0015)
   router.post('/ai/social/compose', perm('ai.generate'), requirePermission('social.create', deps.sink, deps.pool), ah(async (req, res) => {
     const a = actorOf(req);
-    const { job, created } = await deps.business.requestCompose(a, req.body ?? {}, idem(req, a));
+    const b = (req.body ?? {}) as { request?: unknown; with_image?: unknown; editorial_id?: unknown };
+    // La liga con una solicitud de chat solo la fija el servidor (Telegram), nunca el cliente del panel.
+    const { job, created } = await deps.business.requestCompose(a, { request: b.request, with_image: b.with_image, editorial_id: b.editorial_id }, idem(req, a));
     res.status(created ? 202 : 200).json({ job: jobView(job), replayed: !created });
   }));
 

@@ -680,7 +680,7 @@ test('Telegram conversa con MainSpot: mensaje libre → tarjeta con botones → 
   assert.equal((await telegram(chat, '¿Qué tengo pendiente?')).body.handled, 'pending_listed');
   assert.match(last().text, /No tienes nada pendiente/);
   assert.equal((await telegram(chat, 'ayuda')).body.handled, 'help');
-  assert.deepEqual(labels(last()), [['📋 Ver pendientes']], 'sin autorización de laboratorio no se ofrece');
+  assert.deepEqual(labels(last()), [['📋 Ver pendientes'], ['📣 Publicar en Facebook']], 'sin autorización de laboratorio no se ofrece el laboratorio');
   assert.equal((await press(chat, { message_id: last().message_id, action: 'lab:on' })).body.handled, 'lab_none');
 
   // Perfil sin permiso de publicar: el botón lo explica y queda auditado.

@@ -12,6 +12,7 @@
 import { escapeHtml as esc, MAX_ACTION_BYTES, type ChannelButton, type OutgoingMessage } from '../channels/types.ts';
 import type { ActionProposalRow } from '../conversation/repositories.ts';
 import type { CaseRow } from './service.ts';
+import type { SocialPostRow } from '../social/service.ts';
 
 // ------------------------------------------------------------------------------------------- acciones
 
@@ -19,7 +20,12 @@ export type TelegramAction =
   | { kind: 'proposal'; op: 'confirm' | 'publish' | 'discard' | 'view'; id: string }
   | { kind: 'case'; op: 'view'; id: string }
   | { kind: 'lab'; on: boolean }
-  | { kind: 'pending' };
+  | { kind: 'pending' }
+  /** Publicación de Facebook: ofrecer (id = solicitud del chat), elegir variante (id = job), decidir (id = post). */
+  | { kind: 'social'; op: 'offer'; id: string; image: boolean }
+  | { kind: 'social'; op: 'decline' | 'drop' | 'publish' | 'schedule' | 'discard'; id: string }
+  | { kind: 'social'; op: 'pick'; id: string; variant: number }
+  | { kind: 'social'; op: 'hint' };
 
 /**
  * Botón con el id de un caso para elegir, publicar, volver o no responder (`cs`/`ca`/`cb`/`cr`), de mensajes anteriores
@@ -29,6 +35,7 @@ export type TelegramAction =
 export interface LegacyCaseButton { kind: 'legacy_case'; id: string }
 
 const PROPOSAL_OPS = { pc: 'confirm', pp: 'publish', pd: 'discard', pv: 'view' } as const;
+const SOCIAL_OPS = { sn: 'decline', sx: 'drop', sp: 'publish', ss: 'schedule', sd: 'discard' } as const;
 const ID = '[A-Za-z0-9_-]{1,56}';
 
 function prefixOf<T extends Record<string, string>>(map: T, op: string): string {
@@ -40,6 +47,10 @@ export function encodeAction(a: TelegramAction): string {
   if (a.kind === 'proposal') data = `${prefixOf(PROPOSAL_OPS, a.op)}:${a.id}`;
   else if (a.kind === 'case') data = `cv:${a.id}`;
   else if (a.kind === 'lab') data = a.on ? 'lab:on' : 'lab:off';
+  else if (a.kind === 'social' && a.op === 'offer') data = `${a.image ? 'si' : 'so'}:${a.id}`;
+  else if (a.kind === 'social' && a.op === 'pick') data = `sv:${a.id}:${a.variant}`;
+  else if (a.kind === 'social' && a.op === 'hint') data = 'sh';
+  else if (a.kind === 'social') data = `${prefixOf(SOCIAL_OPS, a.op)}:${a.id}`;
   else data = 'pend';
   if (Buffer.byteLength(data) > MAX_ACTION_BYTES) throw new Error(`telegram action too long (${data.length})`);
   return data;
@@ -49,12 +60,19 @@ export function encodeAction(a: TelegramAction): string {
 export function parseAction(data: string): TelegramAction | LegacyCaseButton | null {
   if (data === 'pend') return { kind: 'pending' };
   if (data === 'lab:on' || data === 'lab:off') return { kind: 'lab', on: data === 'lab:on' };
+  if (data === 'sh') return { kind: 'social', op: 'hint' };
   let m = new RegExp(`^(pc|pp|pd|pv):(${ID})$`).exec(data);
   if (m) return { kind: 'proposal', op: PROPOSAL_OPS[m[1] as keyof typeof PROPOSAL_OPS], id: m[2]! };
   m = new RegExp(`^cv:(${ID})$`).exec(data);
   if (m) return { kind: 'case', op: 'view', id: m[1]! };
   m = new RegExp(`^(?:(?:cs|ca):(${ID}):[0-2]|(?:cb|cr):(${ID}))$`).exec(data);
   if (m) return { kind: 'legacy_case', id: (m[1] ?? m[2])! };
+  m = new RegExp(`^(so|si):(${ID})$`).exec(data);
+  if (m) return { kind: 'social', op: 'offer', id: m[2]!, image: m[1] === 'si' };
+  m = new RegExp(`^sv:(${ID}):([0-4])$`).exec(data);
+  if (m) return { kind: 'social', op: 'pick', id: m[1]!, variant: Number(m[2]) };
+  m = new RegExp(`^(sn|sx|sp|ss|sd):(${ID})$`).exec(data);
+  if (m) return { kind: 'social', op: SOCIAL_OPS[m[1] as keyof typeof SOCIAL_OPS], id: m[2]! };
   return null;
 }
 
@@ -84,12 +102,14 @@ export function invalidCodeMessage(): OutgoingMessage {
 
 export interface LabState { available: boolean; active: boolean }
 
-export function helpMessage(lab: LabState): OutgoingMessage {
+export function helpMessage(lab: LabState, opts: { social?: boolean } = {}): OutgoingMessage {
   const rows: ChannelButton[][] = [[button('📋 Ver pendientes', { kind: 'pending' })]];
+  if (opts.social) rows.push([button('📣 Publicar en Facebook', { kind: 'social', op: 'hint' })]);
   if (lab.active) rows.push([button('🧪 Dejar el laboratorio de IA', { kind: 'lab', on: false })]);
   else if (lab.available) rows.push([button('🧪 Usar el laboratorio de IA', { kind: 'lab', on: true })]);
+  const social = opts.social ? '\n• «Publica en Facebook que hoy hay 2x1 en tacos de 1 a 5 pm»' : '';
   return {
-    html: '👋 <b>¿En qué te ayudo?</b>\n\nEscríbeme con tus palabras, por ejemplo:\n• «Cambia el horario a 9:00 a 18:00»\n• «Agrega una imagen de pan recién horneado en la portada»\n• «¿Cuál es mi teléfono en la página?»\n\nCuando prepare un cambio o un cliente necesite respuesta, te lo enseño aquí con botones para decidir.',
+    html: `👋 <b>¿En qué te ayudo?</b>\n\nEscríbeme con tus palabras, por ejemplo:\n• «Cambia el horario a 9:00 a 18:00»\n• «Agrega una imagen de pan recién horneado en la portada»${social}\n• «¿Cuál es mi teléfono en la página?»\n\nCuando prepare un cambio o un cliente necesite respuesta, te lo enseño aquí con botones para decidir.`,
     buttons: rows,
   };
 }
@@ -227,6 +247,112 @@ export function answerWithPending(text: string, items: PendingItem[]): OutgoingM
     html: `${esc(text)}\n\n📋 <b>Si querías decidir algo pendiente</b>, tócalo aquí:`,
     buttons: items.map((it) => [button(it.label, it.action)]),
   };
+}
+
+// ------------------------------------------------------------------------------ publicaciones de Facebook
+
+/** Datos de la Página conectada para las tarjetas (null = sin Página conectada). */
+export interface SocialContext { pageName: string | null }
+
+function pageNote(ctx: SocialContext): string {
+  return ctx.pageName
+    ? `Se publicará en tu Página <b>${esc(clip(ctx.pageName, 80))}</b>.`
+    : 'Tu Página de Facebook todavía no está conectada: puedes prepararla, pero para publicarla conéctala en tu panel.';
+}
+
+export function socialHintMessage(): OutgoingMessage {
+  return { html: '📣 <b>Publicar en Facebook</b>\n\nEscríbeme qué quieres publicar, por ejemplo: «Publica en Facebook que hoy hay 2x1 en tacos de 1 a 5 pm». Te preparo propuestas y nada se publica sin que lo apruebes.' };
+}
+
+/** Mensaje del chat que pide una publicación: se ofrece prepararla (el botón es la confirmación de la persona). */
+export function socialOfferMessage(requestId: string, ctx: SocialContext): OutgoingMessage {
+  return {
+    html: `📣 <b>¿Preparo esta publicación para Facebook?</b>\n\nRedacto propuestas con IA a partir de tu mensaje y te las enseño aquí para que elijas. Nada se publica sin que lo apruebes.\n${pageNote(ctx)}`,
+    buttons: [
+      [button('📣 Prepararla', { kind: 'social', op: 'offer', id: requestId, image: false })],
+      [button('🖼 Prepararla con imagen', { kind: 'social', op: 'offer', id: requestId, image: true })],
+      [button('No, gracias', { kind: 'social', op: 'decline', id: requestId })],
+    ],
+  };
+}
+
+export function socialDeclinedMessage(): OutgoingMessage {
+  return { html: 'De acuerdo, no preparo ninguna publicación.' };
+}
+
+export function socialComposingMessage(withImage: boolean, models: string[]): OutgoingMessage {
+  return { html: `⏳ <b>Estoy redactando tus propuestas${withImage ? ' y la imagen' : ''}.</b>\nTe las enseño aquí en cuanto estén.${labLine(models)}` };
+}
+
+export interface ComposeResultView {
+  variants: Array<{ text: string; hashtags: string[]; duplicate_of?: string | null }>;
+  image: { asset_id?: string; alt?: string; status?: string } | null;
+  warnings: string[];
+  simulated?: boolean;
+}
+
+/** Propuestas redactadas: cada variante con su botón; la imagen generada se avisa (se publica con su etiqueta). */
+export function socialVariantsMessage(jobId: string, result: ComposeResultView, ctx: SocialContext): OutgoingMessage {
+  const variants = result.variants.slice(0, 5);
+  const body = variants.map((v, i) => {
+    const tags = v.hashtags.length ? `\n<i>${esc(v.hashtags.map((h) => `#${h.replace(/^#/, '')}`).join(' '))}</i>` : '';
+    const dup = v.duplicate_of ? '\n⚠️ <i>Se parece a una publicación reciente.</i>' : '';
+    return `<b>${i + 1}.</b> ${esc(clip(v.text, 700))}${tags}${dup}`;
+  }).join('\n\n');
+  const image = result.image?.asset_id
+    ? `\n\n🖼 Con una imagen generada con IA${result.image.alt ? ` («${esc(clip(result.image.alt, 120))}»)` : ''}; se publica con el aviso «Imagen generada con IA.».`
+    : result.image ? '\n\n🖼 No pude generar la imagen; puedes publicar solo el texto.' : '';
+  const warnings = result.warnings.length ? `\n\n${result.warnings.slice(0, 3).map((w) => `⚠️ <i>${esc(clip(w, 200))}</i>`).join('\n')}` : '';
+  const sim = result.simulated ? '\n\n🧪 <i>Texto de prueba (IA simulada).</i>' : '';
+  return {
+    html: `📣 <b>Propuestas para Facebook</b>\n\n${body}${image}${warnings}${sim}\n\n${pageNote(ctx)}`,
+    buttons: [
+      ...variants.map((_, i) => [button(variants.length === 1 ? '✍️ Usar esta' : `✍️ Usar la ${i + 1}`, { kind: 'social', op: 'pick', id: jobId, variant: i })]),
+      [button('🗑 Descartar', { kind: 'social', op: 'drop', id: jobId })],
+    ],
+  };
+}
+
+export function socialDroppedMessage(): OutgoingMessage {
+  return { html: '🗑 Descarté estas propuestas. Escríbeme si quieres preparar otra publicación.' };
+}
+
+/** Enlace público a una publicación de una Page (`<page>_<post>`); null si no es una referencia real. */
+function postUrl(externalRef: string | null): string | null {
+  const m = externalRef ? /^(\d+)_(\d+)$/.exec(externalRef) : null;
+  return m ? `https://www.facebook.com/${m[1]}/posts/${m[2]}` : null;
+}
+
+/** Tarjeta de una publicación según su estado: qué puede decidir la persona ahora o qué pasó. */
+export function socialPostMessage(post: SocialPostRow, ctx: SocialContext & { slotLabel: string | null; scheduledLabel: string | null }): OutgoingMessage {
+  const text = `<blockquote>${esc(clip(post.text, 1500))}</blockquote>`;
+  const image = post.media_asset_id ? '\n🖼 Con imagen.' : '';
+  switch (post.status) {
+    case 'draft': {
+      const rows: ChannelButton[][] = [];
+      if (ctx.pageName) {
+        rows.push([button('🚀 Publicar ahora', { kind: 'social', op: 'publish', id: post.post_id })]);
+        if (ctx.slotLabel) rows.push([button(`🕘 Programar: ${ctx.slotLabel}`, { kind: 'social', op: 'schedule', id: post.post_id })]);
+      }
+      rows.push([button('🗑 Descartar', { kind: 'social', op: 'discard', id: post.post_id })]);
+      return { html: `📣 <b>Así se publicará en Facebook</b>\n${text}${image}\n${pageNote(ctx)}`, buttons: rows };
+    }
+    case 'awaiting_approval':
+    case 'scheduled':
+      return {
+        html: ctx.scheduledLabel
+          ? `🕘 <b>Programada para ${esc(ctx.scheduledLabel)}</b>\n${text}${image}\nTe aviso aquí cuando Facebook la confirme.`
+          : `⏳ <b>Enviando a Facebook…</b>\n${text}${image}\nTe aviso aquí en cuanto Facebook la confirme.`,
+      };
+    case 'published': {
+      const url = postUrl(post.external_ref);
+      return { html: `✅ <b>Publicado en Facebook</b>${ctx.pageName ? ` · ${esc(clip(ctx.pageName, 80))}` : ''}\n${text}${image}${url ? `\n<a href="${esc(url)}">Ver la publicación</a>` : ''}` };
+    }
+    case 'rejected':
+      return { html: `🗑 <b>Publicación descartada.</b> No se publicó nada.\n${text}` };
+    default:
+      return { html: `⚠️ <b>No se pudo confirmar la publicación en Facebook.</b> Revísala en tu panel antes de intentarlo de nuevo.\n${text}` };
+  }
 }
 
 // ---------------------------------------------------------------------------------------- laboratorio

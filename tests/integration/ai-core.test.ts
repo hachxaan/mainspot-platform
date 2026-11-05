@@ -278,6 +278,85 @@ test('Telegram → IA: el cambio pedido en el chat se prepara con IA, avisa con 
   assert.equal(done.rows[0]?.status, 'published');
 });
 
+test('Telegram → Facebook: pedir una publicación ofrece prepararla; con botones se elige la propuesta y se publica o programa, con aviso al publicar', async () => {
+  const a = await createTenantWithPlan(t, LIMITS, 'client_tgfb');
+  const chat = `sim-fb-${randomUUID().slice(0, 8)}`;
+  const ch = t.handle.channel as SimulatedChannel;
+  const inChat = () => ch.transcript().filter((m) => m.to === chat);
+  const last = () => inChat().at(-1)!;
+  const byId = (id: string) => inChat().find((m) => m.message_id === id)!;
+  let seq = 0;
+  const press = (messageId: string, label: RegExp) => {
+    const b = byId(messageId).buttons.flat().find((x) => label.test(x.label));
+    assert.ok(b, `botón ${label} en el mensaje`);
+    return t.handle.telegram.handleUpdate({ callback_query: { id: `cbq-fb-${seq += 1}`, data: b.action, message: { message_id: messageId, chat: { id: chat } } } });
+  };
+  const say = (text: string) => t.handle.telegram.handleUpdate({ message: { chat: { id: chat }, text } });
+  const code = await call(a.token, '/telegram/link-code', 'POST');
+  assert.equal((await say(`/start ${code.body.code}`)).handled, 'linked');
+  assert.ok((await say('ayuda')) && last().buttons.flat().some((b) => b.label === '📣 Publicar en Facebook'), 'la ayuda ofrece publicar en Facebook');
+
+  // Pedirlo con palabras: no se bloquea en seco ni actúa solo; se ofrece prepararlo con un botón.
+  assert.equal((await say('Publica en Facebook que hoy tenemos pan de muerto recién horneado')).handled, 'conversation:blocked');
+  const offer = last();
+  assert.match(offer.text, /¿Preparo esta publicación para Facebook\?/);
+  assert.deepEqual(offer.buttons.map((r) => r.map((b) => b.label)), [['📣 Prepararla'], ['🖼 Prepararla con imagen'], ['No, gracias']]);
+  assert.equal((await press(offer.message_id, /^📣 Prepararla$/)).handled, 'social_compose_started');
+  assert.match(byId(offer.message_id).text, /Estoy redactando tus propuestas/);
+  assert.deepEqual(byId(offer.message_id).buttons, [], 'la oferta usada pierde sus botones');
+  await t.handle.aiJobs.drain(a.tenant);
+  const variants = last();
+  assert.match(variants.text, /Propuestas para Facebook[\s\S]*1\. [\s\S]*2\. /);
+  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM social_post WHERE tenant_id = $1', [a.tenant]), 0, 'redactar no crea publicaciones');
+
+  // Elegir una variante crea el borrador (con su cuota); publicar sigue la aprobación del panel con origen telegram.
+  assert.equal((await press(variants.message_id, /Usar la 1/)).handled, 'social_draft_created');
+  const draft = byId(variants.message_id);
+  assert.match(draft.text, /Así se publicará en Facebook[\s\S]*pan de muerto/);
+  const labels = draft.buttons.map((r) => r[0]!.label);
+  assert.deepEqual([labels.length, labels[0], labels[2]], [3, '🚀 Publicar ahora', '🗑 Descartar']);
+  assert.match(labels[1] ?? '', /^🕘 Programar: vie \d{1,2} [a-z]{3}, 18:00$/, 'franja sugerida en la zona del negocio');
+  assert.equal((await press(variants.message_id, /Publicar ahora/)).handled, 'social_published');
+  const posted = await t.pool.query<{ status: string; external_ref: string; proposal_id: string }>('SELECT status, external_ref, proposal_id FROM social_post WHERE tenant_id = $1', [a.tenant]);
+  assert.equal(posted.rows[0]?.status, 'published');
+  const pub = await t.pool.query<{ source: string }>('SELECT source FROM publication WHERE tenant_id = $1 AND proposal_id = $2', [a.tenant, posted.rows[0]?.proposal_id]);
+  assert.equal(pub.rows[0]?.source, 'telegram');
+  assert.match(byId(variants.message_id).text, /Publicado en Facebook/);
+  assert.deepEqual(byId(variants.message_id).buttons, []);
+
+  // Programar en la franja sugerida: queda en cola; al publicarse, el programador avisa en el chat.
+  assert.equal((await say('Publica en Facebook que mañana abrimos más temprano')).handled, 'conversation:blocked');
+  assert.equal((await press(last().message_id, /^📣 Prepararla$/)).handled, 'social_compose_started');
+  await t.handle.aiJobs.drain(a.tenant);
+  const second = last();
+  assert.equal((await press(second.message_id, /Usar la 2/)).handled, 'social_draft_created');
+  assert.equal((await press(second.message_id, /Programar/)).handled, 'social_scheduled');
+  assert.match(byId(second.message_id).text, /Programada para vie \d{1,2} [a-z]{3}, 18:00/);
+  const scheduled = (await t.pool.query<{ post_id: string; status: string }>(`SELECT post_id, status FROM social_post WHERE tenant_id = $1 AND status <> 'published'`, [a.tenant])).rows[0]!;
+  assert.equal(scheduled.status, 'scheduled');
+  const before = inChat().length;
+  await t.pool.query(`UPDATE scheduled_post SET publish_at = now() - interval '1 minute' WHERE tenant_id = $1 AND post_id = $2`, [a.tenant, scheduled.post_id]);
+  await t.handle.socialScheduler.tick({ tenantId: a.tenant });
+  assert.equal(inChat().length, before + 1, 'un aviso al publicarse');
+  assert.match(last().text, /Publicado en Facebook/);
+
+  // Descartar y un rol sin permiso de publicar.
+  assert.equal((await say('Publica en Facebook que el domingo cerramos')).handled, 'conversation:blocked');
+  assert.equal((await press(last().message_id, /^📣 Prepararla$/)).handled, 'social_compose_started');
+  await t.handle.aiJobs.drain(a.tenant);
+  const third = last();
+  assert.equal((await press(third.message_id, /Usar la 1/)).handled, 'social_draft_created');
+  await t.pool.query(`UPDATE user_role SET role_id = 'operation' WHERE user_id = $1 AND tenant_id = $2`, [a.userId, a.tenant]);
+  try {
+    assert.equal((await press(third.message_id, /Publicar ahora/)).handled, 'permission_denied');
+  } finally {
+    await t.pool.query(`UPDATE user_role SET role_id = 'administration' WHERE user_id = $1 AND tenant_id = $2`, [a.userId, a.tenant]);
+  }
+  assert.equal((await press(third.message_id, /Descartar/)).handled, 'social_discarded');
+  assert.match(byId(third.message_id).text, /Publicación descartada/);
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM social_post WHERE tenant_id = $1 AND status = 'rejected'`, [a.tenant]), 1);
+});
+
 test('chat → IA: si la imagen no se puede generar, el job falla con el motivo y no se propone nada (sin sustituto)', async () => {
   const a = await publishedClassicSite('client_aig');
   const reg = t.handle.dispatcher.registry;
