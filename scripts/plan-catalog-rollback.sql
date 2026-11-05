@@ -10,6 +10,10 @@
 -- 0034 no está aplicada, si hay migraciones posteriores a 0034 registradas (revisarlas y revertirlas
 -- antes) o si quota_reservation tiene capacidades fuera de la lista de 0014 (no caben en su CHECK).
 --
+-- Fail-closed: the rollback ABORTS (SQLSTATE 55000) when any subscription is pinned to a
+-- SUPERSEDED or otherwise non-current revision. The old schema cannot express per-tenant pins.
+-- Do not migrate subscribers merely to make the rollback pass without an owner decision.
+--
 -- Resultado:
 --   - plan_limit vuelve (es plan_limit_legacy_0009 renombrada, sin sus triggers de solo lectura y de TRUNCATE)
 --     con sus filas REGENERADAS desde la revisión PUBLISHED vigente de cada plan: una fila por capacidad de
@@ -63,7 +67,8 @@ BEGIN
     FROM subscription s JOIN plan_revision r ON r.revision_id = s.plan_revision_id
    WHERE r.status <> 'PUBLISHED';
   IF unpinned > 0 THEN
-    RAISE NOTICE 'plan-catalog-rollback: % subscription(s) pinned to a non-current revision will use the published values of their plan', unpinned;
+    RAISE EXCEPTION 'plan-catalog-rollback BLOCKED: % subscription(s) pinned to non-current revisions; reverting would silently change entitlements. Migrate explicitly with owner approval or restore a backup.', unpinned
+      USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
 END $$;
 
