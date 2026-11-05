@@ -8,10 +8,11 @@
 -- cualquier aborto sale con código distinto de 0):
 --   psql "$DATABASE_URL" -X -f scripts/plan-catalog-rollback.sql
 -- Es una sola transacción (BEGIN … COMMIT): ante cualquier error no cambia nada. Aborta sin tocar nada si
--- 0034 no está aplicada, si hay migraciones posteriores a 0034 registradas (p. ej. 0035: revertirla antes con
--- scripts/plan-catalog-hardening-rollback.sql), si quota_reservation tiene capacidades fuera de la lista de 0014
--- (no caben en su CHECK) o si alguna suscripción está fijada a una revisión no vigente (SQLSTATE 55000): el
--- esquema anterior no puede expresar esa fijación y revertir cambiaría en silencio los límites del negocio.
+-- 0034 no está aplicada, si ya existe otra relación llamada plan_limit, si hay migraciones posteriores a 0034
+-- registradas (p. ej. 0035: revertirla antes con scripts/plan-catalog-hardening-rollback.sql), si quota_reservation
+-- tiene capacidades fuera de la lista de 0014 (no caben en su CHECK) o si alguna suscripción no está fijada a la
+-- revisión publicada vigente de su plan (SQLSTATE 55000): el esquema anterior no puede expresar esa fijación y
+-- revertir cambiaría en silencio los límites del negocio.
 -- No migrar negocios solo para que la reversión pase sin una decisión del propietario.
 -- Inventario previo de solo lectura: scripts/plan-catalog-rollback-preflight.sql.
 --

@@ -427,3 +427,21 @@ test('conexión terminada con un cliente retenido por pool.connect() directo (si
   assert.deepEqual(statuses(await w!.login([{ login, password: 'wrong-password', code: '000000', ip: '203.0.113.80' }])), [401]);
   await w!.close();
 });
+
+test('ráfaga de logins inventados: el 429 por saturación no gasta intentos del operador, que entra al terminar la ráfaga', { timeout: 60_000 }, async () => {
+  const user = await newUser();
+  const [w] = await startWorkers(1);
+  const ip = '203.0.113.90';
+  // 120 logins inventados y, detrás, 6 reintentos del operador en la misma ráfaga: el proceso solo comprueba 2
+  // contraseñas a la vez con 32 en cola; los demás reciben 429 sin llegar a la BD.
+  const flood = Array.from({ length: 120 }, () => ({ login: `mp-flood-${tag()}`, password: 'wrong-password', code: '000000', ip }));
+  const retries = Array.from({ length: 6 }, () => ({ login: user.login, password: PASSWORD, code: totpAt(user.secret, currentStep()), ip }));
+  const outcomes = statuses(await w!.login([...flood, ...retries]));
+  assert.equal(count(outcomes, 401) + count(outcomes, 429) + count(outcomes, 200), 126);
+  assert.ok(count(outcomes, 429) >= 120 - 34, `la cola se saturó: ${JSON.stringify(outcomes)}`);
+  assert.deepEqual(outcomes.slice(120), [429, 429, 429, 429, 429, 429], 'los reintentos del operador llegaron con la cola llena');
+  assert.equal(await gateAttempts(`login:${ip}|${user.login}`), null, 'un 429 por saturación no reserva intentos de su clave');
+  assert.deepEqual(statuses(await w!.login([{ login: user.login, password: PASSWORD, code: totpAt(user.secret, currentStep()), ip }])), [200],
+    'terminada la ráfaga, el operador entra');
+  await w!.close();
+});

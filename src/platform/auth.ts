@@ -34,8 +34,9 @@ const ATTEMPT_WINDOW_MS = 15 * 60_000;
 const NO_SUCH_USER_HASH = '$2a$10$YPQsHGm5P5HD3/h/P9eLbukBi2sYSoKrx587p72Jft1YZHLjkrUh.';
 /**
  * Esa comparación cuesta ~40 ms de CPU de PostgreSQL y la puede pedir cualquiera con logins inventados: como mucho
- * 2 a la vez por proceso y 32 en espera; el resto recibe 429 sin tocar la BD. Así una ráfaga no deja sin servicio
- * al resto de la aplicación, que comparte la misma BD (los límites globales o por IP son decisión del propietario).
+ * 2 a la vez por proceso y 32 en espera; el resto recibe 429 sin tocar la BD ni gastar intentos de su clave. Así una
+ * ráfaga no deja sin servicio al resto de la aplicación, que comparte la misma BD (los límites globales o por IP son
+ * decisión del propietario).
  */
 const PASSWORD_CHECK_CONCURRENCY = 2;
 const PASSWORD_CHECK_QUEUE = 32;
@@ -365,15 +366,19 @@ export class PlatformAuth {
   async login(loginName: string, password: string, code: string, ip: string): Promise<{ token: string; session: PlatformSession }> {
     const box = this.requireBox();
     const key = `${ip}|${loginName.toLowerCase()}`;
-    if (!(await this.reserveAttempt(`login:${key}`))) throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
     const denied = async (reason: string, platformUserId: string | null) => {
       await writePlatformAudit(this.pool, { actorId: platformUserId ?? 'login:unknown', actorRoles: [], action: 'platform.login', decision: 'deny', result: reason });
       return new AppError(401, 'invalid_credentials', 'Usuario, contraseña o código incorrectos.');
     };
-    const r = await this.withPasswordSlot(() => this.pool.query<{ platform_user_id: string | null; totp_box: Buffer; totp_last_step: string; status: string; display_name: string; ok: boolean }>(
-      `SELECT u.platform_user_id, u.totp_box, u.totp_last_step, u.status, u.display_name,
-              (COALESCE(u.password_hash, $3) = crypt($2, COALESCE(u.password_hash, $3)) AND u.platform_user_id IS NOT NULL) AS ok
-         FROM (SELECT 1) AS probe LEFT JOIN platform_user u ON u.login = $1`, [loginName.toLowerCase(), password, NO_SUCH_USER_HASH]));
+    // El hueco se toma ANTES de reservar el intento: un 429 por saturación (cola llena) no gasta intentos de la
+    // clave, así una ráfaga ajena no bloquea 15 min a un operador que reintenta.
+    const r = await this.withPasswordSlot(async () => {
+      if (!(await this.reserveAttempt(`login:${key}`))) throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
+      return this.pool.query<{ platform_user_id: string | null; totp_box: Buffer; totp_last_step: string; status: string; display_name: string; ok: boolean }>(
+        `SELECT u.platform_user_id, u.totp_box, u.totp_last_step, u.status, u.display_name,
+                (COALESCE(u.password_hash, $3) = crypt($2, COALESCE(u.password_hash, $3)) AND u.platform_user_id IS NOT NULL) AS ok
+           FROM (SELECT 1) AS probe LEFT JOIN platform_user u ON u.login = $1`, [loginName.toLowerCase(), password, NO_SUCH_USER_HASH]);
+    });
     const user = r.rows[0];
     if (!user?.platform_user_id) throw await denied('bad_password_or_user', null);
     if (!user.ok || user.status !== 'active') throw await denied('bad_password_or_user', user.platform_user_id);

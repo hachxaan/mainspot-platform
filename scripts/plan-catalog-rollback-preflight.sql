@@ -1,8 +1,9 @@
 -- G-MIG: read-only preflight BEFORE rolling back 0034 (scripts/plan-catalog-rollback.sql). Requires 0034 applied.
 --   psql "$DATABASE_URL" -X -f scripts/plan-catalog-rollback-preflight.sql
--- Only aggregate counts. The verdict row evaluates the SAME conditions that make the rollback abort, and the
--- script exits non-zero when any holds. It does not authorize anything: the rollback itself needs the owner's
--- decision, stopped writers and a restorable backup. Counts can change until writers are stopped.
+-- Only aggregate counts. The first block and the verdict row evaluate the SAME conditions that make the rollback
+-- abort, and the script exits non-zero when any holds. With 0035 still registered, blocked_later_migrations=t is
+-- expected: revert 0035 first, then this preflight must exit 0 before the 0034 rollback. It does not authorize
+-- anything: the rollback itself needs the owner's decision, stopped writers and a restorable backup.
 \set ON_ERROR_STOP on
 BEGIN READ ONLY;
 DO $$
