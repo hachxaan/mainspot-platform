@@ -223,6 +223,9 @@ export class PlatformAuth {
   private readonly box: SecretBox | null;
   private readonly jwtSecret: string;
   private readonly ttlMinutes: number;
+  /** Logins admitidos (reservando, en espera o comprobando): como mucho PASSWORD_CHECK_CONCURRENCY + QUEUE. */
+  private passwordAdmitted = 0;
+  /** Comprobaciones de contraseña en curso: como mucho PASSWORD_CHECK_CONCURRENCY. */
   private passwordChecks = 0;
   private readonly passwordWaiters: Array<() => void> = [];
   // Failed login and TOTP attempts are shared by every process of the app through PostgreSQL (0035).
@@ -231,10 +234,31 @@ export class PlatformAuth {
     return attemptKeyHash(this.jwtSecret, key);
   }
 
-  /** Ejecuta una comprobación de contraseña con un hueco libre (PASSWORD_CHECK_*); sin hueco ni cola, 429. */
-  private async withPasswordSlot<T>(check: () => Promise<T>): Promise<T> {
+  /**
+   * Admisión síncrona de un login: sin hueco ni cola, 429 ANTES de tocar la BD o de reservar un intento (una ráfaga
+   * ajena no gasta intentos de un operador que reintenta). Devuelve la función que libera la admisión.
+   */
+  private admitPasswordCheck(): () => void {
+    if (this.passwordAdmitted >= PASSWORD_CHECK_CONCURRENCY + PASSWORD_CHECK_QUEUE) {
+      throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
+    }
+    this.passwordAdmitted += 1;
+    let released = false;
+    return () => {
+      if (!released) {
+        released = true;
+        this.passwordAdmitted -= 1;
+      }
+    };
+  }
+
+  /**
+   * Ejecuta la comprobación de contraseña (bcrypt en PostgreSQL) en uno de los PASSWORD_CHECK_CONCURRENCY huecos.
+   * Solo la consulta cara ocupa hueco: la reserva del intento va fuera, así una clave bloqueada no hace esperar a
+   * logins de otras claves.
+   */
+  private async runPasswordCheck<T>(check: () => Promise<T>): Promise<T> {
     if (this.passwordChecks >= PASSWORD_CHECK_CONCURRENCY) {
-      if (this.passwordWaiters.length >= PASSWORD_CHECK_QUEUE) throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
       await new Promise<void>((resolve) => this.passwordWaiters.push(resolve));
     } else {
       this.passwordChecks += 1;
@@ -370,15 +394,18 @@ export class PlatformAuth {
       await writePlatformAudit(this.pool, { actorId: platformUserId ?? 'login:unknown', actorRoles: [], action: 'platform.login', decision: 'deny', result: reason });
       return new AppError(401, 'invalid_credentials', 'Usuario, contraseña o código incorrectos.');
     };
-    // El hueco se toma ANTES de reservar el intento: un 429 por saturación (cola llena) no gasta intentos de la
-    // clave, así una ráfaga ajena no bloquea 15 min a un operador que reintenta.
-    const r = await this.withPasswordSlot(async () => {
+    // Admisión antes de reservar el intento (NEW-07); solo el bcrypt ocupa uno de los huecos de ejecución (NEW-09).
+    const release = this.admitPasswordCheck();
+    let r;
+    try {
       if (!(await this.reserveAttempt(`login:${key}`))) throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
-      return this.pool.query<{ platform_user_id: string | null; totp_box: Buffer; totp_last_step: string; status: string; display_name: string; ok: boolean }>(
+      r = await this.runPasswordCheck(() => this.pool.query<{ platform_user_id: string | null; totp_box: Buffer; totp_last_step: string; status: string; display_name: string; ok: boolean }>(
         `SELECT u.platform_user_id, u.totp_box, u.totp_last_step, u.status, u.display_name,
                 (COALESCE(u.password_hash, $3) = crypt($2, COALESCE(u.password_hash, $3)) AND u.platform_user_id IS NOT NULL) AS ok
-           FROM (SELECT 1) AS probe LEFT JOIN platform_user u ON u.login = $1`, [loginName.toLowerCase(), password, NO_SUCH_USER_HASH]);
-    });
+           FROM (SELECT 1) AS probe LEFT JOIN platform_user u ON u.login = $1`, [loginName.toLowerCase(), password, NO_SUCH_USER_HASH]));
+    } finally {
+      release();
+    }
     const user = r.rows[0];
     if (!user?.platform_user_id) throw await denied('bad_password_or_user', null);
     if (!user.ok || user.status !== 'active') throw await denied('bad_password_or_user', user.platform_user_id);

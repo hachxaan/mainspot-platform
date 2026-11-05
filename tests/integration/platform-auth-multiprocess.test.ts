@@ -31,7 +31,7 @@ const PASSWORD = 'Multi-Process-Gate-2026';
 const mfaKey = randomBytes(32).toString('base64');
 const jwtSecret = randomBytes(32).toString('hex');
 
-interface Outcome { status: number; code?: string }
+interface Outcome { status: number; code?: string; ms?: number }
 type Call = { login: string; password: string; code: string; ip: string };
 
 class Worker {
@@ -76,6 +76,11 @@ class Worker {
 
   login(calls: Call[], at?: number): Promise<Outcome[]> {
     return this.send({ op: 'login', calls, at });
+  }
+
+  /** Como login, con la duración de cada llamada (`ms`). */
+  loginTimed(calls: Call[]): Promise<Outcome[]> {
+    return this.send({ op: 'login', calls, timed: true });
   }
 
   stepUp(session: PlatformSession, codes: string[], at?: number): Promise<Outcome[]> {
@@ -443,5 +448,30 @@ test('ráfaga de logins inventados: el 429 por saturación no gasta intentos del
   assert.equal(await gateAttempts(`login:${ip}|${user.login}`), null, 'un 429 por saturación no reserva intentos de su clave');
   assert.deepEqual(statuses(await w!.login([{ login: user.login, password: PASSWORD, code: totpAt(user.secret, currentStep()), ip }])), [200],
     'terminada la ráfaga, el operador entra');
+  await w!.close();
+});
+
+test('una clave con su fila bloqueada no hace esperar a los logins de OTRAS claves del mismo proceso', { timeout: 60_000 }, async () => {
+  const ip = '203.0.113.95';
+  const stuck = `mp-stuck-${tag()}`;
+  const [w] = await startWorkers(1);
+  assert.deepEqual(statuses(await w!.login([{ login: stuck, password: 'wrong-password', code: '000000', ip }])), [401]);
+  const holder = await pool.connect();
+  try {
+    await holder.query('BEGIN');
+    await holder.query('SELECT 1 FROM platform_auth_attempt_gate WHERE key_hash = $1 FOR UPDATE', [gateKey(`login:${ip}|${stuck}`)]);
+    // Dos intentos sobre la clave bloqueada (esperan hasta lock_timeout) y tres sobre otras claves.
+    const outcomes = await w!.loginTimed([
+      { login: stuck, password: 'wrong-password', code: '000000', ip },
+      { login: stuck, password: 'wrong-password', code: '000000', ip },
+      ...Array.from({ length: 3 }, () => ({ login: `mp-free-${tag()}`, password: 'wrong-password', code: '000000', ip })),
+    ]);
+    const [a, b, ...others] = outcomes;
+    assert.deepEqual([a?.status, a?.code, b?.status, b?.code], [500, '55P03', 500, '55P03'], JSON.stringify(outcomes));
+    assert.ok(others.every((o) => o.status === 401 && (o.ms ?? Infinity) < 2_000), `otras claves sin esperar: ${JSON.stringify(outcomes)}`);
+  } finally {
+    await holder.query('ROLLBACK');
+    holder.release();
+  }
   await w!.close();
 });

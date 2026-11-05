@@ -17,12 +17,13 @@ import { PlatformAuth, type PlatformSession } from '../../src/platform/auth.ts';
 import { AppError } from '../../src/shared/errors.ts';
 
 type Command =
-  | { id: number; op: 'login'; at?: number; calls: Array<{ login: string; password: string; code: string; ip: string }> }
+  /** `timed`: cada resultado lleva también su duración en ms (`ms`). */
+  | { id: number; op: 'login'; at?: number; timed?: boolean; calls: Array<{ login: string; password: string; code: string; ip: string }> }
   | { id: number; op: 'stepUp'; at?: number; session: PlatformSession; codes: string[] }
   /** Cliente retenido con pool.connect() directo (sin runTransaction), como auditedOperation o los workers. */
   | { id: number; op: 'holdCheckout'; at?: number; seconds: number };
 
-interface Outcome { status: number; code?: string }
+interface Outcome { status: number; code?: string; ms?: number }
 
 const pool = getPool({ connectionString: process.env['WORKER_DATABASE_URL'] ?? '', max: Number(process.env['WORKER_POOL_MAX'] ?? 4) });
 const auth = new PlatformAuth({
@@ -51,7 +52,11 @@ async function run(cmd: Command): Promise<Outcome[]> {
     }
   }
   if (cmd.op === 'login') {
-    return Promise.all(cmd.calls.map((c) => auth.login(c.login, c.password, c.code, c.ip).then(() => ({ status: 200 }), outcome)));
+    return Promise.all(cmd.calls.map(async (c) => {
+      const started = performance.now();
+      const result = await auth.login(c.login, c.password, c.code, c.ip).then((): Outcome => ({ status: 200 }), outcome);
+      return cmd.timed ? { ...result, ms: Math.round(performance.now() - started) } : result;
+    }));
   }
   return Promise.all(cmd.codes.map((code) => auth.stepUp(cmd.session, code).then(() => ({ status: 200 }), outcome)));
 }
