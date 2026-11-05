@@ -846,3 +846,59 @@ test('G-MIG: la reversión bloquea el catálogo antes de comprobar las fijacione
       WHERE s.tenant_id = 'client_m_extra'`)).rows;
   assert.deepEqual(pinned, [{ plan_revision_id: 'prv_plan_extra_v1', status: 'SUPERSEDED' }], 'la fijación sigue intacta');
 });
+
+test('G-MIG: con REPEATABLE READ por defecto en la sesión, la reversión sigue comprobando los datos posteriores a su bloqueo', async () => {
+  const db = await migratedDatabase();
+  const migrated = await fingerprint(db.pool);
+  const next = await runAtomic(db.pool, (client) => confirmedDraft(client, 'plan_extra', EXTRA_V2));
+  const holder = await db.pool.connect();
+  const contender = await db.pool.connect();
+  try {
+    await holder.query('BEGIN');
+    await publishDraft(holder, 'plan_extra', next);
+    const holderPid = (await holder.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid;
+    // Con la instantánea tomada antes del LOCK (BEGIN sin nivel), vería v1 aún PUBLISHED y revertiría.
+    await contender.query(`SET default_transaction_isolation = 'repeatable read'`);
+    const running = contender.query(rollbackSql).then(() => 'ok', (err: unknown) => pgCode(err));
+    let blocked = false;
+    for (let i = 0; i < 500 && !blocked; i++) {
+      blocked = (await db.pool.query<{ b: boolean }>(
+        'SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY (pg_blocking_pids(pid))) AS b', [holderPid])).rows[0]?.b === true;
+      if (!blocked) await sleep(10);
+    }
+    await holder.query('COMMIT');
+    assert.deepEqual([blocked, await running], [true, '55000']);
+    await contender.query('ROLLBACK').catch(() => undefined);
+  } finally {
+    holder.release();
+    contender.release();
+  }
+  assert.deepEqual(await fingerprint(db.pool), migrated, 'nada revertido');
+});
+
+test('G-MIG: el preflight de reversión y la reversión se niegan si ya existe una relación plan_limit', async () => {
+  const db = await migratedDatabase();
+  await db.pool.query('CREATE VIEW plan_limit AS SELECT * FROM plan_limit_legacy_0009');
+  const before = await snapshot(db.pool);
+  const run = runPsql(db.url, ROLLBACK_PREFLIGHT);
+  assert.notEqual(run.status, 0, run.out);
+  assert.match(run.out, /a relation named plan_limit already exists/);
+  await assert.rejects(runRollback(db.pool), (err: unknown) => err instanceof Error && /a relation named plan_limit already exists/.test(err.message));
+  assert.deepEqual(await snapshot(db.pool), before);
+});
+
+for (const [label, leftover] of [
+  ['una columna plan.created_by de otro tipo', 'ALTER TABLE plan ADD COLUMN created_by INT'],
+  ['una restricción con el nombre del FK del libro de cuotas', 'ALTER TABLE quota_reservation ADD CONSTRAINT quota_reservation_capability_fk CHECK (true)'],
+  ['un índice con el nombre del índice único de publicadas en otra tabla', 'CREATE UNIQUE INDEX uq_plan_revision_one_published ON client (client_id)'],
+] as const) {
+  test(`preflight G-MIG: ${label} (0034 la adoptaría en silencio) ⇒ bloquea sin cambiar nada`, async () => {
+    const db = await legacyDatabase();
+    await db.pool.query(leftover);
+    const before = await snapshot(db.pool);
+    const run = runPsql(db.url, GMIG_PREFLIGHT);
+    assert.notEqual(run.status, 0, run.out);
+    assert.match(run.out, /objects of 0034 already exist/);
+    assert.deepEqual(await snapshot(db.pool), before);
+  });
+}

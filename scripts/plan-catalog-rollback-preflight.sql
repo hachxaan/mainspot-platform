@@ -10,6 +10,9 @@ BEGIN
   IF to_regclass('public.plan_revision') IS NULL OR to_regclass('public.plan_limit_legacy_0009') IS NULL THEN
     RAISE EXCEPTION 'G-MIG: migration 0034 is not applied in this database; nothing to roll back';
   END IF;
+  IF to_regclass('public.plan_limit') IS NOT NULL THEN
+    RAISE EXCEPTION 'G-MIG ROLLBACK BLOCKED: a relation named plan_limit already exists next to plan_limit_legacy_0009; inspect it manually';
+  END IF;
 END $$;
 SELECT
   count(*) AS subscriptions,

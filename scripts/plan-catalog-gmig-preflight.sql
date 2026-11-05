@@ -10,12 +10,33 @@ BEGIN
  IF to_regclass('public.plan_revision') IS NOT NULL OR to_regclass('public.plan_limit') IS NULL THEN
    RAISE EXCEPTION 'G-MIG BLOCKED: 0034 appears applied (or plan_limit is missing); use scripts/plan-catalog-rollback-preflight.sql';
  END IF;
- -- 0034 uses IF NOT EXISTS: a leftover object with its name would be silently adopted with whatever shape it has.
- IF to_regclass('public.plan_parameter_definition') IS NOT NULL OR to_regclass('public.plan_parameter_value') IS NOT NULL
-    OR to_regclass('public.plan_catalog_event') IS NOT NULL OR to_regclass('public.subscription_history') IS NOT NULL
-    OR to_regclass('public.plan_limit_legacy_0009') IS NOT NULL OR to_regclass('public.uq_plan_name_lower') IS NOT NULL
+ -- 0034 creates objects with IF NOT EXISTS (and checks constraints by name only): any leftover object with one of
+ -- its names would be silently adopted with whatever shape or table it has. Every named object of 0034 is listed.
+ IF EXISTS (SELECT 1 FROM pg_class
+             WHERE relnamespace = 'public'::regnamespace
+               AND relname IN ('plan_parameter_definition', 'plan_parameter_value', 'plan_catalog_event', 'subscription_history',
+                               'plan_limit_legacy_0009', 'uq_plan_name_lower', 'idx_quota_reservation_committed',
+                               'uq_plan_revision_one_draft', 'uq_plan_revision_one_published', 'idx_plan_catalog_event_plan',
+                               'idx_subscription_history_tenant'))
     OR EXISTS (SELECT 1 FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'subscription' AND column_name = 'plan_revision_id') THEN
+                WHERE table_schema = 'public'
+                  AND ((table_name = 'plan' AND column_name IN ('created_by', 'updated_at'))
+                    OR (table_name = 'subscription' AND column_name = 'plan_revision_id')))
+    OR EXISTS (SELECT 1 FROM pg_constraint
+                WHERE connamespace = 'public'::regnamespace
+                  AND conname IN ('quota_reservation_capability_fk', 'subscription_plan_revision_fk'))
+    OR EXISTS (SELECT 1 FROM pg_proc
+                WHERE pronamespace = 'public'::regnamespace
+                  AND proname IN ('plan_revision_checksum', 'plan_revision_guard', 'plan_parameter_value_guard',
+                                  'subscription_history_guard', 'subscription_assignment_guard', 'subscription_history_record',
+                                  'plan_enabled_requires_published'))
+    OR EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+                WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
+                  AND t.tgname IN ('trg_plan_catalog_event_immutable', 'trg_plan_catalog_event_no_truncate', 'trg_plan_revision_guard',
+                                   'trg_plan_revision_no_truncate', 'trg_plan_parameter_value_guard', 'trg_plan_parameter_value_no_truncate',
+                                   'trg_subscription_history_guard', 'trg_subscription_history_no_truncate', 'trg_subscription_history',
+                                   'trg_subscription_assignment_guard', 'trg_plan_enabled_published', 'trg_plan_revision_enabled_published',
+                                   'trg_plan_limit_legacy_readonly', 'trg_plan_limit_legacy_no_truncate')) THEN
    RAISE EXCEPTION 'G-MIG BLOCKED: objects of 0034 already exist without plan_revision; inspect the schema manually';
  END IF;
 END $$;

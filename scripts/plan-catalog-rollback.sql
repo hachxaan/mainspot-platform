@@ -38,7 +38,9 @@
 -- La auditoría general (audit_event, platform_audit_event) no se toca.
 
 \set ON_ERROR_STOP on
-BEGIN;
+-- READ COMMITTED explícito: con otro nivel por defecto, la instantánea se tomaría antes del LOCK de abajo y la
+-- comprobación y la regeneración leerían datos previos al bloqueo.
+BEGIN ISOLATION LEVEL READ COMMITTED;
 SET LOCAL lock_timeout = '15s';
 DO $$
 DECLARE
@@ -49,14 +51,18 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtext('mainspot_migrations'));
   IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE file = '0034_plan_policy_catalog.sql')
      OR to_regclass('public.plan_revision') IS NULL
-     OR to_regclass('public.plan_limit_legacy_0009') IS NULL
-     OR to_regclass('public.plan_limit') IS NOT NULL THEN
+     OR to_regclass('public.plan_limit_legacy_0009') IS NULL THEN
     RAISE EXCEPTION 'plan-catalog-rollback: migration 0034 is not applied in this database; nothing to revert'
       USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
+  IF to_regclass('public.plan_limit') IS NOT NULL THEN
+    RAISE EXCEPTION 'plan-catalog-rollback: a relation named plan_limit already exists next to plan_limit_legacy_0009; inspect it manually'
+      USING ERRCODE = 'object_not_in_prerequisite_state';
+  END IF;
   -- Las comprobaciones de abajo y la regeneración de plan_limit leen el catálogo y las suscripciones: nadie puede
-  -- publicar, asignar ni reservar entre la comprobación y el DDL (una publicación en curso termina antes y su
-  -- resultado se comprueba; las que lleguen después esperan y fallan al desaparecer las tablas).
+  -- publicar, asignar ni reservar entre la comprobación y el DDL. Con escritores aún activos (el procedimiento exige
+  -- detenerlos), una publicación en curso termina antes y su resultado se comprueba, o una de las dos transacciones
+  -- aborta (40P01 o 55P03) sin dejar nada a medias; las que lleguen después fallan al desaparecer las tablas.
   LOCK TABLE plan, plan_revision, plan_parameter_value, plan_parameter_definition, subscription, quota_reservation
     IN ACCESS EXCLUSIVE MODE;
   IF EXISTS (SELECT 1 FROM schema_migrations WHERE file COLLATE "C" > '0034_plan_policy_catalog.sql') THEN
@@ -110,7 +116,8 @@ SELECT r.plan_id, d.capability, v.value_int AS max_value
    AND d.value_type = 'int'
    AND d.capability IN ('website','social_posts','social_ads','reviews_managed','agents','conversations')
    AND v.value_int IS NOT NULL
-   AND v.source <> 'backfill_absent_deny';
+   -- `backfill_absent_deny` con 0 era una capacidad sin fila en 0009: vuelve a ser ausencia (el mismo deny).
+   AND NOT (v.source = 'backfill_absent_deny' AND v.value_int = 0);
 
 DELETE FROM plan_limit l
  WHERE NOT EXISTS (SELECT 1 FROM plan_limit_published_0034 p WHERE p.plan_id = l.plan_id AND p.capability = l.capability);

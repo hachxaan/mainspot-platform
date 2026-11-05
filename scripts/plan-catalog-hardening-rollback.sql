@@ -4,7 +4,7 @@
 --   psql "$DATABASE_URL" -X -f scripts/plan-catalog-hardening-rollback.sql
 -- Single transaction; any refusal exits non-zero and changes nothing (the script imposes ON_ERROR_STOP).
 \set ON_ERROR_STOP on
-BEGIN;
+BEGIN ISOLATION LEVEL READ COMMITTED;
 SET LOCAL lock_timeout='10s';
 SELECT pg_advisory_xact_lock(hashtext('mainspot_migrations'));
 DO $$
