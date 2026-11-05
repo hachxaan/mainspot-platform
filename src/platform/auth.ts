@@ -274,14 +274,15 @@ export class PlatformAuth {
   }
 
   /**
-   * Transaction over platform_auth_attempt_gate with bounded waits: a process that stalls while holding a key's
-   * row lock makes the others fail closed after 5 s (55P03) instead of waiting forever, no statement runs longer
-   * than 10 s, and PostgreSQL ends a session left idle inside the transaction after 15 s, releasing the lock.
-   * A lost connection fails the attempt, never the process (runTransaction).
+   * Transaction over platform_auth_attempt_gate with bounded waits. A normal reservation holds a key's row for a few
+   * milliseconds, so concurrent attempts on one key still serialize; a process that stalls while holding it makes
+   * the others fail closed after 500 ms (55P03) instead of waiting (and each waiter keeps a pool connection: a long
+   * wait would stall the whole process). No statement runs longer than 10 s, and PostgreSQL ends a session left idle
+   * inside the transaction after 15 s, releasing the lock. A lost connection fails the attempt, never the process.
    */
   private gateTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
     return runTransaction(this.pool, async (client) => {
-      await client.query(`SELECT set_config('lock_timeout', '5s', true), set_config('statement_timeout', '10s', true),
+      await client.query(`SELECT set_config('lock_timeout', '500ms', true), set_config('statement_timeout', '10s', true),
                                  set_config('idle_in_transaction_session_timeout', '15s', true)`);
       return fn(client);
     });

@@ -320,7 +320,7 @@ test('un bloqueo retenido sobre la fila del límite no deja la petición esperan
     const held = await Promise.race([w!.login([{ login: user.login, password: PASSWORD, code, ip }]), delay(20_000).then(() => 'still waiting')]);
     const waited = Date.now() - started;
     assert.deepEqual(held, [{ status: 500, code: '55P03' }], 'lock_timeout: no espera indefinidamente ni autentica');
-    assert.ok(waited >= 4_000 && waited < 20_000, `esperó ${waited} ms`);
+    assert.ok(waited >= 400 && waited < 5_000, `esperó ${waited} ms (lock_timeout de 500 ms)`);
     assert.equal(await sessions(user.id), 0);
   } finally {
     await holder.query('ROLLBACK');
@@ -347,7 +347,14 @@ test('purga concurrente: si otra sesión borra la fila vencida mientras la reser
     await pruner.query('BEGIN');
     await pruner.query('SELECT 1 FROM platform_auth_attempt_gate WHERE key_hash = $1 FOR UPDATE', [key]);
     pending = w!.login([{ login, password: 'wrong-password', code: '000000', ip }]);
-    await delay(500); // la reserva ya espera por la fila
+    // La reserva espera por la fila (como mucho 500 ms, su lock_timeout): se borra en cuanto queda bloqueada.
+    const pid = (await pruner.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid;
+    let waiting = false;
+    for (let i = 0; i < 40 && !waiting; i++) {
+      waiting = (await pool.query<{ b: boolean }>('SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY (pg_blocking_pids(pid))) AS b', [pid])).rows[0]?.b === true;
+      if (!waiting) await delay(5);
+    }
+    assert.ok(waiting, 'la reserva quedó esperando por la fila');
     await pruner.query('DELETE FROM platform_auth_attempt_gate WHERE key_hash = $1', [key]);
     await pruner.query('COMMIT');
   } catch (err) {
