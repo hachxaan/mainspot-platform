@@ -13,17 +13,17 @@
 \if :{?APPLY}
 \else
   \echo 'BLOCKED: require -v APPLY=1 and explicit G-SEC/G-MIG owner authorization.'
-  \quit 3
+  SELECT 1/0 AS REQUIRED_APPROVAL_MISSING; -- ON_ERROR_STOP=1 aborts without changes
 \endif
 \if :APPLY
 \else
   \echo 'BLOCKED: APPLY must be 1.'
-  \quit 3
+  SELECT 1/0 AS REQUIRED_APPROVAL_MISSING; -- ON_ERROR_STOP=1 aborts without changes
 \endif
 \if :{?EXPECTED_ROWS}
 \else
   \echo 'BLOCKED: require -v EXPECTED_ROWS=<count from read-only preflight>.'
-  \quit 3
+  SELECT 1/0 AS REQUIRED_APPROVAL_MISSING; -- ON_ERROR_STOP=1 aborts without changes
 \endif
 
 BEGIN;
