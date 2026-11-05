@@ -6,7 +6,7 @@
  *   anti-replay del paso usado. El secreto TOTP se guarda cifrado (SecretBox, AAD propia).
  * - Sesión corta (PLATFORM_SESSION_TTL_MINUTES) revocable; step-up = TOTP reciente (10 min) para
  *   acciones de alto impacto. Login (por IP + login) y step-up (por platform_user_id): 5 fallos en
- *   15 min ⇒ 429 y no se acepta ningún código hasta que venzan.
+ *   15 min ⇒ 429 y no se acepta ningún código hasta que venzan. Contador compartido en PostgreSQL.
  * - Toda decisión (allow/deny) queda en platform_audit_event (append-only) con el request_id del
  *   servidor (nunca una cabecera del cliente) y, en las denegaciones, el PATRÓN de la ruta: una fila
  *   sin tenant no puede llevar ids de negocios (la anonimización no la re-etiqueta, DEC-0027).
@@ -179,7 +179,51 @@ export class PlatformAuth {
   private readonly box: SecretBox | null;
   private readonly jwtSecret: string;
   private readonly ttlMinutes: number;
-  private readonly attempts = new Map<string, number[]>();
+  // Failed login and TOTP attempts must be shared across all running app processes.
+  // A transactional row lock serializes the check AND reservation. On DB failure authentication fails closed.
+  private attemptHash(key: string): string {
+    return createHmac('sha256', this.jwtSecret).update('mainspot-platform-auth-v1:').update(key).digest('hex');
+  }
+
+  private async reserveAttempt(key: string): Promise<boolean> {
+    const keyHash = this.attemptHash(key);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO platform_auth_attempt_gate (key_hash) VALUES ($1) ON CONFLICT (key_hash) DO NOTHING`, [keyHash]);
+      const r = await client.query<{ attempt_times: Date[]; db_now: Date }>(
+        `SELECT attempt_times, clock_timestamp() AS db_now FROM platform_auth_attempt_gate WHERE key_hash = $1 FOR UPDATE`, [keyHash]);
+      if (!r.rows[0]) throw new Error('Platform authentication attempt gate row missing');
+      const now = new Date(r.rows[0].db_now).getTime();
+      const live = r.rows[0].attempt_times
+        .map((v) => new Date(v).toISOString())
+        .filter((v) => new Date(v).getTime() > now - 15 * 60_000);
+      const allowed = live.length < 5;
+      await client.query(
+        `UPDATE platform_auth_attempt_gate
+            SET attempt_times = $2::timestamptz[], updated_at = clock_timestamp()
+          WHERE key_hash = $1`,
+        [keyHash, allowed ? [...live, new Date(now).toISOString()] : live]);
+      await client.query('COMMIT');
+      // Small, indexed, best-effort expiry of unused HMAC keys; cleanup failure cannot grant access.
+      await this.pool.query(
+        `DELETE FROM platform_auth_attempt_gate WHERE key_hash IN
+           (SELECT key_hash FROM platform_auth_attempt_gate
+             WHERE updated_at < clock_timestamp() - interval '15 minutes' ORDER BY updated_at LIMIT 25)`,
+      ).catch(() => undefined);
+      return allowed;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async clearAttempts(key: string): Promise<void> {
+    await this.pool.query('DELETE FROM platform_auth_attempt_gate WHERE key_hash = $1', [this.attemptHash(key)]);
+  }
 
   constructor(deps: { pool: Pool; mfaKey: string; jwtSecret: string; ttlMinutes: number }) {
     this.pool = deps.pool;
@@ -231,25 +275,12 @@ export class PlatformAuth {
     return { platform_user_id: id, totp_secret: secret, otpauth_uri: uri };
   }
 
-  private limited(key: string): boolean {
-    const now = Date.now();
-    const list = (this.attempts.get(key) ?? []).filter((t) => now - t < 15 * 60_000);
-    this.attempts.set(key, list);
-    return list.length >= 5;
-  }
-  private fail(key: string): void {
-    const list = this.attempts.get(key) ?? [];
-    list.push(Date.now());
-    this.attempts.set(key, list);
-  }
-
   /** Contraseña + TOTP. Respuesta idéntica ante cualquier fallo (anti-oráculo). */
   async login(loginName: string, password: string, code: string, ip: string): Promise<{ token: string; session: PlatformSession }> {
     const box = this.requireBox();
     const key = `${ip}|${loginName.toLowerCase()}`;
-    if (this.limited(key)) throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
+    if (!(await this.reserveAttempt(`login:${key}`))) throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
     const denied = async (reason: string) => {
-      this.fail(key);
       await writePlatformAudit(this.pool, { actorId: `login:${loginName.toLowerCase().slice(0, 80)}`, actorRoles: [], action: 'platform.login', decision: 'deny', result: reason });
       return new AppError(401, 'invalid_credentials', 'Usuario, contraseña o código incorrectos.');
     };
@@ -269,7 +300,7 @@ export class PlatformAuth {
     await this.pool.query(
       `INSERT INTO platform_session (session_id, platform_user_id, roles, expires_at, mfa_at, step_up_at)
        VALUES ($1,$2,$3, now() + make_interval(mins => $4), now(), now())`, [sid, user.platform_user_id, roles, this.ttlMinutes]);
-    this.attempts.delete(key);
+    await this.clearAttempts(`login:${key}`);
     await writePlatformAudit(this.pool, { actorId: user.platform_user_id, actorRoles: roles, action: 'platform.login', decision: 'allow', result: 'mfa_ok' });
     const token = signPlatformToken({ sid, uid: user.platform_user_id }, this.jwtSecret, this.ttlMinutes);
     const session = await this.sessionById(sid);
@@ -299,12 +330,11 @@ export class PlatformAuth {
     const key = `step_up:${session.platform_user_id}`;
     const audit = (decision: 'allow' | 'deny', result: string) =>
       writePlatformAudit(this.pool, { actorId: session.platform_user_id, actorRoles: session.roles, action: 'platform.step_up', decision, result });
-    if (this.limited(key)) {
+    if (!(await this.reserveAttempt(key))) {
       await audit('deny', 'too_many_attempts');
       throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
     }
-    // El intento cuenta ANTES de verificar (y se borra al acertar): una ráfaga simultánea tampoco pasa de 5.
-    this.fail(key);
+    // Reserva atómica en PostgreSQL ANTES de verificar: varios procesos comparten el mismo límite.
     const r = await this.pool.query<{ totp_box: Buffer; totp_last_step: string }>('SELECT totp_box, totp_last_step FROM platform_user WHERE platform_user_id = $1', [session.platform_user_id]);
     const row = r.rows[0];
     const step = row ? verifyTotp(box.open(row.totp_box, this.ctx(session.platform_user_id)), code, Number(row.totp_last_step)) : null;
@@ -313,7 +343,7 @@ export class PlatformAuth {
       await audit('deny', 'bad_totp');
       throw new AppError(401, 'invalid_credentials', 'Código incorrecto.');
     }
-    this.attempts.delete(key);
+    await this.clearAttempts(key);
     await this.pool.query('UPDATE platform_session SET step_up_at = now() WHERE session_id = $1', [session.session_id]);
     await audit('allow', 'ok');
   }
