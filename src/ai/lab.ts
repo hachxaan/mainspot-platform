@@ -14,6 +14,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { runAtomic } from '../conversation/state-machine.ts';
+import { assertNoTenantData } from '../platform/auth.ts';
 import { AppError } from '../shared/errors.ts';
 import type { RoleName } from '../identity/entities.ts';
 import { MATRIX, type ActionName } from '../rbac/matrix.ts';
@@ -368,6 +369,8 @@ export class AiLab {
     const decision = input.decision === 'accept' || input.decision === 'reject' ? input.decision : null;
     if (!decision) throw new AppError(400, 'validation_error', 'La decisión es accept o reject.');
     const notes = textBetween(input.notes, 10, 2000, 'Escribe las notas de la revisión');
+    // Las notas quedan en ai_manual_review y en la auditoría de plataforma, sin negocio: la anonimización no las toca.
+    assertNoTenantData(notes, 'las notas');
     if (typeof input.checklist !== 'object' || input.checklist === null) throw new AppError(400, 'validation_error', 'La lista de verificación necesita los cuatro puntos (true/false).');
     const flags = new Map(Object.entries(input.checklist));
     const flag = (k: keyof ManualChecklist): boolean => {

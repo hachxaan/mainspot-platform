@@ -23,7 +23,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { runAtomic } from '../conversation/state-machine.ts';
-import { assertPlatformReason, charLength, hasControlOrFormat, writePlatformAudit } from '../platform/auth.ts';
+import { assertNoTenantData, assertPlatformReason, charLength, hasControlOrFormat, writePlatformAudit } from '../platform/auth.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
 import type { PlatformActor } from './assignment.ts';
@@ -122,16 +122,6 @@ function planIdFor(name: string): string {
   return `plan_${slug}_${randomUUID().slice(0, 6)}`;
 }
 
-/** Datos de un negocio (correos, ids `client_…`) que no pueden quedar en el historial inmutable del catálogo. */
-const TENANT_DATA = /[^\s@]+@[^\s@]+\.[^\s@]+|\bclient_[a-z0-9_]+/iu;
-
-function assertNoTenantData(text: string, field: string): void {
-  if (TENANT_DATA.test(text)) {
-    throw new AppError(400, 'validation_error',
-      `No incluyas datos de negocios (correos ni identificadores client_…) en ${field}: queda en un historial permanente.`);
-  }
-}
-
 function cleanName(name: unknown): string {
   const v = typeof name === 'string' ? name.trim().replace(/\s+/g, ' ') : '';
   const length = charLength(v);
@@ -148,13 +138,6 @@ function cleanDescription(description: unknown): string | null {
   if (hasControlOrFormat(v)) throw new AppError(400, 'validation_error', 'La descripción tiene caracteres invisibles o de control. Escríbela de nuevo sin pegarla de otro documento.');
   assertNoTenantData(v, 'la descripción');
   return v;
-}
-
-/** Motivo de una escritura del catálogo: reglas de plataforma y, además, sin datos de negocios. */
-export function assertReason(reason: unknown): string {
-  const r = assertPlatformReason(reason);
-  assertNoTenantData(r, 'el motivo');
-  return r;
 }
 
 const conflict = () => new AppError(409, DENY_CODES.STALE_VERSION,
@@ -355,7 +338,7 @@ export class PlanCatalog {
   async createPlan(input: { name: unknown; description?: unknown; cloneFromPlanId?: unknown; reason: unknown; actor: PlatformActor }): Promise<{ plan_id: string; revision_id: string }> {
     const name = cleanName(input.name);
     const description = cleanDescription(input.description);
-    const reason = assertReason(input.reason);
+    const reason = assertPlatformReason(input.reason);
     const cloneFrom = typeof input.cloneFromPlanId === 'string' && input.cloneFromPlanId ? input.cloneFromPlanId : null;
     return runAtomic(this.pool, async (client) => {
       await this.assertWritable(client);
@@ -388,7 +371,7 @@ export class PlanCatalog {
 
   /** Nombre y descripción del plan (no versionados; auditados con diff). */
   async updatePlanMeta(input: { planId: string; name?: unknown; description?: unknown; reason: unknown; actor: PlatformActor }): Promise<void> {
-    const reason = assertReason(input.reason);
+    const reason = assertPlatformReason(input.reason);
     await runAtomic(this.pool, async (client) => {
       await this.assertWritable(client);
       const plan = await this.lockPlan(client, input.planId);
@@ -406,7 +389,7 @@ export class PlanCatalog {
 
   /** Borrador nuevo desde la revisión publicada vigente (copia SIN confirmar). Uno por plan. */
   async createDraft(input: { planId: string; reason: unknown; actor: PlatformActor }): Promise<{ revision_id: string; version: number }> {
-    const reason = assertReason(input.reason);
+    const reason = assertPlatformReason(input.reason);
     return runAtomic(this.pool, async (client) => {
       await this.assertWritable(client);
       await this.lockPlan(client, input.planId);
@@ -425,7 +408,7 @@ export class PlanCatalog {
 
   /** Cambia valores y confirmaciones de un borrador (control de concurrencia por lock_version). */
   async updateDraft(input: { revisionId: string; lockVersion: unknown; values: unknown; reason: unknown; actor: PlatformActor }): Promise<{ lock_version: number; diff: unknown }> {
-    const reason = assertReason(input.reason);
+    const reason = assertPlatformReason(input.reason);
     if (!Array.isArray(input.values) || input.values.length === 0 || input.values.length > this.definitions.length) {
       throw new AppError(400, 'validation_error', 'Indica los valores a cambiar.');
     }
@@ -486,7 +469,7 @@ export class PlanCatalog {
 
   /** Publica un borrador completo y confirmado; la publicada anterior pasa a SUPERSEDED. */
   async publish(input: { revisionId: string; lockVersion: unknown; reason: unknown; actor: PlatformActor }): Promise<{ revision_id: string; version: number; checksum: string; diff: DiffEntry[] }> {
-    const reason = assertReason(input.reason);
+    const reason = assertPlatformReason(input.reason);
     return runAtomic(this.pool, async (client) => {
       await this.assertWritable(client);
       const rev = await this.lockDraft(client, input.revisionId, input.lockVersion);
@@ -524,7 +507,7 @@ export class PlanCatalog {
    * revisión publicada (no se podría abrir otro borrador, publicar ni habilitar) y con su nombre ocupado.
    */
   async discard(input: { revisionId: string; lockVersion: unknown; reason: unknown; actor: PlatformActor }): Promise<void> {
-    const reason = assertReason(input.reason);
+    const reason = assertPlatformReason(input.reason);
     await runAtomic(this.pool, async (client) => {
       await this.assertWritable(client);
       const rev = await this.lockDraft(client, input.revisionId, input.lockVersion);
@@ -542,7 +525,7 @@ export class PlanCatalog {
    * conserva todas las revisiones. Requiere que no haya borrador abierto.
    */
   async rollback(input: { planId: string; toRevisionId: unknown; reason: unknown; actor: PlatformActor }): Promise<{ revision_id: string; version: number; checksum: string; diff: DiffEntry[] }> {
-    const reason = assertReason(input.reason);
+    const reason = assertPlatformReason(input.reason);
     return runAtomic(this.pool, async (client) => {
       await this.assertWritable(client);
       await this.lockPlan(client, input.planId);
@@ -582,7 +565,7 @@ export class PlanCatalog {
 
   /** Habilitar (asignable) o deshabilitar (no asignable; las suscripciones vigentes no cambian). */
   async setEnabled(input: { planId: string; enabled: unknown; reason: unknown; actor: PlatformActor }): Promise<{ active: boolean }> {
-    const reason = assertReason(input.reason);
+    const reason = assertPlatformReason(input.reason);
     if (typeof input.enabled !== 'boolean') throw new AppError(400, 'validation_error', 'Indica si el plan queda habilitado (sí o no).');
     const enabled = input.enabled;
     return runAtomic(this.pool, async (client) => {

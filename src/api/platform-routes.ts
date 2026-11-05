@@ -26,7 +26,6 @@ import type { RouteParams } from '../ai/registry.ts';
 import type { SubscriptionRepository } from '../subscriptions/entitlements.ts';
 import { QuotaLedger } from '../subscriptions/quota.ts';
 import { SubscriptionAssignment } from '../plans/assignment.ts';
-import { assertReason } from '../plans/catalog.ts';
 import { loadPinnedPolicy } from '../plans/policy.ts';
 import { PLAN_PARAMETERS, periodLabel } from '../plans/registry.ts';
 import { permissionsOf, requirePlatformPermission } from '../platform/permissions.ts';
@@ -157,7 +156,7 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
     const s = sessionOf(req);
     // El motivo queda en subscription_history y en la auditoría de plataforma: sin datos de otros negocios, que
     // bloquearían su anonimización (mismas reglas que el catálogo).
-    const reason = assertReason((req.body as { reason?: unknown } | null)?.reason);
+    const reason = assertPlatformReason((req.body as { reason?: unknown } | null)?.reason);
     const out = await assignment.assign({
       tenantId: req.params['id'] as string, planId: String((req.body ?? {})['plan_id'] ?? ''), reason,
       actor: { platformUserId: s.platform_user_id, login: s.login, roles: s.roles, requestId: serverRequestId(req) },
@@ -199,6 +198,10 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
   router.get('/tenants/:id/support-view', guard(['platform_admin', 'platform_support'], 'platform.support.view'), ah(async (req, res) => {
     const s = sessionOf(req);
     const id = req.params['id'] as string;
+    // Un id que no es un negocio no se audita como tal (quedaría con tenant_id inventado, fuera de la anonimización).
+    if (!(await pool.query('SELECT 1 FROM client WHERE client_id = $1', [id])).rowCount) {
+      return res.status(404).json({ error: { code: 'not_found', message: 'No existe ese negocio.' } });
+    }
     const ok = await pool.query(`SELECT 1 FROM platform_support_access WHERE tenant_id = $1 AND platform_user_id = $2 AND revoked_at IS NULL AND expires_at > now()`, [id, s.platform_user_id]);
     if (!ok.rowCount) {
       await writePlatformAudit(pool, { actorId: s.platform_user_id, actorRoles: s.roles, action: 'platform.support.view', resource: `client/${id}`, tenantId: id, decision: 'deny', result: 'no_active_access' });
@@ -416,8 +419,10 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
     const b = (req.body ?? {}) as { tenant_id?: unknown; user_id?: unknown; route_ids?: unknown; minutes?: unknown; reason?: unknown };
     const grant = await deps.lab.issueGrant({ tenantId: b.tenant_id, userId: b.user_id, routeIds: b.route_ids, minutes: b.minutes, reason: b.reason, issuer: issuerOf(s) });
     // Visible para el negocio en su propia auditoría: quién autorizó, hasta cuándo y qué rutas (ids), sin motivo íntegro.
-    await deps.sink.write({ tenant_id: grant.tenant_id, actor_id: `platform:${s.login}`, actor_role: s.roles[0] ?? 'platform_admin', action: 'ai.lab.grant_issued', resource: `ai_lab_grant/${grant.grant_id}`, request_id: `plat_${randomUUID()}`, decision: 'allow', result: `user:${grant.user_id} routes:${grant.route_ids.length} expires:${grant.expires_at}`, evidence_ref: grant.reason.slice(0, 120) });
-    await audit(s, req, 'ai.lab.grant', `ai_lab_grant/${grant.grant_id}`, `user:${grant.user_id} routes:${grant.route_ids.join(',')} expires:${grant.expires_at}`, { tenantId: grant.tenant_id, reason: grant.reason });
+    // Sin el user_id en `result`: la anonimización conserva `result` y su verificación rechaza ese id (DEC-0027);
+    // el usuario queda en ai_lab_grant (resource), que se borra con el negocio.
+    await deps.sink.write({ tenant_id: grant.tenant_id, actor_id: `platform:${s.login}`, actor_role: s.roles[0] ?? 'platform_admin', action: 'ai.lab.grant_issued', resource: `ai_lab_grant/${grant.grant_id}`, request_id: `plat_${randomUUID()}`, decision: 'allow', result: `routes:${grant.route_ids.length} expires:${grant.expires_at}`, evidence_ref: grant.reason.slice(0, 120) });
+    await audit(s, req, 'ai.lab.grant', `ai_lab_grant/${grant.grant_id}`, `routes:${grant.route_ids.join(',')} expires:${grant.expires_at}`, { tenantId: grant.tenant_id, reason: grant.reason });
     res.status(201).json({ grant });
   }));
 

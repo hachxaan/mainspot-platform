@@ -15,8 +15,8 @@ import { Router, type Request, type Response } from 'express';
 import type { Pool } from 'pg';
 import type { AuditSink } from '../audit/sink.ts';
 import { SubscriptionAssignment, type PlatformActor } from '../plans/assignment.ts';
-import { PlanCatalog, assertReason } from '../plans/catalog.ts';
-import { serverRequestId, writePlatformAudit, type PlatformAuth, type PlatformRequest } from '../platform/auth.ts';
+import { PlanCatalog } from '../plans/catalog.ts';
+import { assertPlatformReason, serverRequestId, writePlatformAudit, type PlatformAuth, type PlatformRequest } from '../platform/auth.ts';
 import { permissionsOf, requirePlatformPermission, type PlatformPermission } from '../platform/permissions.ts';
 import { AppError } from '../shared/errors.ts';
 
@@ -135,7 +135,7 @@ export function planCatalogRouter(deps: PlanCatalogRouteDeps): Router {
     if (typeof expected !== 'number' || !Number.isInteger(expected) || expected < 1) throw new AppError(400, 'validation_error', 'Indica cuántos negocios viste en la vista previa (expected_count).');
     res.json(await assignment.migrateToPublished({
       planId: param(req, 'planId'), toRevisionId: String(b['to_revision_id'] ?? ''), tenantIds, expectedCount: expected,
-      reason: assertReason(b['reason']), actor: actorOf(req),
+      reason: assertPlatformReason(b['reason']), actor: actorOf(req),
     }));
   }));
 

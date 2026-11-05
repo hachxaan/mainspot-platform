@@ -15,6 +15,7 @@
 import type { Pool, PoolClient } from 'pg';
 import type { AuditEventInput } from '../audit/event.ts';
 import type { AuditSink } from '../audit/sink.ts';
+import { runTransaction } from '../db/pool.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
 import { PublisherRegistry, type PublisherContext } from '../publishing/publisher.ts';
@@ -42,19 +43,9 @@ export interface PublishOutcome {
   published: boolean;
 }
 
-export async function runAtomic<T>(pool: Pool, fn: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await fn(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => undefined);
-    throw err;
-  } finally {
-    client.release();
-  }
+/** Transacción atómica; ante una conexión perdida falla la operación, nunca el proceso (src/db/pool.ts). */
+export function runAtomic<T>(pool: Pool, fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  return runTransaction(pool, fn);
 }
 
 /** Auditoría dentro de una transacción (fail-closed: si falla, ROLLBACK). */

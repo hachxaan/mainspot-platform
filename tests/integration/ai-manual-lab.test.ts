@@ -423,6 +423,10 @@ test('DEC-0074 revisión manual: evidencia saneada; aceptar exige checklist y ev
   assert.equal((await review({ ...accept, checklist: { ...full, safety_privacy: false } })).status, 409, 'checklist incompleto no acepta');
   assert.equal((await review({ ...accept, checklist: { result_reviewed: true } })).status, 400, 'checklist con los cuatro puntos');
   assert.equal((await review({ ...accept, notes: 'corto' })).status, 400);
+  // Las notas quedan sin negocio en ai_manual_review y en la auditoría de plataforma (DEC-0027): ni correos ni ids.
+  const noted = await review({ ...accept, notes: `Revisado con ${a.login}: resumen correcto y sin datos inventados.` });
+  assert.equal(noted.status, 400, JSON.stringify(noted.body));
+  assert.match(noted.body.error.message, /datos de negocios/);
   assert.equal((await review({ ...accept, decision: 'maybe' })).status, 400);
   assert.equal((await review({ ...accept, invocation_ids: [] })).status, 400);
   assert.equal((await review({ ...accept, invocation_ids: [failed] })).status, 409, 'una ejecución fallida no es evidencia aceptable');

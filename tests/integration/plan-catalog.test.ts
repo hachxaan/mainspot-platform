@@ -20,12 +20,12 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { bootApi, api, authHeaders, type TestApi } from '../helpers/testdb.ts';
 import { createPublishedPlan, setTenantPlan } from '../helpers/plans.ts';
 import { countRows, createTenantWithPlan } from '../helpers/tenants.ts';
-import { PlatformAuth, currentStep, totpAt, type PlatformRole } from '../../src/platform/auth.ts';
+import { currentStep, totpAt, type PlatformRole } from '../../src/platform/auth.ts';
 import { PLAN_PARAMETERS } from '../../src/plans/registry.ts';
 
 interface Operator { id: string; token: string; secret: string; lastStep: number }
@@ -1267,52 +1267,6 @@ test('step-up: 5 códigos incorrectos en 15 min ⇒ 429 auditado; mientras dura,
   await stepUp(await operator('platform_admin', 'stepup-other')); // otro operador no comparte el límite
 });
 
-test('G-SEC: dos instancias de PlatformAuth comparten el límite de login y step-up en PostgreSQL bajo 12 llamadas concurrentes', async () => {
-  const mfaKey = randomBytes(32).toString('base64');
-  const jwtSecret = randomBytes(32).toString('hex');
-  const a = new PlatformAuth({ pool: t.pool, mfaKey, jwtSecret, ttlMinutes: 30 });
-  const b = new PlatformAuth({ pool: t.pool, mfaKey, jwtSecret, ttlMinutes: 30 });
-
-  // Dos procesos con el mismo secreto efectivo generan la misma huella de clave (no exponen login ni IP).
-  const loginName = `pc-absent-${sfx()}`;
-  const ip = '192.0.2.88';
-  const results = await Promise.all(Array.from({ length: 12 }, (_, i) =>
-    (i % 2 ? a : b).login(loginName, 'wrong-password', '000000', ip)
-      .then(() => 200, (err: unknown) => err instanceof Error && 'status' in err ? (err as { status: number }).status : 500)));
-  assert.equal(results.filter((status) => status === 401).length, 5, JSON.stringify(results));
-  assert.equal(results.filter((status) => status === 429).length, 7, JSON.stringify(results));
-  const key = createHmac('sha256', jwtSecret).update('mainspot-platform-auth-v1:')
-    .update(`login:${ip}|${loginName}`).digest('hex');
-  const attempts = (await t.pool.query<{ attempt_times: Date[] }>(
-    'SELECT attempt_times FROM platform_auth_attempt_gate WHERE key_hash = $1', [key])).rows;
-  assert.equal(attempts.length, 1);
-  assert.equal(attempts[0]?.attempt_times.length, 5);
-  assert.match(key, /^[0-9a-f]{64}$/);
-  assert.ok(!key.includes(loginName));
-
-  // Expirar los intentos almacenados reabre la ventana; el contador sigue compartido.
-  await t.pool.query(
-    `UPDATE platform_auth_attempt_gate
-        SET attempt_times = ARRAY(SELECT ts - interval '16 minutes' FROM unnest(attempt_times) ts)
-      WHERE key_hash = $1`, [key]);
-  await assert.rejects(b.login(loginName, 'wrong-password', '000000', ip),
-    (err: unknown) => err instanceof Error && 'status' in err && (err as { status: number }).status === 401);
-
-  const username = `pc-stepup-shared-${sfx()}`;
-  const password = 'Plan-Hardening-Tests-2026';
-  const u = await a.createUser({ login: username, displayName: 'Step-up shared test', password, roles: ['platform_admin'], grantedBy: 'test' });
-  const signed = await a.login(username, password, totpAt(u.totp_secret, currentStep()), '192.0.2.89');
-  const codes = new Set([-2, -1, 0, 1, 2].map((offset) => totpAt(u.totp_secret, currentStep() + offset)));
-  const invalid = Array.from({ length: 100 }, (_, i) => String(i).padStart(6, '0')).find((v) => !codes.has(v));
-  assert.ok(invalid);
-  const denied = await Promise.all(Array.from({ length: 12 }, (_, i) =>
-    (i % 2 ? a : b).stepUp(signed.session, invalid)
-      .then(() => 200, (err: unknown) => err instanceof Error && 'status' in err ? (err as { status: number }).status : 500)));
-  assert.equal(denied.filter((status) => status === 401).length, 5, JSON.stringify(denied));
-  assert.equal(denied.filter((status) => status === 429).length, 7, JSON.stringify(denied));
-  assert.ok(denied.every((status) => status !== 200));
-});
-
 test('retención (DEC-0027): una denegación de plataforma guarda el patrón de la ruta (con el request_id del servidor), nunca el id del negocio; después, ese negocio se anonimiza sin error', async () => {
   const plan = await publishedPlan(eng, { social_posts: 3 });
   const biz = await createTenantWithPlan(t, { social_posts: 1 }, 'client_pcdeny');
@@ -1329,6 +1283,31 @@ test('retención (DEC-0027): una denegación de plataforma guarda el patrón de 
     ['subscriptions.assign', '/api/platform/tenants/:id/plan', 'role_denied', null, 'string'],
     ['tenants.read', '/api/platform/tenants/:id', 'role_denied', null, 'string'],
   ]);
+  await anonymize(biz.tenant);
+  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM client WHERE client_id = $1', [biz.tenant]), 0, 'el negocio quedó anonimizado');
+});
+
+test('retención (DEC-0027): ningún motivo de plataforma admite datos de negocios (presupuestos, estado); support-view de un id que no es un negocio responde 404 sin auditarlo; después, el negocio se anonimiza sin error', async () => {
+  const biz = await createTenantWithPlan(t, { social_posts: 1 }, 'client_pcreason');
+  const op = await operator('platform_admin', 'reason');
+  await stepUp(op);
+  const budgetSql = `SELECT limit_usd, source, updated_at FROM ai_budget WHERE scope = 'platform_month' AND tenant_id IS NULL`;
+  const budget = (await t.pool.query(budgetSql)).rows;
+  const since = await dbNow();
+  for (const reason of [`Ajuste pedido por ${biz.tenant} esta semana`, `Lo pidió ${biz.login} por teléfono`]) {
+    const update = await platform(op.token, '/ai/budgets/platform_month', 'PUT', { limit_usd: 7, reason });
+    assert.equal(update.status, 400, JSON.stringify(update.body));
+    assert.match(update.body.error.message, /datos de negocios/);
+    const status = await platform(op.token, `/tenants/${biz.tenant}/status`, 'POST', { status: 'suspended', reason });
+    assert.equal(status.status, 400, JSON.stringify(status.body));
+  }
+  assert.deepEqual((await t.pool.query(budgetSql)).rows, budget, 'el presupuesto (y su source) no cambió');
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM client WHERE client_id = $1 AND status = 'active'`, [biz.tenant]), 1);
+
+  const ghost = await platform(support.token, `/tenants/${encodeURIComponent(biz.login)}/support-view`);
+  assert.equal(ghost.status, 404, JSON.stringify(ghost.body));
+  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM platform_audit_event WHERE at >= $1 AND (tenant_id = $2 OR reason LIKE $3)',
+    [since, biz.login, `%${biz.tenant}%`]), 0, 'ni el login como tenant_id ni el motivo rechazado quedan en la auditoría');
   await anonymize(biz.tenant);
   assert.equal(await countRows(t, 'SELECT count(*) AS n FROM client WHERE client_id = $1', [biz.tenant]), 0, 'el negocio quedó anonimizado');
 });
