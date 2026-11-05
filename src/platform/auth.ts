@@ -281,7 +281,7 @@ export class PlatformAuth {
     const key = `${ip}|${loginName.toLowerCase()}`;
     if (!(await this.reserveAttempt(`login:${key}`))) throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
     const denied = async (reason: string) => {
-      await writePlatformAudit(this.pool, { actorId: `login:${loginName.toLowerCase().slice(0, 80)}`, actorRoles: [], action: 'platform.login', decision: 'deny', result: reason });
+      await writePlatformAudit(this.pool, { actorId: `login:${this.attemptHash(`login-actor:${loginName.toLowerCase()}`)}`, actorRoles: [], action: 'platform.login', decision: 'deny', result: reason });
       return new AppError(401, 'invalid_credentials', 'Usuario, contraseña o código incorrectos.');
     };
     const r = await this.pool.query<{ platform_user_id: string; totp_box: Buffer; totp_last_step: string; status: string; display_name: string; ok: boolean }>(
