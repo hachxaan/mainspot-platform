@@ -1,0 +1,8 @@
+# NEW-09 — prueba nueva de tests/integration/platform-auth-multiprocess.test.ts ejecutada contra el código de ca37e01
+# (worktree /tmp/pr14-ca37e01): la reserva del intento ocupaba uno de los 2 huecos, así que los logins de otras claves
+# esperaban detrás de la clave bloqueada (lock_timeout 5 s × 2). Con la admisión separada pasa (12/12 del fichero).
+✖ una clave con su fila bloqueada no hace esperar a los logins de OTRAS claves del mismo proceso (10160.273823ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ una clave con su fila bloqueada no hace esperar a los logins de OTRAS claves del mismo proceso (10160.273823ms)

@@ -1,0 +1,13 @@
+postgres PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+2026-11-05T03:18:41.292Z workers: [4127442,4127443]
+2026-11-05T03:18:41.366Z A 3 wrong before restart: [{"status":401},{"status":401},{"status":401}]
+docker restart (stop) ...
+2026-11-05T03:18:41.742Z B correct credentials while PostgreSQL is DOWN: [{"status":500,"code":"ECONNREFUSED"}]
+2026-11-05T03:18:41.743Z A wrong while DOWN: [{"status":500,"code":"ECONNREFUSED"}]
+PostgreSQL restarted
+2026-11-05T03:18:42.990Z A wrong after restart (4th): [{"status":401}]
+2026-11-05T03:18:43.052Z B wrong after restart (5th, other process): [{"status":401}]
+2026-11-05T03:18:43.056Z A wrong (6th) => must be 429: [{"status":429}]
+2026-11-05T03:18:43.060Z B CORRECT credentials same ip|login while locked => must be 429: [{"status":429}]
+2026-11-05T03:18:43.116Z B CORRECT credentials other ip => 200: [{"status":200}]
+2026-11-05T03:18:43.124Z sessions for user: {"n":1}

@@ -1,0 +1,25 @@
+6e1eff8
+✔ login: 3 procesos × 8 intentos simultáneos sobre la misma clave ⇒ exactamente 5 × 401 y 19 × 429, sin login en claro (514.099104ms)
+✔ anti-replay TOTP: el mismo código válido en 12 logins simultáneos desde 3 procesos autentica exactamente una vez (546.313552ms)
+✔ step-up entre procesos: 12 códigos incorrectos ⇒ 5 × 401 y 7 × 429; bloqueado, ni el código válido pasa; al vencer la ventana pasa y limpia (570.827572ms)
+✔ reinicio: el límite sobrevive a que un proceso muera (SIGKILL) y lo aplica un proceso nuevo (219.553313ms)
+✔ PostgreSQL inalcanzable: falla cerrado (500) sin autenticar ni consumir el código, y se recupera al reconectar (264.609724ms)
+✖ un bloqueo retenido sobre la fila del límite no deja la petición esperando: falla cerrado tras lock_timeout (20190.851106ms)
+✖ purga concurrente: si otra sesión borra la fila vencida mientras la reserva espera, el intento cuenta (sin 500) (609.922095ms)
+ℹ pass 5
+ℹ fail 2
+✖ failing tests:
+✖ un bloqueo retenido sobre la fila del límite no deja la petición esperando: falla cerrado tras lock_timeout (20190.851106ms)
+  + actual - expected
+  + 'still waiting'
+  - [
+  -   {
+  -     code: '55P03',
+  -     status: 500
+  -   }
+  - ]
+✖ purga concurrente: si otra sesión borra la fila vencida mientras la reserva espera, el intento cuenta (sin 500) (609.922095ms)
+  + actual - expected
+  +     code: 'Error',
+  +     status: 500
+  -     status: 401

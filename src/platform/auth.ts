@@ -6,7 +6,7 @@
  *   anti-replay del paso usado. El secreto TOTP se guarda cifrado (SecretBox, AAD propia).
  * - Sesión corta (PLATFORM_SESSION_TTL_MINUTES) revocable; step-up = TOTP reciente (10 min) para
  *   acciones de alto impacto. Login (por IP + login) y step-up (por platform_user_id): 5 fallos en
- *   15 min ⇒ 429 y no se acepta ningún código hasta que venzan.
+ *   15 min ⇒ 429 y no se acepta ningún código hasta que venzan. Contador compartido en PostgreSQL.
  * - Toda decisión (allow/deny) queda en platform_audit_event (append-only) con el request_id del
  *   servidor (nunca una cabecera del cliente) y, en las denegaciones, el PATRÓN de la ruta: una fila
  *   sin tenant no puede llevar ids de negocios (la anonimización no la re-etiqueta, DEC-0027).
@@ -17,12 +17,39 @@ import type { NextFunction, Request, Response } from 'express';
 import type { Pool, PoolClient } from 'pg';
 import { SecretBox } from '../connectors/secret-box.ts';
 import { getRequestContext } from '../shared/context.ts';
+import { runTransaction } from '../db/pool.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
 
 export const PLATFORM_ROLES = ['platform_admin', 'ai_engineer', 'platform_support'] as const;
 export type PlatformRole = (typeof PLATFORM_ROLES)[number];
 export const STEP_UP_WINDOW_MS = 10 * 60_000;
+/** Login (por IP + login) y step-up (por usuario): intentos por ventana móvil; 0035 impone el mismo tope (CHECK). */
+const ATTEMPT_LIMIT = 5;
+const ATTEMPT_WINDOW_MS = 15 * 60_000;
+/**
+ * bcrypt (coste 10, el de createUser) de un valor aleatorio que nadie conoce: un login inexistente paga la misma
+ * comparación que uno existente, así el tiempo de respuesta no revela qué logins existen.
+ */
+const NO_SUCH_USER_HASH = '$2a$10$YPQsHGm5P5HD3/h/P9eLbukBi2sYSoKrx587p72Jft1YZHLjkrUh.';
+/**
+ * Esa comparación cuesta ~40 ms de CPU de PostgreSQL y la puede pedir cualquiera con logins inventados: como mucho
+ * 2 a la vez por proceso y 32 en espera; el resto recibe 429 sin tocar la BD ni gastar intentos de su clave. Así una
+ * ráfaga no deja sin servicio al resto de la aplicación, que comparte la misma BD (los límites globales o por IP son
+ * decisión del propietario).
+ */
+const PASSWORD_CHECK_CONCURRENCY = 2;
+const PASSWORD_CHECK_QUEUE = 32;
+
+/**
+ * Huella de una clave de platform_auth_attempt_gate: HMAC-SHA256 con una clave DERIVADA de JWT_SECRET solo para
+ * este uso (como platformKey para las sesiones). Todos los procesos deben compartir JWT_SECRET; rotarlo reinicia
+ * los contadores.
+ */
+export function attemptKeyHash(jwtSecret: string, key: string): string {
+  const attemptsKey = createHmac('sha256', jwtSecret).update('mainspot-platform-auth-attempts-v1').digest();
+  return createHmac('sha256', attemptsKey).update(key).digest('hex');
+}
 
 // ------------------------------------------------------------------ TOTP (RFC 6238 / RFC 4648)
 
@@ -155,7 +182,23 @@ export function hasControlOrFormat(text: string): boolean {
   return CONTROL_OR_FORMAT.test(text);
 }
 
-/** Motivo de una acción de plataforma: de 10 a 500 caracteres reales, sin caracteres de control ni de formato. */
+/**
+ * Datos de un negocio (correos, ids `client_…`) que no pueden quedar en textos de plataforma: muchos quedan en
+ * filas sin negocio o inmutables (auditoría de plataforma, catálogo, presupuestos, revisiones manuales) que la
+ * anonimización no puede re-etiquetar (DEC-0027). Slugs, subdominios y nombres no se detectan por patrón (R4).
+ * El límite del id es el mismo que usa la verificación de la anonimización (`[A-Za-z0-9_-]`), sin `\b` ni flag `u`:
+ * con `/iu`, `ſ` o el signo Kelvin cuentan como letras y `ſclient_x` pasaría aquí pero bloquearía la anonimización.
+ */
+const TENANT_DATA = /[^\s@]+@[^\s@]+\.[^\s@]+|(?<![A-Za-z0-9_-])client_[A-Za-z0-9_-]+/i;
+
+export function assertNoTenantData(text: string, field: string): void {
+  if (TENANT_DATA.test(text)) {
+    throw new AppError(400, 'validation_error',
+      `No incluyas datos de negocios (correos ni identificadores client_…) en ${field}: queda en un historial permanente.`);
+  }
+}
+
+/** Motivo de una acción de plataforma: de 10 a 500 caracteres reales, sin caracteres de control ni de formato ni datos de negocios. */
 export function assertPlatformReason(reason: unknown): string {
   const r = typeof reason === 'string' ? reason.trim() : '';
   const length = charLength(r);
@@ -163,6 +206,7 @@ export function assertPlatformReason(reason: unknown): string {
   if (hasControlOrFormat(r)) {
     throw new AppError(400, 'validation_error', 'El motivo tiene caracteres invisibles o de control. Escríbelo de nuevo sin pegarlo de otro documento.');
   }
+  assertNoTenantData(r, 'el motivo');
   return r;
 }
 
@@ -179,7 +223,114 @@ export class PlatformAuth {
   private readonly box: SecretBox | null;
   private readonly jwtSecret: string;
   private readonly ttlMinutes: number;
-  private readonly attempts = new Map<string, number[]>();
+  /** Logins admitidos (reservando, en espera o comprobando): como mucho PASSWORD_CHECK_CONCURRENCY + QUEUE. */
+  private passwordAdmitted = 0;
+  /** Comprobaciones de contraseña en curso: como mucho PASSWORD_CHECK_CONCURRENCY. */
+  private passwordChecks = 0;
+  private readonly passwordWaiters: Array<() => void> = [];
+  // Failed login and TOTP attempts are shared by every process of the app through PostgreSQL (0035).
+  // A transactional row lock serializes the check AND the reservation. Any database error fails closed.
+  private attemptHash(key: string): string {
+    return attemptKeyHash(this.jwtSecret, key);
+  }
+
+  /**
+   * Admisión síncrona de un login: sin hueco ni cola, 429 ANTES de tocar la BD o de reservar un intento (una ráfaga
+   * ajena no gasta intentos de un operador que reintenta). Devuelve la función que libera la admisión.
+   */
+  private admitPasswordCheck(): () => void {
+    if (this.passwordAdmitted >= PASSWORD_CHECK_CONCURRENCY + PASSWORD_CHECK_QUEUE) {
+      throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
+    }
+    this.passwordAdmitted += 1;
+    let released = false;
+    return () => {
+      if (!released) {
+        released = true;
+        this.passwordAdmitted -= 1;
+      }
+    };
+  }
+
+  /**
+   * Ejecuta la comprobación de contraseña (bcrypt en PostgreSQL) en uno de los PASSWORD_CHECK_CONCURRENCY huecos.
+   * Solo la consulta cara ocupa hueco: la reserva del intento va fuera, así una clave bloqueada no hace esperar a
+   * logins de otras claves.
+   */
+  private async runPasswordCheck<T>(check: () => Promise<T>): Promise<T> {
+    if (this.passwordChecks >= PASSWORD_CHECK_CONCURRENCY) {
+      await new Promise<void>((resolve) => this.passwordWaiters.push(resolve));
+    } else {
+      this.passwordChecks += 1;
+    }
+    try {
+      return await check();
+    } finally {
+      // El hueco pasa directamente al siguiente en espera; si no hay nadie, se libera.
+      const next = this.passwordWaiters.shift();
+      if (next) next();
+      else this.passwordChecks -= 1;
+    }
+  }
+
+  /**
+   * Transaction over platform_auth_attempt_gate with bounded waits. A normal reservation holds a key's row for a few
+   * milliseconds, so concurrent attempts on one key still serialize; a process that stalls while holding it makes
+   * the others fail closed after 500 ms (55P03) instead of waiting (and each waiter keeps a pool connection: a long
+   * wait would stall the whole process). No statement runs longer than 10 s, and PostgreSQL ends a session left idle
+   * inside the transaction after 15 s, releasing the lock. A lost connection fails the attempt, never the process.
+   */
+  private gateTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+    return runTransaction(this.pool, async (client) => {
+      await client.query(`SELECT set_config('lock_timeout', '500ms', true), set_config('statement_timeout', '10s', true),
+                                 set_config('idle_in_transaction_session_timeout', '15s', true)`);
+      return fn(client);
+    });
+  }
+
+  private async reserveAttempt(key: string): Promise<boolean> {
+    const keyHash = this.attemptHash(key);
+    // Fast path: a key that is already full is denied with one read and no write. A deny is never unsafe; an
+    // allow is only ever decided below, under the row lock.
+    const peek = await this.pool.query<{ live: number }>(
+      `SELECT count(*)::int AS live FROM platform_auth_attempt_gate g, unnest(g.attempt_times) t
+        WHERE g.key_hash = $1 AND t > clock_timestamp() - make_interval(secs => $2)`, [keyHash, ATTEMPT_WINDOW_MS / 1000]);
+    if ((peek.rows[0]?.live ?? 0) >= ATTEMPT_LIMIT) return false;
+    const allowed = await this.gateTransaction(async (client) => {
+      // The upsert ALWAYS locks the key's row, also when a concurrent prune has just deleted it (ON CONFLICT
+      // retries the insert), so there is no window between "row exists" and "row locked".
+      const r = await client.query<{ attempt_times: Date[]; db_now: Date }>(
+        `INSERT INTO platform_auth_attempt_gate AS g (key_hash) VALUES ($1)
+         ON CONFLICT (key_hash) DO UPDATE SET updated_at = g.updated_at
+         RETURNING g.attempt_times, clock_timestamp() AS db_now`, [keyHash]);
+      const row = r.rows[0];
+      if (!row) throw new Error('platform authentication attempt gate: upsert returned no row');
+      const now = new Date(row.db_now).getTime();
+      const live = row.attempt_times.map((v) => new Date(v)).filter((v) => v.getTime() > now - ATTEMPT_WINDOW_MS);
+      if (live.length >= ATTEMPT_LIMIT) return false;
+      await client.query(
+        `UPDATE platform_auth_attempt_gate SET attempt_times = $2::timestamptz[], updated_at = clock_timestamp() WHERE key_hash = $1`,
+        [keyHash, [...live, new Date(now)].map((v) => v.toISOString())]);
+      return true;
+    });
+    if (allowed) {
+      // Best-effort expiration (after the transaction: pool.max may be 1); it can never grant access. SKIP LOCKED:
+      // it never waits for, nor deletes, a key that a reservation is holding. updated_at is the last reserved
+      // attempt, so a row older than the window has no live attempt.
+      await this.pool.query(
+        `DELETE FROM platform_auth_attempt_gate WHERE key_hash IN
+           (SELECT key_hash FROM platform_auth_attempt_gate
+             WHERE updated_at < clock_timestamp() - make_interval(secs => $1)
+             ORDER BY updated_at LIMIT 25 FOR UPDATE SKIP LOCKED)`, [ATTEMPT_WINDOW_MS / 1000],
+      ).catch(() => undefined);
+    }
+    return allowed;
+  }
+
+  private async clearAttempts(key: string): Promise<void> {
+    const keyHash = this.attemptHash(key);
+    await this.gateTransaction((client) => client.query('DELETE FROM platform_auth_attempt_gate WHERE key_hash = $1', [keyHash]));
+  }
 
   constructor(deps: { pool: Pool; mfaKey: string; jwtSecret: string; ttlMinutes: number }) {
     this.pool = deps.pool;
@@ -231,45 +382,46 @@ export class PlatformAuth {
     return { platform_user_id: id, totp_secret: secret, otpauth_uri: uri };
   }
 
-  private limited(key: string): boolean {
-    const now = Date.now();
-    const list = (this.attempts.get(key) ?? []).filter((t) => now - t < 15 * 60_000);
-    this.attempts.set(key, list);
-    return list.length >= 5;
-  }
-  private fail(key: string): void {
-    const list = this.attempts.get(key) ?? [];
-    list.push(Date.now());
-    this.attempts.set(key, list);
-  }
-
-  /** Contraseña + TOTP. Respuesta idéntica ante cualquier fallo (anti-oráculo). */
+  /**
+   * Contraseña + TOTP. Respuesta idéntica ante cualquier fallo (anti-oráculo), también en el tiempo: un login
+   * inexistente compara contra NO_SUCH_USER_HASH. Un fallo se audita con el operador al que corresponde el login
+   * (`platform_user_id`) o con `login:unknown`: el texto tecleado nunca se guarda (podría ser el correo o el id de
+   * un negocio y bloquear su anonimización).
+   */
   async login(loginName: string, password: string, code: string, ip: string): Promise<{ token: string; session: PlatformSession }> {
     const box = this.requireBox();
     const key = `${ip}|${loginName.toLowerCase()}`;
-    if (this.limited(key)) throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
-    const denied = async (reason: string) => {
-      this.fail(key);
-      await writePlatformAudit(this.pool, { actorId: `login:${loginName.toLowerCase().slice(0, 80)}`, actorRoles: [], action: 'platform.login', decision: 'deny', result: reason });
+    const denied = async (reason: string, platformUserId: string | null) => {
+      await writePlatformAudit(this.pool, { actorId: platformUserId ?? 'login:unknown', actorRoles: [], action: 'platform.login', decision: 'deny', result: reason });
       return new AppError(401, 'invalid_credentials', 'Usuario, contraseña o código incorrectos.');
     };
-    const r = await this.pool.query<{ platform_user_id: string; totp_box: Buffer; totp_last_step: string; status: string; display_name: string; ok: boolean }>(
-      `SELECT platform_user_id, totp_box, totp_last_step, status, display_name, (password_hash = crypt($2, password_hash)) AS ok
-         FROM platform_user WHERE login = $1`, [loginName.toLowerCase(), password]);
+    // Admisión antes de reservar el intento (NEW-07); solo el bcrypt ocupa uno de los huecos de ejecución (NEW-09).
+    const release = this.admitPasswordCheck();
+    let r;
+    try {
+      if (!(await this.reserveAttempt(`login:${key}`))) throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
+      r = await this.runPasswordCheck(() => this.pool.query<{ platform_user_id: string | null; totp_box: Buffer; totp_last_step: string; status: string; display_name: string; ok: boolean }>(
+        `SELECT u.platform_user_id, u.totp_box, u.totp_last_step, u.status, u.display_name,
+                (COALESCE(u.password_hash, $3) = crypt($2, COALESCE(u.password_hash, $3)) AND u.platform_user_id IS NOT NULL) AS ok
+           FROM (SELECT 1) AS probe LEFT JOIN platform_user u ON u.login = $1`, [loginName.toLowerCase(), password, NO_SUCH_USER_HASH]));
+    } finally {
+      release();
+    }
     const user = r.rows[0];
-    if (!user || !user.ok || user.status !== 'active') throw await denied('bad_password_or_user');
+    if (!user?.platform_user_id) throw await denied('bad_password_or_user', null);
+    if (!user.ok || user.status !== 'active') throw await denied('bad_password_or_user', user.platform_user_id);
     const secret = box.open(user.totp_box, this.ctx(user.platform_user_id));
     const step = verifyTotp(secret, code, Number(user.totp_last_step));
-    if (step === null) throw await denied('bad_totp');
+    if (step === null) throw await denied('bad_totp', user.platform_user_id);
     // Anti-replay: el paso solo avanza (UPDATE condicional); un mismo código no sirve dos veces.
     const upd = await this.pool.query('UPDATE platform_user SET totp_last_step = $2 WHERE platform_user_id = $1 AND totp_last_step < $2', [user.platform_user_id, step]);
-    if (!upd.rowCount) throw await denied('totp_replay');
+    if (!upd.rowCount) throw await denied('totp_replay', user.platform_user_id);
     const roles = (await this.pool.query<{ role: PlatformRole }>('SELECT role FROM platform_user_role WHERE platform_user_id = $1 ORDER BY role', [user.platform_user_id])).rows.map((x) => x.role);
     const sid = `ps_${randomUUID()}`;
     await this.pool.query(
       `INSERT INTO platform_session (session_id, platform_user_id, roles, expires_at, mfa_at, step_up_at)
        VALUES ($1,$2,$3, now() + make_interval(mins => $4), now(), now())`, [sid, user.platform_user_id, roles, this.ttlMinutes]);
-    this.attempts.delete(key);
+    await this.clearAttempts(`login:${key}`);
     await writePlatformAudit(this.pool, { actorId: user.platform_user_id, actorRoles: roles, action: 'platform.login', decision: 'allow', result: 'mfa_ok' });
     const token = signPlatformToken({ sid, uid: user.platform_user_id }, this.jwtSecret, this.ttlMinutes);
     const session = await this.sessionById(sid);
@@ -299,12 +451,11 @@ export class PlatformAuth {
     const key = `step_up:${session.platform_user_id}`;
     const audit = (decision: 'allow' | 'deny', result: string) =>
       writePlatformAudit(this.pool, { actorId: session.platform_user_id, actorRoles: session.roles, action: 'platform.step_up', decision, result });
-    if (this.limited(key)) {
+    if (!(await this.reserveAttempt(key))) {
       await audit('deny', 'too_many_attempts');
       throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
     }
-    // El intento cuenta ANTES de verificar (y se borra al acertar): una ráfaga simultánea tampoco pasa de 5.
-    this.fail(key);
+    // Reserva atómica en PostgreSQL ANTES de verificar: varios procesos comparten el mismo límite.
     const r = await this.pool.query<{ totp_box: Buffer; totp_last_step: string }>('SELECT totp_box, totp_last_step FROM platform_user WHERE platform_user_id = $1', [session.platform_user_id]);
     const row = r.rows[0];
     const step = row ? verifyTotp(box.open(row.totp_box, this.ctx(session.platform_user_id)), code, Number(row.totp_last_step)) : null;
@@ -313,7 +464,7 @@ export class PlatformAuth {
       await audit('deny', 'bad_totp');
       throw new AppError(401, 'invalid_credentials', 'Código incorrecto.');
     }
-    this.attempts.delete(key);
+    await this.clearAttempts(key);
     await this.pool.query('UPDATE platform_session SET step_up_at = now() WHERE session_id = $1', [session.session_id]);
     await audit('allow', 'ok');
   }

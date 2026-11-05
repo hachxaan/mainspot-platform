@@ -1,0 +1,11 @@
+# NEW-02 — rendimiento de preflight y reparación R1 (BD desechable, PostgreSQL 16.15 en 127.0.0.1:55499)
+# Datos: 102 negocios (100 sintéticos + 2 del seed), 306 usuarios internos, 20.050 filas en platform_audit_event
+# (20.000 sin identificadores + 50 denegaciones heredadas reparables). ~800 patrones de identificadores.
+
+scripts de 7928838 (regex por patrón, sin prefiltro):
+  tiempo total cortado a los 1800 s sin terminar; el preflight tardó ~20 min y la reparación llevaba
+  9 min 45 s en su bloque $block$ (pg_stat_activity) cuando se interrumpió y se terminaron sus sesiones.
+
+scripts actuales (strpos antes de la regex, regla consciente del negocio):
+  new: preflight_exit=0 preflight_s=7.031684738 repair_exit=0 repair_s=6.970341575
+  OK: legacy denials rewritten to route patterns, other columns verified, trigger enabled, evidence row written.

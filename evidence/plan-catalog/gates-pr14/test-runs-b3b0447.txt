@@ -1,0 +1,476 @@
+# Suite sobre HEAD b3b044713370cfa0bd325e0e71ebfcbf9ba9cd99 (PostgreSQL 16.15 desechable, Node v24.16.0, psql 16.15)
+# TEST_DATABASE_URL=postgres://mainspot:***@127.0.0.1:55499/mainspot_test APP_ENV=test; sin cambios de código fuera del commit (solo el documento de endurecimiento y este directorio, aún sin commitear)
+npx tsc --noEmit -> exit 0
+== npm run test:unit
+ℹ tests 187
+ℹ pass 187
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ duration_ms 13009.221002
+== npm run test:integration
+ℹ tests 254
+ℹ pass 254
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ duration_ms 112909.393927
+== npm run test:smoke
+ℹ tests 5
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ duration_ms 778.048191
+== node scripts/test-prep.ts && node --test tests/e2e/plan-catalog-ui.test.ts tests/e2e/inc004-inc006-e2e.test.ts (https://app.mainspot.local.io, TLS verificado; mainspot-local detenido y rearrancado)
+✔ E2E INC-004/005/006: reseña → humanos → publica una vez; post → preview → publicado; plan → límite deny (442.344455ms)
+✔ E2E Planes: catálogo versionado por permisos, confirmación explícita, publicación, asignación fijada, migración y rollback (44717.569867ms)
+ℹ tests 2
+ℹ pass 2
+ℹ fail 0
+checks PASS=62 FAIL=0
+
+## Pruebas unitarias
+✔ action limiter: permite hasta max en la ventana y bloquea después (aprobación sensible)
+✔ action limiter: llaves por ip+actor+recurso (no comparten estado)
+✔ action limiter: ventana expira y permite reintentar
+✔ action limiter: configuración inválida falla rápido
+✔ diseño: el DSL exige portada primero, contacto y hechos confirmados (precios/teléfonos/enlaces fuera)
+✔ diseño: el sitio renderizado no tiene scripts, escapa texto del modelo y garantiza contraste AA
+✔ edición: parche tipado atómico; nunca cambia el teléfono ni quita portada/contacto
+✔ prompts: datos no confiables van delimitados y JSON-codificados; variables no declaradas fallan antes de llamar
+✔ esquemas: anulables se convierten a anyOf para proveedores estrictos y la validación aplica límites
+✔ plataforma: TOTP con ventana ±1 y anti-replay; tokens de plataforma y de negocio no son intercambiables
+✔ marca: promociones con vigencia obligatoria; vencidas no se usan; colores en hex
+✔ dominio: casi-duplicados, cifras sin fuente, precios no confirmados y compensaciones en respuestas
+✔ atención: lectura Jev → categoría segura solo con tema concreto; riesgos por umbral; sin texto del cliente
+✔ DEC-0067: al proveedor no viajan correos, teléfonos ni tarjetas que escriba el cliente; el resto del texto queda igual
+✔ anthropic: conversión de mensajes — system aparte, tool_calls → tool_use, tool → tool_result fusionados en un turno de usuario
+✔ anthropic: salida estructurada nativa — output_config.format, cabeceras, esfuerzo, sin temperature ni simulation
+✔ anthropic: esquema con 17 uniones → herramienta forzada no estricta y content = JSON del input
+✔ anthropic: modelos que rechazan tool_choice forzado usan auto + instrucción; con herramientas el modelo decide
+✔ anthropic: herramientas + esquema dentro del límite — tools con input_schema, auto y gramática solo en la respuesta final
+✔ anthropic: uso — entrada incluye caché, salida total, pensamiento aparte, costo null
+✔ anthropic: mapeo de errores — 401/403 auth, 402 crédito, 404 bad_request, 429 con Retry-After, 529 unavailable, timeout, red, JSON inválido
+✔ anthropic: image() no está soportado y ping() es un GET autenticado sin prompt
+✔ anthropic: el deadline sigue vigente después de recibir las cabeceras
+✔ imagen: cuerpo con modelo, tamaño por aspecto, quality, n:1 y png; decodifica, guarda uso y clave solo en Authorization
+✔ imagen: mapeo de aspectos a tamaños válidos (múltiplos de 16, ≥655.360 px, ratio exacto) y sin quality cuando no se pide
+✔ imagen: respuesta sin datos o demasiado pequeña es bad_response; el formato del proveedor fija mediaType
+✔ chat: Responses API con store:false, json_schema estricto, herramientas, reasoning y temperature solo si se admite
+✔ chat: llamadas a herramientas se devuelven y, en la ronda siguiente, se reenvían los ítems originales (razonamiento cifrado incluido) con sus salidas
+✔ chat: rechazo y respuesta incompleta se reflejan en finishReason; sin output o fallida es bad_response
+✔ errores: mapeo por estado, cuota en 429, moderación en 400, Retry-After; el cuerpo nunca llega al error
+✔ errores: tiempo de espera agotado es timeout y fallo de red es network; JSON inválido con 200 es bad_response
+✔ ping: GET /models autenticado sin gasto; refleja aceptación, rechazo y falta de conexión
+✔ openai: el deadline incluye el cuerpo de una generación de imagen
+✔ analytics: CSV escape RFC4180 básico (comas, comillas, saltos)
+✔ analytics: rowsToCsv con header estable y sin valores descartados
+✔ analytics: paginación normalizada (page>=1, pageSize 1..100)
+✔ AC-003 unit: normalizeEvent fills event_id/ts/created_by_system and keeps all contract fields
+✔ AC-003 unit: required fields enforced
+✔ AC-003 unit: decision is allow|deny only
+✔ INVARIANT unit: audit never accepts secret-like fields
+✔ AC-003 unit: sensitive action set contains write/approve/execute verbs
+✔ unit: newEventId unique
+✔ classifier: consulta de solo lectura → read_only sin approval gate (RULE-002, AC-005)
+✔ classifier: cambio visible con verbo → preview_required (FLOW-002, AC-006)
+✔ classifier: decisión sensible → human_approval_required (RULE-004, AC-004)
+✔ classifier: inventar precios/condiciones → PROHIBITED (RULE-005, AC-004)
+✔ classifier: capacidad no implementada (redes sociales) → bloqueada sin efecto
+✔ classifier: sugerencia → draft (matriz DRAFT, sin publicar)
+✔ classifier: ambigüedad → needs_clarification sin efecto
+✔ classifier: normalize quita acentos y normaliza mayúsculas
+✔ classifier: detectCapabilityTarget distingue website/social/domain
+✔ IR-02 unit: JWT_SECRET is required in development (no default secret)
+✔ IR-02 unit: known placeholder secrets are rejected
+✔ IR-02 unit: real secret accepted; test env may run without one
+✔ IR-10 unit: invalid enums fail fast with the allowed values listed
+✔ IR-10 unit: valid enums are accepted
+✔ APR-0002 unit: Jev is disabled by default and disabled needs no key
+✔ APR-0002 unit: shadow and primary configs are accepted with synthetic scope and default budget
+✔ APR-0002 unit: the replaced JEV_ENABLED / JEV_SHADOW_MODE variables abort startup
+✔ APR-0002 unit: enabled modes without key, provider or synthetic tenants fail fast
+✔ APR-0002/DEC-0067 unit: only typesafe, known data scopes and known modes are accepted
+✔ DEC-0032 unit: the daily budget must be positive and at most USD 1
+✔ a sealed token opens only for the same tenant, provider and purpose
+✔ tampered ciphertext or another key is rejected
+✔ missing or malformed key fails closed with a message that never echoes the value
+✔ agradecimiento simple + política opt-in → respuesta automática con versión de política
+✔ la calificación sola no basta: 5★ sin señales de texto o con queja va a revisión humana
+✔ riesgo (salud, compensación, legal, amenaza, datos privados) → humano aunque haya política
+✔ sin política, política en revisión, datos sin verificar o cupo agotado → humano
+✔ borradores: máximo 3, sin promesas comerciales; respuesta automática usa solo datos verificados
+✔ APR-0002 unit: one call asks intent (8 intents + other) and capability_target (5 areas)
+✔ APR-0002 unit: the intent → ActionClass table matches the deterministic classifier for every intent
+✔ APR-0002 unit: reading keeps selected probability and confidence distinct; other has no class
+✔ APR-0002 unit: answers outside the contract are rejected, never mapped
+✔ DEC-0030 unit: D3 — probability 0.70 is accepted, just below it or `other` asks for clarification
+✔ DEC-0028 unit: D1 — a discrepancy involving prohibited or human approval escalates to a person
+✔ DEC-0029 unit: D2 — no reading falls back to the deterministic classification, marked
+✔ DEC-0032 unit: the budget ledger seeds from the store once per UTC day and stops at the limit
+✔ DEC-0031/DEC-0033 unit: the gate thresholds are recomputed from stored metrics
+✔ DEC-0031 unit: the gate follows the latest run, caches it and fails closed when unreadable
+✔ DEC-0019 unit: tenants outside JEV_SYNTHETIC_TENANTS never reach TypeSafe
+✔ APR-0002 unit: shadow keeps the deterministic decision and records Jev with raw bodies, never the key
+✔ DEC-0031 unit: primary with the gate closed behaves as shadow (primary_gated)
+✔ DEC-0031 unit: primary with the gate open lets Jev determine the classification
+✔ DEC-0031 unit: a resolved model the evaluation did not cover falls back to the rules
+✔ DEC-0029 unit: primary falls back to the rules on HTTP 503 (no retry)
+✔ DEC-0029 unit: primary falls back to the rules on HTTP 401
+✔ DEC-0029 unit: primary falls back to the rules on invalid JSON
+✔ DEC-0029 unit: primary falls back to the rules on network failure
+✔ DEC-0029 unit: a call past its deadline falls back (timeout)
+✔ DEC-0032 unit: an exhausted budget sends nothing and falls back
+✔ APR-0002 unit: abandoned requests persist nothing; oversized messages never leave the process
+✔ APR-0002 unit: persistence failures are contained (drain resolves, nothing thrown)
+✔ APR-0002 unit: disabled config builds no classifier (no client, no calls)
+✔ DEC-0031 unit: both shipped synthetic sets can satisfy the gate (size, every intent, unique ids)
+✔ DEC-0031/DEC-0034 unit: the reserved gate set shares no message with the development set or the retired v2 set
+✔ DEC-0031 unit: malformed evaluation sets are rejected
+✔ DEC-0031 unit: metrics count intent hits, risky misses and estimated cost
+✔ DEC-0033 unit: a risky case fails the gate only when its final outcome with D1–D3 is an automatic action
+✔ DEC-0032 unit: the evaluation stops calling TypeSafe once the daily budget is spent
+✔ unit: JWT roundtrip sign/verify
+✔ unit: JWT tampered payload is rejected
+✔ unit: JWT wrong secret is rejected
+✔ unit: JWT expired token is rejected
+✔ unit: extractBearerToken parses Authorization header
+✔ IR-13 unit: algorithm is pinned to HS256 (none/others rejected)
+✔ unit: logger refuses sensitive-looking keys (never logs secrets)
+✔ unit: logger accepts ordinary fields
+✔ SMTP implícito (465): TLS desde la conexión, AUTH PLAIN y mensaje aceptado; registros sin destinatario
+✔ SMTP STARTTLS (587): se exige STARTTLS y el mensaje viaja ya cifrado
+✔ SMTP sin TLS disponible: NO hay degradación a texto claro (ni credenciales ni correo salen)
+✔ SMTP: certificado no confiable → rechazo (rejectUnauthorized) sin enviar
+✔ SMTP: configuración incompleta falla al construir (fail fast)
+✔ Resend: POST /emails con Bearer y campos del mensaje; id del proveedor en el resultado
+✔ Resend: clave rechazada (401) → sent:false sin lanzar; registro con estado HTTP y sin destinatario
+✔ Resend: solo HTTPS salvo el servidor falso local; configuración incompleta falla al construir
+✔ disabled: nunca envía, nunca finge, registra mail.transport_disabled sin datos personales
+✔ loadMailConfig: disabled por defecto; valores inválidos fallan; SMTP_SECURE se deduce del puerto
+✔ cambiar sesión elimina selección y resultados AI; una respuesta pendiente de la sesión anterior no se entrega
+✔ rechazo de grant no repite la acción sin autorización ni borra la selección silenciosamente
+✔ monthlyCycle: ancla 31-ene → 28-feb → 31-mar, siempre desde el ancla original (sin deriva)
+✔ monthlyCycle: años bisiestos (29-feb) y ancla en 29-feb sin deriva
+✔ monthlyCycle: el instante exacto de la frontera pertenece al ciclo nuevo
+✔ monthlyCycle: un now anterior al ancla devuelve el primer ciclo
+✔ monthlyCycle: ciclos contiguos que contienen a now, con día del ancla acotado al mes y su misma hora
+✔ monthlyCycle: no depende de la zona horaria del proceso (sin efectos de DST)
+✔ effectiveValue: aplica el valor publicado y solo lo acota al techo de sistema
+✔ effectiveValue: nunca eleva un valor publicado (un mínimo vigente mayor no concede unidades)
+✔ effectiveValue: ausente o de tipo incorrecto ⇒ null (el llamador deniega)
+✔ validateValue: enteros dentro del rango del registro, sin conversiones de tipo
+✔ validateValue: booleanos solo true/false
+✔ validateValue: cada parámetro del registro admite su sugerencia y sus extremos, y nada fuera de ellos
+✔ fitsLimit: con límite K caben exactamente K unidades, una a una o en un lote completo
+✔ revisionChecksum: determinista, independiente del orden y sensible a cada clave y valor
+✔ motivo de plataforma: acepta texto operativo sin datos de negocios
+✔ motivo de plataforma: rechaza correos e ids client_, también pegados a letras que no son ASCII
+✔ stub publisher: publica una vez con external_ref único e idempotente
+✔ stub publisher: fallo inyectado devuelve ok=false sin lanzar (rama failed de FLOW-002)
+✔ preview token: alta entropía, hash estable, verificación con timing-safe
+✔ preview token: expiración configurable (PREVIEW_TOKEN_TTL_MINUTES)
+✔ IR-06 unit: allows below max, locks after max failures in a window
+✔ IR-06 unit: successful login resets the key
+✔ IR-06 unit: keys are per IP+login (not shared across users or ips)
+✔ IR-06 unit: window expiry allows retry
+✔ IR-06 unit: rejects invalid config
+✔ AC-001 unit: administration can do every declared action except blocked ones
+✔ AC-001 unit: operation creates/executes ops, reads/writes data, drives conversations and rep/social/subs/analytics reading (no approve/advanced)
+✔ AC-001 unit: read_only can read data, conversation, reputation, social, subscription, analytics and AI Core read surfaces
+✔ AC-001 unit: blocked actions (hide reviews / advanced campaigns) are denied for EVERY role
+✔ AC-001 unit: deny cases (user.manage / audit.read / data.write by role)
+✔ AC-001 unit: fail-closed default deny for unknown action
+✔ AC-001 unit: fail-closed default deny for unknown/missing role
+✔ AC-001 unit: authorize() returns structured reasons
+✔ AC-001 unit: matrix is complete (every usable ACTION is declared for at least one role)
+✔ AC-001 unit: role labels are plain language for UX (AC-008)
+✔ reputation: dataset simulado determinista por tenant (2+ positivas, 1 neutra, 1 negativa <4)
+✔ reputation: respuesta pública simulada es determinista e idempotente
+✔ reputation: clasificación por calificación y umbral configurable (DEC-023)
+✔ reputation: sugerencias deterministas de 3 opciones sin inventar hechos comerciales (RULE-005)
+✔ reputation: manipulación de reseñas (hide) está bloqueada para TODOS los roles
+✔ reputation: administration aprueba respuestas; read_only solo lee
+✔ programación interpreta la hora en la zona elegida y preserva el día al cruzar UTC
+✔ fechas imposibles no se normalizan; distingue febrero bisiesto y límites de reloj
+✔ hora inexistente o repetida por DST requiere elegir otra, no una publicación desplazada
+✔ social: SimulatedMeta página fija por tenant y sin aleatoriedad
+✔ social: publishPost determinista e idempotente por contenido (AC-007 patrón)
+✔ social: campaña avanzada BLOQUEADA para todos los roles (fail-closed)
+✔ social: administración aprueba publicaciones; read_only no crea
+✔ subscriptions: límites fail-closed puros (usage + units > max ⇒ deny)
+✔ subscriptions: catálogo de capacidades conocido y estable
+✔ subscriptions: SimulatedPaymentProvider siempre ok, sin llamadas externas
+✔ subscriptions: asignar plan/facturar es admin; leer entitlements es para todos
+✔ status is read-only and never prints the token or the secret
+✔ register without explicit readiness or bot identity makes no Bot API call
+✔ register refuses a token that belongs to another bot
+✔ an existing foreign webhook is never overwritten unless its exact URL is named
+✔ register sets exactly the agreed webhook parameters and confirms them with getWebhookInfo
+✔ a credentials file readable by group or others is refused before any call
+✔ missing bot token is reported as an external blocker without calling Telegram
+✔ Bot API errors never echo the token or the secret
+✔ website: render es determinista y contiene los datos del negocio
+✔ website: render escapa contenido del negocio (XSS-safe, NFR-003)
+✔ website: normalizeWebsiteData con valores raros no rompe (defaults seguros)
+✔ edit-mapper: "cambia el teléfono a +51 987 654 321" produce parche de contacto
+✔ edit-mapper: "agrega la sección servicios" agrega sección sin duplicar
+✔ edit-mapper: "agrega un servicio llamado Café de especialidad" agrega ítem
+✔ edit-mapper: cambio genérico produce diff claro (default determinista)
+
+## Pruebas de integración
+✔ E05/E07/E13: diseño IA → vista previa → aprobación → HTML sin scripts con imágenes de la biblioteca, acotadas al negocio
+✔ DEC-0024/0027: un negocio que usó la IA se exporta y se anonimiza sin rastros; el costo de IA queda re-etiquetado
+✔ E06/E18: la edición usa la ruta fijada al crear el job aunque cambie el rollout; base_version protege publicaciones
+✔ E14: un job que cae a mitad se reintenta con su lease y reutiliza el paso ya pagado (sin doble invocación)
+✔ E15/BR-0007: datos reales solo con proveedor verificado; techo duro con reservas concurrentes; proveedor retirado no vuelve
+✔ E03/E17: consola de plataforma con MFA, anti-replay, step-up y roles separados; sesiones no intercambiables
+✔ FR-0016: Jev lee comentarios (sin guardar el texto en la lectura) y el ledger impide una segunda respuesta pública
+✔ E11/E12: asistente con datos SOLO del propio negocio; campaña aprobada sin gasto; read_only no genera
+✔ APR-0003: trazas de más de 90 días pierden contenido, no costos ni aislamiento ni idempotencia
+✔ DEC-0073: el corte retira Anthropic activo/canary sin promover OpenAI ni alterar costo histórico
+✔ DEC-0074: fuera de AI_ENVIRONMENT=lab el laboratorio manual está cerrado: ningún id de grant abre un borrador ni degrada a la ruta normal
+✔ una autorización DRAFT no es tráfico normal; el job nativo fija el grant y una revocación impide ejecutarlo o reutilizarlo
+✔ imagen y respuesta manual rechazan grant ajeno o caso no incluido antes de clasificar/generar
+✔ imagen manual conserva biblioteca y costo al repetir la misma acción; revocar no devuelve el resultado ni cambia el rollout
+✔ DEC-0074 lectura: el laboratorio lista negocios, usuarios y rutas autorizables sin llamadas pagadas ni secretos; soporte no entra
+✔ DEC-0074 grants: step-up, motivo, caducidad 5–120, allowlist, membresía y auditoría durable; revocación idempotente
+✔ DEC-0074 dispatcher: DRAFT solo bajo grant válido (manual_lab), sin fallback al rollout, clasificación normal revalidada, replay aislado y revocación sin gasto
+✔ DEC-0074 jobs: enqueue fija solo generativas del grant (clasificación normal, nada más); grant inválido ⇒ 403; revocado ⇒ el worker falla el job sin gastar
+✔ DEC-0074 revisión manual: evidencia saneada; aceptar exige checklist y evidencia real ⇒ TESTED manual; rechazar la retira; approve/activate separados; fuera de lab no se despliega
+✔ DEC-0074 migración 0030: retira solo texto OpenAI de rollouts y revisiones con eventos auditables; Anthropic, imágenes, Jev, historial y costos intactos; idempotente
+✔ INC-007: export ETL por tenant aísla (no filtra datos de otro cliente)
+✔ INC-007: export JSON paginado + CSV con filtro por acción
+✔ QS-0006: la retención es automática; el tenant solo ve una vista previa sin efectos
+✔ INC-007: agregados diarios básicos (count por acción) y refresh del resumen
+✔ AC-003: create/approve/reject/execute flow writes correlated audit events
+✔ AC-003: export contains the full event schema and no secrets (INVARIANT)
+✔ AC-003: decision=deny events are also reconstructible (denials audited)
+✔ TEL-01: tres canales con «Otro número» y tres valores DISTINTOS, sin cruces
+✔ TEL-02: cambiar solo Facebook no altera Página Web, Google ni el principal
+✔ TEL-03: web=own, google=other, facebook=other → cambiar el principal solo mueve la web
+✔ TEL-04: other→own→other recupera el valor propio; borrar es explícito; varios países
+✔ TEL-04: datos inválidos fallan con error de campo y sin tocar canales hermanos
+✔ TEL-04: aislamiento tenant, RBAC y auditoría sin PII
+✔ FLOW-02: con teléfono configurado por canal, el chat no edita el número de la web (una sola fuente)
+✔ AC-005: consulta de solo lectura responde sin approval gate ni efectos externos
+✔ AC-006: cambio visible genera confirmación detallada y estado awaiting_confirmation
+✔ AC-007: preview → aprobación → publicado UNA vez; repetir aprobación no duplica
+✔ AC-007 EXT: rechazo no publica y expiración marca expired
+✔ AC-004: solicitud sensible queda bloqueada sin aprobación y se audita
+✔ AC-004/RULE-005: inventar precios queda bloqueado y auditado (prohibited)
+✔ INC-001 invariants: cross-tenant ops on a proposal are anti-oracle 404 + no leak
+✔ read_only profile: can read conversation state but not send/confirm/approve (403 audited)
+✔ AG-01: reseña simple + opt-in explícito → respuesta simulada ÚNICA con auditoría y versión de política
+✔ AG-01: sin política, o con la política revocada, una reseña positiva espera revisión humana
+✔ AG-02: reseña delicada → caso humano con 3 alternativas, aviso Telegram, edición y aprobación (una vez)
+✔ AG-02: rechazo en panel, Telegram ve el mismo estado; chat sin permiso o ajeno no decide
+✔ AG-03: Facebook comentario simple (auto) y delicado (humano) sin afectar publicaciones previas; teléfono propio de Facebook
+✔ AG-04: duplicados, carrera, doble worker y reinicio sin dobles respuestas ni casos perdidos
+✔ AG-04: timeout y error del proveedor → reintentos con backoff; agotados → humano o failed con aviso
+✔ AG-04: caída del worker a mitad de envío → recuperación sin doble respuesta (proveedor idempotente)
+✔ AG-04: sin chat de Telegram, fallo de envío de aviso y fallo de lectura del proveedor
+✔ Webhook Telegram: exige secreto en TODO entorno (503 sin configurar, 401 incorrecto); sondas vacías sin efectos
+✔ Webhook Telegram: entregas repetidas/concurrentes del mismo update no duplican respuestas ni decisiones; dedupe durable; fallo → reintento reprocesa
+✔ OAuth liga state/PKCE al tenant, cifra tokens y consume el state una sola vez
+✔ desconectar invalida OAuth pendiente y una renovación tardía no resucita credenciales
+✔ un callback pendiente no autoriza al usuario suspendido después de iniciar OAuth
+✔ renueva token caducado y revoca credenciales al desconectar
+✔ ficha PATCH se confirma por lectura; campos restringidos quedan pendientes
+✔ reseñas paginadas y reply con read-back, replay sin reescritura y aislamiento por ubicación
+✔ 401 renueva una vez; 403 registra permisos y 429 respeta Retry-After sin simulación
+✔ retención elimina texto/reviewer de Google antiguo sin borrar hechos ni contenido reciente
+✔ T-015 hook: resolve_identity resolves user + tenant + role from a session header
+✔ T-015 hook: check_authorization returns matrix truth + fail-closed deny
+✔ T-015 hook: audit_sink persists events with correlation (reusable taxonomy)
+✔ AC-002 positive: actor A reads ONLY its own tenant data
+✔ AC-002 negative: actor A reading resource of tenant B is not-found (anti-oracle)
+✔ IR-01 anti-oracle: other-tenant and nonexistent resources are indistinguishable (data)
+✔ IR-01 anti-oracle: other-tenant and nonexistent actions are indistinguishable (approve/execute)
+✔ AC-002 negative: actor A executing an action of tenant B is not-found (anti-oracle)
+✔ AC-002 negative: actor A writing with forced tenant (body) is denied + audited
+✔ AC-002 negative: forced tenant header (X-Force-Tenant) is denied
+✔ AC-002 negative: request without context is denied + audited (fail-closed)
+✔ AC-002 unit of enforcement: data layer never runs unscoped queries
+✔ DEC-0032: el ledger legacy incluye AI Core TypeSafe, no generativos ni otros días UTC
+✔ APR-0002: shadow keeps outcomes identical to disabled and records one shadow row per request
+✔ DEC-0031: primary with a model that never passed the evaluation behaves as shadow
+✔ DEC-0033: a passing run only counts for the exact decision code it evaluated
+✔ DEC-0031: pinning JEV_MODEL to the version that answered the evaluation reuses it; other versions do not
+✔ DEC-0031: primary with the gate open lets Jev determine the classification
+✔ DEC-0028: a discrepancy over a prohibited request goes to human approval
+✔ DEC-0030: a low-probability reading asks the owner to clarify
+✔ DEC-0029: a Jev outage falls back to the rules, marked
+✔ DEC-0019: messages of tenants outside JEV_SYNTHETIC_TENANTS never reach TypeSafe
+✔ APR-0002: the TypeSafe key never reaches stored rows, audit events or logs
+✔ ME-CONTRACT: administration /me returns the canonical shape
+✔ ME-CONTRACT: operation and read_only keep canonical shape too
+✔ ME-CONTRACT: read_only cannot list demo actions (fail-closed + audited)
+✔ bucle automático publica aprobadas sin process-due manual; dos workers no duplican
+✔ fila sin aprobación queda blocked y no toca Graph
+✔ cancelar una programada impide el envío; una publicación en curso o incierta no se anuncia cancelada
+✔ lease vencida real se reconcilia sin POST adicional; ausencia requiere revisión
+✔ timeout de escritura no reenvía; read-back ausente no es published
+✔ 429 limita y espera Retry-After; token 190 requiere reconexión; otro tenant nunca usa la Page
+✔ comentario real-falso se lee y respuesta concurrente no se duplica ni cruza tenant
+✔ publicación real inmediata se encola antes de salir a la red; no falso published
+✔ NFR-0001: social schedule is rolled back when its audit cannot be written
+✔ NFR-0001: social approve leaves no proposal and no state change when its audit fails
+✔ NFR-0001: social reject is rolled back when its audit cannot be written
+✔ NFR-0001: the scheduler does not block a queue row whose deny cannot be audited
+✔ NFR-0001: reputation escalate is rolled back when its audit cannot be written
+✔ NFR-0001: reputation response edit is rolled back when its audit cannot be written
+✔ NFR-0001: reputation approve leaves no proposal and no state change when its audit fails
+✔ NFR-0001: reputation reject is rolled back when its audit cannot be written
+✔ NFR-0001: user creation (user.manage) is rolled back when its audit cannot be written
+✔ NFR-0001: plan assignment (subscription.plan_assigned) is rolled back, history included, when its audit cannot be written
+✔ FLOW-01: invitación de un solo uso → cuenta del dueño (Administración) → acceso sin tenant_id
+✔ FLOW-01: invitación caducada, inexistente o usada a la vez → respuesta neutra; un solo ganador
+✔ FLOW-01: mismo correo en dos negocios → elegir negocio (solo tras demostrar la contraseña)
+✔ AUTH-RESET: misma respuesta y duración acotada exista o no el correo; sin eco de la entrada
+✔ AUTH-RESET: token hasheado en BD; ni token, ni correo, ni contraseña en auditoría
+✔ AUTH-RESET: contraseña débil no consume; cambio real; un solo uso; sesión antigua fuera (401) y nueva dentro
+✔ AUTH-RESET: enlace caducado → misma respuesta neutra que inexistente
+✔ AUTH-RESET: dos solicitudes → la anterior deja de valer; la nueva funciona
+✔ AUTH-RESET: canje concurrente del mismo enlace → solo uno gana
+✔ AUTH-RESET: límite por correo (exista o no) y por IP, sin revelar nada; canje también limitado
+✔ AUTH-RESET: mismo correo en dos negocios → un enlace cambia ambas cuentas sin revelar negocios
+✔ AUTH-RESET: cuenta suspendida no recibe enlace; el enlace de una cuenta nunca cambia otra
+✔ AUTH-RESET: entradas inválidas → 400 claro; el shell del panel atiende /restablecer sin tocar el token
+✔ AUTH-RESET: transporte deshabilitado → respuesta neutra, nada enviado y constancia honesta (BLOCKED_EXTERNAL)
+✔ AUTH-RESET: solicitudes simultáneas dejan un solo enlace vigente
+✔ AUTH-RESET: un login que comprobó la contraseña antes del reset no crea una sesión válida después
+✔ R1 preflight: solo recuentos sin identificadores; detecta reparables (también en otra caja), logins en claro y negocios no anonimizables
+✔ R1 repair: se niega sin autorización exacta, sin la BD correcta o con otro recuento, sin ON_ERROR_STOP del operador y sin cambiar nada
+✔ R1 repair: un id client_ en el motivo de una fila sin tenant ⇒ revisión manual: el preflight lo cuenta y la reparación no cambia nada
+✔ R1 repair: el correo de un negocio (no es client_) en el motivo de una fila sin tenant ⇒ revisión manual: el preflight lo cuenta y la reparación no cambia nada
+✔ R1 repair: el correo de OTRO negocio en el motivo de una fila con tenant ⇒ revisión manual: el preflight lo cuenta y la reparación no cambia nada
+✔ R1 repair: un client_ que no es de ningún negocio vivo solo se avisa; la reparación sigue y no lo toca
+✔ R1 repair autorizado: solo cambia resource a la ruta canónica, conserva el resto, la inmutabilidad vuelve y la anonimización funciona
+✔ R1 repair: un login heredado en claro que nombra a una persona bloquea la reparación; solo con su flag y recuento se redacta
+✔ 0034: backfill exacto de planes, valores, suscripciones, historial y reservas; mismas decisiones de cuota
+✔ 0034 aborta sin pérdida si plan_limit tiene una capacidad fuera del registro
+✔ 0034 aborta sin pérdida si plan_limit tiene un valor por encima del techo de sistema
+✔ 0034 aplicada pero no registrada (caída del runner antes de schema_migrations) se re-ejecuta sin error, duplicados ni cambios
+✔ BD: TRUNCATE no vacía el historial de suscripciones, los eventos del catálogo, los valores, las revisiones ni el legado
+✔ BD: escribir un valor y publicar a la vez se serializa; nunca queda PUBLISHED un valor sin confirmar ni con otra huella
+✔ BD: una suscripción escrita durante la publicación de su plan queda fijada a la revisión nueva
+✔ reversión: vuelve al esquema previo a 0034 con los valores publicados vigentes, aborta ante capacidades ajenas a 0014 y 0034 se reaplica
+✔ preflight G-MIG: antes de 0034 solo lee y aprueba el estado realista; tras 0034 se niega con su motivo
+✔ preflight G-MIG: una capacidad fuera del registro ⇒ bloquea (código ≠ 0) y 0034 también aborta, sin cambiar nada
+✔ preflight G-MIG: un valor sobre el techo de sistema ⇒ bloquea (código ≠ 0) y 0034 también aborta, sin cambiar nada
+✔ preflight G-MIG: nombres de plan iguales sin distinguir mayúsculas ⇒ bloquea (código ≠ 0) y 0034 también aborta, sin cambiar nada
+✔ preflight G-MIG: un libro de cuotas con una capacidad que se desvió del registro ⇒ bloquea (código ≠ 0) y 0034 también aborta, sin cambiar nada
+✔ preflight G-MIG: un objeto de 0034 que ya existe con otra forma ⇒ bloquea (código ≠ 0) y 0034 también aborta, sin cambiar nada
+✔ G-MIG 0034 → 0035: re-ejecutable; revertir 0034 exige revertir 0035 antes y no fijar negocios a revisiones no vigentes; la secuencia vuelve al esquema previo
+✔ G-MIG: la reversión bloquea el catálogo antes de comprobar las fijaciones; una publicación en curso termina antes y la hace abortar
+✔ G-MIG: con REPEATABLE READ por defecto en la sesión, la reversión sigue comprobando los datos posteriores a su bloqueo
+✔ G-MIG: el preflight de reversión y la reversión se niegan si ya existe una relación plan_limit
+✔ preflight G-MIG: una columna plan.created_by de otro tipo (0034 la adoptaría en silencio) ⇒ bloquea sin cambiar nada
+✔ preflight G-MIG: una restricción con el nombre del FK del libro de cuotas (0034 la adoptaría en silencio) ⇒ bloquea sin cambiar nada
+✔ preflight G-MIG: un índice con el nombre del índice único de publicadas en otra tabla (0034 la adoptaría en silencio) ⇒ bloquea sin cambiar nada
+✔ autorización: plans.read para admin, ingeniería y soporte; escribir exige plans.edit/plans.publish y step-up; asignar y migrar solo platform_admin; token de negocio 401; denegaciones auditadas y sin efectos
+✔ mínimo privilegio (BR-0007): sin tenants.read (ai_engineer) el catálogo solo muestra recuentos por revisión, sin ids ni nombres de negocios, y la vista previa de migración y los negocios se deniegan (403 auditado); admin y soporte sí los ven y cada lectura con identidades queda auditada sin ids
+✔ crear plan: nace deshabilitado con borrador v1 sugerido SIN confirmar; publicar exige confirmar uno a uno; cambiar un valor le quita la confirmación (también en BD); checksum = plan_revision_checksum(); solo habilitado se asigna; clonar copia sin confirmar
+✔ edición: un borrador por plan; lock_version desfasado ⇒ 409 stale_version sin cambios; diff y motivo en plan_catalog_event; v2 reemplaza a v1 sin mover a los clientes; vista previa con uso sobre el nuevo límite; migración explícita con expected_count; downgrade sin borrados
+✔ rollback: revisión nueva PUBLICADA con los valores de la elegida (origen rollback) y el historial completo; con borrador abierto ⇒ 409; solo hacia revisiones reemplazadas; descartar libera el borrador
+✔ descartar el único borrador de un plan nunca publicado ⇒ 409: el plan no queda sin borrador ni revisión publicada
+✔ BD: publicadas y reemplazadas inmutables (valores y revisión); ninguna revisión ni valor se borra; publicar por SQL exige todo confirmado y huella correcta; nunca dos publicadas; plan_catalog_event y subscription_history append-only
+✔ espejo del registro: si plan_parameter_definition difiere del registro, toda escritura del catálogo da 503 sin efectos; lecturas y enforcement siguen; /plan-catalog/parameters informa la diferencia
+✔ concurrencia: publicaciones simultáneas del mismo borrador ⇒ gana una; PATCH simultáneos con el mismo lock_version ⇒ gana uno; borradores simultáneos ⇒ uno; nunca dos PUBLISHED del mismo plan
+✔ concurrencia: clonar mientras se publica el plan de origen copia la revisión que quedó publicada
+✔ concurrencia de suscripciones: asignar mientras se publica fija la revisión publicada al confirmar (sin error); migraciones simultáneas del mismo negocio ⇒ una gana, con un solo historial y un solo evento
+✔ concurrencia: asignar mientras se confirma la baja del negocio espera a la baja y se rechaza (409); la suscripción queda cancelada
+✔ asignación de Administration: alta, repetición sin cambios (auditada como noop), reactivación que conserva la revisión, migración de revisión y cambio de plan quedan en el historial con su tipo, actor y motivo, y en ambas auditorías; el mismo plan en una revisión anterior ⇒ 409 (se migra con vista previa); negocio inexistente ⇒ 404; plan inexistente ⇒ 409
+✔ validación: valores fuera de tipo, rango o registro ⇒ 400 sin tocar el borrador; motivo de 10 a 500 caracteres; nombre repetido ⇒ 409; revisiones de otro plan no son destino de rollback ni de migración
+✔ textos: motivo, nombre y descripción se miden en caracteres reales y no admiten caracteres de control ni de formato; los del catálogo y de la asignación tampoco correos ni ids de negocio (400, nada cambia); al límite se guardan íntegros, también en la auditoría de plataforma
+✔ borrador sin la fila de un parámetro (creado por SQL): guardar ese valor inserta la fila, el diff solo lista lo guardado y el borrador se puede publicar
+✔ escritura permitida sin cambio: habilitar un plan ya habilitado responde 200, no toca el plan ni su historial y queda en la auditoría de plataforma como noop
+✔ panel del negocio: entitlements refleja la revisión fijada y su uso (un borrador o una publicación nueva no lo cambian); /subscriptions/plans y /plans solo listan planes habilitados con revisión publicada
+✔ step-up: 5 códigos incorrectos en 15 min ⇒ 429 auditado; mientras dura, tampoco se acepta un código válido; el límite es por operador
+✔ retención (DEC-0027): una denegación de plataforma guarda el patrón de la ruta (con el request_id del servidor), nunca el id del negocio; después, ese negocio se anonimiza sin error
+✔ retención (DEC-0027): ningún motivo de plataforma admite datos de negocios (presupuestos, estado); support-view de un id que no es un negocio responde 404 sin auditarlo; después, el negocio se anonimiza sin error
+✔ retención (DEC-0027): migrar con la cabecera X-Request-Id no la guarda en ninguna auditoría; cada negocio deja su fila de plataforma con tenant y motivo y el lote un resumen sin motivo ni ids; después, cada negocio migrado se anonimiza sin error
+✔ reconciliación de cuotas: informa el uso por encima del límite fijado en los parámetros que se aplican, nunca en `agents` (no se aplica)
+✔ login: 3 procesos × 8 intentos simultáneos sobre la misma clave ⇒ exactamente 5 × 401 y 19 × 429, sin login en claro
+✔ anti-replay TOTP: el mismo código válido en 12 logins simultáneos desde 3 procesos autentica exactamente una vez
+✔ step-up entre procesos: 12 códigos incorrectos ⇒ 5 × 401 y 7 × 429; bloqueado, ni el código válido pasa; al vencer la ventana pasa y limpia
+✔ reinicio: el límite sobrevive a que un proceso muera (SIGKILL) y lo aplica un proceso nuevo
+✔ PostgreSQL inalcanzable: falla cerrado (500) sin autenticar ni consumir el código, y se recupera al reconectar
+✔ un bloqueo retenido sobre la fila del límite no deja la petición esperando: falla cerrado tras lock_timeout
+✔ purga concurrente: si otra sesión borra la fila vencida mientras la reserva espera, el intento cuenta (sin 500)
+✔ conexión terminada mientras el cliente está inactivo en el pool: el proceso sigue vivo y el siguiente intento funciona
+✔ conexión terminada DENTRO de la transacción del límite: 500 sin autenticar, el proceso sigue vivo y el siguiente intento funciona
+✔ conexión terminada con un cliente retenido por pool.connect() directo (sin runTransaction): el proceso sigue vivo y el pool se recupera
+✔ ráfaga de logins inventados: el 429 por saturación no gasta intentos del operador, que entra al terminar la ráfaga
+✔ una clave con su fila bloqueada no hace esperar a los logins de OTRAS claves del mismo proceso
+✔ periódica: consume hasta el límite; el deny no deja rastro; ni el replay ni un create fallido consumen
+✔ periódica: una reserva viva cuenta; la liberada y la vencida no (y su commit tardío no consume)
+✔ ventana móvil: consume hasta el límite; el deny no deja rastro; ni el replay ni un create fallido consumen
+✔ ventana móvil: una reserva viva cuenta; la liberada y la vencida no (y su commit tardío no consume)
+✔ periódica: solo cuentan las unidades del ciclo mensual vigente (UTC, anclado al inicio de la suscripción)
+✔ ventana móvil: solo cuentan las unidades confirmadas en los últimos 3600 s; el cupo reabre al salir de la ventana
+✔ stock: cuentan los recursos activos; archivar libera una unidad y reactivar vuelve a comprobar el límite
+✔ elegibilidad: true pasa; false ⇒ 403 prohibited; ausente en la revisión fijada ⇒ deny; no consume nada
+✔ concurrencia (periódica): 12 consumos simultáneos en 12 conexiones con límite 3 ⇒ exactamente 3 éxitos
+✔ concurrencia (ventana móvil): 12 consumos simultáneos en 12 conexiones con límite 3 ⇒ exactamente 3 éxitos
+✔ concurrencia (stock): 12 consumos simultáneos en 12 conexiones con límite 2 ⇒ exactamente 2 éxitos
+✔ concurrencia: la misma clave en 12 conexiones a la vez consume una sola vez (en uno y en dos pasos)
+✔ aislamiento: otro negocio no comparte cupo, claves ni candado
+✔ sin suscripción activa ⇒ 403 subscription_required al consumir, reservar o comprobar elegibilidad; nada se consume
+✔ una suscripción fijada a una revisión SUPERSEDED sigue resolviendo y aplicando sus valores
+✔ DEC-0005: 10 concurrent drafts against 3 free slots create exactly 3 and consume exactly 3
+✔ DEC-0005: concurrent messages reserve before processing and never exceed the conversations limit
+✔ DEC-0005: the same Idempotency-Key replays the original draft and message without consuming again
+✔ DEC-0005: concurrent duplicates with one key create a single resource
+✔ DEC-0005: tenants never share quota, keys or replays
+✔ DEC-0005: at the limit the deny is audited and nothing is reserved or created
+✔ NFR-0001: if the consumption cannot be audited, the draft and its quota are rolled back together
+✔ NFR-0001: if the site creation cannot be audited, neither the site nor its quota remain
+✔ DEC-0005: a message that fails after reserving releases its unit (audited) and the next one fits
+✔ DEC-0005: an abandoned reservation expires, stops counting and is closed by reconciliation
+✔ AC-001: administration profile can use all backoffice actions
+✔ AC-001: operation profile CAN write data and create actions but CANNOT manage users/audit
+✔ AC-001: read_only profile can read but every mutation is denied + audited
+✔ AC-001: denied responses use plain language (AC-008) and never leak data
+✔ AC-001: DB permission mirror matches the code matrix (governance)
+✔ IR-03/IR-05/IR-07: duplicate login -> 409, clear message, login never in audit
+✔ IR-05: same login in a DIFFERENT tenant is allowed (compound unique per tenant)
+✔ IR-06: repeated failed logins are rate-limited with Retry-After
+✔ INC-004: sync determinista, positiva acknowledge, <4 sugerida (sin publicar)
+✔ INC-004: reseña <4 → escalamiento humano → respuesta aprobada publica UNA vez
+✔ INC-004: sin manipulación — ocultar/borrar reseña es PROHIBITED con auditoría deny
+✔ INC-004: anti-oracle — review de OTRO tenant responde 404 idéntico
+✔ PR-06: rate limiting en el approve de reputación (IP + operador + recurso → 429)
+✔ DEC-0021..0023: each kind of data is purged at its own term; structure and fresher data stay
+✔ NFR-0001: if a tenant purge cannot be audited it is rolled back; the other tenants are still purged
+✔ DEC-0025: the scheduled run happens once per UTC day, after 03:00, even with concurrent schedulers
+✔ DEC-0024/0027: a confirmed exit exports first, removes access, and is anonymized only after 30 days without traces
+✔ DEC-0027: if any identifier would survive, the anonymization is rolled back and reported
+✔ DEC-0026/0027: after restoring an older backup, exits are re-applied from the registry; the registry expires
+✔ INC-005: crear borrador, deny sin permiso (read_only) y listado
+✔ INC-005: post → preview → aprobación → publicado idempotente
+✔ INC-005: programar con aprobación → cola SOLO tras aprobar → tick manual publica UNA vez (PR-01)
+✔ PR-01: programar sin aprobar ⇒ el tick NO publica (audit deny, fila bloqueada)
+✔ INC-005: campaña avanzada PROHIBITED con auditoría deny (fuera del MVP)
+✔ PR-06: rate limiting en el approve social (IP + operador + recurso → 429)
+✔ INC-006: entitlements por rol (Piloto 1 sin precio, con uso); el negocio no se asigna planes; Administration sí, fijado y con historial
+✔ INC-006: Administration no asigna planes deshabilitados ni borradores (también por SQL directo)
+✔ INC-006: límite excedido ⇒ deny 403 limit_exceeded + auditoría deny (social)
+✔ INC-006: facturar un plan SIN precio es PROHIBITED (piloto sin cobro)
+✔ INC-006: límite de reseñas gestionadas — lote que excede NO deja estado parcial (PR-03)
+✔ PR-02: mensajes que exceden el límite de conversaciones ⇒ 403 limit_exceeded + audit deny
+✔ PR-02: creación de sitio — sin suscripción (deny subscription_required), con plan (201) y techo 1 por negocio
+✔ sin página: el chat no crea propuesta, la primera versión pide crearla y una propuesta previa no se marca fallida
+✔ primera página: datos del alta, una sola propuesta con solicitudes simultáneas y publicación tras aprobar
+✔ teléfono de la Página web: vista previa con el número efectivo, reemplazo si cambia y publicación solo tras aprobar
+✔ INC-003: el sitio del tenant existe en BD con datos de negocio (seed)
+✔ INC-003: edición asistida → preview → aprobación → publicación (REQ-012, RULE-003)
+✔ INC-003: FLOW-006 provisión de subdominio simulada e idempotente (Hostinger simulated, DEC-019/026)
+✔ INC-003: denegación sin permiso (read_only no publica ni aprovisiona; 403 auditado)
+✔ INC-003: publicación solo tras aprobación — una propuesta confirmada no cambia la versión publicada
+✔ restaurar: versión nueva con el contenido de la elegida, historial intacto, idempotente y guard optimista
+✔ restaurar: una propuesta preparada sobre una versión que ya cambió no se publica a ciegas (409) y el publicador no deja éxito ficticio
+✔ restaurar: aislamiento por tenant — las versiones de otro negocio no se ven ni se restauran
+✔ sitio local por Host: publicada vs sin publicar vs desconocida; nunca para el panel; sin API bajo el host del sitio

@@ -1,0 +1,6 @@
+# GSEC-14 — mediana de 25 logins fallidos (contraseña incorrecta) por tipo de login, PlatformAuth real contra
+# PostgreSQL 16.15 desechable; script desechable /tmp/gsec14-probe.ts (borrado). IP distinta por intento.
+== ANTES: /tmp/pr14-head-6e1eff8 (HEAD 6e1eff8)
+existing_login_median_ms=45.8 unknown_login_median_ms=4.1
+== DESPUÉS: worktree del PR #14 con NO_SUCH_USER_HASH (commit 466b74d)
+existing_login_median_ms=44.6 unknown_login_median_ms=44.9

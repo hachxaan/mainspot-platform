@@ -1287,6 +1287,31 @@ test('retención (DEC-0027): una denegación de plataforma guarda el patrón de 
   assert.equal(await countRows(t, 'SELECT count(*) AS n FROM client WHERE client_id = $1', [biz.tenant]), 0, 'el negocio quedó anonimizado');
 });
 
+test('retención (DEC-0027): ningún motivo de plataforma admite datos de negocios (presupuestos, estado); support-view de un id que no es un negocio responde 404 sin auditarlo; después, el negocio se anonimiza sin error', async () => {
+  const biz = await createTenantWithPlan(t, { social_posts: 1 }, 'client_pcreason');
+  const op = await operator('platform_admin', 'reason');
+  await stepUp(op);
+  const budgetSql = `SELECT limit_usd, source, updated_at FROM ai_budget WHERE scope = 'platform_month' AND tenant_id IS NULL`;
+  const budget = (await t.pool.query(budgetSql)).rows;
+  const since = await dbNow();
+  for (const reason of [`Ajuste pedido por ${biz.tenant} esta semana`, `Lo pidió ${biz.login} por teléfono`]) {
+    const update = await platform(op.token, '/ai/budgets/platform_month', 'PUT', { limit_usd: 7, reason });
+    assert.equal(update.status, 400, JSON.stringify(update.body));
+    assert.match(update.body.error.message, /datos de negocios/);
+    const status = await platform(op.token, `/tenants/${biz.tenant}/status`, 'POST', { status: 'suspended', reason });
+    assert.equal(status.status, 400, JSON.stringify(status.body));
+  }
+  assert.deepEqual((await t.pool.query(budgetSql)).rows, budget, 'el presupuesto (y su source) no cambió');
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM client WHERE client_id = $1 AND status = 'active'`, [biz.tenant]), 1);
+
+  const ghost = await platform(support.token, `/tenants/${encodeURIComponent(biz.login)}/support-view`);
+  assert.equal(ghost.status, 404, JSON.stringify(ghost.body));
+  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM platform_audit_event WHERE at >= $1 AND (tenant_id = $2 OR reason LIKE $3)',
+    [since, biz.login, `%${biz.tenant}%`]), 0, 'ni el login como tenant_id ni el motivo rechazado quedan en la auditoría');
+  await anonymize(biz.tenant);
+  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM client WHERE client_id = $1', [biz.tenant]), 0, 'el negocio quedó anonimizado');
+});
+
 test('retención (DEC-0027): migrar con la cabecera X-Request-Id no la guarda en ninguna auditoría; cada negocio deja su fila de plataforma con tenant y motivo y el lote un resumen sin motivo ni ids; después, cada negocio migrado se anonimiza sin error', async () => {
   const plan = await publishedPlan(eng, { social_posts: 5 });
   const tenants = [(await createTenantWithPlan(t, { social_posts: 1 }, 'client_pcmig')).tenant, (await createTenantWithPlan(t, { social_posts: 1 }, 'client_pcmig')).tenant].sort();

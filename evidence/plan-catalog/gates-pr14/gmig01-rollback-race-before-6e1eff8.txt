@@ -1,0 +1,8 @@
+✖ G-MIG: la reversión bloquea el catálogo antes de comprobar las fijaciones; una publicación en curso termina antes y la hace abortar (1100.601992ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ G-MIG: la reversión bloquea el catálogo antes de comprobar las fijaciones; una publicación en curso termina antes y la hace abortar (1100.601992ms)
+  + actual - expected
+  +   'ok'
+  -   '55000'

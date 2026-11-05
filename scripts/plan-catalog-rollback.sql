@@ -4,11 +4,17 @@
 -- (base 95f9436 o equivalente). El código del catálogo versionado NO funciona sobre el esquema revertido
 -- (sus tablas, la columna subscription.plan_revision_id y sus triggers desaparecen).
 --
--- Uso, con la aplicación y los workers DETENIDOS y una copia de seguridad reciente:
---   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/plan-catalog-rollback.sql
+-- Uso, con la aplicación y los workers DETENIDOS y una copia de seguridad reciente (el script impone ON_ERROR_STOP:
+-- cualquier aborto sale con código distinto de 0):
+--   psql "$DATABASE_URL" -X -f scripts/plan-catalog-rollback.sql
 -- Es una sola transacción (BEGIN … COMMIT): ante cualquier error no cambia nada. Aborta sin tocar nada si
--- 0034 no está aplicada, si hay migraciones posteriores a 0034 registradas (revisarlas y revertirlas
--- antes) o si quota_reservation tiene capacidades fuera de la lista de 0014 (no caben en su CHECK).
+-- 0034 no está aplicada, si ya existe otra relación llamada plan_limit, si hay migraciones posteriores a 0034
+-- registradas (p. ej. 0035: revertirla antes con scripts/plan-catalog-hardening-rollback.sql), si quota_reservation
+-- tiene capacidades fuera de la lista de 0014 (no caben en su CHECK) o si alguna suscripción no está fijada a la
+-- revisión publicada vigente de su plan (SQLSTATE 55000): el esquema anterior no puede expresar esa fijación y
+-- revertir cambiaría en silencio los límites del negocio.
+-- No migrar negocios solo para que la reversión pase sin una decisión del propietario.
+-- Inventario previo de solo lectura: scripts/plan-catalog-rollback-preflight.sql.
 --
 -- Resultado:
 --   - plan_limit vuelve (es plan_limit_legacy_0009 renombrada, sin sus triggers de solo lectura y de TRUNCATE)
@@ -26,13 +32,16 @@
 -- SE PIERDE (solo recuperable desde la copia de seguridad):
 --   - el historial de revisiones (borradores, publicadas, SUPERSEDED, DISCARDED), sus valores con
 --     confirmación individual, sus huellas y la auditoría detallada del catálogo (plan_catalog_event);
---   - la fijación por revisión: cada suscripción pasa a los valores PUBLICADOS de su plan; una suscripción
---     fijada a una revisión no vigente cambia de límites (se avisa con un NOTICE con el recuento);
+--   - la fijación por revisión: cada suscripción pasa a los valores PUBLICADOS de su plan (por eso la reversión
+--     solo procede cuando todas están fijadas a la revisión publicada vigente);
 --   - el historial de asignaciones (subscription_history) y el autor y la fecha de cambio de cada plan;
 --   - los valores de parámetros sin capacidad de 0014 (no existen en la forma 0009).
 -- La auditoría general (audit_event, platform_audit_event) no se toca.
 
-BEGIN;
+\set ON_ERROR_STOP on
+-- READ COMMITTED explícito: con otro nivel por defecto, la instantánea se tomaría antes del LOCK de abajo y la
+-- comprobación y la regeneración leerían datos previos al bloqueo.
+BEGIN ISOLATION LEVEL READ COMMITTED;
 SET LOCAL lock_timeout = '15s';
 DO $$
 DECLARE
@@ -43,11 +52,20 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtext('mainspot_migrations'));
   IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE file = '0034_plan_policy_catalog.sql')
      OR to_regclass('public.plan_revision') IS NULL
-     OR to_regclass('public.plan_limit_legacy_0009') IS NULL
-     OR to_regclass('public.plan_limit') IS NOT NULL THEN
+     OR to_regclass('public.plan_limit_legacy_0009') IS NULL THEN
     RAISE EXCEPTION 'plan-catalog-rollback: migration 0034 is not applied in this database; nothing to revert'
       USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
+  IF to_regclass('public.plan_limit') IS NOT NULL THEN
+    RAISE EXCEPTION 'plan-catalog-rollback: a relation named plan_limit already exists next to plan_limit_legacy_0009; inspect it manually'
+      USING ERRCODE = 'object_not_in_prerequisite_state';
+  END IF;
+  -- Las comprobaciones de abajo y la regeneración de plan_limit leen el catálogo y las suscripciones: nadie puede
+  -- publicar, asignar ni reservar entre la comprobación y el DDL. Con escritores aún activos (el procedimiento exige
+  -- detenerlos), una publicación en curso termina antes y su resultado se comprueba, o una de las dos transacciones
+  -- aborta (40P01 o 55P03) sin dejar nada a medias; las que lleguen después fallan al desaparecer las tablas.
+  LOCK TABLE plan, plan_revision, plan_parameter_value, plan_parameter_definition, subscription, quota_reservation
+    IN ACCESS EXCLUSIVE MODE;
   IF EXISTS (SELECT 1 FROM schema_migrations WHERE file COLLATE "C" > '0034_plan_policy_catalog.sql') THEN
     RAISE EXCEPTION 'plan-catalog-rollback: migrations after 0034 are applied; review and revert them first'
       USING ERRCODE = 'object_not_in_prerequisite_state';
@@ -59,11 +77,14 @@ BEGIN
     RAISE EXCEPTION 'plan-catalog-rollback: quota_reservation has capabilities outside migration 0014 (%); rollback aborted', foreign_caps
       USING ERRCODE = 'check_violation';
   END IF;
+  -- Fijada a una revisión que no es la PUBLICADA vigente de SU plan (SUPERSEDED, DRAFT, de otro plan o inexistente).
   SELECT count(*) INTO unpinned
-    FROM subscription s JOIN plan_revision r ON r.revision_id = s.plan_revision_id
-   WHERE r.status <> 'PUBLISHED';
+    FROM subscription s
+   WHERE NOT EXISTS (SELECT 1 FROM plan_revision r
+                      WHERE r.revision_id = s.plan_revision_id AND r.plan_id = s.plan_id AND r.status = 'PUBLISHED');
   IF unpinned > 0 THEN
-    RAISE NOTICE 'plan-catalog-rollback: % subscription(s) pinned to a non-current revision will use the published values of their plan', unpinned;
+    RAISE EXCEPTION 'plan-catalog-rollback BLOCKED: % subscription(s) pinned to non-current revisions; reverting would silently change entitlements. Migrate explicitly with owner approval or restore a backup.', unpinned
+      USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
 END $$;
 
@@ -96,7 +117,8 @@ SELECT r.plan_id, d.capability, v.value_int AS max_value
    AND d.value_type = 'int'
    AND d.capability IN ('website','social_posts','social_ads','reviews_managed','agents','conversations')
    AND v.value_int IS NOT NULL
-   AND v.source <> 'backfill_absent_deny';
+   -- `backfill_absent_deny` con 0 era una capacidad sin fila en 0009: vuelve a ser ausencia (el mismo deny).
+   AND NOT (v.source = 'backfill_absent_deny' AND v.value_int = 0);
 
 DELETE FROM plan_limit l
  WHERE NOT EXISTS (SELECT 1 FROM plan_limit_published_0034 p WHERE p.plan_id = l.plan_id AND p.capability = l.capability);

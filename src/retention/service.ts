@@ -154,6 +154,15 @@ export function tenantSha256(tenantId: string): string {
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** Fuerza el ROLLBACK de un ensayo de anonimización que pasó la verificación (anonymizeTenant con dryRun). */
+class DryRunRollback extends Error {
+  readonly anonymousId: string;
+  constructor(anonymousId: string) {
+    super('anonymization dry run: rolled back');
+    this.anonymousId = anonymousId;
+  }
+}
+
 /** Identificadores del tenant capturados antes de anonimizar, para verificar que no quedan. */
 interface TenantIdentifiers {
   /** Identificadores técnicos o de contacto: no pueden aparecer en ninguna columna de texto. */
@@ -330,8 +339,19 @@ export class RetentionService {
    * Anonimiza un tenant en UNA transacción: re-etiqueta agregados y auditoría con
    * identificadores nuevos (sin correspondencia guardada), borra todo dato operativo,
    * registra la huella y verifica que no queda ningún rastro antes de confirmar.
+   * `dryRun`: hace exactamente lo mismo, incluida la verificación, y SIEMPRE revierte (ensayo sin cambios;
+   * scripts/anonymization-dry-run.ts). Un fallo de verificación se lanza igual que en la anonimización real.
    */
-  async anonymizeTenant(tenantId: string, runId: string): Promise<{ anonymousId: string }> {
+  async anonymizeTenant(tenantId: string, runId: string, opts: { dryRun?: boolean } = {}): Promise<{ anonymousId: string }> {
+    try {
+      return await this.anonymizeInTransaction(tenantId, runId, opts.dryRun === true);
+    } catch (err) {
+      if (err instanceof DryRunRollback) return { anonymousId: err.anonymousId };
+      throw err;
+    }
+  }
+
+  private anonymizeInTransaction(tenantId: string, runId: string, dryRun: boolean): Promise<{ anonymousId: string }> {
     return runAtomic(this.deps.pool, async (client) => {
       const ids = await this.identifiers(client, tenantId);
       const logins = (await client.query<{ login: string }>('SELECT login FROM internal_user WHERE tenant_id=$1', [tenantId])).rows.map((r) => r.login);
@@ -383,12 +403,15 @@ export class RetentionService {
          ON CONFLICT (tenant_sha256) DO UPDATE SET anonymized_at = now(), run_id = EXCLUDED.run_id`,
         [tenantSha256(tenantId), runId]);
       const removed = Object.values(deleted).reduce((a, b) => a + b, 0);
+      // En el ensayo el evento se revierte con todo lo demás; su acción propia evita que el log de la escritura
+      // (audit.written) se lea como una anonimización real. Mismo trato fail-closed que tenant.anonymized.
       await this.deps.sink.write({
-        tenant_id: anonymousId, actor_id: RETENTION_ACTOR, actor_role: null, action: 'tenant.anonymized',
+        tenant_id: anonymousId, actor_id: RETENTION_ACTOR, actor_role: null, action: dryRun ? 'tenant.anonymization_dry_run' : 'tenant.anonymized',
         resource: 'tenant', request_id: runId, decision: 'allow',
         result: `rows_deleted:${removed},audit_rekeyed:${audit.rowCount ?? 0},aggregates_rekeyed:${analytics.rowCount ?? 0},ai_rekeyed:${aiRekeyed.rowCount ?? 0},platform_audit_rekeyed:${platformRekeyed.rowCount ?? 0}`,
-      }, client);
+      }, client, true);
       await this.assertNoTraces(client, ids, anonymousId);
+      if (dryRun) throw new DryRunRollback(anonymousId);
       return { anonymousId };
     });
   }
