@@ -255,11 +255,16 @@
       var params = (S.planParams || []).filter(function (x) { return x.value !== null; });
       if (params.length) {
         html += '<section class="card"><h3>Lo que incluye</h3><ul class="list" style="margin-top:8px">' + params.map(function (x) {
+          // DEC-0076: un parámetro que no se aplica por decisión (recibir reseñas) se explica en vez de mostrar un tope.
+          if (!x.enforced && x.note) return '<li class="list-row static" style="padding-left:0">' + icon('check') + '<span class="grow">' + esc(x.label) + '<span class="muted small" style="display:block">' + esc(x.note) + '</span></span><strong>Sin límite</strong></li>';
           var used = x.enforced && x.usage !== null;
           // Por encima: el límite bajó después de crear lo existente; se conserva y solo se bloquean nuevas creaciones.
           var over = used && x.usage > x.value, full = used && x.value > 0 && x.usage === x.value;
           var n = function (v) { return Number(v).toLocaleString('es-MX'); };
-          return '<li class="list-row static" style="padding-left:0">' + icon(x.value > 0 ? 'check' : 'lock') + '<span class="grow">' + esc(x.label) + '<span class="muted small" style="display:block">' + (x.value > 0 ? esc(x.period) : 'No incluido en tu plan') + (x.enforced ? '' : ' · Este límite todavía no se aplica.') + (over ? ' · Lo que ya tienes se conserva; no puedes crear más hasta bajar del límite.' : '') + '</span></span><strong>' + (used ? esc(n(x.usage)) + ' de ' : '') + esc(n(x.value)) + ' ' + esc(x.unit) + '</strong>' + (over ? ' ' + UI.tag('Por encima del límite', 'alerta') : full ? ' ' + UI.tag('Completo', 'ocre') : '') + '</li>';
+          // Periódicas: el uso es del ciclo vigente; lo no usado no se acumula y se renueva al terminar el ciclo.
+          var cycle = x.window && x.value > 0 ? ' · Se renueva el ' + MS.renewal(x.window.end) + '; lo no usado no se acumula.' : '';
+          var overText = x.window ? ' · Agotado en este ciclo.' : ' · Lo que ya tienes se conserva; no puedes crear más hasta bajar del límite.';
+          return '<li class="list-row static" style="padding-left:0">' + icon(x.value > 0 ? 'check' : 'lock') + '<span class="grow">' + esc(x.label) + '<span class="muted small" style="display:block">' + (x.value > 0 ? esc(x.period) : 'No incluido en tu plan') + esc(cycle) + (x.enforced ? '' : ' · Este límite todavía no se aplica.') + (over ? esc(overText) : '') + '</span></span><strong>' + (used ? esc(n(x.usage)) + ' de ' : '') + esc(n(x.value)) + ' ' + esc(x.unit) + '</strong>' + (over ? ' ' + UI.tag('Por encima del límite', 'alerta') : full ? ' ' + UI.tag('Completo', 'ocre') : '') + '</li>';
         }).join('') + '</ul>' + UI.note('Sin cobros: tu plan no tiene precio aprobado. Para cambiarlo, escribe a MainSpot.') + '</section>';
       }
     }

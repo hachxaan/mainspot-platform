@@ -23,9 +23,22 @@ export type SemanticRead =
   | { ok: true; classification: Classification; invocationId: string; reading: Record<string, unknown> }
   | { ok: false; source: 'blocked_external' | 'unavailable' | 'not_configured' };
 
+/** Redacción pedida por una persona («Redactar con IA», DEC-0076): su propia traza y clave por petición. */
+export interface ReplyRequest {
+  requestId: string;
+  actorId: string;
+}
+
 export interface EngagementSemantics {
   read(row: CaseRow): Promise<SemanticRead>;
-  reply(row: CaseRow, c: Classification, facts: Record<string, unknown>): Promise<{ text: string; needsHuman: boolean; invocationId: string } | null>;
+  /** ¿Hay ruta activa de redacción para este origen en este entorno? (sin invocar al proveedor) */
+  replyAvailable(origin: CaseRow['origin']): Promise<boolean>;
+  /**
+   * Redacta la respuesta. Sin `request` es la del agente al clasificar (clave fija por caso: nunca se paga dos
+   * veces). Con `request`, cada petición usa su propia clave: un intento fallido no bloquea el siguiente; el libro
+   * de cuotas es quien garantiza como máximo una unidad por caso.
+   */
+  reply(row: CaseRow, c: Classification, facts: Record<string, unknown>, request?: ReplyRequest): Promise<{ text: string; needsHuman: boolean; invocationId: string } | null>;
 }
 
 const choiceOf = (a: Answer | undefined): ChoiceAnswer | null => (a && a.type === 'choice' ? (a as ChoiceAnswer) : null);
@@ -80,13 +93,16 @@ export class AiEngagementSemantics implements EngagementSemantics {
     return { ok: true, invocationId: res.invocationId, ...toClassification(res.output.answers) };
   }
 
-  async reply(row: CaseRow, c: Classification, facts: Record<string, unknown>): Promise<{ text: string; needsHuman: boolean; invocationId: string } | null> {
+  async replyAvailable(origin: CaseRow['origin']): Promise<boolean> {
+    return this.active(origin === 'google_review' ? 'engagement.google.review.reply' : 'engagement.facebook.comment.reply');
+  }
+
+  async reply(row: CaseRow, c: Classification, facts: Record<string, unknown>, request?: ReplyRequest): Promise<{ text: string; needsHuman: boolean; invocationId: string } | null> {
     const uc = row.origin === 'google_review' ? 'engagement.google.review.reply' : 'engagement.facebook.comment.reply';
     if (!(await this.active(uc))) return null;
-    const res = await this.dispatcher.invokeStructured<ReplyOutput>(uc, {
-      requestId: `eng_${row.case_id}`, idempotencyKey: `case:${row.case_id}:reply`, tenantId: row.tenant_id, actorId: 'system:engagement-agent',
-      actorKind: 'system', origin: 'engagement.case',
-    }, {
+    const res = await this.dispatcher.invokeStructured<ReplyOutput>(uc, request
+      ? { requestId: request.requestId, idempotencyKey: `case:${row.case_id}:reply:${request.requestId}`, tenantId: row.tenant_id, actorId: request.actorId, actorKind: 'tenant_user', origin: 'engagement.case.ai_draft' }
+      : { requestId: `eng_${row.case_id}`, idempotencyKey: `case:${row.case_id}:reply`, tenantId: row.tenant_id, actorId: 'system:engagement-agent', actorKind: 'system', origin: 'engagement.case' }, {
       facts, reading: { sentiment: c.sentiment, category: c.category, risks: c.risk_flags },
       author: row.author_label || 'cliente', rating: row.rating ? String(row.rating) : 'n/a', message: redactContactData(row.body),
     }, { domainCheck: (out) => replyViolations(out) });

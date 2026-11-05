@@ -32,6 +32,11 @@ increments:
     sección Planes en /ingenieria), suscripciones fijadas a su revisión, asignación exclusiva de Administration y
     autoasignación del negocio retirada (403). Código en la rama feat/plan-policy-catalog-impl-20261104 (base 95f9436);
     su verificación y evidencia se registran al integrarlo, no en este registro. Estado y evidencia de la base sin cambio.
+    Evolución por DEC-0076/SRC-0015 (canon 0.7.0 de FR-0008, FR-0010 y FR-0016): registro de parámetros 2 (migración 0036
+    y su reversión), cuota mensual ai_review_replies medida en src/engagement/service.ts («Redactar con IA» y respuesta
+    automática autorizada), recepción de reseñas sin cuota y panel con saldo y renovación. Código en la rama
+    feat/commercial-quota-semantics-20261105 (apilada sobre PR #15); evidencia local en evidence/commercial-quota/, que
+    se registra aquí al integrarlo. Estado y evidencia de la base sin cambio.
 - increment_id: INC-0007
   state: IMPLEMENTED
   risk_tier: 2

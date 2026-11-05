@@ -8,7 +8,7 @@
  *
  * Recorrido: soporte solo lee → ingeniería crea un plan clonado (deshabilitado, valores copiados SIN
  * confirmar) → validación en línea del techo → cambiar un valor desmarca su confirmación → publicar
- * bloqueado hasta confirmar los 6 → step-up TOTP cuando caduca → publicar v1 → habilitar → v2 →
+ * bloqueado hasta confirmar los 7 (registro 2: la cuota de IA llega sugerida en 0 y sin confirmar) → step-up TOTP cuando caduca → publicar v1 → habilitar → v2 →
  * Administration asigna el plan (fijado a v2) → ingeniería publica v3 (downgrade) → el negocio sigue en
  * v2 → vista previa con uso por encima del límite → Administration migra → rollback a v2 (v4) → el panel
  * del negocio muestra plan y uso en solo lectura y no puede asignarse planes → móvil sin desbordes →
@@ -227,6 +227,8 @@ test('E2E Planes: catálogo versionado por permisos, confirmación explícita, p
   check(created?.active === false, `el plan ${planId} nace deshabilitado`);
   const unconfirmed = await one<{ n: string }>(`SELECT count(*) AS n FROM plan_parameter_value v JOIN plan_revision r ON r.revision_id = v.revision_id WHERE r.plan_id = $1 AND v.confirmed_at IS NULL AND v.source = 'copied'`, [planId]);
   check(Number(unconfirmed?.n) === 6, 'los 6 valores copiados quedan SIN confirmar');
+  const aiValue = await one<{ value_int: number; source: string; confirmed_at: Date | null }>(`SELECT v.value_int, v.source, v.confirmed_at FROM plan_parameter_value v JOIN plan_revision r ON r.revision_id = v.revision_id WHERE r.plan_id = $1 AND v.parameter_key = 'quota.ai_review_replies.max'`, [planId]);
+  check(aiValue?.value_int === 0 && aiValue.source === 'suggested' && aiValue.confirmed_at === null, 'la cuota de respuestas con IA (sin valor en el piloto) llega sugerida en 0 y SIN confirmar (DEC-0076)');
   check(await e.page.locator('form[data-form="plan-publish"] button[disabled]').count() === 1, 'publicar está deshabilitado mientras falten confirmaciones');
   await shot(e.page, '02-borrador-sin-confirmar');
 
@@ -245,14 +247,14 @@ test('E2E Planes: catálogo versionado por permisos, confirmación explícita, p
   check(/solo dígitos/.test((await e.page.locator('#pe-quota-social-ads-max').textContent()) ?? ''), '«1,000» se rechaza en línea (solo dígitos) en lugar de guardarse como 1');
   await e.page.locator('#pv-quota-social-ads-max').fill(adsServer);
 
-  // Cambiar un valor desmarca su confirmación; confirmar los 6 uno a uno.
+  // Cambiar un valor desmarca su confirmación; confirmar los 7 uno a uno.
   await e.page.locator('#pc-quota-social-posts-max').check();
   await e.page.locator('#pv-quota-social-posts-max').fill('7');
   check(!(await e.page.locator('#pc-quota-social-posts-max').isChecked()), 'cambiar el valor desmarca «Confirmo este valor»');
-  for (const key of ['website', 'social-posts', 'social-ads', 'reviews-managed', 'conversations', 'agents']) await e.page.locator(`#pc-quota-${key}-max`).check();
+  for (const key of ['website', 'social-posts', 'social-ads', 'reviews-managed', 'ai-review-replies', 'conversations', 'agents']) await e.page.locator(`#pc-quota-${key}-max`).check();
   // Step-up caducado: la siguiente escritura debe pedir el código.
   await pool.query(`UPDATE platform_session SET step_up_at = now() - interval '11 minutes' WHERE platform_user_id = (SELECT platform_user_id FROM platform_user WHERE login = $1)`, [eng.login]);
-  await e.page.locator('#pdr-reason').fill('E2E: confirmar los seis valores revisados');
+  await e.page.locator('#pdr-reason').fill('E2E: confirmar los siete valores revisados');
   await e.page.locator('form[data-form="plan-draft"] button[type="submit"]').click();
   check(await stepUpIfAsked(e.page, eng), 'con el step-up caducado, guardar pide el código TOTP');
   check(await toastWith(e.page, 'Borrador guardado'), 'borrador guardado tras el step-up');
@@ -289,7 +291,7 @@ test('E2E Planes: catálogo versionado por permisos, confirmación explícita, p
     await stepUpIfAsked(e.page, eng);
     await e.page.locator('form[data-form="plan-draft"]').waitFor();
     await e.page.locator('#pv-quota-social-posts-max').fill(value);
-    for (const key of ['website', 'social-posts', 'social-ads', 'reviews-managed', 'conversations', 'agents']) await e.page.locator(`#pc-quota-${key}-max`).check();
+    for (const key of ['website', 'social-posts', 'social-ads', 'reviews-managed', 'ai-review-replies', 'conversations', 'agents']) await e.page.locator(`#pc-quota-${key}-max`).check();
     await e.page.locator('#pdr-reason').fill(`E2E: ${label}`);
     await e.page.locator('form[data-form="plan-draft"] button[type="submit"]').click();
     await stepUpIfAsked(e.page, eng);

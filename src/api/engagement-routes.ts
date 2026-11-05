@@ -89,6 +89,25 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
     }
   }));
 
+  // DEC-0076: «Redactar con IA» para una reseña que espera decisión (consume 1 respuesta con IA del ciclo).
+  router.post('/engagement/cases/:id/ai-draft', requirePermission('engagement.respond', deps.sink, deps.pool),
+    requirePermission('ai.generate', deps.sink, deps.pool), ah(async (req, res) => {
+      const actor = actorOf(req);
+      try {
+        const r = await deps.engagement.requestAiDraft(actor, String(req.params.id));
+        return res.status(r.already ? 200 : 201).json({ case: r.case, already_drafted: r.already, ai_replies: await deps.engagement.aiReplyStatus(actor.tenantId) });
+      } catch (err) {
+        if (err instanceof AppError && err.code === DENY_CODES.NOT_FOUND) return caseNotFound(res);
+        throw err;
+      }
+    }));
+
+  // DEC-0076: cuota de respuestas con IA del ciclo vigente (misma cuenta que el enforcement).
+  router.get('/engagement/ai-replies', read, ah(async (req, res) => {
+    const actor = actorOf(req);
+    return res.json({ tenant_id: actor.tenantId, ai_replies: await deps.engagement.aiReplyStatus(actor.tenantId) });
+  }));
+
   router.post('/engagement/cases/:id/approve', requirePermission('engagement.approve', deps.sink, deps.pool), ah(async (req, res) => {
     const actor = actorOf(req);
     const id = String(req.params.id);

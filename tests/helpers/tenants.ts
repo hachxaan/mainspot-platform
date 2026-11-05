@@ -10,10 +10,19 @@ import { createPublishedPlan } from './plans.ts';
 
 const PASSWORD = 'Fixture-Admin-2026!';
 
+/** Negocio de prueba: tenant, sesión de su administrador y su plan. */
+export interface TestTenant {
+  tenant: string;
+  token: string;
+  userId: string;
+  login: string;
+  plan: string;
+}
+
 /** Tenant activo con un usuario de administración y un plan publicado con los límites dados (resto = 0). */
 export async function createTenantWithPlan(
   t: TestApi, limits: Record<string, number>, prefix = 'client_t',
-): Promise<{ tenant: string; token: string; userId: string; login: string; plan: string }> {
+): Promise<TestTenant> {
   const tenant = `${prefix}_${randomUUID().slice(0, 8)}`;
   // El plan es catálogo de plataforma (sobrevive al tenant): su id no deriva del tenant.
   const plan = `plan_${randomUUID().slice(0, 8)}`;

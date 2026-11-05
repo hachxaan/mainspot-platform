@@ -141,12 +141,12 @@ export class EngagementWorker {
     log.warn('engagement.poll.failed', 'provider poll failed; backing off', { tenant_id: tenantId, origin, code });
   }
 
-  /** Google: reutiliza ReputationEngine.sync (cuota, dedupe por source_review_id, auditoría). */
+  /** Google: reutiliza ReputationEngine.sync (dedupe por source_review_id, auditoría; sin consumo de cuota, DEC-0076). */
   private async ingestGoogle(tenantId: string, force: boolean, report: TenantTickReport): Promise<number> {
     const { due } = await this.pollDue(tenantId, 'google_review', force);
     if (!due) return 0;
     try {
-      await this.deps.reputationEngine.sync(tenantId, SYSTEM_ACTOR, `eng_sync_${randomUUID()}`, null);
+      await this.deps.reputationEngine.sync(tenantId, SYSTEM_ACTOR, `eng_sync_${randomUUID()}`);
     } catch (err) {
       await this.pollFailed(tenantId, 'google_review', err, report);
       return 0;

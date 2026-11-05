@@ -3,6 +3,7 @@
 - Estado: **implementado en la rama `feat/plan-policy-catalog-impl-20261104`** (base `95f9436`). Autoridad: **DEC-0075**, derivada de la directiva explícita del propietario **SRC-0013** (2026-11-04). Canon afectado: BR-0007, FR-0010, FR-0018, FR-0019.
 - Entradas: handoff `docs/handoffs/plan-policy-catalog-2026-11-04/HANDOFF.md` (rama `docs/handoff-plan-policy-catalog-20261104`, `585017b`), inventario verificado [`docs/research/plan-parameters-inventory.md`](../research/plan-parameters-inventory.md), DEC-0005, DEC-0007, DEC-0010, DEC-0018, DEC-0074.
 - Este documento describe el diseño y su operación. No aprueba nombres, precios, paquetes ni cuotas comerciales (Q-004 sigue pospuesta, DEC-0010).
+- **Delta DEC-0076 (2026-11-05, rama `feat/commercial-quota-semantics-20261105`).** Registro de parámetros 2 (migración `0036`): `quota.ai_review_replies.max` es la primera cuota **periódica** real (respuestas a reseñas redactadas con IA por ciclo mensual) y `quota.reviews_managed.max` queda sin enforcement (recibir reseñas no consume). Lo que sigue describe DEC-0075; el delta, su operación y su reversión están en [`commercial-quota.md`](commercial-quota.md). Donde este documento dice «6 capacidades acumuladas» o «ningún parámetro nuevo», vale para el registro 1.
 
 ## 1. Decisiones del propietario (SRC-0013 → DEC-0075)
 
@@ -56,7 +57,8 @@ Fuente única: `src/plans/registry.ts`. Cada definición tiene clave, capacidad,
 | `quota.website.max` | acumulada | 1: `client_website.tenant_id` es UNIQUE | 1 | creación de la página |
 | `quota.social_posts.max` | acumulada | 1 000 000 (límite de validación) | 10 | `createDraft` |
 | `quota.social_ads.max` | acumulada | 1 000 000 | 5 | `createDraft` (sin gasto) |
-| `quota.reviews_managed.max` | acumulada | 1 000 000 | 20 | `sync` (lote atómico) |
+| `quota.reviews_managed.max` | acumulada | 1 000 000 | 20 | **no se aplica** desde DEC-0076 (antes: `sync`, lote atómico) |
+| `quota.ai_review_replies.max` | **periódica** (ciclo mensual) | 1 000 000 | 0 (sin cantidad aprobada) | redacción con IA de la respuesta a una reseña (DEC-0076) |
 | `quota.conversations.max` | acumulada | 1 000 000 | 500 | `pipeline.ingest` |
 | `quota.agents.max` | acumulada | 1 000 000 | 5 | **no se aplica** (DEC-0006/0017) |
 
@@ -180,6 +182,8 @@ Reglas comunes:
 ## 9. Reversión
 
 `scripts/plan-catalog-rollback.sql` (transaccional, impone `ON_ERROR_STOP`) restaura `plan_limit` con los valores de la revisión publicada vigente de cada plan. También quita lo que añadió 0034, restaura el CHECK de capacidades de `quota_reservation` y elimina la entrada de `schema_migrations`. Se pierden el historial de revisiones, el historial de asignaciones y la auditoría del catálogo, y requiere desplegar el código anterior.
+
+Con DEC-0076 aplicada, el orden es **0036 → 0035 → 0034**: `scripts/commercial-quota-rollback.sql` primero (se niega si algún valor de revisión o reserva usa `ai_review_replies`), luego `scripts/plan-catalog-hardening-rollback.sql` y por último este script; cada uno se niega mientras haya migraciones posteriores registradas (prueba `tests/integration/commercial-quota-migration.test.ts`).
 
 Tras confirmar que 0034 está aplicada, y antes de comprobar las fijaciones, bloquea en `ACCESS EXCLUSIVE` el catálogo, las suscripciones y el libro de cuotas (con `READ COMMITTED` explícito, para que la comprobación vea los datos posteriores al bloqueo). Si aún hubiera escritores (el procedimiento exige detenerlos), una publicación en curso termina antes y su resultado se comprueba, o una de las dos transacciones aborta con 40P01 o 55P03 sin dejar nada a medias. **Aborta sin cambiar nada** (SQLSTATE 55000) si alguna suscripción está fijada a una revisión que no es la publicada vigente de su plan: el esquema anterior no puede expresar esa fijación y revertir cambiaría sus límites en silencio. Migrar negocios solo para que la reversión pase es una decisión del propietario. También aborta si hay migraciones posteriores registradas: con PR #14, primero `scripts/plan-catalog-hardening-rollback.sql` (0035). Inventario previo de solo lectura: `scripts/plan-catalog-rollback-preflight.sql`, que sale con código distinto de 0 en las mismas condiciones. El servicio con el código nuevo ejecuta las migraciones al arrancar: debe quedar **deshabilitado** hasta desplegar el código anterior, o volvería a aplicar 0034/0035. La secuencia completa y la carrera con una publicación están probadas en `tests/integration/plan-catalog-migration.test.ts`; procedimiento en `docs/architecture/plan-catalog-gates-hardening.md`.
 

@@ -338,6 +338,34 @@
     return { tab: 'atencion', screen: 'DS-15', title: 'Atención', html: html };
   };
 
+  /* DEC-0076: «Redactar con IA» en reseñas de Google que esperan decisión. Recibir la reseña y responder tú mismo
+     no consumen tu plan; cada propuesta redactada con IA consume 1 respuesta con IA del ciclo vigente. */
+  function aiDraftBox(c) {
+    var q = S().aiReplies;
+    if (!c.aiEligible || !q || !q.available || !MS.can('ai.generate')) return '';
+    var n = function (v) { return Number(v).toLocaleString('es-MX'); };
+    var renew = q.window ? MS.renewal(q.window.end) : '';
+    var body, btn = '';
+    if (!q.subscription_active) body = 'Tu plan no está activo, así que la redacción con IA está en pausa. Puedes elegir una propuesta o escribir tu respuesta.';
+    else if (q.limit === null || q.limit === 0) body = 'Tu plan no incluye respuestas con IA. Puedes elegir una propuesta o escribir tu respuesta; eso no consume tu plan.';
+    else if (q.remaining === 0) body = 'Ya usaste ' + n(q.usage) + ' de ' + n(q.limit) + (q.limit === 1 ? ' respuesta' : ' respuestas') + ' con IA de este ciclo. Se renuevan el ' + renew + '. Mientras tanto puedes elegir una propuesta o escribir tu respuesta, sin consumir tu plan. Para ampliar tu plan, escribe a MainSpot.';
+    else {
+      body = 'Usa 1 de tus respuestas con IA de este ciclo: ' + (q.remaining === 1 ? 'te queda ' : 'te quedan ') + n(q.remaining) + ' de ' + n(q.limit) + ' y se renuevan el ' + renew + '. Elegir una propuesta o escribir tu respuesta no consume tu plan.';
+      btn = '<div class="btn-row">' + UI.btn('Redactar con IA', { action: 'case-ai-draft', arg: c.id, id: 'case-ai-draft', style: 'secondary', icon: 'sparkles' }) + '</div>';
+    }
+    return '<section class="card stack" aria-labelledby="ai-t" id="case-ai"><h2 id="ai-t" style="font-size:var(--fs-lg)">Respuesta con IA</h2><p class="muted" id="case-ai-text">' + esc(body) + '</p>' + btn + '</section>';
+  }
+
+  /* Opciones del caso: la propuesta pedida con IA (clave «ai») va aparte; las numeradas son las del aviso de Telegram. */
+  function draftOptions(c, dr) {
+    var opts = c.aiDraft ? [{ key: 'ai', label: 'Propuesta con IA', text: c.aiDraft }] : [];
+    c.drafts.forEach(function (d, i) { opts.push({ key: String(i), label: 'Opción ' + (i + 1) + (c.aiInDrafts && i === 0 ? ' · Redactada con IA' : ''), text: d.text }); });
+    return opts.map(function (o) {
+      var on = String(dr.pick) === o.key;
+      return '<label class="draft' + (on ? ' is-on' : '') + '"><input type="radio" id="draft-' + c.id + '-' + o.key + '" name="draft-' + c.id + '" value="' + o.key + '" data-action="case-pick" data-arg="' + c.id + '|' + o.key + '"' + (on ? ' checked' : '') + '><span><span class="d-tone">' + esc(o.label) + '</span><span class="d-text">' + esc(o.text) + '</span></span></label>';
+    }).join('');
+  }
+
   /* ---------- Caso ---------- */
   V.caseView = function (id) {
     var c = MS.agent.get(id), back = { tab: 'atencion', screen: 'DS-16', back: '#/atencion', backLabel: 'Atención' };
@@ -369,12 +397,13 @@
       var canRespond = MS.can('engagement.respond') && !MS.expired();
       var canApprove = MS.can('engagement.approve') && !MS.expired();
       var dr = MS.mem.caseDraft[c.id];
-      if (!dr) dr = MS.mem.caseDraft[c.id] = { pick: 0, text: c.drafts[0] ? c.drafts[0].text : '' };
+      if (!dr) dr = MS.mem.caseDraft[c.id] = { pick: '0', text: c.drafts[0] ? c.drafts[0].text : '' };
       if (!canRespond) {
         html += '<div class="banner banner-lila">' + icon('lock') + '<span>' + (MS.expired() ? 'Tu plan no está activo. Para responder, contacta a MainSpot.' : 'Tu perfil puede ver este caso, pero no responderlo.') + '</span></div>';
       } else {
+        html += aiDraftBox(c);
         html += '<section aria-labelledby="dr-t"><h2 id="dr-t" style="font-size:var(--fs-lg);margin-bottom:10px">Elige una respuesta</h2><div class="drafts" role="radiogroup" aria-labelledby="dr-t">' +
-          c.drafts.map(function (d, i) { return '<label class="draft' + (dr.pick === i ? ' is-on' : '') + '"><input type="radio" id="draft-' + c.id + '-' + i + '" name="draft-' + c.id + '" value="' + i + '" data-action="case-pick" data-arg="' + c.id + '|' + i + '"' + (dr.pick === i ? ' checked' : '') + '><span><span class="d-tone">Opción ' + (i + 1) + '</span><span class="d-text">' + esc(d.text) + '</span></span></label>'; }).join('') + '</div></section>' +
+          draftOptions(c, dr) + '</div></section>' +
           '<form class="card stack" data-form="case-reply" data-arg="' + c.id + '"><div class="field"><label for="case-text-' + c.id + '">Tu respuesta</label><span class="hint">Puedes editarla. No prometas descuentos ni cosas que no puedas cumplir.</span><textarea class="textarea" id="case-text-' + c.id + '" rows="4" maxlength="1000">' + esc(dr.text) + '</textarea></div>' +
           '<div class="btn-row">' + UI.btn(canApprove ? (c.status === 'failed' ? 'Intentar de nuevo' : 'Publicar respuesta') : 'Guardar propuesta para aprobación', { type: 'submit', id: 'case-submit' }) + (canApprove ? UI.btn('No responder', { action: 'case-reject', arg: c.id, style: 'secondary', id: 'case-reject' }) : '') + '</div>' +
           (canApprove ? '' : '<p class="tiny">Quien administra tu negocio decide si se publica.</p>') + '</form>';
@@ -409,7 +438,9 @@
     html += '<div class="stack-lg">';
     html += '<div class="banner banner-lila">' + icon('info') + '<span><strong>Autorización por negocio</strong>Los canales reales publican respuestas visibles con las reglas que autorices. Los simulados no publican fuera de MainSpot. Por defecto, todo se revisa antes de publicarse.</span></div>';
     html += '<section class="card stack"><div class="row" style="justify-content:space-between"><div><h2 style="font-size:var(--fs-lg)">Respuestas automáticas</h2><p class="muted small">Si lo apagas, MainSpot te pregunta antes de cada respuesta.</p></div>' +
-      '<button type="button" class="switch" id="pol-switch" role="switch" aria-checked="' + !!d.enabled + '" aria-label="Respuestas automáticas" data-action="pol-toggle"' + (canEdit ? '' : ' disabled') + '><span></span></button></div></section>';
+      '<button type="button" class="switch" id="pol-switch" role="switch" aria-checked="' + !!d.enabled + '" aria-label="Respuestas automáticas" data-action="pol-toggle"' + (canEdit ? '' : ' disabled') + '><span></span></button></div>' +
+      // DEC-0076: la respuesta automática a una reseña redactada con IA consume la misma cuota mensual que «Redactar con IA».
+      '<p class="tiny" id="pol-ai-quota">En reseñas de Google, cada respuesta automática redactada con IA usa 1 de tus respuestas con IA del ciclo; si no quedan, MainSpot responde con un texto seguro sin IA.</p></section>';
     html += '<section class="card stack" aria-labelledby="rl-t"><h2 id="rl-t" style="font-size:var(--fs-lg)">Por tipo de mensaje</h2>' +
       opt('thanks', 'Agradecimientos y comentarios positivos', 'Sin compromisos ni promesas.') +
       opt('info', 'Preguntas sobre tu negocio', 'Solo con datos que tú confirmaste (por ejemplo, el teléfono de cada canal).') +

@@ -134,28 +134,7 @@ test('INC-006: facturar un plan SIN precio es PROHIBITED (piloto sin cobro)', as
   );
   assert.equal(ev.rows[0]?.decision, 'deny');
   assert.equal(ev.rows[0]?.result, 'no_price_prohibited');
-});
-
-test('INC-006: límite de reseñas gestionadas — lote que excede NO deja estado parcial (PR-03)', async () => {
-  const ops = await login(t.baseUrl, SEED.b.ops.login, SEED.b.ops.password, SEED.b.tenant);
-  // client_b NO tiene reseñas sincronizadas todavía (la INC-004 usa client_a).
-  const plan = `plan_test_reviews_${randomUUID().slice(0, 6)}`;
-  await createPublishedPlan(t.pool, plan, { reviews_managed: 2 });
-  await setTenantPlan(t.pool, SEED.b.tenant, plan);
-
-  const sync = await api(t.baseUrl, '/api/backoffice/reputation/reviews/sync', {
-    method: 'POST', headers: authHeaders(ops.token),
-  });
-  assert.equal(sync.status, 403, 'el lote (4 nuevas) excede reviews_managed=2');
-  assert.equal(sync.body.error.code, 'limit_exceeded');
-  const reviewsB = await t.pool.query('SELECT count(*) AS n FROM review WHERE tenant_id = $1', [SEED.b.tenant]);
-  assert.equal(Number(reviewsB.rows[0]?.n ?? 0), 0, 'sin estado parcial (cero reseñas insertadas)');
-  const ev = await t.pool.query<{ result: string }>(
-    `SELECT result FROM audit_event
-     WHERE tenant_id = $1 AND action = 'access.deny' AND result = 'limit_exceeded' ORDER BY ts DESC LIMIT 1`,
-    [SEED.b.tenant],
-  );
-  assert.ok(ev.rowCount && ev.rowCount >= 1, 'deny auditado');
+  // DEC-0076: el antiguo límite de reseñas al sincronizar ya no existe (commercial-quota.test.ts); client_b vuelve a su plan.
   await setTenantPlan(t.pool, SEED.b.tenant, 'plan_piloto_1');
 });
 

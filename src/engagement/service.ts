@@ -21,6 +21,8 @@ import { formatInternational, type ContactPhoneService, type PhoneChannel } from
 import { runAtomic } from '../conversation/state-machine.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
+import { loadPinnedPolicy } from '../plans/policy.ts';
+import type { QuotaLedger, QuotaReservationRow } from '../subscriptions/quota.ts';
 import { autoReplyText, classify, decide, humanDrafts, type Classification, type Decision, type EngagementCategory, type EngagementOrigin, type InfoTopic, type PolicySnapshot } from './classifier.ts';
 import type { EngagementSemantics } from './ai-semantics.ts';
 import { consumeSimFault, type EngagementReplier, type ReplyResult } from './providers.ts';
@@ -45,9 +47,47 @@ const MAX_TEXT = 1000;
  */
 export const AI_REPLY_DISCLOSURE = 'Respuesta automática generada con IA.';
 
+/** DEC-0076 (SRC-0014 C01): cuota periódica de respuestas a reseñas redactadas con IA. */
+export const AI_REVIEW_REPLY_CAPABILITY = 'ai_review_replies' as const;
+
+/** Clave del libro de cuotas: un caso consume como máximo una unidad (replay ⇒ sin consumo nuevo). */
+export function aiReplyQuotaKey(caseId: string): string {
+  return `ai_reply:${caseId}`;
+}
+
+/**
+ * Vigencia de la reserva de una respuesta con IA: cubre la redacción completa (timeout por intento de la ruta,
+ * hasta 300 s, con sus reparaciones) con margen. Si aun así vence, la respuesta automática sale con el texto seguro.
+ */
+export const AI_REPLY_RESERVATION_TTL_MS = 15 * 60_000;
+
+/** Estado de la cuota de respuestas con IA para el panel (misma cuenta que el enforcement). */
+export interface AiReplyStatus {
+  /** Hay ruta activa de redacción para reseñas en este entorno. */
+  available: boolean;
+  subscription_active: boolean;
+  /** Valor de la revisión fijada; null si el plan no lo define (se deniega). */
+  limit: number | null;
+  usage: number;
+  remaining: number | null;
+  /** Ciclo mensual vigente [start, end) en UTC. */
+  window: { start: string; end: string } | null;
+}
+
+type AiReplyClaim =
+  | { kind: 'reserved'; reservation: QuotaReservationRow }
+  | { kind: 'replay' }
+  | { kind: 'denied'; error: AppError };
+
+interface AiReplyActor {
+  actorId: string;
+  actorRole: string | null;
+  requestId: string;
+}
+
 export const CONSENT_TEXT: Record<PolicyMode, string> = {
   safe_auto_reply:
-    'Autorizo a MainSpot a responder públicamente en mi nombre solo los casos de esta categoría que pasen todas las comprobaciones de seguridad (sin riesgos, sin quejas, con datos verificados). Cuando la respuesta la redacta la IA de MainSpot, se publica indicando que es una respuesta automática generada con IA. Las demás interacciones quedan para mi revisión. Puedo revocarlo en cualquier momento.',
+    'Autorizo a MainSpot a responder públicamente en mi nombre solo los casos de esta categoría que pasen todas las comprobaciones de seguridad (sin riesgos, sin quejas, con datos verificados). Cuando la respuesta la redacta la IA de MainSpot, se publica indicando que es una respuesta automática generada con IA. En reseñas de Google, cada respuesta redactada con IA usa 1 de las respuestas con IA de mi plan en el ciclo; si no quedan, MainSpot responde con un texto seguro sin IA. Las demás interacciones quedan para mi revisión. Puedo revocarlo en cualquier momento.',
   review_required: 'Todas las respuestas públicas de esta categoría quedan pendientes de mi revisión.',
 };
 
@@ -80,6 +120,14 @@ export interface CaseRow {
   lease_until: string | null;
   last_error: string | null;
   delivery_mode: 'simulated' | 'real' | null;
+  /** Lectura de Jev (sin texto del cliente) y su fuente; null sin AI Core. */
+  sentiment: Classification['sentiment'] | null;
+  semantic: Record<string, unknown> | null;
+  semantic_source: 'jev' | 'blocked_external' | 'unavailable' | null;
+  /** Invocación que redactó el borrador de IA (null: ninguno). */
+  reply_invocation_id: string | null;
+  /** Propuesta pedida con «Redactar con IA» (aparte de `drafts`, cuya numeración usa el aviso de Telegram). */
+  ai_draft: string | null;
   responded_external_ref: string | null;
   responded_at: string | null;
   notify_status: 'pending' | 'sent' | 'no_destination' | 'failed' | null;
@@ -113,6 +161,8 @@ export interface EngagementServiceDeps {
   replier: EngagementReplier;
   phones: ContactPhoneService;
   channel: ChannelAdapter;
+  /** DEC-0076: libro de cuotas (redacción con IA de respuestas a reseñas). */
+  quota: QuotaLedger;
   /** URL del panel incluida en los avisos (enlace autorizado: exige sesión). */
   panelUrl: string;
   /** AI Core (FR-0016): lectura Jev y respuestas con hechos verificados; ausente = solo reglas deterministas. */
@@ -288,15 +338,29 @@ export class EngagementService {
       ? { decision: 'human_review', reason: `semantic_${semanticSource}` }
       : decide({ classification, policy, autoRepliesLastHour: Number(rate.rows[0]?.n ?? 0), verifiedAnswer: verified });
     const author = row.author_label;
+    const facts = { name: business, verified_answer: verified };
     // Respuesta redactada con hechos verificados (el teléfono lo inserta el servidor, nunca el modelo).
-    const generated = semanticSource === 'jev' && this.deps.semantics && !(classification.category === 'basic_info' && classification.info_topic === 'phone')
-      ? await this.deps.semantics.reply(row, classification, { name: business, verified_answer: verified })
-      : null;
+    const aiEligible = semanticSource === 'jev' && !(classification.category === 'basic_info' && classification.info_topic === 'phone');
+    let generated: { text: string; needsHuman: boolean; invocationId: string } | null = null;
+    let reservation: QuotaReservationRow | null = null;
+    if (aiEligible && this.deps.semantics) {
+      if (row.origin !== 'google_review') {
+        // Comentarios de Facebook: fuera de la cuota de DEC-0076 (comportamiento sin cambios).
+        generated = await this.deps.semantics.reply(row, classification, facts);
+      } else if (decision.decision === 'auto_reply') {
+        // DEC-0076: recibir una reseña no consume cuota. Solo la respuesta automática que el dueño autorizó se
+        // redacta con IA al llegar y consume 1 unidad del ciclo; sin cuota disponible sale el texto seguro sin IA.
+        // Las reseñas que esperan decisión llevan solo propuestas sin IA; la de IA se pide con «Redactar con IA».
+        const metered = await this.meteredReply(row, classification, facts, { actorId: SYSTEM_ACTOR, actorRole: null, requestId: `eng_${row.case_id}` });
+        generated = metered.generated;
+        reservation = metered.reservation;
+      }
+    }
     if (decision.decision === 'auto_reply' && generated?.needsHuman) decision = { decision: 'human_review', reason: 'reply_needs_human' };
-    return runAtomic(this.deps.pool, async (client) => {
+    const persist = (gen: typeof generated, held: QuotaReservationRow | null) => runAtomic(this.deps.pool, async (client) => {
       let res;
       if (decision.decision === 'auto_reply') {
-        const text = generated ? `${generated.text}\n\n${AI_REPLY_DISCLOSURE}` : autoReplyText({ category: classification.category, author, business, verifiedAnswer: verified });
+        const text = gen ? `${gen.text}\n\n${AI_REPLY_DISCLOSURE}` : autoReplyText({ category: classification.category, author, business, verifiedAnswer: verified });
         res = await client.query<CaseRow>(
           `UPDATE engagement_case SET state = 'classified', decision = 'auto_reply', reason = $2, category = $3,
              risk_flags = $4, confidence = $5, policy_id = $6, policy_version = $7, response_text = $8,
@@ -305,10 +369,10 @@ export class EngagementService {
            WHERE case_id = $1 AND state = 'received' RETURNING *`,
           [row.case_id, decision.reason, classification.category, JSON.stringify(classification.risk_flags),
             classification.confidence, policy?.policy_id ?? null, policy?.version ?? null, text,
-            classification.sentiment, reading ? JSON.stringify(reading) : null, semanticSource, generated?.invocationId ?? null]);
+            classification.sentiment, reading ? JSON.stringify(reading) : null, semanticSource, gen?.invocationId ?? null]);
       } else {
         const rulesDrafts = humanDrafts({ classification, author, business, verifiedAnswer: verified });
-        const drafts = [...(generated ? [generated.text] : []), ...rulesDrafts].slice(0, 3);
+        const drafts = [...(gen ? [gen.text] : []), ...rulesDrafts].slice(0, 3);
         res = await client.query<CaseRow>(
           `UPDATE engagement_case SET state = 'needs_human', decision = 'human_review', reason = $2, category = $3,
              risk_flags = $4, confidence = $5, policy_id = $6, policy_version = $7, drafts = $8, response_text = $9,
@@ -317,10 +381,12 @@ export class EngagementService {
            WHERE case_id = $1 AND state = 'received' RETURNING *`,
           [row.case_id, decision.reason, classification.category, JSON.stringify(classification.risk_flags),
             classification.confidence, policy?.policy_id ?? null, policy?.version ?? null, JSON.stringify(drafts), drafts[0] ?? null,
-            classification.sentiment, reading ? JSON.stringify(reading) : null, semanticSource, generated?.invocationId ?? null]);
+            classification.sentiment, reading ? JSON.stringify(reading) : null, semanticSource, gen?.invocationId ?? null]);
       }
       const updated = res.rows[0] ?? null;
       if (updated) {
+        // La unidad se confirma con el caso que guarda la respuesta de IA: o ambos o ninguno.
+        if (held) await this.deps.quota.commitInTx(client, held, `engagement_case/${row.case_id}`, null);
         await this.deps.sink.write({
           tenant_id: row.tenant_id, actor_id: SYSTEM_ACTOR, actor_role: null,
           action: 'engagement.case.classified', resource: `engagement_case/${row.case_id}`,
@@ -330,6 +396,173 @@ export class EngagementService {
       }
       return updated;
     });
+    let consumed = false;
+    try {
+      try {
+        const classified = await persist(generated, reservation);
+        consumed = classified !== null;
+        return classified;
+      } catch (err) {
+        if (!reservation || !(err instanceof AppError) || err.code !== DENY_CODES.QUOTA_RESERVATION_EXPIRED) throw err;
+        // La redacción tardó más que la reserva: el caso sale con el texto seguro, sin IA ni consumo (nunca se corta el tick).
+        log.warn('engagement.ai_reply.reservation_expired', 'AI reply outlived its quota reservation; using the safe text', { tenant_id: row.tenant_id, case_id: row.case_id });
+        return await persist(null, null);
+      }
+    } finally {
+      if (reservation && !consumed) await this.deps.quota.release(reservation, null, 'ai_reply_not_used');
+    }
+  }
+
+  // ---------------------------------------------------------------- respuestas con IA medidas (DEC-0076)
+
+  /**
+   * Reserva 1 unidad de `ai_review_replies` del ciclo para el caso, ANTES de invocar a la IA (bajo el candado del
+   * libro: dos procesos no superan el límite). La clave es el caso: ya consumida ⇒ `replay` sin consumo nuevo.
+   * Sin cuota, sin suscripción activa o sin valor en la revisión fijada ⇒ `denied` (auditado); en curso en otra
+   * petición ⇒ 409 request_in_progress (lo decide el llamador).
+   */
+  private async claimAiReply(row: CaseRow, who: AiReplyActor): Promise<AiReplyClaim> {
+    try {
+      const claim = await this.deps.quota.reserve({
+        tenantId: row.tenant_id, capability: AI_REVIEW_REPLY_CAPABILITY, units: 1, idempotencyKey: aiReplyQuotaKey(row.case_id),
+        requestId: who.requestId, actorId: who.actorId, actorRole: who.actorRole,
+      });
+      return claim.kind === 'replay' ? { kind: 'replay' } : claim;
+    } catch (err) {
+      if (!(err instanceof AppError) || (err.code !== DENY_CODES.LIMIT_EXCEEDED && err.code !== DENY_CODES.SUBSCRIPTION_REQUIRED)) throw err;
+      await this.deps.sink.write({
+        tenant_id: row.tenant_id, actor_id: who.actorId, actor_role: who.actorRole,
+        action: 'engagement.ai_reply', resource: `engagement_case/${row.case_id}`,
+        request_id: who.requestId, decision: 'deny', result: err.code,
+      }, this.deps.pool, false).catch(() => undefined);
+      return { kind: 'denied', error: err };
+    }
+  }
+
+  /**
+   * Respuesta automática autorizada (clasificación): reserva y redacta. Sin ruta activa no reserva; si la
+   * redacción falla o la cuota no alcanza, devuelve null y el caso sigue sin IA. La reserva devuelta se confirma
+   * en la transacción que guarda el caso (o se libera).
+   */
+  private async meteredReply(row: CaseRow, classification: Classification, facts: Record<string, unknown>, who: AiReplyActor):
+    Promise<{ generated: { text: string; needsHuman: boolean; invocationId: string } | null; reservation: QuotaReservationRow | null }> {
+    const semantics = this.deps.semantics;
+    if (!semantics || !(await semantics.replyAvailable(row.origin))) return { generated: null, reservation: null };
+    let claim: AiReplyClaim;
+    try {
+      claim = await this.claimAiReply(row, who);
+    } catch (err) {
+      // Otra clasificación del mismo caso tiene la reserva: este intento sigue sin IA y su UPDATE perderá la carrera.
+      if (err instanceof AppError && err.code === DENY_CODES.REQUEST_IN_PROGRESS) return { generated: null, reservation: null };
+      throw err;
+    }
+    if (claim.kind === 'denied') return { generated: null, reservation: null };
+    // Unidad ya confirmada para este caso sin que el caso la refleje: no se redacta otra sin medir (fail-closed).
+    if (claim.kind === 'replay') return { generated: null, reservation: null };
+    const generated = await semantics.reply(row, classification, facts);
+    if (!generated) {
+      await this.deps.quota.release(claim.reservation, who.actorRole, 'ai_reply_failed');
+      return { generated: null, reservation: null };
+    }
+    return { generated, reservation: claim.reservation };
+  }
+
+  /** Clasificación guardada en el caso (para redactar a pedido); null si no hubo lectura semántica. */
+  private storedClassification(row: CaseRow): Classification | null {
+    if (row.semantic_source !== 'jev' || !row.category || !row.sentiment) return null;
+    const topic = row.semantic && typeof row.semantic['info_topic'] === 'string' ? row.semantic['info_topic'] as InfoTopic : null;
+    return {
+      category: row.category, risk_flags: row.risk_flags, confidence: Number(row.confidence ?? 0), sentiment: row.sentiment,
+      info_topic: row.category === 'basic_info' ? topic : null,
+    };
+  }
+
+  /**
+   * «Redactar con IA» (DEC-0076, SRC-0014 C01): el dueño pide la propuesta de IA para una reseña de Google que
+   * espera su decisión. Consume 1 unidad del ciclo solo si la propuesta se genera y se guarda en el caso (misma
+   * transacción); si la IA falla o el caso cambió, no consume. Repetir no consume otra vez. La propuesta va en
+   * `ai_draft`, aparte de las tres numeradas: lo que muestra el aviso de Telegram y lo que aprueba `/aprobar <caso> N`
+   * no cambia, y una edición de las numeradas no la borra. Agotar la cuota solo bloquea esto: elegir otra propuesta
+   * o escribir la respuesta sigue igual (panel y Telegram).
+   */
+  async requestAiDraft(actor: Actor, caseId: string): Promise<{ case: CaseRow; already: boolean }> {
+    const found = await this.getCase(actor.tenantId, caseId);
+    if (!found) throw this.notFound();
+    if (found.reply_invocation_id) return { case: found, already: true };
+    if (found.origin !== 'google_review') {
+      throw new AppError(409, 'validation_error', 'Redactar con IA a pedido está disponible para reseñas de Google.');
+    }
+    if (found.state !== 'needs_human' && found.state !== 'failed') {
+      throw new AppError(409, 'validation_error', found.state === 'received'
+        ? 'MainSpot todavía está analizando esta reseña. Inténtalo en unos segundos.'
+        : 'Este caso ya no admite cambios en sus respuestas.');
+    }
+    const classification = this.storedClassification(found);
+    if (!classification || (classification.category === 'basic_info' && classification.info_topic === 'phone')) {
+      throw new AppError(409, 'validation_error', 'Esta reseña no admite redacción con IA. Elige una de las propuestas o escribe tu respuesta.');
+    }
+    const semantics = this.deps.semantics;
+    if (!semantics || !(await semantics.replyAvailable(found.origin))) {
+      throw new AppError(409, 'validation_error', 'La redacción con IA no está disponible en este momento. Puedes elegir una propuesta o escribir tu respuesta.');
+    }
+    const who: AiReplyActor = { actorId: actor.userId, actorRole: actor.role, requestId: actor.requestId };
+    const claim = await this.claimAiReply(found, who);
+    if (claim.kind === 'denied') {
+      const err = new AppError(403, claim.error.code, `${claim.error.userMessage} Responder tú mismo no consume tu plan.`);
+      err.audited = true;
+      throw err;
+    }
+    if (claim.kind === 'replay') {
+      // La unidad de este caso ya se consumió: o ya tiene su propuesta, o el estado es incoherente y no se redacta
+      // otra sin medir (fail-closed).
+      const now = await this.getCase(actor.tenantId, caseId);
+      if (now?.reply_invocation_id) return { case: now, already: true };
+      log.error('engagement.ai_draft.replay_without_draft', 'quota unit committed for a case without AI draft', { tenant_id: actor.tenantId, case_id: caseId });
+      throw new AppError(409, 'validation_error', 'Este caso ya usó su respuesta con IA. Elige una propuesta o escribe tu respuesta.');
+    }
+    const business = await this.businessName(actor.tenantId);
+    const verified = await this.verifiedAnswer(actor.tenantId, found.origin, classification.info_topic);
+    let consumed = false;
+    try {
+      const generated = await semantics.reply(found, classification, { name: business, verified_answer: verified }, { requestId: actor.requestId, actorId: actor.userId });
+      if (!generated) {
+        throw new AppError(502, 'validation_error', 'No se pudo redactar con IA en este momento. No se descontó de tu plan; puedes elegir una propuesta o escribir tu respuesta.');
+      }
+      const updated = await runAtomic(this.deps.pool, async (client) => {
+        const res = await client.query<CaseRow>(
+          `UPDATE engagement_case SET ai_draft = $2, reply_invocation_id = $3, updated_at = now()
+           WHERE case_id = $1 AND tenant_id = $4 AND state IN ('needs_human','failed') AND reply_invocation_id IS NULL RETURNING *`,
+          [caseId, generated.text, generated.invocationId, actor.tenantId]);
+        const row = res.rows[0];
+        if (!row) throw new AppError(409, 'validation_error', 'El caso cambió mientras se redactaba. Recarga la página; no se descontó de tu plan.');
+        await this.deps.quota.commitInTx(client, claim.reservation, `engagement_case/${caseId}`, actor.role);
+        await this.deps.sink.write({
+          tenant_id: actor.tenantId, actor_id: actor.userId, actor_role: actor.role,
+          action: 'engagement.ai_draft.generated', resource: `engagement_case/${caseId}`,
+          request_id: actor.requestId, decision: 'allow', result: 'consumed:1',
+          evidence_ref: generated.invocationId,
+        }, client);
+        return row;
+      });
+      consumed = true;
+      return { case: updated, already: false };
+    } finally {
+      if (!consumed) await this.deps.quota.release(claim.reservation, actor.role, 'ai_draft_not_saved');
+    }
+  }
+
+  /** Cuota de respuestas con IA del negocio: valor fijado, uso del ciclo vigente y su ventana (solo lectura). */
+  async aiReplyStatus(tenantId: string): Promise<AiReplyStatus> {
+    const available = this.deps.semantics ? await this.deps.semantics.replyAvailable('google_review') : false;
+    const policy = await loadPinnedPolicy(this.deps.pool, tenantId);
+    if (!policy) return { available, subscription_active: false, limit: null, usage: 0, remaining: null, window: null };
+    const status = (await this.deps.quota.capacityStatus(this.deps.pool, policy)).find((s) => s.capability === AI_REVIEW_REPLY_CAPABILITY);
+    const limit = status?.limit ?? null;
+    const usage = status?.usage ?? 0;
+    return {
+      available, subscription_active: policy.subscription.status === 'active', limit, usage,
+      remaining: limit === null ? null : Math.max(0, limit - usage), window: status?.window ?? null,
+    };
   }
 
   // ---------------------------------------------------------------- decisiones humanas

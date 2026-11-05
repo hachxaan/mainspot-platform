@@ -8,9 +8,10 @@
  *   `GET /plan-catalog/parameters`. No hay comprobación al arrancar.
  * - Solo entran parámetros con punto de enforcement real (o, para `agents`, la decisión canónica que lo
  *   difiere). Techos técnicos, de proveedor, seguridad, retención o evidencia NO se registran aquí.
- * - Alcance de este incremento (SRC-0013): las seis capacidades existentes con sus valores vigentes,
- *   ningún parámetro nuevo. Las semánticas `stock`, `periodic`, `rate_window` y `eligibility` existen
- *   como mecanismo probado del libro de cuotas; ningún parámetro real las usa (periódicas: HDC-MSP-06).
+ * - Alcance de SRC-0013: las seis capacidades existentes con sus valores vigentes. DEC-0076 (SRC-0014, registro 2)
+ *   añade la única cuota periódica real, `ai_review_replies` (respuestas a reseñas redactadas con IA por ciclo
+ *   mensual), y retira el enforcement de `reviews_managed`: recibir reseñas ya no consume cuota. Las semánticas
+ *   `stock`, `rate_window` y `eligibility` siguen siendo mecanismo probado sin parámetros reales.
  * - Agregar un parámetro exige migración que lo refleje y una revisión nueva por plan: las revisiones
  *   publicadas no cambian y un valor ausente siempre deniega (nunca concesión implícita).
  */
@@ -41,7 +42,13 @@ export interface PlanParameterDefinition {
   /** Valor precargado al crear un plan: sugerencia SIN confirmar, nunca una oferta comercial. */
   readonly suggested: number | boolean;
   readonly suggestedReason: string;
-  readonly enforcement: { readonly state: 'enforced' | 'not_enforced'; readonly points: readonly string[]; readonly note: string };
+  readonly enforcement: {
+    readonly state: 'enforced' | 'not_enforced';
+    readonly points: readonly string[];
+    readonly note: string;
+    /** Texto para el negocio cuando el parámetro no se aplica por decisión (sustituye a «todavía no se aplica»). */
+    readonly businessNote?: string;
+  };
   /**
    * Uso para `cumulative`/`stock`: SQL de conteo de filas de dominio del tenant ($1) que corre dentro
    * del candado de cuota. `periodic`/`rate_window` cuentan unidades confirmadas del libro de cuotas.
@@ -51,7 +58,7 @@ export interface PlanParameterDefinition {
 }
 
 /** Versión del registro: se incrementa con cualquier cambio de definiciones (y su migración). */
-export const PLAN_REGISTRY_VERSION = 1;
+export const PLAN_REGISTRY_VERSION = 2;
 
 /**
  * Límite de validación contra errores de captura en recuentos (no es oferta comercial ni techo de
@@ -94,11 +101,29 @@ export const PLAN_PARAMETERS = [
   {
     key: 'quota.reviews_managed.max', capability: 'reviews_managed', category: 'Reseñas',
     label: 'Reseñas gestionadas', unit: 'reseñas',
-    description: 'Reseñas que MainSpot puede ingerir y gestionar. Cuenta todas las reseñas ingeridas durante toda la suscripción; cada sincronización consume el lote completo o nada.',
+    description: 'Reseñas recibidas por el negocio (solo informativo). Recibir y sincronizar reseñas no consume cuota ni se limita por plan (DEC-0076, SRC-0014 C01); el valor de las revisiones publicadas se conserva sin efecto.',
     valueType: 'int', semantics: 'cumulative', period: { kind: 'none' }, min: 0, max: COUNT_SANITY_MAX,
     ceilingReason: COUNT_CEILING, suggested: 20, suggestedReason: PILOT_SUGGESTION,
-    enforcement: { state: 'enforced', points: ['src/reputation/engine.ts (sync, lote atómico)'], note: 'La purga de retención solo redacta el texto; la reseña sigue contando.' },
+    enforcement: {
+      state: 'not_enforced', points: [],
+      note: 'Enforcement retirado por DEC-0076: la sincronización ya no consume ni bloquea (sigue exigiendo suscripción activa); solo se informa el recuento.',
+      businessNote: 'Recibir reseñas no tiene límite y no consume tu plan.',
+    },
     usageSql: 'SELECT count(*) AS n FROM review WHERE tenant_id = $1', sortOrder: 40,
+  },
+  {
+    key: 'quota.ai_review_replies.max', capability: 'ai_review_replies', category: 'Reseñas',
+    label: 'Respuestas a reseñas con IA', unit: 'respuestas',
+    description: 'Respuestas a reseñas de Google redactadas con IA en cada ciclo mensual de la suscripción (anclado a su inicio, UTC). Cada respuesta generada con IA consume 1 al generarse; recibir reseñas y responder manualmente no consumen. Lo no usado no se acumula. Agotarlas solo bloquea la redacción con IA.',
+    valueType: 'int', semantics: 'periodic', period: { kind: 'subscription_month' }, min: 0, max: COUNT_SANITY_MAX,
+    ceilingReason: COUNT_CEILING,
+    suggested: 0, suggestedReason: 'Sin cantidad comercial aprobada (SRC-0014 C03): 0 = no incluido hasta que se confirme un valor operativo.',
+    enforcement: {
+      state: 'enforced',
+      points: ['src/engagement/service.ts (redacción con IA de la respuesta a una reseña: reserva antes de invocar, commit con el caso)'],
+      note: 'Solo reseñas de Google (engagement.google.review.reply), como máximo 1 unidad por caso. Comentarios de Facebook y el laboratorio no consumen esta cuota.',
+    },
+    usageSql: null, sortOrder: 45,
   },
   {
     key: 'quota.conversations.max', capability: 'conversations', category: 'Asistente',

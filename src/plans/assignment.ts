@@ -24,6 +24,10 @@ import { writePlatformAudit } from '../platform/auth.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
 import { QuotaLedger } from '../subscriptions/quota.ts';
 import { loadPinnedPolicy, revisionValues, type PolicySubscription } from './policy.ts';
+import { PLAN_PARAMETERS } from './registry.ts';
+
+/** Parámetros que se aplican: un parámetro sin enforcement (`agents`, `reviews_managed`) nunca es un exceso (igual que `reconcile`). */
+const ENFORCED_KEYS: ReadonlySet<string> = new Set(PLAN_PARAMETERS.filter((d) => d.enforcement.state === 'enforced').map((d) => d.key));
 
 export interface PlatformActor {
   platformUserId: string;
@@ -140,7 +144,7 @@ export class SubscriptionAssignment {
       if (policy) {
         for (const status of await this.quota.capacityStatus(db, policy)) {
           const next = newValues.get(status.parameter_key);
-          if (typeof next === 'number' && status.window === null && status.usage > next) {
+          if (typeof next === 'number' && status.window === null && ENFORCED_KEYS.has(status.parameter_key) && status.usage > next) {
             over.push({ capability: status.capability, usage: status.usage, new_limit: next });
           }
         }

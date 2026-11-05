@@ -125,7 +125,7 @@
     }
     if (can('subscriptions.assign')) {
       var plans = load('assignable', '/plans');
-      var SHORT = { website: 'páginas', social_posts: 'publicaciones', social_ads: 'anuncios', reviews_managed: 'reseñas', conversations: 'solicitudes', agents: 'usuarios' };
+      var SHORT = { website: 'páginas', social_posts: 'publicaciones', social_ads: 'anuncios', reviews_managed: 'reseñas', ai_review_replies: 'respuestas con IA/mes', conversations: 'solicitudes', agents: 'usuarios' };
       html += '<section class="card stack" style="margin-top:16px" aria-labelledby="as-t"><h2 id="as-t" tabindex="-1">Asignar plan</h2>' + commercialNote() + '<p class="tiny">Se fija la revisión publicada vigente del plan; sus límites no cambian si luego se publica otra revisión. Para pasar a este negocio a una revisión nueva de su mismo plan se usa la migración con vista previa (Planes). Pide motivo y código de verificación; el negocio ve la asignación en su auditoría.</p>' +
         (!plans ? '<div class="skeleton" style="height:60px"></div>' : plans.error ? '<div class="banner banner-alerta" role="alert">' + esc(plans.error) + '</div>'
           : '<form class="stack" data-form="tenant-plan" data-id="' + esc(t.client_id) + '" novalidate>' + formError() + '<div class="field"><label for="tp-plan">Plan</label><select class="select" id="tp-plan" required><option value="">Elige un plan habilitado</option>' + plans.plans.map(function (pl) {

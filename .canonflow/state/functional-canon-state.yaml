@@ -19,4 +19,8 @@ note: >-
   suscripciones fijadas a su revisión con migración explícita; mecanismo periódico sin activar hasta HDC-MSP-06;
   asignación exclusiva de platform_admin en Administration; ningún parámetro nuevo. No decide Q-004 ni Trial.
   No nueva sesión HDC ni decisión comercial irreversible; otros items conservan versión/estado.
+  Delta 0.7.0: FR-0010, FR-0016 y FR-0008 cambian por DEC-0076/SRC-0015 (adopta C01–C14 del extracto SRC-0014,
+  G-SOURCE abierto): recibir reseñas y responder a mano sin cuota; cuota mensual ai_review_replies (única periódica,
+  ancla en el inicio de la suscripción, sin acumulación) para cada respuesta redactada con IA; reviews_managed sin
+  enforcement. C07–C14 registradas sin implementar; conflictos C14/DEC-0018 y C10-C12/DEC-0024-0027 sin arbitrar.
   Esta aprobación acotada no declara terminado el canon global.
