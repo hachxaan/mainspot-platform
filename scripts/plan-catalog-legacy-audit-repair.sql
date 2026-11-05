@@ -41,7 +41,51 @@ BEGIN
   IF n <> current_setting('mainspot.audit_repair_expected')::bigint THEN
     RAISE EXCEPTION 'Legacy-audit repair: candidate count changed; found %, expected %', n, current_setting('mainspot.audit_repair_expected');
   END IF;
+  -- This repair is deliberately not a blanket scrubbing tool. Unknown locations of IDs demand manual review.
+  IF EXISTS (
+    SELECT 1 FROM platform_audit_event
+     WHERE tenant_id IS NULL
+       AND (actor_id ~ 'client_[[:alnum:]_-]+' OR reason ~ 'client_[[:alnum:]_-]+'
+         OR result ~ 'client_[[:alnum:]_-]+' OR request_id ~ 'client_[[:alnum:]_-]+'
+         OR (resource ~ 'client_[[:alnum:]_-]+'
+             AND NOT (decision = 'deny' AND resource ~ '^(/api/platform)?/tenants/client_[A-Za-z0-9_-]+(/(plan|status|data-classification|support-access|support-view))?
+
+CREATE TEMP TABLE legacy_audit_repair_ids ON COMMIT DROP AS
+SELECT event_id
+  FROM platform_audit_event
+ WHERE tenant_id IS NULL AND decision = 'deny'
+   AND resource ~ '^(/api/platform)?/tenants/client_[A-Za-z0-9_-]+(/(plan|status|data-classification|support-access|support-view))?$';
+ALTER TABLE platform_audit_event DISABLE TRIGGER trg_platform_audit_immutable;
+UPDATE platform_audit_event a
+   SET resource = regexp_replace(a.resource, '^((/api/platform)?/tenants/)[^/?#]+', '\1:id')
+ WHERE a.event_id IN (SELECT event_id FROM legacy_audit_repair_ids);
+ALTER TABLE platform_audit_event ENABLE TRIGGER trg_platform_audit_immutable;
+
+DO $$
+DECLARE remaining bigint;
+BEGIN
+  SELECT count(*) INTO remaining FROM platform_audit_event
+   WHERE event_id IN (SELECT event_id FROM legacy_audit_repair_ids)
+     AND resource !~ '^(/api/platform)?/tenants/:id(/(plan|status|data-classification|support-access|support-view))?$';
+  IF remaining > 0 THEN
+    RAISE EXCEPTION 'Legacy-audit repair postcondition failed: % unexpected resources', remaining;
+  END IF;
 END $$;
+
+-- Append-only evidence of exceptional sanitization; no original PII or event IDs in the summary.
+INSERT INTO platform_audit_event
+  (event_id, actor_id, actor_roles, action, resource, tenant_id, decision, result, reason)
+SELECT 'pae_' || gen_random_uuid()::text,
+       'system:authorized-legacy-audit-repair', ARRAY[]::text[],
+       'platform.audit.legacy_deny_sanitized', 'audit/legacy-denials', NULL, 'allow',
+       'rows:' || count(*)::text, NULL
+FROM legacy_audit_repair_ids;
+COMMIT;
+)))
+  ) THEN
+    RAISE EXCEPTION 'Legacy-audit repair blocked: other unbound client identifiers need manual review';
+  END IF;
+END $;
 
 CREATE TEMP TABLE legacy_audit_repair_ids ON COMMIT DROP AS
 SELECT event_id
