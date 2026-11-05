@@ -188,6 +188,7 @@ export class PlatformAuth {
   private async reserveAttempt(key: string): Promise<boolean> {
     const keyHash = this.attemptHash(key);
     const client = await this.pool.connect();
+    let allowed = false;
     try {
       await client.query('BEGIN');
       await client.query(
@@ -199,26 +200,27 @@ export class PlatformAuth {
       const live = r.rows[0].attempt_times
         .map((v) => new Date(v).toISOString())
         .filter((v) => new Date(v).getTime() > now - 15 * 60_000);
-      const allowed = live.length < 5;
+      allowed = live.length < 5;
       await client.query(
         `UPDATE platform_auth_attempt_gate
             SET attempt_times = $2::timestamptz[], updated_at = clock_timestamp()
           WHERE key_hash = $1`,
         [keyHash, allowed ? [...live, new Date(now).toISOString()] : live]);
       await client.query('COMMIT');
-      // Small, indexed, best-effort expiry of unused HMAC keys; cleanup failure cannot grant access.
-      await this.pool.query(
-        `DELETE FROM platform_auth_attempt_gate WHERE key_hash IN
-           (SELECT key_hash FROM platform_auth_attempt_gate
-             WHERE updated_at < clock_timestamp() - interval '15 minutes' ORDER BY updated_at LIMIT 25)`,
-      ).catch(() => undefined);
-      return allowed;
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw err;
     } finally {
       client.release();
     }
+    // Release the transaction client before using the pool again (pool.max may be 1).
+    // Best-effort expiration cannot grant access if it fails.
+    await this.pool.query(
+      `DELETE FROM platform_auth_attempt_gate WHERE key_hash IN
+         (SELECT key_hash FROM platform_auth_attempt_gate
+           WHERE updated_at < clock_timestamp() - interval '15 minutes' ORDER BY updated_at LIMIT 25)`,
+    ).catch(() => undefined);
+    return allowed;
   }
 
   private async clearAttempts(key: string): Promise<void> {
