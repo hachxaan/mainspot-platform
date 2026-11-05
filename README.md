@@ -206,6 +206,8 @@ Rutas INC-006 (suscripciones; solo lectura para el negocio, DEC-0075):
 
 Catálogo de planes (plataforma, `/api/platform`, permisos explícitos de `src/platform/permissions.ts`; toda escritura con step-up TOTP y motivo): ver [`docs/architecture/plan-catalog.md`](docs/architecture/plan-catalog.md).
 
+Cuotas comerciales de reseñas (DEC-0076: recibir y responder a mano sin cuota; respuestas con IA por ciclo mensual, migración `0036`): ver [`docs/architecture/commercial-quota.md`](docs/architecture/commercial-quota.md).
+
 Rutas INC-007 base (analítica):
 
 | Ruta | Protegida | Acción |
