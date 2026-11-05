@@ -14,7 +14,11 @@ SELECT
   count(*) FILTER (WHERE tenant_id IS NULL AND reason ~ 'client_[[:alnum:]_-]+')
     AS unbound_reasons_with_client_ids_to_investigate,
   count(*) FILTER (WHERE tenant_id IS NULL AND result ~ 'client_[[:alnum:]_-]+')
-    AS unbound_results_with_client_ids_to_investigate
+    AS unbound_results_with_client_ids_to_investigate,
+  count(*) FILTER (WHERE tenant_id IS NULL AND actor_id ~ 'client_[[:alnum:]_-]+')
+    AS unbound_actor_ids_with_client_ids_to_investigate,
+  count(*) FILTER (WHERE tenant_id IS NULL AND request_id ~ 'client_[[:alnum:]_-]+')
+    AS unbound_request_ids_with_client_ids_to_investigate
 FROM platform_audit_event;
 SELECT action, count(*) AS candidate_rows
   FROM platform_audit_event
