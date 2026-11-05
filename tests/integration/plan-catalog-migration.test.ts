@@ -606,7 +606,17 @@ test('reversión: vuelve al esquema previo a 0034 con los valores publicados vig
   await db.pool.query(`DELETE FROM quota_reservation WHERE reservation_id = 'qres_m_future'`);
   await db.pool.query(`DELETE FROM plan_parameter_definition WHERE parameter_key = 'test.future_units.max'`);
 
-  // 5. Reversión con el catálogo modificado.
+  // 5. Reversión con el catálogo modificado: si hay suscripciones fijadas a una revisión
+  // SUPERSEDED, aborta (no cambia silenciosamente los límites del negocio).
+  const unsafeRollback = await snapshot(db.pool);
+  await assert.rejects(runRollback(db.pool), (err: unknown) => pgCode(err) === '55000',
+    'el rollback bloquea la pérdida de los derechos fijados a v1');
+  assert.deepEqual(await snapshot(db.pool), unsafeRollback, 'rollback bloqueado sin escrituras');
+
+  // Tras una migración EXPLÍCITA y autorizada (en esta BD desechable), se permite revertir.
+  await db.pool.query(`UPDATE subscription
+      SET plan_revision_id = (SELECT revision_id FROM plan_revision WHERE plan_id = 'plan_extra' AND status = 'PUBLISHED')
+      WHERE tenant_id = 'client_m_extra'`);
   await runRollback(db.pool);
   const after = await snapshot(db.pool);
   assert.deepEqual(after.schema, pre.schema, 'mismo catálogo de BD que antes de 0034');
