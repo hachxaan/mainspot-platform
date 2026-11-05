@@ -217,8 +217,9 @@ export class QuotaLedger {
     const policy = await resolveEffectivePolicy(client, tenantId);
     const limit = effectiveValue(policy, def);
     if (!limit || typeof limit.value !== 'number') {
-      // `parameter`, no `parameter_key`: el logger rechaza (lanza) cualquier campo terminado en `_key`.
-      log.error('quota.parameter_missing', 'pinned plan revision does not define the parameter', {
+      // `parameter`, no `parameter_key`: el logger rechaza (lanza) cualquier campo terminado en `_key`. Aviso, no error:
+      // con el registro 2 (DEC-0076) toda revisión publicada antes de 0036 carece de la cuota nueva por diseño (deny).
+      log.warn('quota.parameter_missing', 'pinned plan revision does not define the parameter', {
         tenant_id: tenantId, parameter: def.key, revision_id: policy.revision.revision_id,
       });
       throw new AppError(403, DENY_CODES.LIMIT_EXCEEDED, missingParameterMessage(def));

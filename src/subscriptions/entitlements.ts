@@ -14,7 +14,7 @@ import type { Pool } from 'pg';
 import type { AuditSink } from '../audit/sink.ts';
 import { AppError, DENY_CODES, type DenyCode } from '../shared/errors.ts';
 import { effectiveValue, loadPinnedPolicy, type PolicySubscription } from '../plans/policy.ts';
-import { PLAN_PARAMETERS, periodLabel } from '../plans/registry.ts';
+import { PLAN_PARAMETERS, periodLabel, type PlanParameterDefinition } from '../plans/registry.ts';
 import { QuotaLedger } from './quota.ts';
 import { SimulatedPaymentProvider, type PaymentProvider } from './payment.ts';
 
@@ -43,6 +43,10 @@ export interface EntitlementParameter {
   value: number | boolean | null;
   usage: number | null;
   enforced: boolean;
+  /** Ciclo vigente [start, end) de un parámetro periódico (UTC); null en los demás. */
+  window: { start: string; end: string } | null;
+  /** Aviso para el negocio cuando el parámetro no se aplica por decisión (p. ej. recibir reseñas). */
+  note: string | null;
 }
 
 export interface EntitlementView {
@@ -111,14 +115,16 @@ export class EntitlementService {
     const limits: Record<string, number> = {};
     const usage: Record<string, number> = {};
     const parameters: EntitlementParameter[] = [];
-    for (const def of PLAN_PARAMETERS) {
+    for (const def of PLAN_PARAMETERS as readonly PlanParameterDefinition[]) {
       const value = effectiveValue(policy, def)?.value ?? null;
-      const used = status.get(def.key)?.usage ?? null;
+      const capacity = status.get(def.key);
+      const used = capacity?.usage ?? null;
       if (def.capability && typeof value === 'number') limits[def.capability] = value;
       if (def.capability && used !== null) usage[def.capability] = used;
       parameters.push({
         key: def.key, capability: def.capability, label: def.label, unit: def.unit, semantics: def.semantics,
         period: periodLabel(def), value, usage: used, enforced: def.enforcement.state === 'enforced',
+        window: capacity?.window ?? null, note: def.enforcement.businessNote ?? null,
       });
     }
     const { revision_id, version, status: revStatus, published_at } = policy.revision;

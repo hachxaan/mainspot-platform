@@ -60,7 +60,7 @@ import { ContactPhoneService } from '../contact/phones.ts';
 import { OnboardingService } from '../identity/onboarding.ts';
 import { contactRouter } from './contact-routes.ts';
 // DEV-E2E-02: agente de atención por políticas, Telegram y ficha de Google (simulados sin credenciales).
-import { EngagementService } from '../engagement/service.ts';
+import { AI_REPLY_RESERVATION_TTL_MS, EngagementService } from '../engagement/service.ts';
 import { EngagementWorker } from '../engagement/worker.ts';
 import { TelegramLinkService } from '../engagement/telegram.ts';
 import { SimulatedCommentSource, SimulatedReplier } from '../engagement/providers.ts';
@@ -201,8 +201,8 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   const entitlements = new EntitlementService({ pool, sink });
   const quota = new QuotaLedger({ pool, sink });
   const subscriptionRepo = new SubscriptionRepository(pool);
-  // INC-004: reputación (engine)
-  const reputationEngine = new ReputationEngine({ pool, config, sink, provider: reputationProvider, conversationRepo, quota });
+  // INC-004: reputación (engine). DEC-0076: recibir reseñas no consume cuota.
+  const reputationEngine = new ReputationEngine({ pool, config, sink, provider: reputationProvider, conversationRepo });
   // INC-005: social (service + cola de programación)
   const socialService = new SocialService({ pool, config, sink, provider: socialProvider, conversationRepo, quota, scheduler: socialScheduler });
   // INC-007: analítica mínima (export/summary); QS-0006: retención global automática.
@@ -224,8 +224,11 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   const aiJobs = new AiJobs({ pool, registry, environment: config.aiEnvironment, lab: aiLab });
   const brand = new BrandService({ pool, sink });
   const media = new MediaService({ pool, sink });
+  // DEC-0076: la redacción con IA de respuestas a reseñas consume `ai_review_replies` del ciclo mensual; su reserva
+  // dura lo que puede durar la redacción (AI_REPLY_RESERVATION_TTL_MS), no los 120 s de una clasificación.
   const engagement = new EngagementService({
     pool, sink, replier, phones, channel, panelUrl: `${config.publicBaseUrl}/panel`,
+    quota: new QuotaLedger({ pool, sink, reservationTtlMs: AI_REPLY_RESERVATION_TTL_MS }),
     semantics: new AiEngagementSemantics({ dispatcher, environment: config.aiEnvironment }),
   });
   const engagementWorker = new EngagementWorker({

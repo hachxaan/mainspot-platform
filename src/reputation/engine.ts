@@ -26,7 +26,7 @@ import { belowThreshold, classifyReview } from './provider.ts';
 import { ConversationRepository, newConversationIds } from '../conversation/repositories.ts';
 import { runAtomic } from '../conversation/state-machine.ts';
 import type { TenantBoundaryResult } from '../conversation/repositories.ts';
-import type { QuotaLedger } from '../subscriptions/quota.ts';
+import { resolveEffectivePolicy } from '../plans/policy.ts';
 
 export type ReviewState =
   | 'detected'
@@ -71,8 +71,6 @@ export interface ReputationEngineDeps {
   sink: AuditSink;
   provider: ReputationProvider;
   conversationRepo: ConversationRepository;
-  /** DEC-0005: cuota `reviews_managed` consumida en la transacción del lote. */
-  quota: QuotaLedger;
 }
 
 export class ReviewRepository {
@@ -236,35 +234,30 @@ export class ReputationEngine {
   /**
    * Sincroniza/ingesta las reseñas del proveedor (simulado determinista).
    *
-   * DEC-0005 + NFR-0001: el lote se mide, se comprueba contra la cuota
-   * `reviews_managed` y se inserta con su auditoría en UNA transacción, con el
-   * candado de cuota del tenant tomado: dos sincronizaciones concurrentes no
-   * pueden superar el límite. Si el lote no cabe ⇒ 403 'limit_exceeded' sin
-   * estado parcial; si un insert falla a mitad ⇒ ROLLBACK (sin filas ni consumo).
-   * El lote ya es idempotente por source_review_id; la clave de cuota es el request_id.
+   * DEC-0076 (SRC-0014 C01): recibir reseñas NO consume cuota ni se limita por plan; agotar la IA tampoco lo
+   * detiene. Se conserva lo demás: para ingerir reseñas nuevas la suscripción debe estar activa (403
+   * subscription_required, mismo acceso que antes), y el lote y su auditoría van en UNA transacción (NFR-0001)
+   * con el candado de sincronización del tenant: dos sincronizaciones concurrentes se serializan; si un insert
+   * falla a mitad ⇒ ROLLBACK sin filas. El lote es idempotente por source_review_id.
    */
-  async sync(tenantId: string, actorId: string, requestId: string, actorRole: string | null = null): Promise<{ outcome: SyncOutcome; reviews: ReviewRow[] }> {
+  async sync(tenantId: string, actorId: string, requestId: string): Promise<{ outcome: SyncOutcome; reviews: ReviewRow[] }> {
     const reviews = await this.deps.provider.listReviews(tenantId);
     const outcome: SyncOutcome = { synced: 0, skipped: 0, classified: { acknowledged: 0, suggested: 0 } };
     await runAtomic(this.deps.pool, async (client) => {
-      await this.deps.quota.lock(client, tenantId, 'reviews_managed');
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`review_sync:${tenantId}`]);
       const existing = await this.repo.existingSourceIds(tenantId, client);
       const fresh = reviews.filter((r) => !existing.has(r.source_review_id)).length;
-      if (fresh > 0) {
-        await this.deps.quota.consumeInTx(client, {
-          tenantId, capability: 'reviews_managed', units: fresh, idempotencyKey: requestId, requestId, actorId, actorRole,
-        }, async () => {
-          for (const r of reviews) {
-            const { row, created } = await this.ingestTracked(tenantId, actorId, requestId, r, client);
-            if (!created) { outcome.skipped += 1; continue; }
-            outcome.synced += 1;
-            if (row.state === 'acknowledged') outcome.classified.acknowledged += 1;
-            if (row.state === 'suggested') outcome.classified.suggested += 1;
-          }
-          return { resourceRef: `review_batch/${requestId}`, value: undefined };
-        });
-      } else {
+      if (fresh === 0) {
         outcome.skipped = reviews.length;
+        return;
+      }
+      await resolveEffectivePolicy(client, tenantId);
+      for (const r of reviews) {
+        const { row, created } = await this.ingestTracked(tenantId, actorId, requestId, r, client);
+        if (!created) { outcome.skipped += 1; continue; }
+        outcome.synced += 1;
+        if (row.state === 'acknowledged') outcome.classified.acknowledged += 1;
+        if (row.state === 'suggested') outcome.classified.suggested += 1;
       }
     });
     const list = await this.repo.list(tenantId);

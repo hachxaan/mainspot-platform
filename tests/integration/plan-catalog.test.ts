@@ -591,7 +591,10 @@ test('edición: un borrador por plan; lock_version desfasado ⇒ 409 stale_versi
   assert.deepEqual([view.revision.revision_id, view.limits['social_posts'], view.usage['social_posts']], [v1, 5, 3]);
   assert.equal((await post(biz.token, 4)).status, 201, 'sigue con el límite de v1');
 
-  // Vista previa: afectados y uso por encima del nuevo límite (downgrade).
+  // Vista previa: afectados y uso por encima del nuevo límite (downgrade). DEC-0076: `reviews_managed` ya no se aplica,
+  // así que tener más reseñas que su valor (20 sugerido en v2) no es un exceso que avisar.
+  await t.pool.query(`INSERT INTO review (review_id, tenant_id, source_review_id, author_name, star_rating, review_text, classification, state)
+    SELECT 'rev_pc_' || g || '_' || $2, $1, 'pc-' || g || '-' || $2, 'A', 5, 'Bien', 'positive', 'acknowledged' FROM generate_series(1, 25) g`, [biz.tenant, sfx()]);
   const preview = await platform(support.token, `/plan-catalog/plans/${plan.planId}/migration-preview?to=${v2}`);
   assert.equal(preview.status, 200, JSON.stringify(preview.body));
   const affected: PreviewRow[] = preview.body.subscriptions;

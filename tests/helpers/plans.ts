@@ -1,12 +1,12 @@
 /**
  * Fixtures del catálogo de planes versionado (migración 0034): un plan de test nace con una revisión
- * PUBLICADA y TODOS los parámetros del registro con valor confirmado (lo exige el trigger de publicación).
+ * PUBLICADA y TODOS los parámetros definidos en la BD con valor confirmado (lo exige el trigger de publicación).
+ * Se leen de `plan_parameter_definition` para servir igual a BD con 0034 (registro 1) o con 0036 (registro 2).
  * Una capacidad no indicada vale 0 (deny), igual que la ausencia de fila en el catálogo anterior.
  */
 
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
-import { PLAN_PARAMETERS } from '../../src/plans/registry.ts';
 
 /** Crea `planId` habilitado con la revisión 1 publicada; devuelve el id de la revisión. */
 export async function createPublishedPlan(pool: Pool, planId: string, limits: Record<string, number>, opts: { name?: string; enabled?: boolean } = {}): Promise<string> {
@@ -20,10 +20,14 @@ export async function createPublishedPlan(pool: Pool, planId: string, limits: Re
     await client.query(
       `INSERT INTO plan_revision (revision_id, plan_id, version, status, origin, registry_version, reason, created_by)
        VALUES ($1, $2, 1, 'DRAFT', 'create', 1, 'Plan de test del catálogo versionado', 'test')`, [revisionId, planId]);
-    for (const def of PLAN_PARAMETERS) {
+    const defs = await client.query<{ parameter_key: string; capability: string | null; value_type: 'int' | 'bool' }>(
+      'SELECT parameter_key, capability, value_type FROM plan_parameter_definition ORDER BY sort_order, parameter_key');
+    for (const def of defs.rows) {
+      const bool = def.value_type === 'bool';
       await client.query(
-        `INSERT INTO plan_parameter_value (revision_id, parameter_key, value_int, source, confirmed_by, confirmed_at, updated_by)
-         VALUES ($1, $2, $3, 'explicit', 'test', now(), 'test')`, [revisionId, def.key, limits[def.capability] ?? 0]);
+        `INSERT INTO plan_parameter_value (revision_id, parameter_key, value_int, value_bool, source, confirmed_by, confirmed_at, updated_by)
+         VALUES ($1, $2, $3, $4, 'explicit', 'test', now(), 'test')`,
+        [revisionId, def.parameter_key, bool ? null : limits[def.capability ?? ''] ?? 0, bool ? false : null]);
     }
     await client.query(
       `UPDATE plan_revision SET status = 'PUBLISHED', published_by = 'test', published_at = now(), publish_reason = 'Plan de test publicado',

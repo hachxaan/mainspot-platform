@@ -434,9 +434,27 @@
     'case-pick': function (el) {
       var parts = el.dataset.arg.split('|'), c = MS.agent.get(parts[0]);
       if (!c) return;
-      MS.mem.caseDraft[c.id] = { pick: +parts[1], text: c.drafts[+parts[1]].text };
-      var t = document.getElementById('case-text-' + c.id); if (t) t.value = c.drafts[+parts[1]].text;
+      // Clave «ai»: la propuesta pedida con IA (aparte de las numeradas); el resto, el índice de la opción numerada.
+      var text = parts[1] === 'ai' ? (c.aiDraft || '') : c.drafts[+parts[1]].text;
+      MS.mem.caseDraft[c.id] = { pick: parts[1], text: text };
+      var t = document.getElementById('case-text-' + c.id); if (t) t.value = text;
       MS.emit();
+    },
+    'case-ai-draft': function (el) {
+      var id = el.dataset.arg;
+      withBusy(el, 'Redactando…', MS.agent.aiDraft(id)).then(function (r) {
+        var t = document.getElementById('case-text-' + id), prev = MS.mem.caseDraft[id];
+        // Solo se sustituye «Tu respuesta» si la persona no la había cambiado (sigue igual a la opción elegida).
+        var untouched = !t || !prev || t.value.trim() === String(prev.text || '').trim();
+        if (r.ok && r.text && untouched) {
+          // El render conserva lo escrito en los campos: igual que «case-pick», se pone el texto en el campo antes de redibujar.
+          MS.mem.caseDraft[id] = { pick: 'ai', text: r.text };
+          if (t) t.value = r.text;
+          MS.emit();
+        }
+        toast(!r.ok ? r.message : r.already ? 'Este caso ya tenía su propuesta con IA; no se volvió a descontar.'
+          : untouched ? 'Listo: la propuesta con IA quedó elegida. Revísala antes de publicar.' : 'Listo: la propuesta con IA está en las opciones; tu texto no cambió.', r.ok ? 'sparkles' : 'info');
+      });
     },
     'case-reject': function (el) {
       var id = el.dataset.arg;
@@ -558,9 +576,11 @@
       var id = form.dataset.arg, t = document.getElementById('case-text-' + id), text = t.value.trim();
       var c = MS.agent.get(id);
       if (!text) { t.focus(); toast('Escribe la respuesta', 'info'); return; }
-      var draft = MS.mem.caseDraft[id] || { pick: 0 };
+      var draft = MS.mem.caseDraft[id] || { pick: '0' };
       if (!MS.can('engagement.approve')) {
-        MS.agent.saveDraft(id, draft.pick, text).then(function (r) { toast(r.ok ? 'Guardamos tu propuesta. Quien administra tu negocio decide si se publica.' : r.message, r.ok ? 'circle-check' : 'info'); });
+        // Operación guarda en una opción numerada; desde la propuesta con IA (aparte) se guarda como opción 1.
+        var index = draft.pick === 'ai' ? 0 : Number(draft.pick) || 0;
+        MS.agent.saveDraft(id, index, text).then(function (r) { toast(r.ok ? 'Guardamos tu propuesta' + (draft.pick === 'ai' ? ' como opción 1' : '') + '. Quien administra tu negocio decide si se publica.' : r.message, r.ok ? 'circle-check' : 'info'); });
         return;
       }
       function send() {

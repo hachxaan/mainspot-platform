@@ -94,6 +94,12 @@
       sentiment: c.sentiment || null, semanticSource: c.semantic_source || null,
       status: status, rawState: c.state, at: at, updatedAt: MS.ts(c.updated_at), reasonCode: c.reason, reason: reasonText(c.reason),
       drafts: (c.drafts || []).map(function (t) { return { tone: '', text: t }; }),
+      /* DEC-0076: la propuesta pedida con «Redactar con IA» va aparte (no cambia la numeración del aviso de Telegram) y
+         consume 1 respuesta con IA del ciclo; en los casos en que la IA redactó al clasificar, su texto es la opción 1. */
+      aiDraft: c.ai_draft || null,
+      aiInDrafts: !!c.reply_invocation_id && !c.ai_draft,
+      aiEligible: c.origin === 'google_review' && c.semantic_source === 'jev' && !c.reply_invocation_id &&
+        !(c.category === 'basic_info' && c.semantic && c.semantic.info_topic === 'phone'),
       response: c.state === 'responded' ? { text: c.response_text, auto: auto, by: auto ? 'MainSpot' : MS.who(c.resolved_by), via: c.resolution_channel === 'telegram' ? 'tg' : 'panel', at: MS.ts(c.responded_at), policyVersion: c.policy_version, delivery: c.delivery_mode } : null,
       attempts: c.attempts, retryAt: MS.ts(c.next_attempt_at), policyVersion: auto ? c.policy_version : null, notify: c.notify_status,
       delivery: c.delivery_mode, events: ev
@@ -132,6 +138,15 @@
   /** Operación propone: guarda su texto en la propuesta elegida para que Administración decida. */
   AG.saveDraft = function (id, index, text) {
     return API.post('/engagement/cases/' + encodeURIComponent(id) + '/drafts/' + (index + 1), { text: text }).then(after);
+  };
+  /** «Redactar con IA» (reseñas de Google): consume 1 respuesta con IA del ciclo; repetir no consume otra vez. */
+  AG.aiDraft = function (id) {
+    return API.post('/engagement/cases/' + encodeURIComponent(id) + '/ai-draft').then(function (res) {
+      return MS.refresh(['cases', 'aiReplies'], true).then(function () {
+        if (!res.ok) return { ok: false, status: res.status, message: res.error.message };
+        return { ok: true, already: !!res.data.already_drafted, text: res.data.case && res.data.case.ai_draft ? res.data.case.ai_draft : '' };
+      });
+    });
   };
 
   /* ---------- Reglas: matriz real (origen × categoría) ⇄ diseño (activar + tipos + dónde) ---------- */

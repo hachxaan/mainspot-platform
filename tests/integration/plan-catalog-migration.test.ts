@@ -272,7 +272,12 @@ function limitsOf(limits: readonly LegacyLimit[], planId: string): Record<string
   return Object.fromEntries(limits.filter((l) => l.plan_id === planId).map((l) => [l.capability, l.max_value]));
 }
 
-const PARAMETERS_BY_KEY = [...PLAN_PARAMETERS].sort((a, b) => (a.key < b.key ? -1 : 1));
+/**
+ * Parámetros que define 0034 (registro 1). Estas pruebas trabajan sobre BD con 0034/0035 sin 0036, así que la cuota
+ * de respuestas con IA (registro 2, DEC-0076) no existe en ellas; su migración se prueba en commercial-quota-migration.
+ */
+const PARAMETERS_0034 = PLAN_PARAMETERS.filter((d) => d.key !== 'quota.ai_review_replies.max');
+const PARAMETERS_BY_KEY = [...PARAMETERS_0034].sort((a, b) => (a.key < b.key ? -1 : 1));
 
 /** Tras aplicar 0034 sobre `legacy`: el catálogo versionado reproduce EXACTAMENTE sus valores y asignaciones. */
 async function assertExactBackfill(pool: pg.Pool, legacy: LegacyState): Promise<void> {
@@ -336,8 +341,8 @@ async function assertExactBackfill(pool: pg.Pool, legacy: LegacyState): Promise<
   for (const s of legacy.subscriptions) {
     const policy = await loadPinnedPolicy(pool, s.tenant_id);
     assert.ok(policy, s.tenant_id);
-    assert.deepEqual(PLAN_PARAMETERS.map((def) => effectiveValue(policy, def)?.value),
-      PLAN_PARAMETERS.map((def) => legacyLimit(s.plan_id, def.capability)?.max_value ?? 0), `valores efectivos de ${s.tenant_id}`);
+    assert.deepEqual(PARAMETERS_0034.map((def) => effectiveValue(policy, def)?.value),
+      PARAMETERS_0034.map((def) => legacyLimit(s.plan_id, def.capability)?.max_value ?? 0), `valores efectivos de ${s.tenant_id}`);
   }
 }
 
@@ -356,7 +361,7 @@ async function confirmedDraft(client: pg.PoolClient, planId: string, limits: Rec
     `INSERT INTO plan_revision (revision_id, plan_id, version, status, origin, based_on_revision_id, registry_version, reason, created_by)
      VALUES ($1, $2, $3, 'DRAFT', 'edit', $4, 1, 'Revisión posterior a 0034 (prueba de migración)', 'platform:test')`,
     [revisionId, planId, current.version + 1, current.revision_id]);
-  for (const def of PLAN_PARAMETERS) {
+  for (const def of PARAMETERS_0034) {
     await client.query(
       `INSERT INTO plan_parameter_value (revision_id, parameter_key, value_int, source, confirmed_by, confirmed_at, updated_by)
        VALUES ($1, $2, $3, 'explicit', 'platform:test', now(), 'platform:test')`, [revisionId, def.key, limits[def.capability]]);

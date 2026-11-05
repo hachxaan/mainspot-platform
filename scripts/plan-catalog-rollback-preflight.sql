@@ -1,8 +1,8 @@
 -- G-MIG: read-only preflight BEFORE rolling back 0034 (scripts/plan-catalog-rollback.sql). Requires 0034 applied.
 --   psql "$DATABASE_URL" -X -f scripts/plan-catalog-rollback-preflight.sql
 -- Only aggregate counts. The first block and the verdict row evaluate the SAME conditions that make the rollback
--- abort, and the script exits non-zero when any holds. With 0035 still registered, blocked_later_migrations=t is
--- expected: revert 0035 first, then this preflight must exit 0 before the 0034 rollback. It does not authorize
+-- abort, and the script exits non-zero when any holds. With 0035/0036 still registered, blocked_later_migrations=t
+-- is expected: revert 0036 and then 0035 first, then this preflight must exit 0 before the 0034 rollback. It does not authorize
 -- anything: the rollback itself needs the owner's decision, stopped writers and a restorable backup.
 \set ON_ERROR_STOP on
 BEGIN READ ONLY;
@@ -41,7 +41,7 @@ SELECT
   \echo 'G-MIG ROLLBACK BLOCKED: 0034 is not registered in schema_migrations'
 \endif
 \if :preflight_blocked_later_migrations
-  \echo 'G-MIG ROLLBACK BLOCKED: migrations after 0034 are registered (revert 0035 first: scripts/plan-catalog-hardening-rollback.sql)'
+  \echo 'G-MIG ROLLBACK BLOCKED: migrations after 0034 are registered (revert 0036 first: scripts/commercial-quota-rollback.sql; then 0035: scripts/plan-catalog-hardening-rollback.sql)'
 \endif
 \if :preflight_blocked_foreign_capabilities
   \echo 'G-MIG ROLLBACK BLOCKED: quota_reservation has capabilities outside 0014'

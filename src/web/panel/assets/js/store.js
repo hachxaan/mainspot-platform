@@ -59,6 +59,8 @@
       posts: [],
       agent: { watching: true, lastCheck: null, policy: { enabled: false, thanks: 'review', info: 'review', scope: { google: true, facebook: true } }, version: 0, versions: [] },
       cases: [],
+      /* DEC-0076: cuota de respuestas a reseñas con IA del ciclo vigente (GET /engagement/ai-replies). */
+      aiReplies: null,
       dev: { simulator: false, telegram: false }
     };
   }
@@ -118,6 +120,11 @@
     if (diff < 60 * 1000 && diff > -60 * 1000) return 'hace un momento';
     if (d.toDateString() === now.toDateString()) return 'hoy, ' + MS.time(ts);
     return MS.date(ts) + ', ' + MS.time(ts);
+  };
+  /** Fecha y hora local de renovación de un ciclo («5 de diciembre, 8:32»). */
+  MS.renewal = function (iso) {
+    var t = MS.ts(iso);
+    return t === null ? '' : MS.date(t) + ', ' + MS.time(t);
   };
   MS.cap = function (t) { t = String(t || ''); return t.charAt(0).toUpperCase() + t.slice(1); };
 
@@ -389,6 +396,7 @@
       MS.agent.derivePolicy(R.policies || []);
       S.agent.lastCheck = MS.mem.lastPoll || Date.now();
     }
+    S.aiReplies = R.aiReplies || null;
 
     // Telegram
     var t = R.telegram;
@@ -422,6 +430,10 @@
     posts: function () { return API.get('/social/posts').then(function (r) { if (r.ok) MS.R.posts = r.data.posts; return r; }); },
     cases: function () { return API.get('/engagement/cases').then(function (r) { if (r.ok) MS.R.cases = r.data.cases; return r; }); },
     policies: function () { return API.get('/engagement/policies').then(function (r) { if (r.ok) MS.R.policies = r.data.policies; return r; }); },
+    aiReplies: function () {
+      if (!MS.can('engagement.read')) return Promise.resolve({ ok: true });
+      return API.get('/engagement/ai-replies').then(function (r) { if (r.ok) MS.R.aiReplies = r.data.ai_replies; return r; });
+    },
     users: function () {
       if (!MS.can('user.manage')) return Promise.resolve({ ok: true });
       return API.get('/users').then(function (r) { if (r.ok) MS.R.users = r.data.users; return r; });
@@ -446,7 +458,7 @@
     googleConn: function () { return API.get('/connections/google').then(function (r) { if (r.ok) MS.R.googleConn = r.data; return r; }); },
     metaConn: function () { return API.get('/connections/meta').then(function (r) { if (r.ok) MS.R.metaConn = r.data; return r; }); }
   };
-  var ALL = ['ent', 'website', 'proposals', 'requests', 'phones', 'gbp', 'googleConn', 'metaConn', 'posts', 'cases', 'policies', 'telegram', 'devsim', 'tgChat', 'users'];
+  var ALL = ['ent', 'website', 'proposals', 'requests', 'phones', 'gbp', 'googleConn', 'metaConn', 'posts', 'cases', 'policies', 'aiReplies', 'telegram', 'devsim', 'tgChat', 'users'];
 
   function snapshot() {
     try { return JSON.stringify([MS.R, MS.mem.tgCode]); } catch (e) { return String(Math.random()); }
@@ -503,6 +515,6 @@
   MS.poll = function () {
     if (!MS.S.session || document.visibilityState !== 'visible') return;
     MS.mem.lastPoll = Date.now();
-    MS.refresh(['proposals', 'requests', 'website', 'cases', 'posts', 'telegram', 'policies', 'phones', 'gbp', 'googleConn', 'metaConn']);
+    MS.refresh(['proposals', 'requests', 'website', 'cases', 'posts', 'telegram', 'policies', 'aiReplies', 'phones', 'gbp', 'googleConn', 'metaConn']);
   };
 })();
