@@ -1,0 +1,40 @@
+# E2E INC-004 + INC-005 + INC-006 — transcript (run 2026-11-05T07:07:25.609Z)
+# HEAD: b3b044713370cfa0bd325e0e71ebfcbf9ba9cd99
+# proveedores: simulated (DEC-026) — sin credenciales reales Meta/Google
+# DB: mainspot_test (recreada por scripts/test-prep.ts)
+
+=== E2E INC-004 + INC-005 + INC-006 (proveedores simulados) ===
+
+-- INC-004: reputación --
+PASS 1. sync de reseñas simulado (4 por tenant)
+PASS 2. reseña negativa (<4) detectada y sugerida sin publicar
+PASS 3. escalamiento humano (awaiting_human)
+PASS 4. edición de borrador antes de aprobar
+PASS 5. aprobación humana de la respuesta → propuesta
+PASS 6. preview preparado (cambio visible, DEC-011)
+PASS 7. respuesta pública aprobada → publicada
+PASS 8. repetir aprobación NO vuelve a publicar (UNA vez)
+PASS 9. publicaciones totales = 1
+
+-- INC-005: publicaciones Facebook (simulado) --
+PASS 10. borrador de publicación creado
+PASS 11. aprobación del contenido → propuesta de preview
+PASS 12. enlace de vista previa seguro
+PASS 13. publicación aprobada → published
+PASS 14. segundo intento → already_published (idempotente)
+PASS 15. UNA sola publicación social
+
+-- INC-006: suscripciones y límites (catálogo versionado, DEC-024/DEC-0075) --
+PASS 16a. el negocio ya no se asigna planes (403, SRC-0013)
+PASS 16. plan Básico asignado por Administration, fijado a su revisión v1 (sin precio)
+PASS 17. límite social_posts = 3 visibile para operación
+PASS 18. base=1 post E2E previo + límite 3 ⇒ 2 creaciones OK y la 3ra excede el límite (201,201,403,403)
+PASS 19. exceso auditado como deny/limit_exceeded
+
+=== Resumen E2E INC-004/005/006 ===
+review escalada y publicada: rev_73cf58c1-d14a-4677-ab14-e327370a7c30 (proposal prop_27e887d3-24a7-4a83-b7fe-649e2fbf8968)
+post publicado: post_5fa6a63d-92e0-4cc5-b296-986bdb1ab89a (proposal prop_b186ed31-02d0-4164-bcd2-e7b48b633bc4)
+plan asignado y límite verificado: plan_basico (social_posts=3)
+=== Fin E2E INC-004/005/006 ===
+
+# Fin de transcript

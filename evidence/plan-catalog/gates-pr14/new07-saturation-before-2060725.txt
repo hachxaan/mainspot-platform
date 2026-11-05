@@ -1,0 +1,6 @@
+✖ ráfaga de logins inventados: el 429 por saturación no gasta intentos del operador, que entra al terminar la ráfaga (1072.249001ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ ráfaga de logins inventados: el 429 por saturación no gasta intentos del operador, que entra al terminar la ráfaga (1072.249001ms)
+  AssertionError [ERR_ASSERTION]: un 429 por saturación no reserva intentos de su clave

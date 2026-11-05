@@ -1,0 +1,4 @@
+# NEW-10 — fila de una clave del límite retenida 8 s por otra sesión; 10 logins sobre esa clave y SELECT 1 ajenos en el
+# mismo pool (max 5). Script desechable .tmp-new10.ts (borrado). Antes (704aea4, lock_timeout 5 s), según FinalGSec:
+# 10 intentos ⇒ SELECT 1 ajeno 7.807 ms. Después (lock_timeout 500 ms):
+stuck_outcomes=["55P03","55P03","55P03","55P03","55P03","55P03","55P03","55P03","55P03","55P03"] unrelated_select_worst_ms=963 probe_window_ms=1956

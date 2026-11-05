@@ -1,0 +1,16 @@
+# GSEC-07 — pool de la aplicación (src/db/pool.ts getPool) y conexión inactiva terminada con pg_terminate_backend
+# Script desechable /tmp/gsec07-probe.ts (borrado tras la ejecución), PostgreSQL 16.15 desechable 127.0.0.1:55499.
+
+== ANTES: worktree /tmp/pr14-head-6e1eff8 (HEAD 6e1eff8, sin cambios)
+terminated 1
+node:events:487
+      throw er; // Unhandled 'error' event
+      ^
+
+error: terminating connection due to administrator command
+exit=1
+
+== DESPUÉS: worktree del PR #14 con las correcciones (pool.on('error') + runTransaction)
+terminated 1
+ALIVE after idle connection loss; next query: 1
+exit=0
