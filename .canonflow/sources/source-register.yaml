@@ -127,3 +127,28 @@ sources:
     Catálogo en Engineering con permisos explícitos; publicar = configuración operativa sin aprobación comercial;
     suscripciones fijadas a su revisión; mecanismo periódico sin activar; autoasignación del negocio retirada;
     respuesta 6 vacía (ningún parámetro nuevo). No sustituye decisiones; Q-004, HDC-MSP-06 y DEC-0018 sin cambios.
+- id: SRC-0014
+  title: Extracto normalizado de decisiones comerciales del propietario (sesión de voz 2026-11-05; SRC-005 del repositorio documental)
+  kind: document
+  location: .canonflow/sources/SRC-0014-commercial-voice-decisions-2026-11-05.md
+  fingerprint: sha256:535c0edec4a9778ff1dbaac4a854de70b20f87fcd8546033ac74570d4006540c
+  reliability: unverified
+  registered_at: '2026-11-05'
+  notes: >-
+    Copia byte a byte de hachxaan/mainspot-documentation@docs/commercial-governance-20261105 (commit f5f49b1,
+    registrado en 2de11a2), sources/normalized/SRC-005-commercial-voice-decisions-2026-11-05.md. Extracto
+    normalizado por ChatGPT a partir de SRT suministrados por el propietario; no literal; raw_audio_verified: false;
+    sin hash de audio ni de SRT (G-SOURCE abierto). Estados DECIDED según el extracto. No confundir con SRC-0005
+    de esta plataforma. Lo adopta la directiva literal SRC-0015.
+- id: SRC-0015
+  title: Instrucción explícita del propietario — cierre técnico local de las decisiones comerciales del 2026-11-05
+  kind: document
+  location: .canonflow/sources/SRC-0015-commercial-closure-directive.md
+  fingerprint: sha256:14a840783fe44903a8d26709786e8aaa08c185ae59a11f9d9cd4373940a5ef89
+  reliability: authoritative
+  registered_at: '2026-11-05'
+  notes: >-
+    Fuente humana literal externa al HDC (mensaje de apertura de la sesión OMP); registrada como DEC-0076 sin
+    inventar QS/ANS. Adopta START-PROMPT.md/HANDOFF.md (PR #15, 83619f0) como especificación operativa y las
+    decisiones del extracto SRC-0014 sin reabrirlas; prioriza la semántica de cuotas. No autoriza precios, cuotas,
+    fórmulas, cobros, migraciones en bases reales, despliegues ni cambios de producción.

@@ -1,5 +1,24 @@
 # Functional Canon changelog
 
+## 0.7.0 — 2026-11-05
+- FR-0010, FR-0016 y FR-0008 cambian por DEC-0076 (directiva humana externa SRC-0015 que adopta las decisiones
+  comerciales C01–C14 del extracto SRC-0014, SRC-005 del repositorio documental; no nueva respuesta HDC ni
+  sustitución de decisiones; G-SOURCE abierto porque el extracto no es literal).
+- FR-0010: parámetro periódico nuevo `quota.ai_review_replies.max` (respuestas a reseñas redactadas con IA por ciclo
+  mensual anclado al inicio de la suscripción, UTC, sin acumulación; sugerido 0 sin confirmar; ausente ⇒ deny);
+  `reviews_managed` sin enforcement (recibir reseñas no consume ni se limita); AC-10006 reformulado y AC-10009…10012.
+  Registro de parámetros 2 (migración 0036, reversible solo sin valores ni consumo de la capacidad nueva).
+- FR-0016: la redacción con IA de respuestas a reseñas consume 1 unidad (reserva antes de invocar, commit con el
+  caso, como máximo 1 por caso); las reseñas que esperan decisión ya no llevan propuesta de IA automática («Redactar
+  con IA» a pedido); la respuesta automática autorizada consume 1 o usa el texto seguro sin IA; AC-16003 ajustado y
+  AC-16004…16006. Facebook y el laboratorio quedan fuera de la cuota (pendiente de confirmación).
+- FR-0008: recepción y respuesta manual sin cuota (AC-8001); se corrige la sangría YAML del segundo enlace.
+- Completa la parte semántica de HDC-MSP-06 (ciclo, rollover, excedentes, reglas de cambio de plan). No decide precios,
+  nombres, paquetes ni cantidades (Q-004, DEC-0010). C07–C14 quedan registradas sin implementar (pago, prorrateo,
+  gracia, cancelación, retención de 60 días, prueba gratuita), con dos conflictos para arbitraje humano: C14 frente a
+  DEC-0018 y C10/C12 frente a DEC-0024/DEC-0027. Los registros DEC/APR, QS/ANS y SRC previos se conservan byte a
+  byte; el canon técnico no cambia.
+
 ## 0.6.0 — 2026-11-04
 - BR-0007, FR-0010, FR-0018 y FR-0019 cambian por DEC-0075 (directiva humana externa SRC-0013: respuestas del
   propietario a siete preguntas del agente en conversación OMP; no nueva respuesta HDC ni sustitución de decisiones):

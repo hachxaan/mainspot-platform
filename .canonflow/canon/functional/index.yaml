@@ -51,6 +51,7 @@ items:
   tier_hint: 2
   path: items/FR-0007.md
   source: DEC-019
+# FR-0008: delta 0.7.0 por DEC-0076/SRC-0015 (recepción y respuesta manual sin cuota).
 - id: FR-0008
   title: 'Reputación: reseñas con escalamiento y respuesta aprobada'
   state: DECIDED
@@ -64,6 +65,7 @@ items:
   path: items/FR-0009.md
   source: DEC-017
 # FR-0010: delta 0.6.0 por DEC-0075/SRC-0013 (catálogo de planes versionado), junto con BR-0007, FR-0018 y FR-0019.
+# FR-0010: delta 0.7.0 por DEC-0076/SRC-0015 (cuota mensual de respuestas a reseñas con IA; recepción sin cuota), junto con FR-0008 y FR-0016.
 - id: FR-0010
   title: Suscripciones configurables sin cobro + límites en creación
   state: DECIDED
@@ -167,6 +169,7 @@ items:
   tier_hint: 3
   path: items/FR-0015.md
   source: issue #9 + APR-0003
+# FR-0016: delta 0.7.0 por DEC-0076/SRC-0015 (redacción con IA de respuestas a reseñas medida).
 - id: FR-0016
   title: 'Comentarios y reseñas: clasificación Jev, respuestas generadas y ledger único'
   state: DECIDED
