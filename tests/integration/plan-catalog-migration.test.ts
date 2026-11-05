@@ -16,7 +16,11 @@
  *    suscripción escrita durante la publicación de su plan queda fijada a la revisión nueva;
  *  - la reversión devuelve el mismo catálogo de BD que antes de 0034 (tablas, columnas, constraints, índices,
  *    triggers y funciones), plan_limit con los valores PUBLICADOS vigentes, funciona con las consultas del
- *    código base 95f9436, aborta ante capacidades ajenas a 0014 y 0034 puede volver a aplicarse.
+ *    código base 95f9436, aborta ante capacidades ajenas a 0014 y 0034 puede volver a aplicarse;
+ *  - G-MIG (PR #14): los preflights (psql, solo lectura) aprueban el estado realista y bloquean exactamente lo que
+ *    haría abortar 0034; 0035 se aplica después de 0034 y es re-ejecutable; la reversión de 0034 aborta sin
+ *    cambiar nada mientras 0035 esté registrada o haya suscripciones fijadas a revisiones no vigentes, y la
+ *    secuencia 0035 → 0034 vuelve al esquema previo.
  */
 
 import { test, before, after } from 'node:test';
@@ -38,12 +42,17 @@ import { config } from '../../src/shared/config.ts';
 import { AppError } from '../../src/shared/errors.ts';
 import { QuotaLedger } from '../../src/subscriptions/quota.ts';
 import { createPublishedPlan } from '../helpers/plans.ts';
+import { psqlAvailable, resultSets, runPsql } from '../helpers/psql.ts';
 
 const { Pool } = pg;
 
 const MIGRATION_0034 = '0034_plan_policy_catalog.sql';
+const MIGRATION_0035 = '0035_platform_auth_shared_attempts.sql';
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/', import.meta.url));
 const ROLLBACK_SCRIPT = new URL('../../scripts/plan-catalog-rollback.sql', import.meta.url);
+const HARDENING_ROLLBACK_SCRIPT = new URL('../../scripts/plan-catalog-hardening-rollback.sql', import.meta.url);
+const GMIG_PREFLIGHT = fileURLToPath(new URL('../../scripts/plan-catalog-gmig-preflight.sql', import.meta.url));
+const ROLLBACK_PREFLIGHT = fileURLToPath(new URL('../../scripts/plan-catalog-rollback-preflight.sql', import.meta.url));
 
 /** Estado previo realista sobre 0001..0033 (además del seed: planes piloto/básico/completo y client_a/b). */
 const PRE_STATE_SQL = `
@@ -94,21 +103,27 @@ INSERT INTO quota_reservation (reservation_id, tenant_id, capability, units, ide
 const TRACKED_TABLES = [
   'schema_migrations', 'permission', 'plan', 'plan_limit', 'plan_limit_legacy_0009', 'subscription', 'subscription_history',
   'quota_reservation', 'plan_parameter_definition', 'plan_revision', 'plan_parameter_value', 'plan_catalog_event',
+  'platform_auth_attempt_gate',
 ];
 
 let admin: pg.Pool | undefined;
 let before0034Dir: string | undefined;
 let only0034Dir: string | undefined;
+let only0035Dir: string | undefined;
 let rollbackSql = '';
+let hardeningRollbackSql = '';
 const databases: string[] = [];
 const pools: pg.Pool[] = [];
 
 before(async () => {
+  assert.ok(psqlAvailable(), 'los preflights son scripts psql: el cliente psql debe estar instalado');
   admin = new Pool({ connectionString: databaseUrl('postgres'), max: 1 });
   const files = (await readdir(MIGRATIONS_DIR)).filter((f) => /^\d{4}_.+\.sql$/.test(f));
   before0034Dir = await stageMigrations(files.filter((f) => Number(f.slice(0, 4)) < 34));
   only0034Dir = await stageMigrations([MIGRATION_0034]);
-  rollbackSql = await readFile(ROLLBACK_SCRIPT, 'utf8');
+  only0035Dir = await stageMigrations([MIGRATION_0035]);
+  rollbackSql = withoutPsqlMeta(await readFile(ROLLBACK_SCRIPT, 'utf8'));
+  hardeningRollbackSql = withoutPsqlMeta(await readFile(HARDENING_ROLLBACK_SCRIPT, 'utf8'));
 });
 
 after(async () => {
@@ -117,7 +132,7 @@ after(async () => {
     for (const name of databases) await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
     await admin.end();
   }
-  for (const dir of [before0034Dir, only0034Dir]) if (dir) await rm(dir, { recursive: true, force: true });
+  for (const dir of [before0034Dir, only0034Dir, only0035Dir]) if (dir) await rm(dir, { recursive: true, force: true });
 });
 
 function databaseUrl(database: string): string {
@@ -152,6 +167,11 @@ async function apply0034(url: string): Promise<string[]> {
   return (await applyMigrations(url, only0034Dir)).applied;
 }
 
+async function apply0035(url: string): Promise<string[]> {
+  assert.ok(only0035Dir);
+  return (await applyMigrations(url, only0035Dir)).applied;
+}
+
 /** BD desechable con 0034 aplicada sobre el estado previo realista. */
 async function migratedDatabase(): Promise<{ url: string; pool: pg.Pool }> {
   const db = await legacyDatabase();
@@ -159,17 +179,29 @@ async function migratedDatabase(): Promise<{ url: string; pool: pg.Pool }> {
   return db;
 }
 
-/** Ejecuta el script de reversión tal cual (su propio BEGIN … COMMIT); si falla, cierra la transacción abortada. */
-async function runRollback(pool: pg.Pool): Promise<void> {
+/**
+ * Los scripts de reversión imponen `\set ON_ERROR_STOP on` (meta-comando de psql); para ejecutarlos con pg y
+ * comprobar su SQLSTATE se omite esa línea. Su código de salida con psql se comprueba aparte (G-MIG).
+ */
+function withoutPsqlMeta(sql: string): string {
+  return sql.split('\n').filter((line) => !/^\\[a-z]/.test(line)).join('\n');
+}
+
+/** Ejecuta un script de reversión tal cual (su propio BEGIN … COMMIT); si falla, cierra la transacción abortada. */
+async function runScript(pool: pg.Pool, sql: string): Promise<void> {
   const client = await pool.connect();
   try {
-    await client.query(rollbackSql);
+    await client.query(sql);
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
     throw err;
   } finally {
     client.release();
   }
+}
+
+function runRollback(pool: pg.Pool): Promise<void> {
+  return runScript(pool, rollbackSql);
 }
 
 function pgCode(err: unknown): unknown {
@@ -641,7 +673,7 @@ test('reversión: vuelve al esquema previo a 0034 con los valores publicados vig
   const base = async (sql: string, params: unknown[]) => (await db.pool.query(sql, params)).rows;
   assert.deepEqual(await base(BASE_95F9436.subscription, ['client_m_extra']), [{ plan_id: 'plan_extra', status: 'active' }]);
   assert.deepEqual(await base(BASE_95F9436.limit, ['plan_extra', 'social_posts']), [{ max_value: 9 }],
-    'la suscripción fijada a v1 pasa al valor publicado (pérdida documentada de la fijación)');
+    'la suscripción migrada explícitamente a v2 conserva su valor (v2 es la publicada)');
   assert.deepEqual(await base(BASE_95F9436.limit, ['plan_basico', 'conversations']), [], 'sin fila: deny, como antes de 0034');
   const assigned = await base(BASE_95F9436.assign, ['sub_base', 'client_m_basic', 'plan_completo']);
   assert.deepEqual(assigned.map((row) => [Object.keys(row).sort(), row['plan_id']]),
@@ -657,4 +689,160 @@ test('reversión: vuelve al esquema previo a 0034 con los valores publicados vig
   assert.deepEqual(await apply0034(db.url), [MIGRATION_0034]);
   assert.deepEqual(await fingerprint(db.pool), migratedSchema);
   await assertExactBackfill(db.pool, beforeReapply);
+});
+
+// ------------------------------------------------------------------ G-MIG (PR #14): preflights, 0035 y orden de reversión
+
+const GMIG_HEADERS = [
+  'plan_count|enabled_plans', 'status|subscription_count', 'legacy_limits', 'unknown_capabilities|incompatible_values',
+  'duplicate_normalized_name|n', 'subscriptions_without_existing_plan', 'reservations_with_unknown_capability',
+  'plan_id|active|explicit_capabilities|currently_missing_capabilities_denied',
+];
+const ROLLBACK_PREFLIGHT_HEADERS = [
+  'subscriptions|pinned_to_current_revision|pinned_to_superseded_revision|inconsistent_pins',
+  'capabilities_not_supported_by_0014', 'later_migrations',
+  'blocked_0034_not_registered|blocked_later_migrations|blocked_foreign_capabilities|blocked_non_current_pins',
+];
+
+test('preflight G-MIG: antes de 0034 solo lee y aprueba el estado realista; tras 0034 se niega con su motivo', async () => {
+  const db = await legacyDatabase();
+  const before = await snapshot(db.pool);
+  const run = runPsql(db.url, GMIG_PREFLIGHT);
+  assert.equal(run.status, 0, run.out);
+  const sets = resultSets(run.out, GMIG_HEADERS);
+  assert.deepEqual(sets.get('plan_count|enabled_plans'), [['6', '5']], run.out);
+  assert.deepEqual(sets.get('unknown_capabilities|incompatible_values'), [['0', '0']]);
+  assert.deepEqual(sets.get('duplicate_normalized_name|n'), []);
+  assert.deepEqual(sets.get('subscriptions_without_existing_plan'), [['0']]);
+  assert.deepEqual(sets.get('reservations_with_unknown_capability'), [['0']]);
+  const perPlan = new Map((sets.get('plan_id|active|explicit_capabilities|currently_missing_capabilities_denied') ?? []).map((r) => [r[0], r.slice(1)]));
+  assert.deepEqual([perPlan.get('plan_extra'), perPlan.get('plan_retired'), perPlan.get('plan_empty')],
+    [['t', '3', '3'], ['f', '6', '0'], ['t', '0', '6']], 'capacidades sin fila (hoy deny) que 0034 explicita como 0');
+  assert.deepEqual(await snapshot(db.pool), before, 'solo lectura');
+
+  assert.deepEqual(await apply0034(db.url), [MIGRATION_0034]);
+  const applied = runPsql(db.url, GMIG_PREFLIGHT);
+  assert.notEqual(applied.status, 0);
+  assert.match(applied.out, /G-MIG BLOCKED: 0034 appears applied/);
+});
+
+for (const [label, dirt, message] of [
+  ['una capacidad fuera del registro', `INSERT INTO plan_limit (limit_id, plan_id, capability, max_value) VALUES ('lim_x', 'plan_basico', 'capacidad_heredada', 4)`, /unknown\/out-of-range existing plan limits/],
+  ['un valor sobre el techo de sistema', `INSERT INTO plan_limit (limit_id, plan_id, capability, max_value) VALUES ('lim_x', 'plan_extra', 'website', 2)`, /unknown\/out-of-range existing plan limits/],
+  ['nombres de plan iguales sin distinguir mayúsculas', `INSERT INTO plan (plan_id, name, description, price_cents, currency, is_pilot, active) VALUES ('plan_extra_dup', 'EXTRA', 'Duplicado por mayúsculas', NULL, NULL, false, true)`, /duplicate case-insensitive plan names/],
+  ['un libro de cuotas con una capacidad que se desvió del registro', `ALTER TABLE quota_reservation DROP CONSTRAINT quota_reservation_capability_check;
+    INSERT INTO quota_reservation (reservation_id, tenant_id, capability, units, idempotency_key, request_id, actor_id, state, expires_at)
+    VALUES ('qres_drift', 'client_a', 'legacy_x', 1, 'k-drift', 'req-drift', 'user_a', 'reserved', now())`, /quota_reservation has capabilities outside the registry/],
+  ['un objeto de 0034 que ya existe con otra forma', `CREATE TABLE plan_parameter_definition (parameter_key TEXT PRIMARY KEY)`, /objects of 0034 already exist/],
+] as const) {
+  test(`preflight G-MIG: ${label} ⇒ bloquea (código ≠ 0) y 0034 también aborta, sin cambiar nada`, async () => {
+    const db = await legacyDatabase();
+    await db.pool.query(dirt);
+    const before = await snapshot(db.pool);
+    const run = runPsql(db.url, GMIG_PREFLIGHT);
+    assert.notEqual(run.status, 0, run.out);
+    assert.match(run.out, message);
+    assert.deepEqual(await snapshot(db.pool), before);
+    await assert.rejects(apply0034(db.url));
+    assert.deepEqual(await snapshot(db.pool), before, '0034 aborta sin pérdida');
+  });
+}
+
+test('G-MIG 0034 → 0035: re-ejecutable; revertir 0034 exige revertir 0035 antes y no fijar negocios a revisiones no vigentes; la secuencia vuelve al esquema previo', async () => {
+  const db = await legacyDatabase();
+  const pre = await snapshot(db.pool);
+  assert.deepEqual(await apply0034(db.url), [MIGRATION_0034]);
+  const only0034 = await fingerprint(db.pool);
+  assert.deepEqual(await apply0035(db.url), [MIGRATION_0035]);
+  const with0035 = await snapshot(db.pool);
+
+  // 0035: solo huellas hexadecimales y como mucho 5 intentos por clave.
+  await assert.rejects(db.pool.query(`INSERT INTO platform_auth_attempt_gate (key_hash) VALUES ('login:192.0.2.1|admin')`),
+    (err: unknown) => pgCode(err) === '23514', 'ningún login ni IP en claro');
+  await assert.rejects(db.pool.query(
+    `INSERT INTO platform_auth_attempt_gate (key_hash, attempt_times) VALUES (repeat('b', 64), ARRAY(SELECT now() FROM generate_series(1, 6)))`),
+  (err: unknown) => pgCode(err) === '23514', 'tope de 5 intentos');
+
+  // 0035 aplicada pero no registrada: se re-ejecuta sin error ni cambios.
+  await db.pool.query('DELETE FROM schema_migrations WHERE file = $1', [MIGRATION_0035]);
+  assert.deepEqual(await apply0035(db.url), [MIGRATION_0035]);
+  const rerun = await snapshot(db.pool);
+  assert.deepEqual(rerun.schema, with0035.schema);
+  const { schema_migrations: _a, ...withData } = with0035.data;
+  const { schema_migrations: _b, ...rerunData } = rerun.data;
+  assert.deepEqual(rerunData, withData);
+
+  // Actividad posterior: un contador vivo y plan_extra publica v2 (client_m_extra sigue fijada a v1, SUPERSEDED).
+  await db.pool.query(`INSERT INTO platform_auth_attempt_gate (key_hash, attempt_times) VALUES (repeat('a', 64), ARRAY[now()])`);
+  await runAtomic(db.pool, async (client) => publishDraft(client, 'plan_extra', await confirmedDraft(client, 'plan_extra', EXTRA_V2)));
+
+  const rollbackPreflight = (wouldAbort: boolean) => {
+    const run = runPsql(db.url, ROLLBACK_PREFLIGHT);
+    if (wouldAbort) {
+      assert.notEqual(run.status, 0, run.out);
+      assert.match(run.out, /G-MIG ROLLBACK BLOCKED/);
+    } else {
+      assert.equal(run.status, 0, run.out);
+    }
+    return resultSets(run.out, ROLLBACK_PREFLIGHT_HEADERS);
+  };
+  let pf = rollbackPreflight(true);
+  // 7 suscripciones (sub_a y sub_b de 0009 + las 5 del estado previo): 6 en su revisión vigente, 1 en v1 SUPERSEDED.
+  assert.deepEqual(pf.get(ROLLBACK_PREFLIGHT_HEADERS[0]!), [['7', '6', '1', '0']]);
+  assert.deepEqual(pf.get('later_migrations'), [['1']]);
+  assert.deepEqual(pf.get(ROLLBACK_PREFLIGHT_HEADERS[3]!), [['f', 't', 'f', 't']]);
+
+  // 1. Con 0035 registrada, la reversión de 0034 aborta antes de cualquier DDL; con psql, código distinto de 0.
+  let blocked = await snapshot(db.pool);
+  await assert.rejects(runRollback(db.pool),
+    (err: unknown) => pgCode(err) === '55000' && err instanceof Error && /migrations after 0034/.test(err.message));
+  assert.deepEqual(await snapshot(db.pool), blocked, 'aborto sin cambios');
+  const viaPsql = runPsql(db.url, fileURLToPath(ROLLBACK_SCRIPT));
+  assert.notEqual(viaPsql.status, 0, 'el operador ve el aborto en el código de salida aunque no pase ON_ERROR_STOP');
+  assert.match(viaPsql.out, /migrations after 0034/);
+  assert.deepEqual(await snapshot(db.pool), blocked);
+
+  // 2. Reversión de 0035: borra la tabla (y sus contadores) y olvida 0035; una segunda ejecución se niega.
+  await runScript(db.pool, hardeningRollbackSql);
+  assert.equal((await db.pool.query<{ t: string | null }>(`SELECT to_regclass('public.platform_auth_attempt_gate')::text AS t`)).rows[0]?.t, null);
+  assert.deepEqual(await fingerprint(db.pool), only0034, 'mismo esquema que con solo 0034');
+  blocked = await snapshot(db.pool);
+  await assert.rejects(runScript(db.pool, hardeningRollbackSql),
+    (err: unknown) => err instanceof Error && /Migration 0035 not registered/.test(err.message));
+  assert.notEqual(runPsql(db.url, fileURLToPath(HARDENING_ROLLBACK_SCRIPT)).status, 0);
+  assert.deepEqual(await snapshot(db.pool), blocked);
+
+  // 3. Una suscripción fijada a una revisión SUPERSEDED bloquea la reversión de 0034 sin cambiar nada.
+  pf = rollbackPreflight(true);
+  assert.deepEqual(pf.get(ROLLBACK_PREFLIGHT_HEADERS[3]!), [['f', 'f', 'f', 't']]);
+  await assert.rejects(runRollback(db.pool),
+    (err: unknown) => pgCode(err) === '55000' && err instanceof Error && /pinned to non-current revisions/.test(err.message));
+  assert.deepEqual(await snapshot(db.pool), blocked, 'derechos fijados intactos');
+
+  // 4. Con la migración explícita del negocio (aquí, BD desechable) la secuencia termina en el esquema previo.
+  await db.pool.query(`UPDATE subscription SET plan_revision_id = 'prv_plan_extra_v2' WHERE tenant_id = 'client_m_extra'`);
+  pf = rollbackPreflight(false);
+  assert.deepEqual(pf.get(ROLLBACK_PREFLIGHT_HEADERS[3]!), [['f', 'f', 'f', 'f']]);
+  await runRollback(db.pool);
+  assert.deepEqual((await snapshot(db.pool)).schema, pre.schema, 'mismo catálogo de BD que antes de 0034');
+
+  // 5. 0034 y 0035 se reaplican.
+  assert.deepEqual(await apply0034(db.url), [MIGRATION_0034]);
+  assert.deepEqual(await apply0035(db.url), [MIGRATION_0035]);
+  assert.deepEqual(await fingerprint(db.pool), with0035.schema);
+});
+
+test('G-MIG: la reversión bloquea el catálogo antes de comprobar las fijaciones; una publicación en curso termina antes y la hace abortar', async () => {
+  const db = await migratedDatabase();
+  const migrated = await fingerprint(db.pool);
+  const next = await runAtomic(db.pool, (client) => confirmedDraft(client, 'plan_extra', EXTRA_V2));
+  // La publicación de v2 queda abierta; la reversión arranca mientras tanto. Sin el bloqueo previo, la comprobación
+  // vería v1 aún PUBLISHED y la regeneración de plan_limit tomaría v2: client_m_extra cambiaría de límites en silencio.
+  const { waited, outcome } = await race(db.pool, (client) => publishDraft(client, 'plan_extra', next), (client) => client.query(rollbackSql));
+  assert.deepEqual([waited, outcome], [true, '55000'], 'espera a la publicación y aborta por la fijación a v1');
+  assert.deepEqual(await fingerprint(db.pool), migrated, 'nada revertido');
+  const pinned = (await db.pool.query(
+    `SELECT s.plan_revision_id, r.status FROM subscription s JOIN plan_revision r ON r.revision_id = s.plan_revision_id
+      WHERE s.tenant_id = 'client_m_extra'`)).rows;
+  assert.deepEqual(pinned, [{ plan_revision_id: 'prv_plan_extra_v1', status: 'SUPERSEDED' }], 'la fijación sigue intacta');
 });

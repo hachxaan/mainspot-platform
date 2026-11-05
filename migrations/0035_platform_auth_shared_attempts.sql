@@ -1,6 +1,6 @@
 -- G-SEC hardening: shared, transactionally serialized platform authentication attempt gates.
--- Applied AFTER 0034. Hashes are HMAC-SHA256 with PLATFORM_JWT_SECRET in application code;
--- no raw login, IP, user ID or TOTP is stored in this table.
+-- Applied AFTER 0034. Keys are HMAC-SHA256 under JWT_SECRET (src/platform/auth.ts), so every app process must
+-- share that secret; no raw login, IP, user ID or TOTP is stored in this table.
 -- At most 5 attempts in a rolling 15-minute window per key; success resets the key.
 CREATE TABLE IF NOT EXISTS platform_auth_attempt_gate (
   key_hash       TEXT PRIMARY KEY CHECK (key_hash ~ '^[0-9a-f]{64}$'),

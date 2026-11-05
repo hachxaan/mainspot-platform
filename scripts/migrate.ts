@@ -28,6 +28,9 @@ export async function applyMigrations(connectionString: string, dir = path.resol
       applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`);
     await client.query(`SELECT pg_advisory_lock(hashtext('mainspot_migrations'))`);
+    // After the advisory lock (concurrent runners still wait for each other): a migration never waits more than
+    // 10 s for a table lock held by the app; it fails fast, its file rolls back whole and nothing is registered.
+    await client.query(`SET lock_timeout = '10s'`);
     const files = (await readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
     for (const file of files) {
       const applied = await client.query<{ file: string }>('SELECT file FROM schema_migrations WHERE file = $1', [file]);
