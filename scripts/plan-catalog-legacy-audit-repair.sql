@@ -37,7 +37,7 @@ DECLARE n bigint;
 BEGIN
   SELECT count(*) INTO n FROM platform_audit_event
    WHERE tenant_id IS NULL AND decision = 'deny'
-     AND resource ~ '^(/api/platform)?/tenants/[^/?#]+(/(plan|status|data-classification|support-access|support-view))?$';
+     AND resource ~ '^(/api/platform)?/tenants/client_[A-Za-z0-9_-]+(/(plan|status|data-classification|support-access|support-view))?$';
   IF n <> current_setting('mainspot.audit_repair_expected')::bigint THEN
     RAISE EXCEPTION 'Legacy-audit repair: candidate count changed; found %, expected %', n, current_setting('mainspot.audit_repair_expected');
   END IF;
@@ -47,7 +47,7 @@ CREATE TEMP TABLE legacy_audit_repair_ids ON COMMIT DROP AS
 SELECT event_id
   FROM platform_audit_event
  WHERE tenant_id IS NULL AND decision = 'deny'
-   AND resource ~ '^(/api/platform)?/tenants/[^/?#]+(/(plan|status|data-classification|support-access|support-view))?$';
+   AND resource ~ '^(/api/platform)?/tenants/client_[A-Za-z0-9_-]+(/(plan|status|data-classification|support-access|support-view))?$';
 ALTER TABLE platform_audit_event DISABLE TRIGGER trg_platform_audit_immutable;
 UPDATE platform_audit_event a
    SET resource = regexp_replace(a.resource, '^((/api/platform)?/tenants/)[^/?#]+', '\1:id')
