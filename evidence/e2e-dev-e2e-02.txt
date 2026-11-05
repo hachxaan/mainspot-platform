@@ -1,10 +1,10 @@
-# E2E DEV-E2E-02 — transcript (run 2026-11-03T10:35:30.388Z)
-# HEAD: 1f1c7da773cf57b5a0081356e4f3ab3eaeabe065
+# E2E DEV-E2E-02 — transcript (run 2026-11-04T12:19:15.925Z)
+# HEAD: 95f9436084fccd4c3ae83b0dbde62bcdbaa1274b
 # procesos reales: servidor, CLI invite-owner, worker independiente
 # proveedores: simulated (Google, Meta, Telegram); ningún resultado es real
 # DB: mainspot_test (recreada por scripts/test-prep.ts)
 
-servidor real en http://127.0.0.1:45461 (worker en proceso, ciclo 1 s) [simulated]
+servidor real en http://127.0.0.1:45561 (worker en proceso, ciclo 1 s) [simulated]
 
 -- FLOW-01: alta asistida --
 PASS 1. CLI de operación crea negocio + invitación de un solo uso
@@ -37,7 +37,7 @@ PASS 18. AG-03 pregunta en Facebook respondida con el número de Facebook
 PASS 19. AG-02/03 casos delicados esperan decisión humana
 PASS 20. un aviso de Telegram por caso delicado (simulado)
 PASS 21. la publicación previa no cambia
-PASS 22. aprobación desde Telegram (alternativa 1)
+PASS 22. aprobación desde Telegram con su botón (alternativa 1)
 PASS 23. rechazo desde el panel (mismo caso)
 PASS 24. panel refleja la decisión tomada en Telegram
 

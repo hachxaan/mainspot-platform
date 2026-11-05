@@ -61,11 +61,13 @@
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     var token = API.token();
     if (opts.auth !== false && token) headers.Authorization = 'Bearer ' + token;
-    // Solo las peticiones autenticadas del AI Core llevan la autorización de laboratorio elegida. La lista de
-    // autorizaciones (GET /ai/lab) no ejecuta IA y nunca la lleva: así se puede elegir otra aunque la actual esté rechazada.
-    // Nunca se reintenta una petición sin header tras un 403: eso sería tráfico normal encubierto.
+    // Solo las peticiones autenticadas del AI Core (y el chat, que puede iniciar una edición con IA) llevan la autorización
+    // de laboratorio elegida. La lista de autorizaciones (GET /ai/lab) no ejecuta IA y nunca la lleva: así se puede elegir
+    // otra aunque la actual esté rechazada. Nunca se reintenta una petición sin header tras un 403: eso sería tráfico
+    // normal encubierto.
     var lab = API.labGrant();
-    if (opts.auth !== false && token && lab && path.indexOf('/api/backoffice/ai/') === 0 && !(method === 'GET' && path === '/api/backoffice/ai/lab')) headers['X-AI-Lab-Grant'] = lab;
+    var aiPath = path.indexOf('/api/backoffice/ai/') === 0 || (method === 'POST' && path === '/api/backoffice/conversation/messages');
+    if (opts.auth !== false && token && lab && aiPath && !(method === 'GET' && path === '/api/backoffice/ai/lab')) headers['X-AI-Lab-Grant'] = lab;
     if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
     return window.fetch(path, { method: method, headers: headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'same-origin', cache: 'no-store' })
       .then(function (res) {

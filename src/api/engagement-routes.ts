@@ -176,15 +176,23 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
   // ---- Telegram (vínculo del chat de avisos de la persona en sesión)
   router.get('/telegram/link', requirePermission('telegram.link', deps.sink, deps.pool), ah(async (req, res) => {
     const actor = actorOf(req);
-    return res.json(await deps.telegram.status(actor.tenantId, actor.userId));
+    const real = deps.config.channelPrimary === 'telegram' && !!deps.config.telegramBotToken;
+    return res.json({ ...await deps.telegram.status(actor.tenantId, actor.userId), channel_mode: real ? 'real' : 'simulated', bot_username: real && deps.config.telegramBotUsername ? deps.config.telegramBotUsername : null });
   }));
   router.post('/telegram/link-code', requirePermission('telegram.link', deps.sink, deps.pool), ah(async (req, res) => {
     const actor = actorOf(req);
     const code = await deps.telegram.createCode(actor);
+    const real = deps.config.channelPrimary === 'telegram' && !!deps.config.telegramBotToken;
+    const bot = real && deps.config.telegramBotUsername ? deps.config.telegramBotUsername : null;
     return res.status(201).json({
       ...code,
-      instructions: `Abre el bot de MainSpot en Telegram y envía: /start ${code.code}`,
-      channel_mode: deps.config.channelPrimary === 'telegram' && deps.config.telegramBotToken ? 'real' : 'simulated',
+      instructions: bot
+        ? `Abre @${bot} en Telegram (o el enlace) y pulsa «Iniciar»; si no se envía solo, escribe: /start ${code.code}`
+        : `Abre el bot de MainSpot en Telegram y envía: /start ${code.code}`,
+      channel_mode: real ? 'real' : 'simulated',
+      bot_username: bot,
+      // Enlace profundo de Telegram: abre el bot con el código precargado (un solo uso, 10 minutos).
+      deep_link: bot ? `https://t.me/${bot}?start=${code.code}` : null,
     });
   }));
   router.delete('/telegram/link', requirePermission('telegram.link', deps.sink, deps.pool), ah(async (req, res) => {
@@ -269,8 +277,8 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
     return res.json({ provider_mode: 'simulated', replies: rows.rows });
   }));
 
-  // ---- Chat de Telegram simulado del panel (DEV-E2E-03): mismo webhook/servicio que el bot real,
-  // con un chat id propio de la persona en sesión. Solo fuera de producción y con canal simulado.
+  // ---- Chat de Telegram simulado del panel (DEV-E2E-03): mismo servicio que el bot real (mensajes con botones y
+  // pulsaciones), con un chat id propio de la persona en sesión. Solo fuera de producción y con canal simulado.
   const simTelegram = (req: Request, res: Response, next: () => void) => {
     if (!(deps.channel instanceof SimulatedChannel)) {
       res.status(404).json({ error: { code: 'not_found', message: 'No disponible.' } });
@@ -284,8 +292,9 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
     const actor = actorOf(req);
     const chatId = simChatId(actor.tenantId, actor.userId);
     const outbox = (deps.channel as SimulatedChannel).transcript()
-      .filter((m) => m.to === chatId).map((m) => ({ from: 'bot' as const, text: m.text, at: m.at }));
-    const inbox = (simInbox.get(chatId) ?? []).map((m) => ({ from: 'me' as const, text: m.text, at: m.at }));
+      .filter((m) => m.to === chatId)
+      .map((m) => ({ from: 'bot' as const, id: m.message_id, text: m.text, buttons: m.buttons, edited: m.edited_at !== null, at: m.at }));
+    const inbox = (simInbox.get(chatId) ?? []).map((m) => ({ from: 'me' as const, id: null, text: m.text, buttons: [], edited: false, at: m.at }));
     const messages = [...inbox, ...outbox].sort((a, b) => a.at.localeCompare(b.at) || (a.from === 'me' ? -1 : 1));
     // Instantáneas de los avisos de ESTE chat: el panel arma los botones con ellas (solo las vigentes), nunca leyendo
     // el texto del mensaje.
@@ -295,11 +304,22 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
     return res.json({ channel_mode: 'simulated', chat_hint: `…${chatId.slice(-3)}`, messages, notices: notices.rows });
   }));
 
+  // Texto (`{text}`) o pulsación de un botón (`{press: {message_id, action}}`), como los updates de Telegram.
   router.post('/dev/simulator/telegram', devOnly, simTelegram, tgPerm, ah(async (req, res) => {
     const actor = actorOf(req);
+    const chatId = simChatId(actor.tenantId, actor.userId);
+    const press = req.body?.press as { message_id?: unknown; action?: unknown } | undefined;
+    if (press && typeof press === 'object') {
+      if (typeof press.message_id !== 'string' || typeof press.action !== 'string' || !press.action || press.action.length > 64) {
+        throw new AppError(400, 'validation_error', 'Botón no válido.');
+      }
+      const actionId = `sim_${randomUUID()}`;
+      const result = await deps.telegram.handleUpdate({ callback_query: { id: actionId, data: press.action, message: { message_id: press.message_id, chat: { id: chatId } } } });
+      const notice = (deps.channel as SimulatedChannel).actionNotices().find((n) => n.action_id === actionId)?.notice ?? null;
+      return res.json({ channel_mode: 'simulated', ...result, notice });
+    }
     const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
     if (!text || text.length > 500) throw new AppError(400, 'validation_error', 'Escribe un mensaje de hasta 500 caracteres.');
-    const chatId = simChatId(actor.tenantId, actor.userId);
     const inbox = simInbox.get(chatId) ?? [];
     inbox.push({ text, at: new Date().toISOString() });
     simInbox.set(chatId, inbox.slice(-SIM_INBOX_MAX));

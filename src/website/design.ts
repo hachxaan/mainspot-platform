@@ -151,6 +151,8 @@ const MARKUP_RE = /<\s*\/?\s*[a-z!]|javascript:|on[a-z]+\s*=/iu;
 export interface FactAllowance {
   /** Cadenas de precio/promoción confirmadas que sí pueden aparecer literalmente. */
   confirmedPriceStrings: string[];
+  /** Textos que el dueño ya tenía publicados (p. ej. al pasar de la plantilla clásica a bloques): no son invención del modelo. */
+  ownerTexts?: ReadonlySet<string>;
 }
 
 /** Textos libres del modelo dentro del diseño (para comprobar hechos y marcado). */
@@ -178,6 +180,7 @@ export function factViolations(texts: Array<{ path: string; text: string }>, all
   const errors: string[] = [];
   const allowed = allowance.confirmedPriceStrings.map((s) => s.toLowerCase()).filter(Boolean);
   for (const { path, text } of texts) {
+    if (allowance.ownerTexts?.has(text)) continue;
     const lower = text.toLowerCase();
     if (MARKUP_RE.test(text)) errors.push(`${path}: contiene marcado o código`);
     if (URL_RE.test(text)) errors.push(`${path}: contiene un enlace`);
@@ -480,5 +483,49 @@ export function normalizeStoredDesign(raw: unknown): StoredDesign | null {
       model_id: typeof r.generated_by?.model_id === 'string' ? r.generated_by.model_id : null,
       brand_version: typeof r.generated_by?.brand_version === 'number' ? r.generated_by.brand_version : null,
     },
+  };
+}
+
+const CLASSIC_PALETTE: DesignPalette = { primary: '#7a3e12', secondary: '#2b2118', accent: '#1d5c2e', background: '#fdf7ef', surface: '#ffffff', text: '#2b2118' };
+
+function clip(text: string, max: number): string {
+  const t = text.trim();
+  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
+}
+
+/**
+ * Plantilla clásica → bloques del DSL con el mismo contenido y los colores de la plantilla. Es el paso previo para
+ * editar secciones o imágenes de una página clásica; los textos del dueño se conservan (y quedan exentos de la
+ * comprobación de hechos inventados porque no los escribió el modelo).
+ */
+export function designFromClassic(data: { name: string; line: string; about: string; services: string[]; sections: Array<{ title: string; content: string }> }): { stored: StoredDesign | null; ownerTexts: Set<string>; errors: string[] } {
+  const block = (b: Pick<DesignBlock, 'type' | 'variant'> & Partial<DesignBlock>): DesignBlock => ({ heading: null, subheading: null, body: null, items: null, image_slot: null, cta: null, tone: 'default', ...b });
+  const blocks: DesignBlock[] = [block({ type: 'hero', variant: 'split', subheading: data.line ? clip(data.line, 180) : null, tone: 'inverted' })];
+  if (data.about.trim()) blocks.push(block({ type: 'intro', variant: 'stacked', body: clip(data.about, 700) }));
+  for (const s of data.sections) {
+    blocks.push(block({ type: 'features', variant: 'stacked', heading: s.title.trim() ? clip(s.title, 90) : null, body: s.content.trim() ? clip(s.content, 700) : null }));
+  }
+  const services = data.services.map((s) => s.trim()).filter(Boolean);
+  for (let i = 0; i < services.length; i += 8) {
+    blocks.push(block({ type: i === 0 ? 'services' : 'features', variant: 'list', heading: i === 0 ? 'Nuestros servicios' : 'Más servicios', items: services.slice(i, i + 8).map((title) => ({ title: clip(title, 80), text: '', icon: null })) }));
+  }
+  blocks.push(block({ type: 'hours', variant: 'centered', heading: 'Horario' }));
+  blocks.push(block({ type: 'contact', variant: 'stacked', heading: 'Contacto' }));
+  const name = clip(data.name || 'Mi negocio', 65);
+  const description = clip([data.line, data.about].map((t) => t.trim()).filter(Boolean).join('. ') || `${name}: conoce lo que ofrecemos, nuestro horario y cómo contactarnos.`, 160);
+  const design: SiteDesign = {
+    theme: { mood: 'calido', palette: { ...CLASSIC_PALETTE }, heading_font: 'neo_grotesque', body_font: 'neo_grotesque', radius: 'soft', density: 'balanced' },
+    seo: { title: name.length >= 5 ? name : `${name} · sitio`, description: description.length >= 20 ? description : `${description} · ${name}: horario y contacto.` },
+    blocks,
+    images: [],
+  };
+  const ownerTexts = new Set(designTexts(design).map((t) => t.text));
+  if (blocks.length > 10) return { stored: null, ownerTexts, errors: ['la página tiene demasiadas secciones para el editor (máximo 10 bloques)'] };
+  const v = validateDesign(design, { confirmedPriceStrings: [], ownerTexts });
+  if (!v.design) return { stored: null, ownerTexts, errors: v.errors };
+  return {
+    stored: { schema: DESIGN_SCHEMA_VERSION, design, assets: {}, adjustments: accessiblePalette(design.theme.palette).adjustments, generated_by: { invocation_id: null, route_id: null, model_id: null, brand_version: null } },
+    ownerTexts,
+    errors: [],
   };
 }

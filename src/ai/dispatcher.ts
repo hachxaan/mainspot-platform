@@ -54,6 +54,8 @@ export type FailureCode =
 export interface RouteRef {
   route_id: string; route_version: number; prompt_revision_id: string; prompt_version: number; prompt_sha256: string;
   model_id: string; provider_id: string; provider_kind: string; provider_model: string; assignment: string;
+  /** Estado de la ruta al invocarla (DRAFT/TESTED solo llegan por grant del laboratorio o evaluación). */
+  route_status: string;
 }
 
 export type InvokeResult<T> =
@@ -82,6 +84,7 @@ function refOf(bundle: RouteBundle, assignment: string): RouteRef {
     route_id: bundle.route.route_id, route_version: bundle.route.version, prompt_revision_id: bundle.prompt.revision_id,
     prompt_version: bundle.prompt.version, prompt_sha256: bundle.prompt.sha256, model_id: bundle.model.model_id,
     provider_id: bundle.provider.provider_id, provider_kind: bundle.provider.kind, provider_model: bundle.model.provider_model, assignment,
+    route_status: bundle.route.status,
   };
 }
 

@@ -7,6 +7,7 @@
  */
 
 import type { ProviderConnectionRepository } from '../connectors/repository.ts';
+import type { MediaService } from '../media/service.ts';
 import type { AppConfig } from '../shared/config.ts';
 import { MetaGraphClient, MetaPagesAdapter } from './meta-graph.ts';
 import type { SocialProvider } from './provider.ts';
@@ -18,9 +19,9 @@ export function createMetaGraphClient(config: Pick<AppConfig, 'metaGraphBaseUrl'
   return new MetaGraphClient({ baseUrl: config.metaGraphBaseUrl, version: config.metaGraphVersion, appSecret: config.metaAppSecret, fetchImpl });
 }
 
-export function createSocialProvider(config: SocialProviderConfig, connections: ProviderConnectionRepository, fetchImpl?: typeof fetch): SocialProvider {
+export function createSocialProvider(config: SocialProviderConfig, connections: ProviderConnectionRepository, fetchImpl?: typeof fetch, media?: Pick<MediaService, 'variant'>): SocialProvider {
   if (config.socialProvider === 'meta') {
-    return new MetaPagesAdapter({ client: createMetaGraphClient(config, fetchImpl), connections, appId: config.metaAppId, appSecret: config.metaAppSecret });
+    return new MetaPagesAdapter({ client: createMetaGraphClient(config, fetchImpl), connections, appId: config.metaAppId, appSecret: config.metaAppSecret, media });
   }
   // La simulación se selecciona explícitamente.
   return new SimulatedMeta();

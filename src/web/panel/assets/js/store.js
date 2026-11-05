@@ -48,7 +48,7 @@
       requests: [],
       convo: { panel: [], tg: [] },
       notices: [],
-      telegram: { status: 'unlinked', code: null, codeState: null, codeExpiresAt: null, linkedAt: null, chatName: '', mode: 'simulated' },
+      telegram: { status: 'unlinked', code: null, codeState: null, codeExpiresAt: null, linkedAt: null, chatName: '', mode: 'simulated', bot: null, deepLink: null },
       primary: null,
       phones: { website: freshPhone(), google: freshPhone(), facebook: freshPhone() },
       prov: {
@@ -254,13 +254,15 @@
     return {
       id: p.proposal_id, kind: kind, title: titleOf(p, kind, changes), summary: p.summary,
       channel: kind === 'first' ? 'mainspot' : (rq && rq.channel === 'telegram' ? 'telegram' : 'panel'),
-      text: rq && kind === 'change' ? rq.raw_message : '', by: MS.who(p.created_by), byId: p.created_by,
+      text: rq && (kind === 'change' || kind === 'ai') ? rq.raw_message : '', by: MS.who(p.created_by), byId: p.created_by,
       changes: changes, status: P_STATUS[p.status] || p.status, raw: p.status, target: p.capability_target,
       createdAt: MS.ts(p.created_at), updatedAt: MS.ts(p.updated_at), events: eventsOf(p, kind),
       after: p.detail && p.detail.after ? siteData(p.detail.after) : null,
       designed: !!(p.detail && p.detail.after && p.detail.after.design),
       approvedBy: p.approved_by ? MS.who(p.approved_by) : null, approvedAt: MS.ts(p.approved_at),
-      version: p.published_version, preview: p.status === 'preview_ready' ? { readyAt: MS.ts(p.updated_at) } : null
+      version: p.published_version, preview: p.status === 'preview_ready' ? { readyAt: MS.ts(p.updated_at) } : null,
+      // Rutas de IA que prepararon el cambio (laboratorio: ruta en borrador, se muestra como tal).
+      aiRoutes: p.detail && p.detail.ai && Array.isArray(p.detail.ai.routes) ? p.detail.ai.routes : []
     };
   }
   MS.req = function (id) { return MS.S.requests.filter(function (r) { return r.id === id; })[0] || null; };
@@ -401,14 +403,17 @@
     // Telegram
     var t = R.telegram;
     var code = MS.mem.tgCode;
+    // Modo del canal y bot según el servidor (real solo con bot configurado); el código guarda su enlace profundo.
+    var mode = (t && t.channel_mode) || (code && code.channel_mode) || 'simulated';
+    var bot = (t && t.bot_username) || (code && code.bot_username) || null;
     if (t && t.linked) {
-      S.telegram = { status: 'linked', code: null, codeState: 'used', codeExpiresAt: null, linkedAt: MS.ts(t.linked_at), chatName: 'chat ' + (t.chat_hint || ''), mode: (code && code.channel_mode) || S.telegram.mode };
+      S.telegram = { status: 'linked', code: null, codeState: 'used', codeExpiresAt: null, linkedAt: MS.ts(t.linked_at), chatName: 'chat ' + (t.chat_hint || ''), mode: mode, bot: bot, deepLink: null };
       MS.mem.tgCode = null;
     } else if (code) {
       var expired = Date.now() > code.expiresAt;
-      S.telegram = { status: 'code', code: code.code, codeState: code.revoked ? 'revoked' : (expired ? 'expired' : 'active'), codeExpiresAt: code.expiresAt, linkedAt: null, chatName: '', mode: code.channel_mode };
+      S.telegram = { status: 'code', code: code.code, codeState: code.revoked ? 'revoked' : (expired ? 'expired' : 'active'), codeExpiresAt: code.expiresAt, linkedAt: null, chatName: '', mode: mode, bot: bot, deepLink: code.deep_link || null };
     } else {
-      S.telegram = { status: 'unlinked', code: null, codeState: null, codeExpiresAt: null, linkedAt: null, chatName: '', mode: S.telegram.mode };
+      S.telegram = { status: 'unlinked', code: null, codeState: null, codeExpiresAt: null, linkedAt: null, chatName: '', mode: mode, bot: bot, deepLink: null };
     }
     S.convo.tg = MS.tg && MS.tg.build ? MS.tg.build(R.tgChat || [], R.tgNotices || []) : [];
     S.dev = { simulator: !!R.devsim, telegram: !!R.devTelegram };

@@ -117,7 +117,7 @@ test('register sets exactly the agreed webhook parameters and confirms them with
   reset('');
   const out = await run(REGISTER, await envFile());
   const set = state.calls.find((c) => c.method === 'setWebhook');
-  assert.deepEqual(set?.body, { url: WEBHOOK_URL, secret_token: SECRET, allowed_updates: ['message'], drop_pending_updates: false, max_connections: 1 });
+  assert.deepEqual(set?.body, { url: WEBHOOK_URL, secret_token: SECRET, allowed_updates: ['message', 'callback_query'], drop_pending_updates: false, max_connections: 1 });
   assert.deepEqual(state.calls.map((c) => c.method), ['getMe', 'getWebhookInfo', 'setWebhook', 'getWebhookInfo']);
   assert.ok(!state.calls.some((c) => c.method === 'getUpdates' || c.method === 'deleteWebhook'));
   const text = out.join('\n');

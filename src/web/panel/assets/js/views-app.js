@@ -40,7 +40,7 @@
       '</ul></nav>' +
       '<div class="side-foot"><div><div class="who">' + esc(me.name) + '</div><div class="muted">' + esc(MS.DATA.business) + '</div></div>' +
         '<div>' + UI.tag(me.role, 'lila') + '</div>' +
-        '<a class="row" style="text-decoration:none;color:inherit" href="#/telegram">' + icon('message-circle', 'ic-sm') + '<span>Telegram: ' + (tg ? 'conectado' : 'sin conectar') + '</span></a>' +
+        '<a class="row" style="text-decoration:none;color:inherit" href="#/telegram">' + icon('message-circle', 'ic-sm') + '<span>Telegram' + (S.telegram.mode === 'real' ? '' : ' (simulado)') + ': ' + (tg ? 'conectado' : 'sin conectar') + '</span></a>' +
       '</div></aside>';
 
     var top = '<header class="topbar" id="topbar">' +
@@ -178,7 +178,7 @@
       chRow('#/pagina', 'globe', 'Página web', phSub('website'), S.site.published ? UI.tag('En internet (desarrollo)', 'nopal') : UI.tag(S.website ? 'Sin publicar' : 'Sin crear', 'neutral')) +
       chRow('#/google', 'map-pin', 'Google Maps', phSub('google'), S.prov.google.connected ? UI.tag('Ficha creada (simulado)', 'nopal') : UI.tag('Sin ficha', 'neutral')) +
       chRow('#/facebook', 'megaphone', 'Facebook', phSub('facebook'), UI.tag(S.prov.facebook.mode === 'not_verified' ? 'Conexión real no verificada' : 'Simulado, sin conexión real', 'lila')) +
-      chRow('#/telegram', 'message-circle', 'Telegram', tg ? 'Avisos de casos: ' + esc(S.telegram.chatName) : 'Para avisos de casos', tg ? UI.tag('Conectado', 'nopal') : UI.tag('Sin conectar', 'neutral')) +
+      chRow('#/telegram', 'message-circle', 'Telegram', tg ? 'Avisos y conversación: ' + esc(S.telegram.chatName) : 'Avisos y conversación con MainSpot', tg ? UI.tag(S.telegram.mode === 'real' ? 'Conectado' : 'Conectado (simulado)', 'nopal') : UI.tag('Sin conectar', 'neutral')) +
       chRow('#/negocio/plan', 'calendar', 'Plan', esc(MS.trialText()), S.trial === 'expired' ? UI.tag('No activo', 'alerta') : UI.tag('Activo', 'nopal')) +
       '</ul></div></section>';
 
@@ -281,8 +281,8 @@
       return { tab: 'negocio', screen: 'DS-07', title: 'Telegram', back: '#/negocio', backLabel: 'Mi negocio', html: head('Telegram') + '<div class="banner banner-lila">' + icon('lock') + '<span>Tu perfil no recibe avisos por Telegram.</span></div>' };
     }
     if (t.status === 'linked') {
-      html = '<div class="result" data-screen="DS-07"><div class="big-spot spot-live">' + icon('check') + '</div><h1 tabindex="-1" data-focus>Tu Telegram está conectado</h1>' +
-        '<p>Te avisaremos en ese chat cuando un cliente necesite tu decisión. Puedes aprobar o descartar desde ahí; verás el mismo resultado en tu panel.</p></div>' +
+      html = '<div class="result" data-screen="DS-07"><div class="big-spot spot-live">' + icon('check') + '</div><h1 tabindex="-1" data-focus>' + (t.mode === 'real' ? 'Tu Telegram está conectado' : 'Tu Telegram (simulado) está conectado') + '</h1>' +
+        '<p>Te avisaremos en ese chat cuando un cliente necesite tu decisión. También puedes escribirle a MainSpot, con tus palabras, lo que quieres cambiar en tu página: cada cambio y cada caso llegan con botones para decidir, y verás el mismo resultado en tu panel.</p></div>' +
         UI.facts([['user', 'Chat conectado', esc(t.chatName)], ['clock', 'Desde', esc(MS.when(t.linkedAt))]]) +
         (S.dev.telegram ? UI.note('Telegram simulado en desarrollo: no hay conexión real con Telegram.') : '') +
         '<div class="btn-row" style="margin-top:24px">' + (onb ? UI.btn('Ir a mi panel', { action: 'onb-finish' }) : '') + (S.dev.telegram ? UI.btn('Abrir el chat', { href: '#/chat', style: onb ? 'secondary' : 'primary', icon: 'message-circle' }) : '') + UI.btn('Desconectar', { action: 'tg-unlink', style: 'danger', icon: 'unlink' }) + '</div>';
@@ -297,12 +297,12 @@
           '<div class="btn-row" style="margin-top:24px">' + UI.btn('Generar un código nuevo', { action: 'tg-generate', icon: 'refresh-cw' }) + '</div>';
       } else {
         html += '<ol class="hub-journey" style="margin-top:20px" aria-label="Pasos">' +
-            '<li><div><div class="t">' + (S.dev.telegram ? 'Toca «Abrir Telegram»' : 'Abre el bot de MainSpot en Telegram') + '</div><div class="d">' + (S.dev.telegram ? 'Se abrirá el chat simulado de MainSpot.' : 'Envía: /start ' + esc(t.code)) + '</div></div></li>' +
+            '<li><div><div class="t">' + (S.dev.telegram ? 'Toca «Abrir Telegram»' : (t.deepLink ? 'Toca «Abrir Telegram» en tu celular' : 'Abre el bot de MainSpot en Telegram')) + '</div><div class="d">' + (S.dev.telegram ? 'Se abrirá el chat simulado de MainSpot.' : (t.bot ? 'Se abrirá @' + esc(t.bot) + ' con tu código. ' : '') + 'Si no se envía solo, escribe: /start ' + esc(t.code)) + '</div></div></li>' +
             '<li><div><div class="t">Toca «Iniciar» en el chat</div><div class="d">Si no aparece, escribe /start y el código de arriba.</div></div></li>' +
             '<li><div><div class="t">Listo</div><div class="d">Aquí verás que tu Telegram quedó conectado.</div></div></li>' +
           '</ol>' +
           (t.mode === 'simulated' ? UI.note('Telegram simulado en desarrollo: no hay conexión real con Telegram.') : '') +
-          '<div class="btn-row" style="margin-top:24px">' + (S.dev.telegram ? UI.btn('Abrir Telegram', { href: '#/chat?inicio=' + encodeURIComponent(t.code), icon: 'external-link' }) : '') + UI.btn('Anular este código', { action: 'tg-revoke', style: 'ghost' }) + '</div>';
+          '<div class="btn-row" style="margin-top:24px">' + (S.dev.telegram ? UI.btn('Abrir Telegram', { href: '#/chat?inicio=' + encodeURIComponent(t.code), icon: 'external-link' }) : '') + (!S.dev.telegram && t.deepLink ? '<a class="btn btn-primary" href="' + esc(t.deepLink) + '" target="_blank" rel="noopener">' + icon('external-link') + '<span>Abrir Telegram</span></a>' : '') + UI.btn('Anular este código', { action: 'tg-revoke', style: 'ghost' }) + '</div>';
       }
     } else {
       html = head('Telegram', 'Recibe en tu celular los casos que necesitan tu decisión.') +
@@ -362,6 +362,9 @@
     if (!S.website) {
       html += '<div class="banner banner-ocre">' + icon('info') + '<span><strong>Primero crea tu página</strong>Con los datos de tu negocio preparamos tu primera versión; después podrás pedir cambios.<br>' + (MS.can('website.provision') ? UI.btn('Crear mi página', { href: '#/pagina/crear', sm: true, style: 'secondary' }) : '') + '</span></div>';
     }
+    if (MS.api.labGrant()) {
+      html += '<div class="banner banner-ocre" style="margin-bottom:12px">' + icon('flask-conical') + '<span><strong>Laboratorio de IA activo</strong>Los cambios que no resuelva el editor simple se preparan con rutas de IA en borrador (DRAFT) de tu autorización. ' + UI.btn('Ver laboratorio', { href: '#/ia/laboratorio', sm: true, style: 'secondary' }) + '</span></div>';
+    }
     html += UI.convo('panel');
     if (canAsk) {
       html += '<form class="convo-input" data-form="panel-send"><label class="sr-only" for="panel-input">Escribe tu mensaje</label><textarea class="textarea" id="panel-input" name="msg" rows="1" maxlength="2000" placeholder="Escribe aquí lo que quieres cambiar"></textarea><button class="icon-btn" type="submit" aria-label="Enviar" id="panel-send">' + icon('arrow-up') + '</button></form>';
@@ -418,6 +421,11 @@
     var html = '<div class="page-head"><h1 tabindex="-1" data-focus>' + (first ? 'Así se verá tu página' : 'Así quedaría tu página') + '</h1><p>Nada cambia hasta que ' + (MS.can('approve') ? 'tú lo apruebes.' : 'quien administra tu negocio lo apruebe.') + '</p>' +
       '<p class="tiny inline-meta" style="margin-top:8px">' + icon('clock') + '<span>Esta vista previa sirve para una sola decisión.</span></p></div>';
     html += '<div class="stack-lg">';
+    if (r.kind === 'ai' && r.aiRoutes && r.aiRoutes.length) {
+      var badge = MS.aiBadge(r.aiRoutes, false);
+      var lab = /Laboratorio/.test(badge);
+      html += '<div class="banner ' + (lab ? 'banner-ocre' : 'banner-lila') + '">' + icon('sparkles') + '<span><strong>' + (lab ? 'Preparado con una ruta de IA en borrador (laboratorio)' : 'Preparado con IA') + '</strong>' + esc(badge) + '. Revisa la vista previa antes de publicar.</span></div>';
+    }
     if (r.status === 'failed') {
       html += '<div class="banner banner-alerta" role="alert">' + icon('triangle-alert') + '<span><strong>' + MS.PUB_TEXT.FAILED.t + '</strong>Tu página no cambió. ' + (MS.can('approve') ? 'Puedes intentarlo de nuevo.' : 'Quien administra tu negocio puede intentarlo de nuevo.') + '</span></div>';
     }

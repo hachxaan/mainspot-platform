@@ -68,10 +68,13 @@ export function socialRouter(deps: SocialRouteDeps): Router {
     const lreq = req as LooseRequest;
     const rc = rcOf(lreq);
     const session = sessionOf(lreq);
-    const { text, image_url, content_type } = (req.body ?? {}) as { text?: string; image_url?: string | null; content_type?: 'post' | 'ad' };
+    const { text, image_url, content_type, media_asset_id } = (req.body ?? {}) as { text?: string; image_url?: string | null; content_type?: 'post' | 'ad'; media_asset_id?: unknown };
+    if (media_asset_id !== undefined && media_asset_id !== null && (typeof media_asset_id !== 'string' || !/^ast_[A-Za-z0-9_-]{16,64}$/.test(media_asset_id))) {
+      return res.status(400).json({ error: { code: 'validation_error', message: 'Elige una imagen válida de tu biblioteca.' } });
+    }
     try {
       const { post, replayed } = await deps.service.createDraft(session.tenant_id, session.user_id, rc.request_id, {
-        text: text ?? '', imageUrl: image_url ?? null, contentType: content_type,
+        text: text ?? '', imageUrl: image_url ?? null, mediaAssetId: typeof media_asset_id === 'string' ? media_asset_id : null, contentType: content_type,
         idempotencyKey: resolveIdempotencyKey(req.get('idempotency-key'), rc.request_id), actorRole: session.role_name,
       });
       if (replayed) {

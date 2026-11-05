@@ -190,7 +190,7 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   say('\n-- FLOW-02: Página Web --');
   const site = await call('/api/backoffice/website', { method: 'POST', token, body: { slug: `dona-mary-${Date.now()}`, site_name: 'Cocina Doña Mary' } });
   check(site.status === 201, 'el negocio crea su página web (cuota website del plan piloto)');
-  const msg = await call('/api/backoffice/conversation/messages', { method: 'POST', token, body: { text: 'necesito cambiar el horario a lunes a sábado de 8 a 16', channel: 'simulated' } });
+  const msg = await call('/api/backoffice/conversation/messages', { method: 'POST', token, body: { text: 'necesito cambiar el horario a lunes a sábado de 8:00 a 16:00', channel: 'simulated' } });
   const proposalId = String(msg.body.proposal_id ?? '');
   check(msg.status === 201 && msg.body.request.action_class === 'preview_required' && proposalId !== '', `solicitud de cambio web → propuesta (${msg.body.request?.intent})`);
   const conf = await call(`/api/backoffice/conversation/proposals/${proposalId}/confirm`, { method: 'POST', token });

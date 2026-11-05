@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Entorno de DESARROLLO del panel integrado (DEV-E2E-03): interfaz de Claude Design servida por
 # Express + PostgreSQL real + worker del agente en el MISMO proceso (un solo `node`, un solo worker).
-# Google, Meta, dominios y pagos quedan SIMULADOS (sin credenciales); nada toca producción.
+# Google y Meta quedan SIMULADOS salvo que ~/.config/mainspot/connectors.env (0600) los active; dominios y pagos, simulados.
 #
 # Telegram: simulado por defecto. El canal REAL (webhook público vía KVM/WireGuard → este proceso)
 # solo se activa de forma EXPLÍCITA con MAINSPOT_DEV_TELEGRAM=real en el archivo protegido
@@ -93,6 +93,23 @@ fi
 # OpenRouter se conserva solo en el historial de la BD, nunca como credencial del runtime (DEC-0069).
 unset OPENROUTER_API_KEY
 
+# --- Conectores reales (Facebook/Meta y Google): archivo protegido (opcional) ---------------------
+# MAINSPOT_DEV_META=real|simulated, META_APP_ID, META_APP_SECRET, META_LOGIN_CONFIG_ID (opcional), CONNECTOR_TOKEN_KEY (32 bytes base64, cifra los
+# tokens de cada negocio), META_GRAPH_VERSION (opcional) y, para Google, MAINSPOT_DEV_GOOGLE y GOOGLE_OAUTH_*.
+# Plantilla: scripts/deploy/connectors.env.example. Nunca en .env ni en el repo.
+CONNECTORS_ENV_FILE="${MAINSPOT_CONNECTORS_ENV_FILE:-${XDG_CONFIG_HOME:-${HOME:-/nonexistent}/.config}/mainspot/connectors.env}"
+if [ -e "$CONNECTORS_ENV_FILE" ]; then
+  perm="$(stat -c '%a' "$CONNECTORS_ENV_FILE")"
+  if [ $(( 8#$perm & 8#077 )) -ne 0 ]; then
+    echo "ERROR: $CONNECTORS_ENV_FILE debe ser 0600 (actual $perm); no se carga ningún secreto." >&2
+    exit "$EX_CONFIG"
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  . "$CONNECTORS_ENV_FILE"
+  set +a
+fi
+
 # PostgreSQL del docker-compose del repo, publicado solo en loopback.
 if ! docker exec mainspot-platform-postgres-1 pg_isready -U "${POSTGRES_USER:-mainspot}" >/dev/null 2>&1; then
   POSTGRES_PORT="127.0.0.1:${PG_PORT}" docker compose up -d postgres >/dev/null
@@ -139,8 +156,8 @@ export APP_ENV=development REPUTATION_PROVIDER SOCIAL_PROVIDER \
 
 case "${1:-serve}" in
   env)
-    env | grep -E '^(DATABASE_URL|TEST_DATABASE_URL|APP_ENV|PORT|PUBLIC_BASE_URL|JEV_MODE|JEV_DATA_SCOPE|CHANNEL_PRIMARY|MAINSPOT_DEV_TELEGRAM|TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET|REPUTATION_PROVIDER|SOCIAL_PROVIDER|ENGAGEMENT_|AI_|ANTHROPIC_API_KEY|OPENAI_API_KEY|TYPESAFE_API_KEY|PLATFORM_MFA_KEY)=' \
-      | sed -E 's#(://[^:]+:)[^@]+@#\1***@#; s#^(TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET|ANTHROPIC_API_KEY|OPENAI_API_KEY|TYPESAFE_API_KEY|PLATFORM_MFA_KEY)=.+#\1=***#'
+    env | grep -E '^(DATABASE_URL|TEST_DATABASE_URL|APP_ENV|PORT|PUBLIC_BASE_URL|JEV_MODE|JEV_DATA_SCOPE|CHANNEL_PRIMARY|MAINSPOT_DEV_TELEGRAM|TELEGRAM_BOT_TOKEN|TELEGRAM_BOT_USERNAME|TELEGRAM_WEBHOOK_SECRET|REPUTATION_PROVIDER|SOCIAL_PROVIDER|META_APP_ID|META_APP_SECRET|META_LOGIN_CONFIG_ID|META_OAUTH_REDIRECT_URI|META_GRAPH_VERSION|CONNECTOR_TOKEN_KEY|ENGAGEMENT_|AI_|ANTHROPIC_API_KEY|OPENAI_API_KEY|TYPESAFE_API_KEY|PLATFORM_MFA_KEY)=' \
+      | sed -E 's#(://[^:]+:)[^@]+@#\1***@#; s#^(TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET|META_APP_SECRET|CONNECTOR_TOKEN_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY|TYPESAFE_API_KEY|PLATFORM_MFA_KEY)=.+#\1=***#'
     ;;
   invite)
     shift

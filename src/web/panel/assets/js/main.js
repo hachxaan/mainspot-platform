@@ -392,6 +392,7 @@
     },
     /* --- Facebook --- */
     'fb-when': function (el) { if (MS.mem.fbDraft) { MS.mem.fbDraft.when = el.dataset.arg; var tx = document.getElementById('fb-text'); if (tx) MS.mem.fbDraft.text = tx.value; MS.emit(); } },
+    'fb-media': function (el) { if (MS.mem.fbDraft) { MS.mem.fbDraft.mediaAssetId = el.dataset.arg || null; var tx = document.getElementById('fb-text'); if (tx) MS.mem.fbDraft.text = tx.value; MS.emit(); } },
     'fb-back': function () { if (MS.mem.fbDraft) MS.mem.fbDraft.step = 'write'; MS.emit(); },
     'fb-approve': function (el) {
       var p = MS.fb.get(el.dataset.arg);
@@ -560,7 +561,8 @@
     'fb-write': function () {
       var t = document.getElementById('fb-prompt'), v = t.value.trim();
       if (!v) { t.focus(); toast('Escribe qué quieres publicar', 'info'); return; }
-      MS.mem.fbDraft = { prompt: v, text: MS.fb.write(v), step: 'preview', when: 'now' };
+      MS.mem.fbDraft = { prompt: v, text: MS.fb.write(v), step: 'preview', when: 'now', mediaAssetId: null };
+      MS.mem.fbMedia = undefined; // la biblioteca se vuelve a leer (fotos recién subidas)
       MS.emit();
       var h = document.querySelector('[data-focus]'); if (h) h.focus();
     },
@@ -577,7 +579,7 @@
       }
       d.error = '';
       function create() {
-        return API.post('/social/posts', { text: text }, { idempotencyKey: API.key() }).then(function (res) {
+        return API.post('/social/posts', d.mediaAssetId ? { text: text, media_asset_id: d.mediaAssetId } : { text: text }, { idempotencyKey: API.key() }).then(function (res) {
           if (!res.ok || !at) return res;
           return API.post('/social/posts/' + res.data.post.post_id + '/schedule', { publish_local: dd + 'T' + tt }).then(function (s) { return s.ok ? res : s; });
         });

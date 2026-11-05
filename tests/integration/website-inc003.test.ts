@@ -165,3 +165,35 @@ test('INC-003: publicación solo tras aprobación — una propuesta confirmada n
   assert.equal(Number(after.rows[0]?.v ?? 0), Number(before.rows[0]?.v ?? 0), 'confirmado ≠ publicado');
   console.log('TEST_PASS INC-003 confirmed preview does NOT change published site (RULE-003)');
 });
+
+test('edición sin IA disponible: una petición que el editor simple no entiende no crea una propuesta vacía', async () => {
+  const admin = await login(t.baseUrl, SEED.a.admin.login, SEED.a.admin.password, SEED.a.tenant);
+  const before = await t.pool.query<{ n: string }>(`SELECT count(*) AS n FROM action_proposal WHERE tenant_id = $1`, [SEED.a.tenant]);
+  const r = await sendMsg(admin.token, 'Agrega una imagen de una panadería francesa en la portada de mi página');
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.proposal_id, null);
+  assert.equal(r.body.ai_job, null, 'en este entorno no hay ruta de edición con IA');
+  assert.match(r.body.reply, /edición con IA todavía no está activa/);
+  const after = await t.pool.query<{ n: string }>(`SELECT count(*) AS n FROM action_proposal WHERE tenant_id = $1`, [SEED.a.tenant]);
+  assert.equal(after.rows[0]?.n, before.rows[0]?.n);
+});
+
+test('publicación: una propuesta que no cambia nada visible se rechaza (409) y la versión publicada no se duplica', async () => {
+  const admin = await login(t.baseUrl, SEED.a.admin.login, SEED.a.admin.password, SEED.a.tenant);
+  const site = await t.pool.query<{ v: number; data: Record<string, unknown> }>('SELECT published_version AS v, data FROM client_website WHERE tenant_id = $1', [SEED.a.tenant]);
+  const user = (await t.pool.query<{ user_id: string }>('SELECT user_id FROM internal_user WHERE login = $1 AND tenant_id = $2', [SEED.a.admin.login, SEED.a.tenant])).rows[0]?.user_id ?? '';
+  const id = `prop_noop_${Date.now()}`;
+  // Propuesta heredada del editor anterior (cambio genérico sin efecto), ya con vista previa.
+  await t.pool.query(
+    `INSERT INTO conversation_request (request_id, tenant_id, actor_id, channel, raw_message, intent, capability_target, action_class, status, response_message, proposal_id)
+     VALUES ($1, $2, $3, 'simulated', 'cambio sin efecto', 'website.edit', 'website', 'preview_required', 'awaiting_confirmation', NULL, $4)`, [`req_${id}`, SEED.a.tenant, user, id]);
+  await t.pool.query(
+    `INSERT INTO action_proposal (proposal_id, tenant_id, request_id, capability_target, proposal_type, action_class, summary, detail, status, created_by)
+     VALUES ($1, $2, $3, 'website', 'website.edit', 'preview_required', 'Actualizar la información de la página web.', $4, 'preview_ready', $5)`,
+    [id, SEED.a.tenant, `req_${id}`, JSON.stringify({ after: site.rows[0]?.data, diff_sentences: ['Actualizar la información de la página web.'], patches: [] }), user]);
+  const approve = await api(t.baseUrl, `/api/backoffice/conversation/proposals/${id}/approve`, { method: 'POST', headers: authHeaders(admin.token) });
+  assert.equal(approve.status, 409, JSON.stringify(approve.body));
+  assert.equal(approve.body.error.code, 'no_visible_change');
+  const now = await t.pool.query<{ v: number }>('SELECT published_version AS v FROM client_website WHERE tenant_id = $1', [SEED.a.tenant]);
+  assert.equal(Number(now.rows[0]?.v), Number(site.rows[0]?.v));
+});

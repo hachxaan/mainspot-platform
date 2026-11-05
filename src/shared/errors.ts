@@ -27,6 +27,8 @@ export const DENY_CODES = {
   // DEV-E2E-04 (P3): restaurar versión — guard optimista y versión sin datos (conflictos recuperables).
   STALE_VERSION: 'stale_version',
   VERSION_NOT_RESTORABLE: 'version_not_restorable',
+  // Edición web: un cambio idéntico a la página publicada no se propone ni se publica.
+  NO_VISIBLE_CHANGE: 'no_visible_change',
 } as const;
 
 export type DenyCode = (typeof DENY_CODES)[keyof typeof DENY_CODES];

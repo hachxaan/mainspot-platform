@@ -119,6 +119,11 @@ ${banner}
 </html>`;
 }
 
+/** Dos datos de página son el mismo sitio para quien lo visita si producen el mismo HTML (sin versión ni avisos). */
+export function sameVisiblePage(a: WebsiteData, b: WebsiteData): boolean {
+  return renderSite(normalizeWebsiteData(a)) === renderSite(normalizeWebsiteData(b));
+}
+
 /** Normaliza WebsiteData desconocida (de JSONB) con defaults seguros. */
 export function normalizeWebsiteData(raw: unknown): WebsiteData {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<string, unknown>>;

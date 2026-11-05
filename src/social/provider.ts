@@ -19,6 +19,8 @@ export interface SocialPostInput {
   tenantId: string;
   text: string;
   imageUrl?: string | null;
+  /** Foto de la biblioteca del negocio: el proveedor real la sube como imagen de la publicación. */
+  mediaAssetId?: string | null;
   contentType: SocialContentType;
   /** Clave de idempotencia local (una por publicación programada); el proveedor real la
    *  usa para reconciliar, el simulador la ignora (es idempotente por contenido). */

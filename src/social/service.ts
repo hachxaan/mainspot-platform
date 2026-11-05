@@ -44,6 +44,8 @@ export interface SocialPostRow {
   content_type: SocialContentType;
   text: string;
   image_url: string | null;
+  /** Imagen de la biblioteca del negocio que acompaña la publicación (se sube a Facebook como foto). */
+  media_asset_id: string | null;
   status: SocialPostStatus;
   scheduled_at: string | null;
   published_at: string | null;
@@ -118,13 +120,13 @@ export class SocialRepository {
   }
 
   async create(input: {
-    postId: string; tenantId: string; contentType: SocialContentType; text: string; imageUrl: string | null; createdBy: string;
+    postId: string; tenantId: string; contentType: SocialContentType; text: string; imageUrl: string | null; mediaAssetId?: string | null; createdBy: string;
   }, db: Pool | PoolClient = this.pool): Promise<SocialPostRow> {
     const t = this.assertTenant(input.tenantId);
     const res = await db.query<SocialPostRow>(
-      `INSERT INTO social_post (post_id, tenant_id, network, content_type, text, image_url, status, created_by)
-       VALUES ($1,$2,'facebook',$3,$4,$5,'draft',$6) RETURNING *`,
-      [input.postId, t, input.contentType, input.text, input.imageUrl, input.createdBy],
+      `INSERT INTO social_post (post_id, tenant_id, network, content_type, text, image_url, media_asset_id, status, created_by)
+       VALUES ($1,$2,'facebook',$3,$4,$5,$6,'draft',$7) RETURNING *`,
+      [input.postId, t, input.contentType, input.text, input.imageUrl, input.mediaAssetId ?? null, input.createdBy],
     );
     return res.rows[0] as SocialPostRow;
   }
@@ -245,13 +247,19 @@ export class SocialService {
    */
   async createDraft(
     tenantId: string, actorId: string, requestId: string,
-    input: { text: string; imageUrl?: string | null; contentType?: SocialContentType; idempotencyKey: string; actorRole: string | null },
+    input: { text: string; imageUrl?: string | null; mediaAssetId?: string | null; contentType?: SocialContentType; idempotencyKey: string; actorRole: string | null },
   ): Promise<{ post: SocialPostRow; replayed: boolean }> {
     const text = input.text?.trim() ?? '';
     if (!text) {
       throw new AppError(400, 'validation_error', 'Escribe el texto de la publicación.');
     }
     const contentType = input.contentType === 'ad' ? 'ad' : 'post';
+    const mediaAssetId = input.mediaAssetId ?? null;
+    if (mediaAssetId !== null) {
+      // Solo una imagen de la biblioteca de ESTE negocio y vigente (mismo 404 que inexistente).
+      const asset = await this.deps.pool.query('SELECT 1 FROM media_asset WHERE asset_id = $1 AND tenant_id = $2 AND status <> $3', [mediaAssetId, tenantId, 'archived']);
+      if (!asset.rowCount) throw new AppError(404, DENY_CODES.NOT_FOUND, 'No encontramos esa imagen en tu biblioteca.');
+    }
     const out = await runAtomic(this.deps.pool, (client) => this.deps.quota.consumeInTx(client, {
       tenantId, capability: contentType === 'ad' ? 'social_ads' : 'social_posts', units: 1,
       idempotencyKey: input.idempotencyKey, requestId, actorId, actorRole: input.actorRole,
@@ -262,6 +270,7 @@ export class SocialService {
         contentType,
         text,
         imageUrl: input.imageUrl ?? null,
+        mediaAssetId,
         createdBy: actorId,
       }, client);
       await this.deps.sink.write({

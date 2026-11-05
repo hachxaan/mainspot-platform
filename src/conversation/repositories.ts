@@ -38,6 +38,8 @@ export interface ConversationRequestRow {
   status: RequestStatus;
   response_message: string | null;
   proposal_id: string | null;
+  /** Job de IA que prepara el cambio pedido en esta solicitud (edición web desde el chat). */
+  ai_job_id: string | null;
   created_at: string;
 }
 
@@ -97,7 +99,7 @@ export interface PublicationRow {
   published_version: number | null;
   external_ref: string | null;
   published_by: string;
-  source: 'backoffice' | 'preview';
+  source: 'backoffice' | 'preview' | 'telegram';
   published_at: string;
 }
 
@@ -122,17 +124,18 @@ export class ConversationRepository {
     status: RequestStatus;
     responseMessage: string | null;
     proposalId?: string | null;
+    aiJobId?: string | null;
   }, db: Pool | PoolClient = this.pool): Promise<ConversationRequestRow> {
     const tenantId = assertTenant(input.tenantId);
     // RETURNING * (no re-SELECT): la fila puede no ser visible desde el pool
     // dentro de la misma transacción (misma conexión = client).
     const res = await db.query<ConversationRequestRow>(
       `INSERT INTO conversation_request
-        (request_id, tenant_id, actor_id, channel, raw_message, intent, capability_target, action_class, status, response_message, proposal_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        (request_id, tenant_id, actor_id, channel, raw_message, intent, capability_target, action_class, status, response_message, proposal_id, ai_job_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`,
       [input.requestId, tenantId, input.actorId, input.channel, input.rawMessage, input.intent,
-        input.capabilityTarget, input.actionClass, input.status, input.responseMessage, input.proposalId ?? null],
+        input.capabilityTarget, input.actionClass, input.status, input.responseMessage, input.proposalId ?? null, input.aiJobId ?? null],
     );
     return res.rows[0] as ConversationRequestRow;
   }
@@ -143,6 +146,16 @@ export class ConversationRepository {
     const row = res.rows[0] ?? null;
     if (!row) return { found: false, in_tenant: false, row: null };
     return { found: true, in_tenant: row.tenant_id === t, row };
+  }
+
+  /** Liga el job de edición con IA a la solicitud del chat que lo originó (la solicitud se guarda antes que el job). */
+  async linkAiJob(tenantId: string, requestId: string, jobId: string): Promise<void> {
+    await this.pool.query('UPDATE conversation_request SET ai_job_id = $3 WHERE tenant_id = $1 AND request_id = $2', [assertTenant(tenantId), requestId, jobId]);
+  }
+
+  /** Cierra una solicitud como respondida con el mensaje que vio la persona. */
+  async answerRequest(tenantId: string, requestId: string, message: string): Promise<void> {
+    await this.pool.query(`UPDATE conversation_request SET status = 'answered', response_message = $3 WHERE tenant_id = $1 AND request_id = $2`, [assertTenant(tenantId), requestId, message]);
   }
 
   /** Lista solicitudes del tenant (opcional filtro por estado). */
@@ -342,7 +355,7 @@ export class ConversationRepository {
       attempt: number;
       publisher: string;
       publishedBy: string;
-      source: 'backoffice' | 'preview';
+      source: 'backoffice' | 'preview' | 'telegram';
       externalRef?: string | null;
       publishedVersion?: number | null;
     },

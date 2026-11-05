@@ -5,7 +5,7 @@
  */
 
 import type { JsonSchema } from './schema.ts';
-import { BLOCK_SCHEMA, DESIGN_SCHEMA, factViolations, ICONS, type FactAllowance } from '../website/design.ts';
+import { BLOCK_TYPES, BLOCK_VARIANTS, CTA_ACTIONS, DESIGN_SCHEMA, factViolations, ICONS, type FactAllowance } from '../website/design.ts';
 
 export const USE_CASES = [
   'conversation.intent.classify',
@@ -35,7 +35,15 @@ const nstr = (max: number): JsonSchema => ({ type: ['string', 'null'], maxLength
 export const EDIT_FIELDS = ['heading', 'subheading', 'body', 'cta_label', 'cta_action', 'tone', 'variant'] as const;
 export const THEME_FIELDS = ['palette.primary', 'palette.secondary', 'palette.accent', 'palette.background', 'palette.surface', 'palette.text', 'heading_font', 'body_font', 'radius', 'density', 'mood'] as const;
 export const FACT_FIELDS = ['hours', 'address', 'email', 'line', 'about'] as const;
+export const EDIT_OPS = ['set_block_field', 'set_theme', 'set_fact', 'add_block', 'remove_block', 'move_block', 'set_items', 'set_image'] as const;
+export const IMAGE_ASPECTS = ['16:9', '4:3', '1:1', '3:4'] as const;
+export const EDIT_SCHEMA_ID = 'site-edit/v2';
 
+/**
+ * `site-edit/v2`: 9 parámetros con unión (anulables), dentro del límite de salida estructurada nativa de
+ * Anthropic (≤ 16). Los campos internos de `new_block`, `items` e `image` no son anulables: «no aplica» se
+ * expresa con cadena vacía, lista vacía o el valor `none` (`applyEdit` lo interpreta).
+ */
 export const EDIT_SCHEMA: JsonSchema = {
   type: 'object', additionalProperties: false, required: ['summary', 'operations', 'needs_clarification'],
   properties: {
@@ -45,39 +53,65 @@ export const EDIT_SCHEMA: JsonSchema = {
       type: 'array', maxItems: 12,
       items: {
         type: 'object', additionalProperties: false,
-        required: ['op', 'block_index', 'field', 'theme_field', 'fact_field', 'value', 'block', 'items', 'to_index'],
+        required: ['op', 'block_index', 'field', 'theme_field', 'fact_field', 'value', 'to_index', 'new_block', 'items', 'image'],
         properties: {
-          op: { type: 'string', enum: ['set_block_field', 'set_theme', 'set_fact', 'add_block', 'remove_block', 'move_block', 'set_items'] },
+          op: { type: 'string', enum: [...EDIT_OPS] },
           block_index: { type: ['integer', 'null'], minimum: 0, maximum: 9 },
           field: { type: ['string', 'null'], enum: [...EDIT_FIELDS, null] },
           theme_field: { type: ['string', 'null'], enum: [...THEME_FIELDS, null] },
           fact_field: { type: ['string', 'null'], enum: [...FACT_FIELDS, null] },
           value: nstr(700),
-          block: { ...BLOCK_SCHEMA, type: ['object', 'null'] },
-          items: {
-            type: ['array', 'null'], maxItems: 8,
-            items: {
-              type: 'object', additionalProperties: false, required: ['title', 'text', 'icon'],
-              properties: { title: str(80), text: str(280, 0), icon: { type: ['string', 'null'], enum: [...ICONS, null] } },
+          to_index: { type: ['integer', 'null'], minimum: 0, maximum: 9 },
+          new_block: {
+            type: ['object', 'null'], additionalProperties: false,
+            required: ['type', 'variant', 'heading', 'subheading', 'body', 'cta_label', 'cta_action', 'tone'],
+            properties: {
+              type: { type: 'string', enum: [...BLOCK_TYPES] },
+              variant: { type: 'string', enum: [...BLOCK_VARIANTS] },
+              heading: str(90, 0), subheading: str(180, 0), body: str(700, 0), cta_label: str(40, 0),
+              cta_action: { type: 'string', enum: [...CTA_ACTIONS, 'none'] },
+              tone: { type: 'string', enum: ['default', 'inverted', 'accent'] },
             },
           },
-          to_index: { type: ['integer', 'null'], minimum: 0, maximum: 9 },
+          items: {
+            type: 'array', maxItems: 8,
+            items: {
+              type: 'object', additionalProperties: false, required: ['title', 'text', 'icon'],
+              properties: { title: str(80), text: str(280, 0), icon: { type: 'string', enum: [...ICONS, 'none'] } },
+            },
+          },
+          image: {
+            type: ['object', 'null'], additionalProperties: false,
+            required: ['source', 'asset_id', 'subject', 'style', 'alt', 'aspect'],
+            properties: {
+              source: { type: 'string', enum: ['generate', 'library'] },
+              asset_id: str(80, 0), subject: str(400, 0), style: str(200, 0), alt: str(140, 5),
+              aspect: { type: 'string', enum: [...IMAGE_ASPECTS] },
+            },
+          },
         },
       },
     },
   },
 };
 
+export interface EditNewBlock {
+  type: (typeof BLOCK_TYPES)[number]; variant: (typeof BLOCK_VARIANTS)[number];
+  heading: string; subheading: string; body: string; cta_label: string; cta_action: (typeof CTA_ACTIONS)[number] | 'none';
+  tone: 'default' | 'inverted' | 'accent';
+}
+export interface EditImage { source: 'generate' | 'library'; asset_id: string; subject: string; style: string; alt: string; aspect: (typeof IMAGE_ASPECTS)[number] }
 export interface EditOperation {
-  op: 'set_block_field' | 'set_theme' | 'set_fact' | 'add_block' | 'remove_block' | 'move_block' | 'set_items';
+  op: (typeof EDIT_OPS)[number];
   block_index: number | null;
   field: (typeof EDIT_FIELDS)[number] | null;
   theme_field: (typeof THEME_FIELDS)[number] | null;
   fact_field: (typeof FACT_FIELDS)[number] | null;
   value: string | null;
-  block: Record<string, unknown> | null;
-  items: Array<{ title: string; text: string; icon: string | null }> | null;
   to_index: number | null;
+  new_block: EditNewBlock | null;
+  items: Array<{ title: string; text: string; icon: string }>;
+  image: EditImage | null;
 }
 export interface EditOutput { summary: string; needs_clarification: string | null; operations: EditOperation[] }
 
@@ -232,7 +266,7 @@ export interface EditorialOutput { ideas: Array<{ date: string; idea: string; ra
 
 export const OUTPUT_SCHEMAS: Record<string, JsonSchema> = {
   'site-design/v1': DESIGN_SCHEMA,
-  'site-edit/v1': EDIT_SCHEMA,
+  [EDIT_SCHEMA_ID]: EDIT_SCHEMA,
   'social-compose/v1': COMPOSE_SCHEMA,
   'engagement-reply/v1': REPLY_SCHEMA,
   'owner-assistant/v1': ASSISTANT_SCHEMA,

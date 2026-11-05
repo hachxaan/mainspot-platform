@@ -22,7 +22,6 @@ import { approveAndPublish, confirmAndPreparePreview, rejectProposal, runAtomic,
 import type { ActionRateLimiter } from '../boundary/action-ratelimit.ts';
 import type { WebsiteRepository } from '../website/repository.ts';
 import type { DomainService, ClientDomainRow } from '../domain/service.ts';
-import type { ChannelAdapter } from '../channels/types.ts';
 import { denyAndRespond, type LooseRequest } from '../boundary/middleware.ts';
 import { requirePermission } from '../boundary/middleware.ts';
 import type { ProposalStatus, RequestStatus } from '../conversation/intents.ts';
@@ -30,6 +29,7 @@ import { resolveIdempotencyKey, resourceIdOf, type QuotaLedger } from '../subscr
 import { initialWebsiteData, prepareFirstPage, preparePhoneUpdate, prepareRestore, type SiteProposalDeps } from '../website/site-proposals.ts';
 import { localSiteInfo } from '../website/local-site.ts';
 import type { ContactPhoneService } from '../contact/phones.ts';
+import type { TelegramLinkService } from '../engagement/telegram.ts';
 
 export interface ConversationRouteDeps {
   pool: Pool;
@@ -41,10 +41,43 @@ export interface ConversationRouteDeps {
   approvalRateLimiter: ActionRateLimiter;
   websiteRepo: WebsiteRepository;
   domainService: DomainService;
-  channel: ChannelAdapter;
   quota: QuotaLedger;
   /** DEV-E2E-03: teléfono efectivo de la Página web para la propuesta de número nuevo. */
   phones: ContactPhoneService;
+  /** Respuesta en el chat de Telegram vinculado de la persona (mensajes marcados como de Telegram). */
+  telegram: Pick<TelegramLinkService, 'deliverOutcome'>;
+}
+
+/** Estado legible de un job de edición con IA para la conversación (sin entradas ni salidas del modelo). */
+export interface AiJobView {
+  job_id: string; status: string; error_code: string | null; step: string | null; lab: boolean;
+  image_error: string | null; image_reason: string | null;
+  result: { status: string | null; question: string | null; message: string | null; proposal_id: string | null; model: string | null; route_status: string | null; assignment: string | null } | null;
+  routes: Array<{ use_case_id: string; model_id: string; status: string }>;
+}
+
+const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+
+async function aiJobViews(pool: Pool, tenantId: string, jobIds: string[]): Promise<Map<string, AiJobView>> {
+  const out = new Map<string, AiJobView>();
+  if (!jobIds.length) return out;
+  const jobs = await pool.query<{ job_id: string; status: string; error_code: string | null; progress: Record<string, unknown>; result: Record<string, unknown> | null; lab_grant_id: string | null; pinned: Record<string, string> }>(
+    'SELECT job_id, status, error_code, progress, result, lab_grant_id, pinned FROM ai_job WHERE tenant_id = $1 AND job_id = ANY($2::text[])', [tenantId, jobIds]);
+  const routeIds = [...new Set(jobs.rows.flatMap((j) => Object.entries(j.pinned ?? {}).filter(([uc]) => uc.startsWith('website.')).map(([, id]) => id)))];
+  const routes = routeIds.length
+    ? (await pool.query<{ route_id: string; use_case_id: string; model_id: string; status: string }>('SELECT route_id, use_case_id, model_id, status FROM ai_route_revision WHERE route_id = ANY($1::text[])', [routeIds])).rows
+    : [];
+  for (const j of jobs.rows) {
+    const pinned = new Set(Object.values(j.pinned ?? {}));
+    const r = j.result ?? null;
+    out.set(j.job_id, {
+      job_id: j.job_id, status: j.status, error_code: j.error_code, step: str(j.progress?.['step']), lab: !!j.lab_grant_id,
+      image_error: str(j.progress?.['image_error']), image_reason: str(j.progress?.['image_reason']),
+      result: r ? { status: str(r['status']), question: str(r['question']), message: str(r['message']), proposal_id: str(r['proposal_id']), model: str(r['model']), route_status: str(r['route_status']), assignment: str(r['assignment']) } : null,
+      routes: routes.filter((x) => pinned.has(x.route_id)).map((x) => ({ use_case_id: x.use_case_id, model_id: x.model_id, status: x.status })),
+    });
+  }
+  return out;
 }
 
 function rcOf(lreq: LooseRequest): { request_id: string; session: SessionSummary | null } {
@@ -91,6 +124,10 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
       return res.status(400).json({ error: { code: 'validation_error', message: 'Escribe tu solicitud para poder ayudarte.' } });
     }
     const idempotencyKey = resolveIdempotencyKey(req.get('idempotency-key'), rc.request_id);
+    // Laboratorio (DEC-0074): la autorización elegida solo importa si el mensaje necesita la edición con IA; el pipeline
+    // la valida entonces (inválida ⇒ 403 sin job ni fallback). Preguntas y atajos exactos no dependen de ella.
+    const labGrantId = req.get('x-ai-lab-grant');
+    if (labGrantId !== undefined && (!labGrantId.trim() || labGrantId.length > 160)) throw new AppError(400, 'validation_error', 'Selecciona una autorización de laboratorio válida.');
 
     let outcome;
     try {
@@ -104,6 +141,7 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
         text: text.trim(),
         requestId: rc.request_id,
         idempotencyKey,
+        labGrantId: labGrantId ?? null,
       });
     } catch (err) {
       if (await handleDomainDeny(req, res, lreq, err, deps.pool)) return undefined;
@@ -113,6 +151,7 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
     const body = {
       request: { request_id: outcome.requestId, status: outcome.requestStatus, action_class: outcome.actionClass, intent: outcome.intent, capability_target: outcome.capabilityTarget },
       proposal_id: outcome.proposalId ?? null,
+      ai_job: outcome.aiJob ?? null,
       response: outcome.responseText,
       reply: outcome.responseText,
     };
@@ -121,15 +160,18 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
       return res.status(200).json({ ...body, channel_sent: false, replayed: true });
     }
 
-    // Respuesta por el canal (best-effort; el outcome JSON es la respuesta API).
-    const channelSent = await deps.channel.sendMessage(session.user_id, outcome.responseText).catch(() => ({ ok: false, error: 'send_failed' }));
+    // Un mensaje marcado como de Telegram se responde también en el chat VINCULADO de la persona (nunca a su id
+    // interno), con el mismo formato y botones que el chat; los del panel se quedan en el panel. Best-effort.
+    const channelSent = channel === 'telegram'
+      ? await deps.telegram.deliverOutcome(session.tenant_id, session.user_id, outcome).catch(() => false)
+      : false;
     await deps.sink.write({
       tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
       action: 'conversation.routed', resource: `request:${outcome.requestId}`,
       request_id: rc.request_id, decision: 'allow', result: outcome.actionClass,
     });
 
-    return res.status(201).json({ ...body, channel_sent: channelSent.ok });
+    return res.status(201).json({ ...body, channel_sent: channelSent });
   }));
 
   // --- Requests del tenant (conversation.read). -----------------------------
@@ -139,12 +181,13 @@ export function conversationRouter(deps: ConversationRouteDeps): Router {
     const session = sessionOf(lreq);
     const status = typeof req.query.status === 'string' ? (req.query.status as RequestStatus) : undefined;
     const rows = await deps.repo.listRequests(session.tenant_id, status ? { status } : {});
+    const jobs = await aiJobViews(deps.pool, session.tenant_id, rows.map((r) => r.ai_job_id).filter((id): id is string => !!id));
     await deps.sink.write({
       tenant_id: session.tenant_id, actor_id: session.user_id, actor_role: session.role_name,
       action: 'conversation.read', resource: 'requests', request_id: rc.request_id,
       decision: 'allow', result: 'success',
     });
-    return res.json({ tenant_id: session.tenant_id, requests: rows });
+    return res.json({ tenant_id: session.tenant_id, requests: rows.map((r) => ({ ...r, ai_job: r.ai_job_id ? jobs.get(r.ai_job_id) ?? null : null })) });
   }));
 
   // --- Proposals del tenant (conversation.read). -----------------------------

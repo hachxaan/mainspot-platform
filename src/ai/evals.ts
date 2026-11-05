@@ -53,7 +53,8 @@ export const BASE_DESIGN: SiteDesign = {
 };
 const BASE_PAGE_FACTS = { line: 'Café de altura y pan del día', about: 'Somos una cafetería de barrio.', hours: CAFE_FACTS.hours, address: CAFE_FACTS.address, email: '' };
 
-const editCase = (id: string, instruction: string, expect: Record<string, unknown>): EvalCase => ({ id, input: { current_design: BASE_DESIGN, page_facts: BASE_PAGE_FACTS, instruction }, expect });
+// site-edit/v2: el prompt declara la biblioteca del negocio (vacía en estas evaluaciones, salvo el caso que la usa).
+const editCase = (id: string, instruction: string, expect: Record<string, unknown>, library: Array<{ asset_id: string; alt: string; source: string }> = []): EvalCase => ({ id, input: { current_design: BASE_DESIGN, page_facts: BASE_PAGE_FACTS, library, instruction }, expect });
 
 function classifyCases(kind: 'comment' | 'review'): EvalCase[] {
   const rows: Array<[string, string, string, string, string[]]> = [
@@ -93,17 +94,19 @@ export const EVAL_SUITES: EvalSuiteSeed[] = [
     ],
   },
   {
-    useCase: 'website.edit.simple', name: 'ediciones-simples', version: 1, thresholds: { min_pass_rate: 0.8 },
+    useCase: 'website.edit.simple', name: 'ediciones-simples', version: 2, thresholds: { min_pass_rate: 0.8 },
     cases: [
       editCase('hours', 'Cambia el horario del sábado: ahora abrimos de 8:00 a 14:00.', { allowed_ops: ['set_fact'], fact_field: 'hours', value_includes: ['8', '14'] }),
       editCase('title', "Cambia el título de la portada por 'Café de altura en el centro de Chetumal'.", { allowed_ops: ['set_block_field'], block_index: 0, field: 'heading', value_includes: ['Café de altura en el centro de Chetumal'] }),
       editCase('color', 'Pon el color principal en un verde oscuro.', { allowed_ops: ['set_theme'], theme_field: 'palette.primary' }),
       editCase('item', "Agrega 'Chocolate caliente' a lo que ofrecemos.", { allowed_ops: ['set_items', 'set_block_field'], block_index: 1, items_include: 'Chocolate caliente' }),
       editCase('phone', 'Cambia el teléfono a 9831112233.', { allowed_ops: [], needs_clarification: true }),
+      editCase('image', 'Pon en la portada una imagen de pan dulce recién horneado.', { allowed_ops: ['set_image'], block_index: 0 }),
+      editCase('library', 'Usa la foto de la fachada que subí para la sección de nuestra historia.', { allowed_ops: ['set_image'], block_index: 2 }, [{ asset_id: 'ast_eval_fachada_0000000001', alt: 'Fachada del café con toldo verde', source: 'uploaded' }]),
     ],
   },
   {
-    useCase: 'website.edit.complex', name: 'redisenos', version: 1, thresholds: { min_pass_rate: 1 },
+    useCase: 'website.edit.complex', name: 'redisenos', version: 2, thresholds: { min_pass_rate: 1 },
     cases: [
       editCase('dark', 'Rediseña la portada para que se vea como una cafetería moderna y minimalista con tonos oscuros.', { allowed_ops: ['set_theme', 'set_block_field', 'add_block', 'remove_block', 'move_block', 'set_items'], forbid_ops: ['set_fact'], min_ops: 1 }),
       editCase('faq', 'Agrega una sección de preguntas frecuentes sobre reservaciones y estacionamiento.', { allowed_ops: ['add_block', 'set_items', 'move_block', 'set_block_field'], add_block_type: 'faq' }),
@@ -228,8 +231,8 @@ function scoreEdit(out: EditOutput, expect: Record<string, unknown>): string[] {
   if (expect['block_index'] !== undefined && ops.some((o) => o.block_index !== null && o.block_index !== expect['block_index'] && o.op !== 'add_block')) notes.push('toca otro bloque');
   if (expect['field'] && !ops.some((o) => o.field === expect['field'])) notes.push(`no cambia ${String(expect['field'])}`);
   for (const s of (expect['value_includes'] as string[] | undefined) ?? []) if (!ops.some((o) => (o.value ?? '').includes(s))) notes.push(`valor sin «${s}»`);
-  if (expect['items_include'] && !ops.some((o) => (o.items ?? []).some((i) => i.title.includes(String(expect['items_include']))) || (o.value ?? '').includes(String(expect['items_include'])))) notes.push('no agrega el elemento');
-  if (expect['add_block_type'] && !ops.some((o) => o.op === 'add_block' && (o.block as { type?: string } | null)?.type === expect['add_block_type'])) notes.push(`no agrega bloque ${String(expect['add_block_type'])}`);
+  if (expect['items_include'] && !ops.some((o) => o.items.some((i) => i.title.includes(String(expect['items_include']))) || (o.value ?? '').includes(String(expect['items_include'])))) notes.push('no agrega el elemento');
+  if (expect['add_block_type'] && !ops.some((o) => o.op === 'add_block' && o.new_block?.type === expect['add_block_type'])) notes.push(`no agrega bloque ${String(expect['add_block_type'])}`);
   if (expect['min_ops'] && ops.length < Number(expect['min_ops'])) notes.push('muy pocas operaciones');
   return notes;
 }

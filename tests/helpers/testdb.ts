@@ -36,9 +36,9 @@ export interface TestApi {
   close: () => Promise<void>;
 }
 
-export async function bootApi(configOverrides: Partial<AppConfig> = {}, poolMax = 5): Promise<TestApi> {
+export async function bootApi(configOverrides: Partial<AppConfig> = {}, poolMax = 5, appOverrides: { metaFetch?: typeof fetch } = {}): Promise<TestApi> {
   const pool = new Pool({ connectionString: TEST_URL, max: poolMax });
-  const handle = createApp({ config: { ...TEST_CONFIG, engagementPollIntervalMs: 0, ...configOverrides }, pool });
+  const handle = createApp({ config: { ...TEST_CONFIG, engagementPollIntervalMs: 0, ...configOverrides }, pool, ...appOverrides });
   const { app, jev } = handle;
   const server: Server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));

@@ -1,10 +1,11 @@
 /**
  * Editor asistido por lenguaje natural (INC-003, REQ-012) — BÁSICO y DETERMINISTA.
  *
- * TENTATIVA e iterable: mapeo de comandos/patrones comunes en español a un
- * parche estructurado de WebsiteData. No hay modelo generativo en esta tanda;
- * el resultado SIEMPRE es una propuesta revisable que pasa por confirmación →
- * preview → aprobación humana (RULE-003) antes de publicar.
+ * Atajo opcional, no el límite de lo que se puede pedir: reconoce patrones comunes en español
+ * (horario, nombre, dirección, giro, servicio, sección) y los convierte en un parche estructurado de
+ * WebsiteData. `isPreciseEdit` decide si el atajo basta; si no, el chat delega en la edición con IA
+ * (Jev + parche `site-edit/v2`). El resultado SIEMPRE es una propuesta revisable que pasa por
+ * confirmación → preview → aprobación humana (RULE-003) antes de publicar.
  *
  * La DETECCIÓN usa texto normalizado (sin acentos, minúsculas); los VALORES
  * de contenido del negocio se extraen del texto ORIGINAL para preservar
@@ -58,8 +59,8 @@ export function editWebsiteByInstruction(before: WebsiteData, rawInstruction: st
     sentences.push(p.sentence);
   };
 
-  // Teléfono / WhatsApp / contacto.
-  if (/(telefono|teléfono|whatsapp|whats ap|celular|movil|móvil)/.test(n) && !TIME_RE.test(n)) {
+  // Teléfono / WhatsApp / contacto («mi número nuevo es …»).
+  if (/(telefono|teléfono|whatsapp|whats ap|celular|movil|móvil|numero)/.test(n) && !TIME_RE.test(n)) {
     const newPhone = extractValue(raw, PHONE_RE);
     if (newPhone) {
       const beforeValue = after.phone || '(sin teléfono)';
@@ -155,6 +156,24 @@ export function editWebsiteByInstruction(before: WebsiteData, rawInstruction: st
   // Cambio genérico de la web.
   push({ field: 'site.generic', kind: 'change', label: 'información', after: raw, sentence: 'Actualizar la información de la página web.' });
   return { patches, after, sentences };
+}
+
+/** Campos que el atajo determinista resuelve con exactitud cuando la petición es una sola instrucción. */
+const PRECISE_FIELDS = new Set(['schedule.hours', 'site.name', 'contact.address', 'site.line', 'service.add', 'section.add']);
+/** Conectores que indican más de una petición o un matiz que el atajo no entiende («… y …», «… con …»). */
+const COMPOUND = /\s(y|e|ademas|tambien|con|pero|luego|despues)\s|;/;
+
+/**
+ * El atajo determinista basta: un único cambio de un campo conocido, con valor extraído y sin otras
+ * instrucciones en la misma frase. Lo demás lo interpreta la edición con IA cuando está disponible.
+ */
+export function isPreciseEdit(result: WebsiteEditResult, rawInstruction: string): boolean {
+  if (result.patches.length !== 1) return false;
+  const p = result.patches[0] as WebsitePatch;
+  if (!PRECISE_FIELDS.has(p.field)) return false;
+  if (p.field === 'schedule.hours' && p.before === undefined) return false;
+  if (COMPOUND.test(` ${normalize(rawInstruction)} `)) return false;
+  return p.after.length > 0 && p.after.length <= 80;
 }
 
 export function sentenceList(patches: WebsitePatch[]): PatchSentence[] {

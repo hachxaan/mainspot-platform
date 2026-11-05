@@ -173,8 +173,10 @@
     return html + '</div>';
 
     function msgBot(text, m, actions) {
-      var out = '<div class="msg bot' + (m && m.error ? ' is-error' : '') + '"><div class="who"><span class="brand-mark" aria-hidden="true"></span>MainSpot</div><div class="bubble">' + esc(text);
+      var out = '<div class="msg bot' + (m && m.error ? ' is-error' : '') + '"><div class="who"><span class="brand-mark" aria-hidden="true"></span>MainSpot</div><div class="bubble">' + (m && m.pending ? icon('loader-circle', 'spinner') + ' ' : '') + esc(text);
       if (m && m.changes && m.changes.length) out += '<div class="change-box">' + UI.diff(m.changes) + '</div>';
+      // Edición con IA: qué ruta la ejecutó (una ruta en borrador del laboratorio se nombra como tal).
+      if (m && m.badge) out += '<p class="tiny" style="margin-top:6px;opacity:.85">' + esc(m.badge) + '</p>';
       out += '</div>';
       if (actions.length) {
         var busy = m && MS.mem.busy[m.id];
@@ -216,7 +218,7 @@
     }
     html += '</div>';
     if (linked && MS.S.dev.telegram) {
-      html += '<div class="tg-suggest" aria-label="Comandos del bot">' + ['/ayuda'].map(function (s) {
+      html += '<div class="tg-suggest" aria-label="Sugerencias">' + ['Ayuda', '¿Qué tengo pendiente?'].map(function (s) {
         return '<button type="button" data-action="tg-suggest" data-arg="' + esc(s) + '">' + esc(s) + '</button>';
       }).join('') + '</div>';
     }

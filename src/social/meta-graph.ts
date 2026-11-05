@@ -23,6 +23,7 @@ import type { ProviderConnection, ProviderConnectionRepository } from '../connec
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
 import type { SocialPage, SocialPostInput, SocialPostLookup, SocialPublishResult, SocialProvider } from './provider.ts';
+import type { MediaService } from '../media/service.ts';
 
 export const META_PROVIDER = 'meta_pages' as const;
 
@@ -77,6 +78,8 @@ export function classifyGraphError(httpStatus: number, body: unknown, retryAfter
   }
   if (code === 506) return new MetaGraphError('duplicate', detail);
   if (code === 100 && subcode === 33) return new MetaGraphError('not_found', detail);
+  // 100 = parámetro inválido (campo inexistente, etc.): un fallo de la petición, nunca una autorización revocada.
+  if (code === 100) return new MetaGraphError('provider_error', detail);
   if (code === 1 || code === 2 || code === 368 || httpStatus >= 500) return new MetaGraphError('transient', detail);
   if (httpStatus === 404) return new MetaGraphError('not_found', detail);
   if (err?.type === 'OAuthException') return new MetaGraphError('invalid_token', detail);
@@ -144,11 +147,21 @@ export class MetaGraphClient {
     return this.request<T>('POST', this.url(path, null, call.params), body, true);
   }
 
+  /** POST multipart (subida de una foto): el token viaja en el cuerpo, nunca en la URL. */
+  postFile<T>(path: string, call: GraphCall & { fields: Record<string, string>; file: { field: string; bytes: Buffer; mime: string; filename: string } }): Promise<T> {
+    const body = new FormData();
+    for (const [k, v] of Object.entries(call.fields)) body.set(k, v);
+    body.set(call.file.field, new Blob([new Uint8Array(call.file.bytes)], { type: call.file.mime }), call.file.filename);
+    body.set('access_token', call.token);
+    if (this.appSecret) body.set('appsecret_proof', createHmac('sha256', this.appSecret).update(call.token).digest('hex'));
+    return this.request<T>('POST', this.url(path, null, call.params), body, true);
+  }
+
   delete<T>(path: string, call: GraphCall): Promise<T> {
     return this.request<T>('DELETE', this.url(path, call.token, call.params), undefined, true);
   }
 
-  private async request<T>(method: string, url: string, body: URLSearchParams | undefined, write: boolean): Promise<T> {
+  private async request<T>(method: string, url: string, body: URLSearchParams | FormData | undefined, write: boolean): Promise<T> {
     let res: Response;
     try {
       res = await this.fetchImpl(url, {
@@ -197,6 +210,8 @@ export interface MetaPagesAdapterDeps {
   connections: ProviderConnectionRepository;
   appId: string;
   appSecret: string;
+  /** Bytes de la biblioteca para publicar fotos (acotados al negocio). */
+  media?: Pick<MediaService, 'variant'>;
 }
 
 function toResult(err: unknown, ref: string): SocialPublishResult {
@@ -272,12 +287,31 @@ export class MetaPagesAdapter implements SocialProvider {
     const ctx = await this.pageContext(input.tenantId);
     if (!ctx) return { ok: false, external_ref: ref, error: 'meta_not_connected', retryable: false };
     const message = input.text.trim();
-    const link = input.imageUrl && /^https?:\/\//i.test(input.imageUrl) ? input.imageUrl : undefined;
+    // Con imagen de la biblioteca: foto de la Page (POST /{page}/photos) con el texto como pie; Graph devuelve la
+    // publicación creada en `post_id`. Sin imagen: publicación de texto (POST /{page}/feed).
+    let photo: { bytes: Buffer; mime: string } | null = null;
+    if (input.mediaAssetId) {
+      const media = this.deps.media;
+      const found = media ? (await media.variant(input.mediaAssetId, 'w1920', input.tenantId)) ?? (await media.variant(input.mediaAssetId, 'original', input.tenantId)) : null;
+      if (!found) return { ok: false, external_ref: ref, error: 'meta_media_unavailable', retryable: false };
+      photo = { bytes: found.bytes, mime: found.mime };
+    }
+    const link = !photo && input.imageUrl && /^https?:\/\//i.test(input.imageUrl) ? input.imageUrl : undefined;
     let postId: string;
     try {
-      const created = await this.deps.client.post<{ id?: string }>(`${ctx.pageId}/feed`, { token: ctx.pageToken, form: { message, link } });
-      if (!created.id) return { ok: false, external_ref: ref, error: 'meta_publish_no_id', uncertain: true };
-      postId = created.id;
+      if (photo) {
+        const ext = photo.mime === 'image/png' ? 'png' : photo.mime === 'image/jpeg' ? 'jpg' : 'webp';
+        const created = await this.deps.client.postFile<{ id?: string; post_id?: string }>(`${ctx.pageId}/photos`, {
+          token: ctx.pageToken, fields: { caption: message, published: 'true' },
+          file: { field: 'source', bytes: photo.bytes, mime: photo.mime, filename: `mainspot.${ext}` },
+        });
+        if (!created.post_id) return { ok: false, external_ref: created.id ?? ref, error: 'meta_publish_no_id', uncertain: true };
+        postId = created.post_id;
+      } else {
+        const created = await this.deps.client.post<{ id?: string }>(`${ctx.pageId}/feed`, { token: ctx.pageToken, form: { message, link } });
+        if (!created.id) return { ok: false, external_ref: ref, error: 'meta_publish_no_id', uncertain: true };
+        postId = created.id;
+      }
     } catch (err) {
       await this.noteAuthFailure(input.tenantId, err);
       return toResult(err, ref);
@@ -318,14 +352,17 @@ export class MetaPagesAdapter implements SocialProvider {
   // ------------------------------------------------------------------ conexión / OAuth
 
   /** URL del diálogo de Facebook Login (code flow, state de un solo uso). */
-  authorizationUrl(input: { state: string; redirectUri: string; adsRead: boolean }): string {
+  authorizationUrl(input: { state: string; redirectUri: string; adsRead: boolean; configId?: string }): string {
     const scopes = [...REQUIRED_PAGE_SCOPES, ...(input.adsRead ? [ADS_READ_SCOPE] : [])];
     const u = new URL(`https://www.facebook.com/${this.deps.client.version}/dialog/oauth`);
     u.searchParams.set('client_id', this.deps.appId);
     u.searchParams.set('redirect_uri', input.redirectUri);
     u.searchParams.set('state', input.state);
     u.searchParams.set('response_type', 'code');
-    u.searchParams.set('scope', scopes.join(','));
+    // Facebook Login for Business: la configuración define los permisos (Meta desaconseja mezclarla con `scope`).
+    // Los permisos concedidos se comprueban igual al volver (me/permissions y debug_token).
+    if (input.configId) u.searchParams.set('config_id', input.configId);
+    else u.searchParams.set('scope', scopes.join(','));
     return u.toString();
   }
 
@@ -374,13 +411,16 @@ export class MetaPagesAdapter implements SocialProvider {
     return out;
   }
 
-  /** Page token de una Page que la persona administra (derivado de un token de usuario de larga duración). */
-  async pageAccess(userToken: string, pageId: string): Promise<{ id: string; name: string; page_token: string; tasks: string[] }> {
-    const r = await this.deps.client.get<{ id?: string; name?: string; access_token?: string; tasks?: string[] }>(pageId, {
-      token: userToken, params: { fields: 'id,name,access_token,tasks' },
+  /**
+   * Page token de una Page que la persona administra (derivado de un token de usuario de larga duración). Las tareas
+   * de la persona solo vienen en `me/accounts` (el nodo Page no tiene el campo `tasks`).
+   */
+  async pageAccess(userToken: string, pageId: string): Promise<{ id: string; name: string; page_token: string }> {
+    const r = await this.deps.client.get<{ id?: string; name?: string; access_token?: string }>(pageId, {
+      token: userToken, params: { fields: 'id,name,access_token' },
     });
     if (!r.id || !r.access_token) throw new MetaGraphError('permission_missing', {});
-    return { id: r.id, name: r.name ?? r.id, page_token: r.access_token, tasks: Array.isArray(r.tasks) ? r.tasks : [] };
+    return { id: r.id, name: r.name ?? r.id, page_token: r.access_token };
   }
 
   /**

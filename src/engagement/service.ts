@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Pool, PoolClient } from 'pg';
 import type { AuditSink } from '../audit/sink.ts';
-import type { ChannelAdapter } from '../channels/types.ts';
+import { plainMessage, type ChannelAdapter } from '../channels/types.ts';
 import { formatInternational, type ContactPhoneService, type PhoneChannel } from '../contact/phones.ts';
 import { runAtomic } from '../conversation/state-machine.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
@@ -220,6 +220,11 @@ export class EngagementService {
 
   constructor(deps: EngagementServiceDeps) {
     this.deps = deps;
+  }
+
+  /** Cómo se publican las respuestas (simulación o proveedor real); los avisos lo dicen claramente. */
+  get replyMode(): 'simulated' | 'real' {
+    return this.deps.replier.mode;
   }
 
   // ---------------------------------------------------------------- políticas
@@ -1154,7 +1159,7 @@ export class EngagementService {
     const notice = await this.issueNotice(c, n.notification_id, n.chat_id, userId);
     if (!notice) return 'skipped';
     const injected = this.deps.channel.name === 'simulated' && await consumeSimFault(this.deps.pool, c.tenant_id, 'telegram', 'error');
-    const sent = injected ? { ok: false, error: 'simulated_telegram_error' } : await this.deps.channel.sendMessage(n.chat_id, this.notificationText(c, notice));
+    const sent = injected ? { ok: false, error: 'simulated_telegram_error' } : await this.deps.channel.send(n.chat_id, plainMessage(this.notificationText(c, notice)));
     if (sent.ok) {
       // Bajo candado compartido del caso (una edición en curso confirma antes): solo queda «enviada» si la revisión
       // enviada sigue siendo la vigente; si no, la fila sigue pendiente y el siguiente ciclo manda la nueva.

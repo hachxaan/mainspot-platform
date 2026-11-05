@@ -46,6 +46,24 @@ export const META_CALLBACK_PATH = '/api/connections/meta/callback';
 /** A dónde vuelve el navegador tras el callback (sin datos sensibles; solo un resultado). */
 const PANEL_RETURN = '/panel#/facebook/conectar';
 
+/**
+ * URI a la que Meta devuelve el navegador: la pública configurada (META_OAUTH_REDIRECT_URI, publicada por el KVM y el
+ * túnel hasta este mismo callback) o la del panel. Una URI que no sea HTTPS o no apunte a este callback no arranca.
+ */
+export function metaRedirectUri(config: Pick<AppConfig, 'publicBaseUrl' | 'metaOAuthRedirectUri'>): string {
+  if (!config.metaOAuthRedirectUri) return `${config.publicBaseUrl}${META_CALLBACK_PATH}`;
+  let u: URL;
+  try {
+    u = new URL(config.metaOAuthRedirectUri);
+  } catch {
+    throw new Error('META_OAUTH_REDIRECT_URI no es una URL válida');
+  }
+  if (u.protocol !== 'https:' || u.pathname !== META_CALLBACK_PATH || u.search || u.hash || u.username || u.password) {
+    throw new Error(`META_OAUTH_REDIRECT_URI debe ser https://<dominio>${META_CALLBACK_PATH}, sin query ni fragmento`);
+  }
+  return `${u.origin}${META_CALLBACK_PATH}`;
+}
+
 /** Lo que las rutas necesitan del actor de la sesión (ver actorOf en contact-routes). */
 interface RouteActor {
   tenantId: string;
@@ -87,7 +105,7 @@ function graphUserError(err: unknown): AppError {
 export function metaConnectionRouter(deps: MetaConnectionRouteDeps): Router {
   const router = Router();
   const limiter = new ActionRateLimiter(10, 60_000, 60_000);
-  const redirectUri = `${deps.config.publicBaseUrl}${META_CALLBACK_PATH}`;
+  const redirectUri = metaRedirectUri(deps.config);
 
   const limited = (req: Request, res: Response, actor: string, resource: string): boolean => {
     const ip = req.ip ?? 'unknown';
@@ -133,7 +151,7 @@ export function metaConnectionRouter(deps: MetaConnectionRouteDeps): Router {
     if (!deps.meta.oauthConfigured) throw oauthNotConfigured();
     if (limited(req, res, a.userId, 'meta:start')) return undefined;
     const state = await deps.connections.createOAuthState({ tenantId: a.tenantId, userId: a.userId, provider: META_PROVIDER, redirectUri });
-    const url = deps.meta.authorizationUrl({ state, redirectUri, adsRead: deps.config.metaAdsCheckEnabled });
+    const url = deps.meta.authorizationUrl({ state, redirectUri, adsRead: deps.config.metaAdsCheckEnabled, configId: deps.config.metaLoginConfigId || undefined });
     await audit(a, 'connection.meta.start', 'oauth_state_issued');
     return res.json({ url, redirect_uri: redirectUri, scopes: [...REQUIRED_PAGE_SCOPES, ...(deps.config.metaAdsCheckEnabled ? [ADS_READ_SCOPE] : [])] });
   }));
@@ -170,12 +188,14 @@ export function metaConnectionRouter(deps: MetaConnectionRouteDeps): Router {
       return res.status(409).json({ error: { code: 'validation_error', message: 'Primero autoriza a MainSpot en Facebook (Conectar Facebook).' } });
     }
     let page;
+    let tasks: string[];
     try {
       const available = (await deps.meta.listPages(tokens.user_token)).find((p) => p.id === pageId);
       if (!available) throw new AppError(403, 'permission_denied', 'La página no pertenece a las páginas autorizadas de esta cuenta.');
       if (!available.tasks.some((task) => task === 'CREATE_CONTENT' || task === 'MANAGE')) {
         throw new AppError(403, 'permission_denied', 'La cuenta no tiene una tarea de publicación habilitada en esa página.');
       }
+      tasks = available.tasks;
       page = await deps.meta.pageAccess(tokens.user_token, pageId);
     } catch (err) {
       await deps.meta.noteAuthFailure(a.tenantId, err);
@@ -193,7 +213,7 @@ export function metaConnectionRouter(deps: MetaConnectionRouteDeps): Router {
     log.info('meta.connection.selected', 'facebook page linked to business', { tenant_id: a.tenantId, status: verification.status });
     return res.json({
       status: saved.status, page_id: saved.external_resource_id, page_name: saved.external_resource_name,
-      missing_scopes: verification.missing_scopes, tasks: page.tasks,
+      missing_scopes: verification.missing_scopes, tasks,
       message: verification.status === 'connected'
         ? 'Página de Facebook conectada y verificada.'
         : verification.status === 'permission_missing'
@@ -258,7 +278,7 @@ export function metaConnectionRouter(deps: MetaConnectionRouteDeps): Router {
  */
 export function metaOAuthCallbackRouter(deps: MetaConnectionRouteDeps): Router {
   const router = Router();
-  const redirectUri = `${deps.config.publicBaseUrl}${META_CALLBACK_PATH}`;
+  const redirectUri = metaRedirectUri(deps.config);
   const back = (res: Response, outcome: string) => res.redirect(303, `${deps.config.publicBaseUrl}${PANEL_RETURN}?conexion=${encodeURIComponent(outcome)}`);
 
   router.get(META_CALLBACK_PATH, ah(async (req, res) => {

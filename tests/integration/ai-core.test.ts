@@ -19,6 +19,7 @@ import path from 'node:path';
 import { bootApi, authHeaders, api, login, type TestApi } from '../helpers/testdb.ts';
 import { createTenantWithPlan, countRows } from '../helpers/tenants.ts';
 import { AiDispatcher } from '../../src/ai/dispatcher.ts';
+import type { SimulatedChannel } from '../../src/channels/simulated.ts';
 import { AuditSink } from '../../src/audit/sink.ts';
 import { currentStep, totpAt } from '../../src/platform/auth.ts';
 import { AUTO_REPLY_CONSENT } from '../../src/engagement/consent.ts';
@@ -193,6 +194,109 @@ test('E06/E18: la edición usa la ruta fijada al crear el job aunque cambie el r
     await t.pool.query(`UPDATE client_website SET published_version = published_version - 1 WHERE tenant_id = $1`, [a.tenant]);
   } finally {
     for (const uc of ['website.edit.simple', 'website.edit.complex']) await reg.activate(uc, ENV, before.get(uc) as string, 'test:e18', 'E18: restaurar rollout', 'seed');
+  }
+});
+
+async function publishedClassicSite(prefix: string) {
+  const a = await createTenantWithPlan(t, LIMITS, prefix);
+  const slug = `chat-${randomUUID().slice(0, 6)}`;
+  const created = await call(a.token, '/website', 'POST', { slug, site_name: `Panadería ${slug}`, data: { line: 'Pan recién hecho', hours: 'Lunes a sábado: 7:00 a 20:00', services: ['Baguette'] } });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const first = await call(a.token, '/website/first-publication', 'POST');
+  assert.equal((await call(a.token, `/conversation/proposals/${first.body.proposal.proposal_id}/approve`, 'POST')).body.status, 'published');
+  return { ...a, slug };
+}
+
+async function chatRequest(token: string, requestId: string) {
+  const reqs = (await call(token, '/conversation/requests')).body.requests as Array<{ request_id: string; proposal_id: string | null; ai_job: { status: string; error_code: string | null; routes: Array<{ use_case_id: string }> } | null }>;
+  return { all: reqs, row: reqs.find((x) => x.request_id === requestId) };
+}
+
+test('chat → IA: pedir una imagen en la portada prepara un cambio real (bloques + imagen) en la misma solicitud, con vista previa y publicación', async () => {
+  const a = await publishedClassicSite('client_aic');
+  const msg = await call(a.token, '/conversation/messages', 'POST', { text: 'Agrega una imagen de una panadería francesa en la portada de mi página', channel: 'simulated' });
+  assert.equal(msg.status, 201, JSON.stringify(msg.body));
+  assert.equal(msg.body.proposal_id, null, 'el editor determinista no inventa un cambio vacío');
+  assert.ok(msg.body.ai_job?.job_id, 'el chat delega en la edición con IA');
+  assert.equal(msg.body.request.status, 'classified');
+  await t.handle.aiJobs.drain(a.tenant);
+
+  const { all, row } = await chatRequest(a.token, msg.body.request.request_id);
+  assert.equal(row?.ai_job?.status, 'succeeded', JSON.stringify(row?.ai_job));
+  assert.ok(row?.proposal_id, 'la propuesta queda en la solicitud del chat');
+  assert.equal(all.filter((x) => x.proposal_id === row?.proposal_id).length, 1, 'sin una segunda solicitud para la misma propuesta');
+  const p = (await call(a.token, `/conversation/proposals/${row?.proposal_id}`)).body.proposal;
+  assert.deepEqual([p.proposal_type, p.status], ['website.ai_edit', 'preview_ready']);
+  const stored = p.detail.after.design;
+  assert.equal(stored.design.blocks[0].type, 'hero');
+  assert.equal(stored.design.blocks[0].image_slot, 'hero', 'la portada usa la imagen nueva');
+  assert.match(stored.assets.hero.asset_id, /^ast_/);
+  assert.ok(stored.design.blocks.some((b: { items: Array<{ title: string }> | null }) => (b.items ?? []).some((i) => i.title === 'Baguette')), 'la conversión conserva el contenido clásico');
+  assert.ok(p.detail.ai.routes.some((x: { use_case_id: string }) => x.use_case_id === 'website.image.generate'), 'la ruta de imagen queda registrada');
+
+  const pub = await call(a.token, `/conversation/proposals/${row?.proposal_id}/approve`, 'POST');
+  assert.equal(pub.body.status, 'published', JSON.stringify(pub.body));
+  const site = await rawGet('/', `${a.slug}.${DOMAIN}`);
+  assert.equal(site.status, 200);
+  assert.match(site.body.toString(), new RegExp(`/media/${stored.assets.hero.asset_id}/`), 'el sitio publicado muestra la imagen');
+});
+
+test('chat con una autorización de laboratorio inválida: preguntas y cambios exactos siguen; lo que necesita IA se rechaza sin job ni fallback', async () => {
+  const a = await publishedClassicSite('client_aiq');
+  const send = (text: string) => api(t.baseUrl, '/api/backoffice/conversation/messages', {
+    method: 'POST', headers: authHeaders(a.token, { 'X-AI-Lab-Grant': 'lab_vencida_o_inexistente', 'Idempotency-Key': randomUUID() }), body: JSON.stringify({ text, channel: 'simulated' }),
+  });
+  const question = await send('¿Cuál es mi horario?');
+  assert.equal(question.status, 201, JSON.stringify(question.body));
+  assert.equal(question.body.request.status, 'answered');
+  const precise = await send('El horario es de lunes a viernes de 9:00 a 18:00');
+  assert.equal(precise.status, 201, JSON.stringify(precise.body));
+  assert.ok(precise.body.proposal_id, 'un atajo exacto no depende de la autorización');
+  const image = await send('Agrega una imagen de una panadería francesa en la portada de mi página');
+  assert.equal(image.status, 403, JSON.stringify(image.body));
+  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM ai_job WHERE tenant_id = $1', [a.tenant]), 0, 'sin job ni ruta de sustitución');
+});
+
+test('Telegram → IA: el cambio pedido en el chat se prepara con IA, avisa con la vista previa y el botón «Publicar» lo publica', async () => {
+  const a = await publishedClassicSite('client_ait');
+  const chat = `sim-ai-${randomUUID().slice(0, 8)}`;
+  const last = () => (t.handle.channel as SimulatedChannel).transcript().filter((m) => m.to === chat).at(-1)!;
+  const code = await call(a.token, '/telegram/link-code', 'POST');
+  assert.equal((await t.handle.telegram.handleUpdate({ message: { chat: { id: chat }, text: `/start ${code.body.code}` } })).handled, 'linked');
+  const ask = await t.handle.telegram.handleUpdate({ message: { chat: { id: chat }, text: 'Agrega una imagen de una panadería francesa en la portada de mi página' } });
+  assert.equal(ask.handled, 'ai_edit_started');
+  assert.match(last().text, /preparando tu cambio con IA/);
+  await t.handle.aiJobs.drain(a.tenant);
+  const p = await t.pool.query<{ proposal_id: string }>(`SELECT proposal_id FROM action_proposal WHERE tenant_id = $1 AND proposal_type = 'website.ai_edit'`, [a.tenant]);
+  const card = last();
+  assert.match(card.text, /Así quedará tu página/, 'al terminar el job avisa en el mismo chat con la vista previa');
+  const publish = card.buttons.flat().find((b) => b.label === '🚀 Publicar');
+  assert.equal(publish?.action, `pp:${p.rows[0]?.proposal_id}`);
+  const pressed = await t.handle.telegram.handleUpdate({ callback_query: { id: 'cbq-ai', data: publish!.action, message: { message_id: card.message_id, chat: { id: chat } } } });
+  assert.equal(pressed.handled, 'published');
+  const done = await t.pool.query<{ status: string }>(`SELECT status FROM action_proposal WHERE tenant_id = $1 AND proposal_id = $2`, [a.tenant, p.rows[0]?.proposal_id]);
+  assert.equal(done.rows[0]?.status, 'published');
+});
+
+test('chat → IA: si la imagen no se puede generar, el job falla con el motivo y no se propone nada (sin sustituto)', async () => {
+  const a = await publishedClassicSite('client_aig');
+  const reg = t.handle.dispatcher.registry;
+  const current = (await reg.rollout('website.image.generate', ENV))?.active_route_id as string;
+  const prompt = (await reg.bundle(current))?.prompt.revision_id as string;
+  // Ruta real de imágenes: en pruebas los proveedores reales están apagados ⇒ BLOCKED_EXTERNAL, sin red.
+  const real = await reg.createRoute({ useCaseId: 'website.image.generate', modelId: 'oa:gpt-image-2', promptRevisionId: prompt, params: { timeout_ms: 20_000, aspect_ratio: '16:9' }, maxCostUsd: 0.08, changeNote: 'prueba: imagen sin proveedor disponible', actor: 'test:chat-ai' });
+  await reg.activate('website.image.generate', ENV, real.route_id, 'test:chat-ai', 'prueba: imagen bloqueada', 'seed');
+  try {
+    const msg = await call(a.token, '/conversation/messages', 'POST', { text: 'Agrega una imagen de una panadería francesa en la portada de mi página', channel: 'simulated' });
+    assert.ok(msg.body.ai_job?.job_id, JSON.stringify(msg.body));
+    await t.handle.aiJobs.drain(a.tenant);
+    const { row } = await chatRequest(a.token, msg.body.request.request_id);
+    assert.equal(row?.ai_job?.status, 'failed');
+    assert.match(row?.ai_job?.error_code ?? '', /^image_/);
+    assert.equal(row?.proposal_id, null, 'sin imagen no hay propuesta');
+    assert.equal(await countRows(t, `SELECT count(*) AS n FROM action_proposal WHERE tenant_id = $1 AND proposal_type = 'website.ai_edit'`, [a.tenant]), 0);
+  } finally {
+    await reg.activate('website.image.generate', ENV, current, 'test:chat-ai', 'prueba: restaurar rollout', 'seed');
   }
 });
 

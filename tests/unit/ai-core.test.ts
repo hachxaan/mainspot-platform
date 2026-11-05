@@ -17,7 +17,8 @@ import { base32Encode, currentStep, signPlatformToken, totpAt, verifyPlatformTok
 import { signSessionToken, verifySessionToken } from '../../src/shared/jwt.ts';
 import { activePromotions, normalizeFact } from '../../src/brand/service.ts';
 import { similarity } from '../../src/ai/business.ts';
-import { composeViolations, replyViolations, untracedNumbers, type EditOperation } from '../../src/ai/contracts.ts';
+import { composeViolations, EDIT_SCHEMA, replyViolations, untracedNumbers, type EditOperation } from '../../src/ai/contracts.ts';
+import { countUnionParams, withinStructuredOutputLimits } from '../../src/ai/providers/anthropic.ts';
 import { toClassification } from '../../src/engagement/ai-semantics.ts';
 import type { Answer } from '../../src/jev/types.ts';
 import { redactContactData } from '../../src/ai/minimize.ts';
@@ -63,7 +64,7 @@ test('diseño: el sitio renderizado no tiene scripts, escapa texto del modelo y 
 test('edición: parche tipado atómico; nunca cambia el teléfono ni quita portada/contacto', async () => {
   const d = await simulatedDesign('Café Brisa Sol');
   const data = normalizeWebsiteData({ name: 'Café Brisa Sol', hours: 'Lun-Sáb 7-20', phone: '+52 983 111 1111', design: stored(d) });
-  const op = (o: Partial<EditOperation>): EditOperation => ({ op: 'set_fact', block_index: null, field: null, theme_field: null, fact_field: null, value: null, block: null, items: null, to_index: null, ...o });
+  const op = (o: Partial<EditOperation>): EditOperation => ({ op: 'set_fact', block_index: null, field: null, theme_field: null, fact_field: null, value: null, to_index: null, new_block: null, items: [], image: null, ...o });
   const ok = applyEdit(data, [op({ op: 'set_fact', fact_field: 'hours', value: 'Lun-Sáb 8-14' }), op({ op: 'set_theme', theme_field: 'palette.primary', value: '#1f4d2b' })], { confirmedPriceStrings: [] });
   assert.deepEqual(ok.errors, []);
   assert.equal(ok.data.hours, 'Lun-Sáb 8-14');
@@ -76,8 +77,53 @@ test('edición: parche tipado atómico; nunca cambia el teléfono ni quita porta
   assert.ok(bad.errors.length > 0, 'una operación inválida rechaza todo el parche');
   assert.ok(applyEdit(data, [op({ op: 'set_theme', theme_field: 'palette.primary', value: 'verde' })], { confirmedPriceStrings: [] }).errors.length > 0);
   assert.ok(applyEdit(data, [op({ op: 'set_block_field', block_index: 1, field: 'body', value: 'Promo 2x1 a $40' })], { confirmedPriceStrings: [] }).errors.some((e) => e.includes('precio')));
-  const classic = normalizeWebsiteData({ name: 'Sin diseño' });
-  assert.ok(applyEdit(classic, [op({ op: 'set_block_field', block_index: 0, field: 'heading', value: 'Hola' })], { confirmedPriceStrings: [] }).errors.some((e) => e.includes('plantilla clásica')));
+});
+
+const op2 = (o: Partial<EditOperation>): EditOperation => ({ op: 'set_fact', block_index: null, field: null, theme_field: null, fact_field: null, value: null, to_index: null, new_block: null, items: [], image: null, ...o });
+
+test('edición: el contrato site-edit/v2 cabe en la salida estructurada nativa de Anthropic', () => {
+  const model = toModelSchema(EDIT_SCHEMA);
+  assert.ok(countUnionParams(model) <= 16, `uniones: ${countUnionParams(model)}`);
+  assert.ok(withinStructuredOutputLimits(model));
+});
+
+test('edición: una página clásica se convierte a bloques solo si el parche lo necesita y conserva el contenido del dueño', () => {
+  const classic = normalizeWebsiteData({ name: 'Taquería Faro Sol', line: 'Tacos al pastor y de asada, todas las noches', about: 'Promo de martes a $25 desde 2010', services: ['Tacos al pastor'], sections: [{ title: 'Promociones', content: 'Información de promociones.' }] });
+  const facts = applyEdit(classic, [op2({ op: 'set_fact', fact_field: 'hours', value: 'Lun-Dom 18:00 a 23:00' })], { confirmedPriceStrings: [] });
+  assert.deepEqual(facts.errors, []);
+  assert.equal(facts.data.design, null, 'solo datos: la página sigue clásica');
+  assert.equal(facts.converted, false);
+
+  const hero = applyEdit(classic, [op2({ op: 'set_block_field', block_index: 0, field: 'heading', value: 'Los tacos de la noche' })], { confirmedPriceStrings: [] });
+  assert.deepEqual(hero.errors, [], 'el precio que el dueño ya publicó no se trata como invención del modelo');
+  assert.equal(hero.converted, true);
+  const blocks = hero.data.design?.design.blocks ?? [];
+  assert.equal(blocks[0]?.type, 'hero');
+  assert.equal(blocks[0]?.heading, 'Los tacos de la noche');
+  assert.ok(blocks.some((b) => b.type === 'contact'));
+  assert.ok(blocks.some((b) => b.heading === 'Promociones'), 'las secciones clásicas pasan como bloques');
+  assert.ok(blocks.some((b) => (b.items ?? []).some((i) => i.title === 'Tacos al pastor')), 'los servicios se conservan');
+  assert.match(hero.sentences[0] ?? '', /formato de secciones/);
+
+  const invented = applyEdit(classic, [op2({ op: 'set_block_field', block_index: 1, field: 'body', value: 'Ahora 2x1 a $30' })], { confirmedPriceStrings: [] });
+  assert.ok(invented.errors.some((e) => e.includes('precio')), 'un precio nuevo escrito por el modelo sigue bloqueado');
+});
+
+test('edición: set_image reserva el slot del bloque y devuelve la imagen a obtener; sin datos válidos rechaza el parche', async () => {
+  const d = await simulatedDesign('Panadería Lupita');
+  const data = normalizeWebsiteData({ name: 'Panadería Lupita', design: { ...stored(d), design: { ...d, images: [], blocks: d.blocks.map((b) => ({ ...b, image_slot: null })) } } });
+  const gen = applyEdit(data, [op2({ op: 'set_image', block_index: 0, image: { source: 'generate', asset_id: '', subject: 'Panadería francesa con baguettes recién horneadas', style: 'fotografía editorial cálida', alt: 'Baguettes recién horneadas', aspect: '16:9' } })], { confirmedPriceStrings: [] });
+  assert.deepEqual(gen.errors, []);
+  assert.equal(gen.images.length, 1);
+  assert.equal(gen.images[0]?.slot, 'hero');
+  assert.equal(gen.data.design?.design.blocks[0]?.image_slot, 'hero');
+  assert.ok(gen.data.design?.design.images.some((i) => i.slot === 'hero' && i.alt === 'Baguettes recién horneadas'));
+  assert.equal(gen.data.design?.assets.hero, undefined, 'el asset lo pone el job cuando obtiene la imagen');
+
+  const lib = applyEdit(data, [op2({ op: 'set_image', block_index: 0, image: { source: 'library', asset_id: 'no-es-un-id', subject: '', style: '', alt: 'Foto del local', aspect: '16:9' } })], { confirmedPriceStrings: [] });
+  assert.ok(lib.errors.some((e) => e.includes('biblioteca')));
+  const noImage = applyEdit(data, [op2({ op: 'set_image', block_index: 0 })], { confirmedPriceStrings: [] });
+  assert.ok(noImage.errors.length > 0);
 });
 
 test('prompts: datos no confiables van delimitados y JSON-codificados; variables no declaradas fallan antes de llamar', () => {

@@ -259,7 +259,7 @@ export class SocialScheduler {
       const timeout = sleep(this.deps.publishTimeoutMs, 'timeout' as const, { ref: false, signal: timer.signal }).catch(() => 'aborted' as const);
       const winner = await Promise.race([
         this.deps.provider.publishPost({
-          tenantId: row.tenant_id, text: post.text, imageUrl: post.image_url, contentType: post.content_type, idempotencyKey: row.publish_key,
+          tenantId: row.tenant_id, text: post.text, imageUrl: post.image_url, mediaAssetId: post.media_asset_id, contentType: post.content_type, idempotencyKey: row.publish_key,
         }),
         timeout,
       ]);

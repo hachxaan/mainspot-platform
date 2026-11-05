@@ -16,9 +16,9 @@
 import type { Pool } from 'pg';
 import type { DbExecutor, PublishResult, Publisher, PublisherContext } from '../publishing/publisher.ts';
 import type { DomainService } from '../domain/service.ts';
-import { normalizeWebsiteData, renderSite, type WebsiteData } from '../website/template.ts';
+import { normalizeWebsiteData, renderSite, sameVisiblePage, type WebsiteData } from '../website/template.ts';
 import { withEffectivePhone, type ContactPhoneService } from '../contact/phones.ts';
-import { AppError } from '../shared/errors.ts';
+import { AppError, DENY_CODES } from '../shared/errors.ts';
 
 /** Payload esperado: { after: WebsiteData, diff_sentences: string[], restore?: {...} } */
 export function extractWebsitePayload(payload: Record<string, unknown>): { data: WebsiteData; sentences: string[]; restore: RestoreRef | null } {
@@ -67,13 +67,17 @@ export class WebsitePublisher implements Publisher {
     const data = await withEffectivePhone(this.phones ?? undefined, ctx.tenantId, extracted.data, conn);
     const sentences = extracted.sentences;
 
-    const siteRes = await conn.query<{ website_id: string; slug: string; published_version: number }>(
-      'SELECT website_id, slug, published_version FROM client_website WHERE tenant_id = $1 FOR UPDATE',
+    const siteRes = await conn.query<{ website_id: string; slug: string; published_version: number; data: unknown }>(
+      'SELECT website_id, slug, published_version, data FROM client_website WHERE tenant_id = $1 FOR UPDATE',
       [ctx.tenantId],
     );
     const site = siteRes.rows[0];
     if (!site) {
       return { ok: false, external_ref: `website_missing:${ctx.tenantId}`, error: 'client_website_not_found' };
+    }
+    // Una versión nueva idéntica a la publicada no aporta nada y confunde el historial: se rechaza.
+    if (Number(site.published_version) > 0 && site.data && sameVisiblePage(normalizeWebsiteData(site.data), data)) {
+      throw new AppError(409, DENY_CODES.NO_VISIBLE_CHANGE, 'Esta propuesta no cambia nada visible de tu página. Descártala o pide otro cambio.');
     }
 
     // FLOW-006: garantizar subdominio simulado (idempotente) antes de publicar.
