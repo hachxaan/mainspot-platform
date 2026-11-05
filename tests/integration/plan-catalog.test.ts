@@ -20,12 +20,12 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { bootApi, api, authHeaders, type TestApi } from '../helpers/testdb.ts';
 import { createPublishedPlan, setTenantPlan } from '../helpers/plans.ts';
 import { countRows, createTenantWithPlan } from '../helpers/tenants.ts';
-import { currentStep, totpAt, type PlatformRole } from '../../src/platform/auth.ts';
+import { PlatformAuth, currentStep, totpAt, type PlatformRole } from '../../src/platform/auth.ts';
 import { PLAN_PARAMETERS } from '../../src/plans/registry.ts';
 
 interface Operator { id: string; token: string; secret: string; lastStep: number }
@@ -1265,6 +1265,52 @@ test('step-up: 5 códigos incorrectos en 15 min ⇒ 429 auditado; mientras dura,
     `SELECT result, count(*)::int AS n FROM platform_audit_event WHERE actor_id = $1 AND action = 'platform.step_up' AND decision = 'deny' GROUP BY result`, [op.id])).rows;
   assert.deepEqual(Object.fromEntries(denied.map((r) => [r.result, r.n])), { bad_totp: 5, too_many_attempts: 1 });
   await stepUp(await operator('platform_admin', 'stepup-other')); // otro operador no comparte el límite
+});
+
+test('G-SEC: dos instancias de PlatformAuth comparten el límite de login y step-up en PostgreSQL bajo 12 llamadas concurrentes', async () => {
+  const mfaKey = randomBytes(32).toString('base64');
+  const jwtSecret = randomBytes(32).toString('hex');
+  const a = new PlatformAuth({ pool: t.pool, mfaKey, jwtSecret, ttlMinutes: 30 });
+  const b = new PlatformAuth({ pool: t.pool, mfaKey, jwtSecret, ttlMinutes: 30 });
+
+  // Dos procesos con el mismo secreto efectivo generan la misma huella de clave (no exponen login ni IP).
+  const loginName = `pc-absent-${sfx()}`;
+  const ip = '192.0.2.88';
+  const results = await Promise.all(Array.from({ length: 12 }, (_, i) =>
+    (i % 2 ? a : b).login(loginName, 'wrong-password', '000000', ip)
+      .then(() => 200, (err: unknown) => err instanceof Error && 'status' in err ? (err as { status: number }).status : 500)));
+  assert.equal(results.filter((status) => status === 401).length, 5, JSON.stringify(results));
+  assert.equal(results.filter((status) => status === 429).length, 7, JSON.stringify(results));
+  const key = createHmac('sha256', jwtSecret).update('mainspot-platform-auth-v1:')
+    .update(`login:${ip}|${loginName}`).digest('hex');
+  const attempts = (await t.pool.query<{ attempt_times: Date[] }>(
+    'SELECT attempt_times FROM platform_auth_attempt_gate WHERE key_hash = $1', [key])).rows;
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0]?.attempt_times.length, 5);
+  assert.match(key, /^[0-9a-f]{64}$/);
+  assert.ok(!key.includes(loginName));
+
+  // Expirar los intentos almacenados reabre la ventana; el contador sigue compartido.
+  await t.pool.query(
+    `UPDATE platform_auth_attempt_gate
+        SET attempt_times = ARRAY(SELECT ts - interval '16 minutes' FROM unnest(attempt_times) ts)
+      WHERE key_hash = $1`, [key]);
+  await assert.rejects(b.login(loginName, 'wrong-password', '000000', ip),
+    (err: unknown) => err instanceof Error && 'status' in err && (err as { status: number }).status === 401);
+
+  const username = `pc-stepup-shared-${sfx()}`;
+  const password = 'Plan-Hardening-Tests-2026';
+  const u = await a.createUser({ login: username, displayName: 'Step-up shared test', password, roles: ['platform_admin'], grantedBy: 'test' });
+  const signed = await a.login(username, password, totpAt(u.totp_secret, currentStep()), '192.0.2.89');
+  const codes = new Set([-2, -1, 0, 1, 2].map((offset) => totpAt(u.totp_secret, currentStep() + offset)));
+  const invalid = Array.from({ length: 100 }, (_, i) => String(i).padStart(6, '0')).find((v) => !codes.has(v));
+  assert.ok(invalid);
+  const denied = await Promise.all(Array.from({ length: 12 }, (_, i) =>
+    (i % 2 ? a : b).stepUp(signed.session, invalid)
+      .then(() => 200, (err: unknown) => err instanceof Error && 'status' in err ? (err as { status: number }).status : 500)));
+  assert.equal(denied.filter((status) => status === 401).length, 5, JSON.stringify(denied));
+  assert.equal(denied.filter((status) => status === 429).length, 7, JSON.stringify(denied));
+  assert.ok(denied.every((status) => status !== 200));
 });
 
 test('retención (DEC-0027): una denegación de plataforma guarda el patrón de la ruta (con el request_id del servidor), nunca el id del negocio; después, ese negocio se anonimiza sin error', async () => {
