@@ -297,6 +297,8 @@ export class AiLab {
     const tenantId = textBetween(input.tenantId, 1, 120, 'Elige el negocio');
     const userId = textBetween(input.userId, 1, 120, 'Elige el usuario');
     const reason = textBetween(input.reason, 10, 500, 'Escribe el motivo');
+    // El motivo se copia a la auditoría de ESTE negocio; el id o el correo de OTRO bloquearía la anonimización de ese otro.
+    assertNoTenantData(reason, 'el motivo');
     const minutes = input.minutes === undefined || input.minutes === null || input.minutes === '' ? LAB_GRANT_MINUTES.default : Number(input.minutes);
     if (!Number.isInteger(minutes) || minutes < LAB_GRANT_MINUTES.min || minutes > LAB_GRANT_MINUTES.max) throw new AppError(400, 'validation_error', `La autorización dura de ${LAB_GRANT_MINUTES.min} a ${LAB_GRANT_MINUTES.max} minutos.`);
     const routeIds = uniqueStrings(input.routeIds, LAB_GRANT_MAX_ROUTES, 'una ruta');
@@ -338,6 +340,7 @@ export class AiLab {
   async revokeGrant(grantId: string, input: { reason: unknown; issuer: LabIssuer }): Promise<{ grant: LabGrantView; revoked: boolean }> {
     this.requireIssuer(input.issuer);
     const reason = textBetween(input.reason, 10, 500, 'Escribe el motivo');
+    assertNoTenantData(reason, 'el motivo');
     const row = await this.grantRow(grantId);
     if (!row || row.environment !== this.environment) throw new AppError(404, 'not_found', 'No existe esa autorización de laboratorio.');
     if (row.revoked_at) return { grant: toView(row), revoked: false };

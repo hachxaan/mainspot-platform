@@ -18,7 +18,9 @@ import { AppError } from '../../src/shared/errors.ts';
 
 type Command =
   | { id: number; op: 'login'; at?: number; calls: Array<{ login: string; password: string; code: string; ip: string }> }
-  | { id: number; op: 'stepUp'; at?: number; session: PlatformSession; codes: string[] };
+  | { id: number; op: 'stepUp'; at?: number; session: PlatformSession; codes: string[] }
+  /** Cliente retenido con pool.connect() directo (sin runTransaction), como auditedOperation o los workers. */
+  | { id: number; op: 'holdCheckout'; at?: number; seconds: number };
 
 interface Outcome { status: number; code?: string }
 
@@ -35,6 +37,19 @@ function outcome(err: unknown): Outcome {
 
 async function run(cmd: Command): Promise<Outcome[]> {
   if (cmd.at) await delay(Math.max(0, cmd.at - Date.now()));
+  if (cmd.op === 'holdCheckout') {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_sleep($1)', [cmd.seconds]);
+      await client.query('COMMIT');
+      return [{ status: 200 }];
+    } catch (err) {
+      return [outcome(err)];
+    } finally {
+      client.release();
+    }
+  }
   if (cmd.op === 'login') {
     return Promise.all(cmd.calls.map((c) => auth.login(c.login, c.password, c.code, c.ip).then(() => ({ status: 200 }), outcome)));
   }

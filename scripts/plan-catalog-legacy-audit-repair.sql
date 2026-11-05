@@ -8,8 +8,9 @@
 -- fails on the literal ID. This script rewrites ONLY `resource` of those rows to the route pattern the current code
 -- writes (/api/platform/tenants/:id[/plan|/status|/data-classification|/support-access|/support-view]); every other
 -- column is verified unchanged. It REFUSES, changing nothing, while platform_audit_event holds any other identifier
--- of a live tenant that anonymization could not remove (rows without tenant: any column; rows with tenant: actor_id
--- and result, which the 0027 guard keeps).
+-- of a live tenant that anonymization could not remove: rows without an existing tenant, any column; rows of a
+-- tenant, actor_id and result (kept by the 0027 guard) and, in the other columns, identifiers of OTHER tenants.
+-- The definitive check is scripts/anonymization-dry-run.ts on a restored copy.
 --
 -- Optional, ONLY with an explicit owner decision: legacy failed platform logins stored the typed login in clear
 -- (`login:<text>`, possibly a business e-mail). REDACT_LEGACY_LOGIN_ACTORS=1 rewrites those actor_id values to
@@ -68,7 +69,8 @@ SELECT :'APPLY' = '1' AS repair_apply_ok,
   SELECT 1/0 AS redact_parameters_invalid;
 \endif
 
-BEGIN;
+-- READ COMMITTED explicitly: every check below must see the table AFTER the exclusive lock, whatever the default.
+BEGIN ISOLATION LEVEL READ COMMITTED;
 SET LOCAL lock_timeout = '10s';
 SET LOCAL statement_timeout = '15min';
 -- Same key as scripts/migrate.ts and the rollback scripts: never concurrent with a migration.
@@ -90,18 +92,33 @@ BEGIN
 END $pre$;
 
 -- Strong identifiers of every live tenant, as RetentionService.identifiers() collects them (trimmed, >= 4 chars),
--- with the identifier boundary assertNoTraces() applies.
+-- with the identifier boundary assertNoTraces() applies; `ident` lets a cheap strpos() run before the regex.
 CREATE TEMP TABLE repair_pattern ON COMMIT DROP AS
-SELECT DISTINCT '(^|[^A-Za-z0-9_-])' || regexp_replace(x.v, '([.*+?^${}()|\[\]\\])', '\\\1', 'g') || '([^A-Za-z0-9_-]|$)' AS re
+SELECT DISTINCT x.tenant_id, x.v AS ident,
+       '(^|[^A-Za-z0-9_-])' || regexp_replace(x.v, '([.*+?^${}()|\[\]\\])', '\\\1', 'g') || '([^A-Za-z0-9_-]|$)' AS re
   FROM (
-    SELECT btrim(c.client_id) AS v FROM client c WHERE c.status <> 'anonymized'
-    UNION ALL SELECT btrim(c.contact_email) FROM client c WHERE c.status <> 'anonymized'
-    UNION ALL SELECT btrim(u.user_id) FROM internal_user u JOIN client c ON c.client_id = u.tenant_id AND c.status <> 'anonymized'
-    UNION ALL SELECT btrim(u.login) FROM internal_user u JOIN client c ON c.client_id = u.tenant_id AND c.status <> 'anonymized'
-    UNION ALL SELECT btrim(w.slug) FROM client_website w JOIN client c ON c.client_id = w.tenant_id AND c.status <> 'anonymized'
-    UNION ALL SELECT btrim(d.subdomain) FROM client_domain d JOIN client c ON c.client_id = d.tenant_id AND c.status <> 'anonymized'
+    SELECT c.client_id AS tenant_id, btrim(c.client_id) AS v FROM client c WHERE c.status <> 'anonymized'
+    UNION ALL SELECT c.client_id, btrim(c.contact_email) FROM client c WHERE c.status <> 'anonymized'
+    UNION ALL SELECT u.tenant_id, btrim(u.user_id) FROM internal_user u JOIN client c ON c.client_id = u.tenant_id AND c.status <> 'anonymized'
+    UNION ALL SELECT u.tenant_id, btrim(u.login) FROM internal_user u JOIN client c ON c.client_id = u.tenant_id AND c.status <> 'anonymized'
+    UNION ALL SELECT w.tenant_id, btrim(w.slug) FROM client_website w JOIN client c ON c.client_id = w.tenant_id AND c.status <> 'anonymized'
+    UNION ALL SELECT d.tenant_id, btrim(d.subdomain) FROM client_domain d JOIN client c ON c.client_id = d.tenant_id AND c.status <> 'anonymized'
   ) x
  WHERE x.v IS NOT NULL AND length(x.v) >= 4;
+
+-- Every text cell of platform_audit_event. `kept`: anonymization never changes it (actor_id, result). A row is
+-- bound when its tenant_id names an existing client; anonymizing that client clears its other cells, so those only
+-- block OTHER tenants. A row without such a client is never re-keyed: every cell counts.
+CREATE TEMP VIEW repair_cell AS
+SELECT e.event_id, c.client_id AS bound_to, v.col, v.kept, v.val,
+       CASE WHEN c.client_id IS NULL THEN 'unbound.' ELSE 'bound.' END || v.col AS kind
+  FROM platform_audit_event e
+  LEFT JOIN client c ON c.client_id = e.tenant_id
+ CROSS JOIN LATERAL (VALUES
+   ('actor_id', true, e.actor_id), ('result', true, e.result),
+   ('resource', false, e.resource), ('reason', false, e.reason), ('request_id', false, e.request_id),
+   ('tenant_id', false, CASE WHEN c.client_id IS NULL THEN e.tenant_id END)) AS v(col, kept, val)
+ WHERE v.val IS NOT NULL;
 
 CREATE TEMP TABLE repair_candidate ON COMMIT DROP AS
 SELECT event_id,
@@ -144,28 +161,31 @@ DO $block$
 DECLARE
   r RECORD;
   total BIGINT := 0;
+  orphan BIGINT;
 BEGIN
   FOR r IN
-    SELECT CASE WHEN c.client_id IS NULL THEN 'unbound.' ELSE 'bound.' END || v.col AS kind, count(DISTINCT e.event_id) AS n
-      FROM platform_audit_event e
-      LEFT JOIN client c ON c.client_id = e.tenant_id
-      CROSS JOIN LATERAL (VALUES
-        ('actor_id', CASE WHEN e.event_id IN (SELECT event_id FROM repair_login) THEN NULL ELSE e.actor_id END),
-        ('result', e.result),
-        ('resource', CASE WHEN c.client_id IS NULL AND e.event_id NOT IN (SELECT event_id FROM repair_candidate) THEN e.resource END),
-        ('reason', CASE WHEN c.client_id IS NULL THEN e.reason END),
-        ('request_id', CASE WHEN c.client_id IS NULL THEN e.request_id END),
-        ('tenant_id', CASE WHEN c.client_id IS NULL THEN e.tenant_id END)) AS v(col, val)
-     WHERE v.val IS NOT NULL
-       AND (v.val ~ ANY (ARRAY(SELECT re FROM repair_pattern))
-            OR (c.client_id IS NULL AND v.val ~ 'client_[A-Za-z0-9_-]+'))
-     GROUP BY 1 ORDER BY 1
+    SELECT x.kind, count(DISTINCT x.event_id) AS n
+      FROM repair_cell x
+     WHERE NOT (x.col = 'resource' AND x.event_id IN (SELECT event_id FROM repair_candidate))
+       AND NOT (x.col = 'actor_id' AND x.event_id IN (SELECT event_id FROM repair_login))
+       AND EXISTS (SELECT 1 FROM repair_pattern p
+                    WHERE CASE WHEN strpos(x.val, p.ident) > 0 THEN x.val ~ p.re ELSE false END
+                      AND (x.bound_to IS NULL OR x.kept OR p.tenant_id <> x.bound_to))
+     GROUP BY x.kind ORDER BY x.kind
   LOOP
     RAISE WARNING 'repair: % row(s) with tenant identifiers in %', r.n, r.kind;
     total := total + r.n;
   END LOOP;
   IF total > 0 THEN
     RAISE EXCEPTION 'repair blocked: % row(s) outside this contract need manual review and an owner decision; nothing changed', total;
+  END IF;
+  -- A client_ id that names no live tenant blocks no anonymization: reported, left unchanged.
+  SELECT count(DISTINCT x.event_id) INTO orphan
+    FROM repair_cell x
+   WHERE x.bound_to IS NULL AND x.val ~ '(^|[^A-Za-z0-9_-])client_[A-Za-z0-9_-]+'
+     AND NOT (x.col = 'resource' AND x.event_id IN (SELECT event_id FROM repair_candidate));
+  IF orphan > 0 THEN
+    RAISE WARNING 'repair: % row(s) without tenant mention a client_ id of no live tenant; left unchanged (see preflight)', orphan;
   END IF;
 END $block$;
 
@@ -207,11 +227,11 @@ BEGIN
     NULL;
   END;
   IF EXISTS (
-    SELECT 1 FROM platform_audit_event e LEFT JOIN client c ON c.client_id = e.tenant_id
-     CROSS JOIN LATERAL (VALUES (e.actor_id), (e.resource), (e.result), (e.reason), (e.request_id), (e.tenant_id)) AS v(val)
-     WHERE c.client_id IS NULL AND v.val IS NOT NULL
-       AND (v.val ~ ANY (ARRAY(SELECT re FROM repair_pattern)) OR v.val ~ 'client_[A-Za-z0-9_-]+')) THEN
-    RAISE EXCEPTION 'repair postcondition failed: tenant identifiers remain in rows without tenant';
+    SELECT 1 FROM repair_cell x
+     WHERE EXISTS (SELECT 1 FROM repair_pattern p
+                    WHERE CASE WHEN strpos(x.val, p.ident) > 0 THEN x.val ~ p.re ELSE false END
+                      AND (x.bound_to IS NULL OR x.kept OR p.tenant_id <> x.bound_to))) THEN
+    RAISE EXCEPTION 'repair postcondition failed: identifiers of a live tenant remain where anonymization cannot remove them';
   END IF;
 END $post$;
 

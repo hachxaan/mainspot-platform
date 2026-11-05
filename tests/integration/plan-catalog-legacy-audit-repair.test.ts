@@ -19,6 +19,7 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { anonymizationDryRun } from '../../scripts/anonymization-dry-run.ts';
 import { applyMigrations } from '../../scripts/migrate.ts';
 import { AuditSink } from '../../src/audit/sink.ts';
 import { RetentionService } from '../../src/retention/service.ts';
@@ -33,7 +34,9 @@ const REPAIR = fileURLToPath(new URL('../../scripts/plan-catalog-legacy-audit-re
 const SUMMARY = 'legacy_denials_eligible_for_targeted_repair|legacy_failed_logins_with_clear_login';
 const BY_ACTION = 'action|candidate_rows';
 const OUT_OF_CONTRACT = 'out_of_contract_kind|rows_naming_a_tenant';
+const ORPHANS = 'unbound_rows_with_client_id_of_no_live_tenant';
 const BLOCKERS = 'store|rows_naming_a_tenant|tenants_whose_anonymization_would_fail';
+const HEADERS = [SUMMARY, BY_ACTION, OUT_OF_CONTRACT, ORPHANS, BLOCKERS];
 
 let admin: pg.Pool | undefined;
 const databases: string[] = [];
@@ -76,7 +79,7 @@ async function scratchDatabase(): Promise<Scratch> {
 function preflight(db: Scratch): Map<string, string[][]> {
   const run = runPsql(db.url, PREFLIGHT);
   assert.equal(run.status, 0, run.out);
-  return resultSets(run.out, [SUMMARY, BY_ACTION, OUT_OF_CONTRACT, BLOCKERS]);
+  return resultSets(run.out, HEADERS);
 }
 
 function repair(db: Scratch, vars: Record<string, string>): { status: number | null; out: string } {
@@ -152,12 +155,13 @@ test('R1 preflight: solo recuentos sin identificadores; detecta reparables (tamb
   for (const secret of [fx.luna, fx.taller, fx.lunaLogin, fx.tallerEmail, 'cafe-luna', ...Object.keys(fx.repairable)]) {
     assert.ok(!run.out.includes(secret), 'el preflight no emite identificadores');
   }
-  const sets = resultSets(run.out, [SUMMARY, BY_ACTION, OUT_OF_CONTRACT, BLOCKERS]);
+  const sets = resultSets(run.out, HEADERS);
   assert.deepEqual(sets.get(SUMMARY), [['4', '1']], run.out);
   assert.deepEqual(sets.get(BY_ACTION), [
     ['platform.support.view', '1'], ['platform.tenant.plan', '1'], ['platform.tenant.read', '1'], ['platform.tenant.status', '1'],
   ]);
   assert.deepEqual(sets.get(OUT_OF_CONTRACT), [['legacy_clear_login', '1']], 'el login en claro nombra a una persona del café');
+  assert.deepEqual(sets.get(ORPHANS), [['0']]);
   // 4 denegaciones + 1 login en claro nombran a los 2 negocios; la fila con tenant se re-etiqueta y no cuenta.
   assert.deepEqual(sets.get(BLOCKERS), [['platform_audit_event', '5', '2'], ['TOTAL', '5', '2']]);
   assert.deepEqual(await auditRows(db.pool), before, 'el preflight es de solo lectura');
@@ -195,17 +199,19 @@ test('R1 repair: se niega sin autorización exacta, sin la BD correcta o con otr
   assert.equal((await db.pool.query(`SELECT to_regclass('public.plan') IS NOT NULL AS ok`)).rows[0]?.ok, true);
 });
 
-for (const [label, reason, kind] of [
-  ['un id client_ en el motivo de una fila sin tenant', (fx: LegacyFixture) => `ajuste pedido por ${fx.taller}`, 'unbound.reason'],
-  ['el correo de un negocio (no es client_) en el motivo de una fila sin tenant', (fx: LegacyFixture) => `lo pidió ${fx.tallerEmail} por teléfono`, 'unbound.reason'],
+for (const [label, reason, boundTo, kind] of [
+  ['un id client_ en el motivo de una fila sin tenant', (fx: LegacyFixture) => `ajuste pedido por ${fx.taller}`, () => null, 'unbound.reason'],
+  ['el correo de un negocio (no es client_) en el motivo de una fila sin tenant', (fx: LegacyFixture) => `lo pidió ${fx.tallerEmail} por teléfono`, () => null, 'unbound.reason'],
+  // Al anonimizar el café se limpia su motivo, pero mientras exista bloquea la anonimización del taller.
+  ['el correo de OTRO negocio en el motivo de una fila con tenant', (fx: LegacyFixture) => `lo pidió ${fx.tallerEmail} por teléfono`, (fx: LegacyFixture) => fx.luna, 'bound.reason'],
 ] as const) {
   test(`R1 repair: ${label} ⇒ revisión manual: el preflight lo cuenta y la reparación no cambia nada`, async () => {
     const db = await scratchDatabase();
     const fx = await legacyRows(db.pool, { clearLogin: false });
     await db.pool.query(
       `INSERT INTO platform_audit_event (event_id, actor_id, actor_roles, action, resource, tenant_id, decision, result, reason)
-       VALUES ($1, 'pu_admin', '{platform_admin}', 'platform.budget.update', 'ai_budget/tenant_day', NULL, 'allow', 'ok', $2)`,
-      [`pae_other_${randomUUID().slice(0, 6)}`, reason(fx)]);
+       VALUES ($1, 'pu_admin', '{platform_admin}', 'platform.support.grant', 'client/x', $3, 'allow', 'ok', $2)`,
+      [`pae_other_${randomUUID().slice(0, 6)}`, reason(fx), boundTo(fx)]);
     const before = await auditRows(db.pool);
 
     assert.deepEqual(preflight(db).get(OUT_OF_CONTRACT), [[kind, '1']]);
@@ -218,12 +224,35 @@ for (const [label, reason, kind] of [
   });
 }
 
+test('R1 repair: un client_ que no es de ningún negocio vivo solo se avisa; la reparación sigue y no lo toca', async () => {
+  const db = await scratchDatabase();
+  await legacyRows(db.pool, { clearLogin: false });
+  const ghost = `pae_ghost_${randomUUID().slice(0, 6)}`;
+  await db.pool.query(
+    `INSERT INTO platform_audit_event (event_id, actor_id, actor_roles, action, resource, tenant_id, decision, result, reason)
+     VALUES ($1, 'pu_admin', '{platform_admin}', 'platform.budget.update', 'ai_budget/tenant_day', NULL, 'allow', 'ok', 'ajuste del antiguo client_inexistente_0a1b2c')`,
+    [ghost]);
+  const ghostRow = (await auditRows(db.pool)).get(ghost);
+  assert.deepEqual(preflight(db).get(ORPHANS), [['1']]);
+  assert.deepEqual(preflight(db).get(OUT_OF_CONTRACT), []);
+  const run = repair(db, { APPLY: '1', TARGET_DB: db.name, EXPECTED_ROWS: '4' });
+  assert.equal(run.status, 0, run.out);
+  assert.match(run.out, /1 row\(s\) without tenant mention a client_ id of no live tenant; left unchanged/);
+  assert.deepEqual((await auditRows(db.pool)).get(ghost), ghostRow);
+});
+
 test('R1 repair autorizado: solo cambia resource a la ruta canónica, conserva el resto, la inmutabilidad vuelve y la anonimización funciona', async () => {
   const db = await scratchDatabase();
   const fx = await legacyRows(db.pool, { clearLogin: false });
   const before = await auditRows(db.pool);
+  const clients = async () => (await db.pool.query('SELECT client_id, status FROM client ORDER BY client_id')).rows;
+  const clientsBefore = await clients();
 
-  // Antes: la denegación heredada bloquea la anonimización (la transacción se revierte entera).
+  // Antes: el ensayo (la anonimización real, siempre revertida) bloquea los dos negocios y no cambia nada.
+  const dryBefore = await anonymizationDryRun(db.pool);
+  assert.deepEqual([dryBefore.tenants, dryBefore.anonymizable, dryBefore.blocked], [4, 2, 2], JSON.stringify(dryBefore));
+  assert.deepEqual(Object.keys(dryBefore.byLocation), ['platform_audit_event.resource']);
+  assert.deepEqual([await auditRows(db.pool), await clients()], [before, clientsBefore], 'el ensayo no cambia nada');
   await assert.rejects(anonymize(db.pool, fx.taller), /identifier left in platform_audit_event\.resource/);
   assert.deepEqual(await auditRows(db.pool), before);
 
@@ -250,6 +279,8 @@ test('R1 repair autorizado: solo cambia resource a la ruta canónica, conserva e
   assert.match(again.out, /nothing to repair/);
 
   assert.deepEqual(preflight(db).get(BLOCKERS), [['TOTAL', '0', '0']]);
+  const dryAfter = await anonymizationDryRun(db.pool);
+  assert.deepEqual([dryAfter.anonymizable, dryAfter.blocked], [4, 0], JSON.stringify(dryAfter));
   await anonymize(db.pool, fx.taller);
   await anonymize(db.pool, fx.luna);
   assert.equal((await db.pool.query('SELECT count(*)::int AS n FROM client WHERE client_id = ANY($1)', [[fx.taller, fx.luna]])).rows[0]?.n, 0);

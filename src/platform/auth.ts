@@ -32,6 +32,13 @@ const ATTEMPT_WINDOW_MS = 15 * 60_000;
  * comparación que uno existente, así el tiempo de respuesta no revela qué logins existen.
  */
 const NO_SUCH_USER_HASH = '$2a$10$YPQsHGm5P5HD3/h/P9eLbukBi2sYSoKrx587p72Jft1YZHLjkrUh.';
+/**
+ * Esa comparación cuesta ~40 ms de CPU de PostgreSQL y la puede pedir cualquiera con logins inventados: como mucho
+ * 2 a la vez por proceso y 32 en espera; el resto recibe 429 sin tocar la BD. Así una ráfaga no deja sin servicio
+ * al resto de la aplicación, que comparte la misma BD (los límites globales o por IP son decisión del propietario).
+ */
+const PASSWORD_CHECK_CONCURRENCY = 2;
+const PASSWORD_CHECK_QUEUE = 32;
 
 /**
  * Huella de una clave de platform_auth_attempt_gate: HMAC-SHA256 con una clave DERIVADA de JWT_SECRET solo para
@@ -178,8 +185,10 @@ export function hasControlOrFormat(text: string): boolean {
  * Datos de un negocio (correos, ids `client_…`) que no pueden quedar en textos de plataforma: muchos quedan en
  * filas sin negocio o inmutables (auditoría de plataforma, catálogo, presupuestos, revisiones manuales) que la
  * anonimización no puede re-etiquetar (DEC-0027). Slugs, subdominios y nombres no se detectan por patrón (R4).
+ * El límite del id es el mismo que usa la verificación de la anonimización (`[A-Za-z0-9_-]`), sin `\b` ni flag `u`:
+ * con `/iu`, `ſ` o el signo Kelvin cuentan como letras y `ſclient_x` pasaría aquí pero bloquearía la anonimización.
  */
-const TENANT_DATA = /[^\s@]+@[^\s@]+\.[^\s@]+|\bclient_[a-z0-9_]+/iu;
+const TENANT_DATA = /[^\s@]+@[^\s@]+\.[^\s@]+|(?<![A-Za-z0-9_-])client_[A-Za-z0-9_-]+/i;
 
 export function assertNoTenantData(text: string, field: string): void {
   if (TENANT_DATA.test(text)) {
@@ -213,10 +222,30 @@ export class PlatformAuth {
   private readonly box: SecretBox | null;
   private readonly jwtSecret: string;
   private readonly ttlMinutes: number;
+  private passwordChecks = 0;
+  private readonly passwordWaiters: Array<() => void> = [];
   // Failed login and TOTP attempts are shared by every process of the app through PostgreSQL (0035).
   // A transactional row lock serializes the check AND the reservation. Any database error fails closed.
   private attemptHash(key: string): string {
     return attemptKeyHash(this.jwtSecret, key);
+  }
+
+  /** Ejecuta una comprobación de contraseña con un hueco libre (PASSWORD_CHECK_*); sin hueco ni cola, 429. */
+  private async withPasswordSlot<T>(check: () => Promise<T>): Promise<T> {
+    if (this.passwordChecks >= PASSWORD_CHECK_CONCURRENCY) {
+      if (this.passwordWaiters.length >= PASSWORD_CHECK_QUEUE) throw new AppError(429, 'validation_error', 'Demasiados intentos. Espera unos minutos.');
+      await new Promise<void>((resolve) => this.passwordWaiters.push(resolve));
+    } else {
+      this.passwordChecks += 1;
+    }
+    try {
+      return await check();
+    } finally {
+      // El hueco pasa directamente al siguiente en espera; si no hay nadie, se libera.
+      const next = this.passwordWaiters.shift();
+      if (next) next();
+      else this.passwordChecks -= 1;
+    }
   }
 
   /**
@@ -341,10 +370,10 @@ export class PlatformAuth {
       await writePlatformAudit(this.pool, { actorId: platformUserId ?? 'login:unknown', actorRoles: [], action: 'platform.login', decision: 'deny', result: reason });
       return new AppError(401, 'invalid_credentials', 'Usuario, contraseña o código incorrectos.');
     };
-    const r = await this.pool.query<{ platform_user_id: string | null; totp_box: Buffer; totp_last_step: string; status: string; display_name: string; ok: boolean }>(
+    const r = await this.withPasswordSlot(() => this.pool.query<{ platform_user_id: string | null; totp_box: Buffer; totp_last_step: string; status: string; display_name: string; ok: boolean }>(
       `SELECT u.platform_user_id, u.totp_box, u.totp_last_step, u.status, u.display_name,
               (COALESCE(u.password_hash, $3) = crypt($2, COALESCE(u.password_hash, $3)) AND u.platform_user_id IS NOT NULL) AS ok
-         FROM (SELECT 1) AS probe LEFT JOIN platform_user u ON u.login = $1`, [loginName.toLowerCase(), password, NO_SUCH_USER_HASH]);
+         FROM (SELECT 1) AS probe LEFT JOIN platform_user u ON u.login = $1`, [loginName.toLowerCase(), password, NO_SUCH_USER_HASH]));
     const user = r.rows[0];
     if (!user?.platform_user_id) throw await denied('bad_password_or_user', null);
     if (!user.ok || user.status !== 'active') throw await denied('bad_password_or_user', user.platform_user_id);

@@ -154,6 +154,15 @@ export function tenantSha256(tenantId: string): string {
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** Fuerza el ROLLBACK de un ensayo de anonimización que pasó la verificación (anonymizeTenant con dryRun). */
+class DryRunRollback extends Error {
+  readonly anonymousId: string;
+  constructor(anonymousId: string) {
+    super('anonymization dry run: rolled back');
+    this.anonymousId = anonymousId;
+  }
+}
+
 /** Identificadores del tenant capturados antes de anonimizar, para verificar que no quedan. */
 interface TenantIdentifiers {
   /** Identificadores técnicos o de contacto: no pueden aparecer en ninguna columna de texto. */
@@ -330,8 +339,19 @@ export class RetentionService {
    * Anonimiza un tenant en UNA transacción: re-etiqueta agregados y auditoría con
    * identificadores nuevos (sin correspondencia guardada), borra todo dato operativo,
    * registra la huella y verifica que no queda ningún rastro antes de confirmar.
+   * `dryRun`: hace exactamente lo mismo, incluida la verificación, y SIEMPRE revierte (ensayo sin cambios;
+   * scripts/anonymization-dry-run.ts). Un fallo de verificación se lanza igual que en la anonimización real.
    */
-  async anonymizeTenant(tenantId: string, runId: string): Promise<{ anonymousId: string }> {
+  async anonymizeTenant(tenantId: string, runId: string, opts: { dryRun?: boolean } = {}): Promise<{ anonymousId: string }> {
+    try {
+      return await this.anonymizeInTransaction(tenantId, runId, opts.dryRun === true);
+    } catch (err) {
+      if (err instanceof DryRunRollback) return { anonymousId: err.anonymousId };
+      throw err;
+    }
+  }
+
+  private anonymizeInTransaction(tenantId: string, runId: string, dryRun: boolean): Promise<{ anonymousId: string }> {
     return runAtomic(this.deps.pool, async (client) => {
       const ids = await this.identifiers(client, tenantId);
       const logins = (await client.query<{ login: string }>('SELECT login FROM internal_user WHERE tenant_id=$1', [tenantId])).rows.map((r) => r.login);
@@ -389,6 +409,7 @@ export class RetentionService {
         result: `rows_deleted:${removed},audit_rekeyed:${audit.rowCount ?? 0},aggregates_rekeyed:${analytics.rowCount ?? 0},ai_rekeyed:${aiRekeyed.rowCount ?? 0},platform_audit_rekeyed:${platformRekeyed.rowCount ?? 0}`,
       }, client);
       await this.assertNoTraces(client, ids, anonymousId);
+      if (dryRun) throw new DryRunRollback(anonymousId);
       return { anonymousId };
     });
   }

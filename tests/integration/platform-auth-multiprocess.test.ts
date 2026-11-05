@@ -82,6 +82,10 @@ class Worker {
     return this.send({ op: 'stepUp', session, codes, at });
   }
 
+  holdCheckout(seconds: number): Promise<Outcome[]> {
+    return this.send({ op: 'holdCheckout', seconds });
+  }
+
   async kill(): Promise<void> {
     this.proc.kill('SIGKILL');
     await this.exited;
@@ -403,5 +407,23 @@ test('conexión terminada DENTRO de la transacción del límite: 500 sin autenti
   assert.ok(w!.alive, 'perder la conexión en medio de la transacción no tumba el proceso');
   assert.equal(await sessions(user.id), 0, 'sin autenticar');
   assert.deepEqual(statuses(await w!.login([{ login: user.login, password: PASSWORD, code: totpAt(user.secret, currentStep()), ip }])), [200]);
+  await w!.close();
+});
+
+test('conexión terminada con un cliente retenido por pool.connect() directo (sin runTransaction): el proceso sigue vivo y el pool se recupera', { timeout: 60_000 }, async () => {
+  const appName = `mp-checkout-${tag()}`;
+  const [w] = await startWorkers(1, taggedUrl(appName));
+  const held = w!.holdCheckout(30);
+  let killed = 0;
+  for (let i = 0; i < 200 && killed === 0; i++) {
+    killed = await terminate(appName, `wait_event = 'PgSleep'`);
+    if (!killed) await delay(20);
+  }
+  assert.equal(killed, 1, 'el cliente retenido estaba dentro de su transacción');
+  assert.deepEqual(await held, [{ status: 500, code: '57P01' }]);
+  await delay(300);
+  assert.ok(w!.alive, 'un cliente fuera del pool que pierde la conexión no tumba el proceso');
+  const login = `mp-checkout-${tag()}`;
+  assert.deepEqual(statuses(await w!.login([{ login, password: 'wrong-password', code: '000000', ip: '203.0.113.80' }])), [401]);
   await w!.close();
 });
