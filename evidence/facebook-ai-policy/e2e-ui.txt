@@ -1,0 +1,51 @@
+# E2E política de IA de Facebook DEC-0078 (FB-1/FB-2, medidor propio, SEC-CONSENT-01, SEC-TG-APPROVAL-01) — 2026-11-06T11:35:07.579Z
+# HEAD: 4673061be432330cdaa005c11c330dedf2ed6dbe (+ cambios sin commitear del árbol de trabajo)
+# Assets (sha256/16):
+#   ddead08a5c2b20a3  src/web/panel/assets/js/views-channels.js
+#   3e2efcade539aed1  src/web/panel/assets/js/agent.js
+#   1ed0514e7f0b6d0f  src/web/panel/assets/js/main.js
+#   ccef44c8e8bac3fb  src/web/panel/assets/js/store.js
+# Origen: https://app.mainspot.local.io (proxy HTTPS, TLS verificado) · navegador: Chrome headless · Telegram: chat SIMULADO del panel · Meta: simulador · AI Core: entorno test, rutas simuladas · proveedores reales: ninguno · valores del medidor: fixtures de prueba, no comerciales
+
+Origen https://app.mainspot.local.io; negocio client_e2e_fb_b0de5b04 (medidor de fixture: 2); negocio client_e2e_fb_1491a798 (plan_piloto_1, sin medidor)
+
+-- FB-1: bajo demanda (predeterminado) --
+PASS 1. sin configuración el modo es «Bajo demanda (predeterminado)»
+PASS 2. la tarjeta muestra el estado y el límite del medidor
+PASS 3. llega el comentario y NO se redacta con IA por sí solo
+PASS 4. antes de invocar se informa el consumo (1 de 2)
+PASS 5. «Sugerir con IA» genera la propuesta
+PASS 6. la propuesta queda guardada aparte, ligada a su invocación
+PASS 7. consume 1 del medidor de Facebook y nada de la cuota de reseñas
+
+-- FB-1: sugerencias automáticas con consentimiento informado --
+PASS 8. la hoja muestra literalmente las condiciones (ai_suggestions.facebook_comment.v1)
+PASS 9. y el costo antes de aceptar: 1 por comentario aunque no se publique
+PASS 10. sin marcar la casilla no se activa
+PASS 11. nada se registró sin aceptación explícita
+PASS 12. activación confirmada
+PASS 13. guarda modo, texto literal, versión, huella y quién aceptó
+PASS 14. chat de Telegram simulado vinculado a la dueña
+PASS 15. la sugerencia llega preparada sin pulsar nada, como opción 1
+PASS 16. preparar no publica nada
+PASS 17. el panel identifica la opción redactada con IA
+
+-- SEC-TG-APPROVAL-01: aprobar la sugerencia desde el aviso publica exactamente lo mostrado --
+PASS 18. el aviso trae la sugerencia de IA como opción 1, con su código
+PASS 19. la confirmación muestra el texto del aviso
+PASS 20. se publicó (simulación) exactamente la sugerencia que mostró el aviso, solo tras la aprobación humana
+PASS 21. agotado el medidor (2 de 2) no se prepara otra sugerencia
+PASS 22. el caso explica que se agotaron y no ofrece IA
+
+-- FB-1: desactivar --
+PASS 23. «Desactivadas» se aplica sin pasos extra
+PASS 24. versión nueva con el modo desactivado
+PASS 25. el caso explica que la IA está desactivada; responder a mano sigue disponible
+
+-- Medidor sin valor en el plan (fail-closed) --
+PASS 26. explica que el plan no incluye la IA para comentarios de Facebook (sin ofrecer consumo ilimitado)
+PASS 27. no se pueden activar las automáticas
+PASS 28. el servidor también lo rechaza (409)
+PASS 29. sin errores de JavaScript en las páginas (0)
+
+Errores de página: ninguno

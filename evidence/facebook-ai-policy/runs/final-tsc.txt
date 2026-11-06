@@ -1,0 +1,2 @@
+# tsc --noEmit — código 4673061
+tsc_rc=0

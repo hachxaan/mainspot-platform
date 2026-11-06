@@ -1,0 +1,57 @@
+# E2E Planes (DEC-0075) — 2026-11-06T11:34:32.364Z
+# HEAD: 4673061be432330cdaa005c11c330dedf2ed6dbe (+ cambios sin commitear del árbol de trabajo)
+# Assets (sha256/16):
+#   3b6674d18ef1882c  src/web/platform/assets/console.js
+#   57bea469be1e99b8  src/web/platform/assets/console.css
+#   510494f7f621aa2b  src/web/panel/assets/js/views-app.js
+#   1ed0514e7f0b6d0f  src/web/panel/assets/js/main.js
+#   ccef44c8e8bac3fb  src/web/panel/assets/js/store.js
+# Origen: https://app.mainspot.local.io (proxy HTTPS, TLS verificado) · navegador: Chrome headless · proveedores reales: ninguno
+
+Origen https://app.mainspot.local.io; usuarios de plataforma creados: ai_engineer, platform_admin, platform_support
+PASS 1. soporte llega a Planes y ve el catálogo (plan_piloto_1, plan_basico, plan_completo)
+PASS 2. soporte no ve el formulario de crear plan
+PASS 3. soporte solo ve la pestaña Planes en Engineering Console (las de IA no son de su rol)
+PASS 4. soporte no tiene ninguna acción de escritura en el detalle
+PASS 5. el plan plan_plan_e2e_887c_e8ad08 nace deshabilitado
+PASS 6. los 6 valores copiados quedan SIN confirmar
+PASS 7. la cuota de respuestas con IA (sin valor en el piloto) llega sugerida en 0 y SIN confirmar (DEC-0076)
+PASS 8. publicar está deshabilitado mientras falten confirmaciones
+PASS 9. website=5 se marca inválido en línea (techo 1) y no se envía
+PASS 10. «1,000» se rechaza en línea (solo dígitos) en lugar de guardarse como 1
+PASS 11. cambiar el valor desmarca «Confirmo este valor»
+PASS 12. con el step-up caducado, guardar pide el código TOTP
+PASS 13. borrador guardado tras el step-up
+PASS 14. social_posts=7 confirmado por la persona (actor de plataforma)
+PASS 15. con un valor cambiado sin guardar se avisa junto a Publicar
+PASS 16. publicar con cambios sin guardar se bloquea (v1 sigue en borrador)
+PASS 17. al deshacer el cambio desaparece el aviso
+PASS 18. v1 publicada
+PASS 19. plan habilitado
+PASS 20. publicar v2 deja v1 como reemplazada (inmutable)
+PASS 21. Administration asigna el plan
+PASS 22. la suscripción queda fijada a v2
+PASS 23. con 3 de 3 publicaciones el siguiente borrador se deniega (Se alcanzó el límite del plan para publicaciones en redes: 3 de 3 publicaciones en toda la suscripción (no se reinicia). Para ampliarlo, consulta con el administrador del plan de MainSpot.)
+PASS 24. el negocio no puede asignarse planes (403)
+PASS 25. publicar v3 NO cambia al negocio (sigue en v2)
+PASS 26. la vista previa muestra el uso por encima del nuevo límite (publicaciones: usa 3; nuevo límite 1)
+PASS 27. un motivo con el id de un negocio se rechaza en el formulario y no migra nada
+PASS 28. Administration migra la suscripción
+PASS 29. migrado a v3 sin borrar publicaciones existentes
+PASS 30. historial revision_migration con actor de plataforma
+PASS 31. rollback publica v4 con los valores de v2
+PASS 32. v4 = valores de v2, origen rollback; historial conserva v1..v4
+PASS 33. cada escritura dejó evento con motivo y diff (12)
+PASS 34. el panel del negocio muestra uso de máximo de su revisión fijada v3 (solo lectura): «Lo que incluyePáginas weben toda la suscripción (no se reinicia)1 de 1 páginas CompletoPublicaciones en redesen toda la suscripción (no se reinicia) · Lo que ya…»
+PASS 35. el panel no ofrece asignar ni editar planes
+PASS 36. editor sin desplazamiento horizontal a 390 px (exceso 0 px)
+PASS 37. cada campo del editor tiene etiqueta y descripción asociada
+PASS 38. conflicto de edición: se muestra el valor que guardó la otra persona y el cambio propio queda sin enviar
+PASS 39. tras el conflicto, la confirmación dada a un valor que cambió en el servidor no se conserva (no se confirma un valor no visto)
+PASS 40. descartar sin marcar la confirmación no envía nada
+PASS 41. con la confirmación marcada el borrador se descarta
+PASS 42. el borrador queda DISCARDED (no se borra)
+PASS 43. sin errores de JavaScript en las páginas (0)
+plan de prueba: plan_plan_e2e_887c_e8ad08
+
+Errores de página: ninguno

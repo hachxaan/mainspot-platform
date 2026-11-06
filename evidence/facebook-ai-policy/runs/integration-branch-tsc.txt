@@ -1,0 +1,2 @@
+# Rama integrate/telegram-channels-notice-binding-20261106 sola — tsc --noEmit — código 5354283
+tsc_rc=0

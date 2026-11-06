@@ -1,0 +1,23 @@
+# Validadores canonflow-keystone 70ff601 (solo lectura; su checkout no se modifica) sobre el canon final de DEC-0078 en b2c3a2e
+VALID   .canonflow/decision-records/DEC-0078.json (schema decision-record.schema.yaml)
+VALID   .canonflow/decision-state/index.json (schema decision-state.schema.yaml)
+VALID   .canonflow/sources/source-register.yaml (schema source-register.schema.yaml)
+VALID   .canonflow/state/functional-canon-state.yaml (schema functional-canon-state.schema.yaml)
+VALID   .canonflow/state/implementation-state.yaml (schema implementation-state.schema.yaml)
+VALID   .canonflow/traceability/links.yaml (schema traceability.schema.yaml)
+
+# resolution index built from .canonflow: 341 known ids
+# validating 118 links from .canonflow/traceability/links.yaml
+
+FAIL  link[62]  ANS-0012 -DERIVES_FROM-> QS-0010
+        - ANS-N DERIVES_FROM QS-M requires N==M, but ANS-0012 -> QS-0010
+FAIL  link[68]  ANS-0013 -DERIVES_FROM-> QS-0012
+        - ANS-N DERIVES_FROM QS-M requires N==M, but ANS-0013 -> QS-0012
+FAIL  link[73]  ANS-0014 -DERIVES_FROM-> QS-0013
+        - ANS-N DERIVES_FROM QS-M requires N==M, but ANS-0014 -> QS-0013
+FAIL  link[79]  ANS-0015 -DERIVES_FROM-> QS-0014
+        - ANS-N DERIVES_FROM QS-M requires N==M, but ANS-0015 -> QS-0014
+FAIL  link[83]  QS-0017 -SUPERSEDES-> QS-0016
+        - SUPERSEDES must originate at a DEC, not QS (QS-0017)
+
+RESULT: FAIL — 5/118 link(s) offending
