@@ -1,0 +1,20 @@
+# E2E DEV-E2E-03 — navegador real + servidor real + PostgreSQL (run 2026-11-06T04:23:25.110Z)
+# HEAD: 41d6c242d41aca6d21ee5587c68ee81598fe8a42
+# origen: https://app.mainspot.local.io (proxy HTTPS LXC webserver → upstream :3100; TLS verificado, sin ignoreHTTPSErrors)
+# navegador: /usr/bin/google-chrome (headless) · servidor: node src/api/server.ts (worker en proceso, ciclo 1 s)
+# proveedores: simulated (Google, Meta, Telegram); ningún resultado es real
+# DB: mainspot_test (recreada por scripts/test-prep.ts)
+
+servidor real detrás de https://app.mainspot.local.io (upstream :3100) · Chrome headless · worker en proceso [proveedores simulated]
+
+-- FLOW-01: invitación de un solo uso y alta en la interfaz de Claude --
+PASS 1. invitación DS-02 muestra el negocio y retira el token de la barra
+PASS 2. contraseña débil: error en el campo, sin llamar a la API
+PASS 3. invitación usada = misma respuesta neutra que una inventada
+PASS 4. la contraseña no queda en sessionStorage ni localStorage
+PASS 5. datos del alta → página creada (cuota website) y primera versión con vista previa, sin publicar
+
+-- Telegram simulado: mismo webhook que el bot real --
+FAIL 6. chat vinculado con código de un solo uso (el chat no es el teléfono público)
+
+# Fin de transcript

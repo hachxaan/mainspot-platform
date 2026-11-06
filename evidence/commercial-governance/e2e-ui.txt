@@ -1,0 +1,48 @@
+# E2E salvaguardas DEC-0077 (SEC-CONSENT-01, SEC-TG-APPROVAL-01) — 2026-11-06T04:22:23.519Z
+# HEAD: 41d6c242d41aca6d21ee5587c68ee81598fe8a42 (+ cambios sin commitear del árbol de trabajo)
+# Assets (sha256/16):
+#   c4f04efe4a83c603  src/web/panel/assets/js/views-channels.js
+#   c1fc11218aafd608  src/web/panel/assets/js/agent.js
+#   d3e21b3d36aae670  src/web/panel/assets/js/main.js
+#   035873f838d488f6  src/web/panel/assets/js/store.js
+#   3e358fbf3761ab4d  src/web/panel/assets/js/assistant.js
+#   4f9d758cd84f2101  src/web/panel/assets/css/app.css
+# Origen: https://app.mainspot.local.io (proxy HTTPS, TLS verificado) · navegador: Chrome headless · Telegram: chat SIMULADO del panel · AI Core: entorno test, rutas simuladas · proveedores reales: ninguno
+
+Origen https://app.mainspot.local.io; negocio client_e2e_gov_837eb22c; regla automática previa a la cuota compartida: pol_eaec6d8d-d6e4-4846-81d1-187f43c73615 (sin versión de consentimiento)
+
+-- SEC-CONSENT-01: reconsentimiento informado y versionado --
+PASS 1. Atención muestra el aviso para aceptar las nuevas condiciones
+PASS 2. la hoja muestra literalmente el texto de las condiciones que guarda el servidor
+PASS 3. versión mostrada: auto_reply.google_review.v2
+PASS 4. las condiciones informan la cuota compartida y que puede agotarse
+PASS 5. sin marcar la casilla no se acepta
+PASS 6. nada se registró sin aceptación explícita
+PASS 7. aceptación confirmada
+PASS 8. nueva versión de la regla con la versión de condiciones aceptada
+PASS 9. guarda el texto literal, su huella sha256 y quién aceptó
+PASS 10. auditado: safe_auto_reply:v2:reconsent:auto_reply.google_review.v2
+PASS 11. el aviso desaparece al aceptar
+PASS 12. el historial de reglas muestra la versión nueva
+PASS 13. activar Facebook muestra sus condiciones literales y su versión
+PASS 14. reglas guardadas
+PASS 15. la regla de Facebook guarda la versión de sus condiciones
+
+-- SEC-TG-APPROVAL-01: el aviso antiguo no publica lo que no mostró --
+PASS 16. chat de Telegram simulado vinculado a la dueña
+PASS 17. llega una reseña delicada (simulada)
+PASS 18. el agente la procesa y avisa por Telegram
+PASS 19. caso humano con tres propuestas
+PASS 20. el aviso muestra las opciones y su código (KWEFY3)
+PASS 21. Operación guarda la opción 1 editada
+PASS 22. las propuestas cambian de revisión
+PASS 23. el aviso ya enviado queda invalidado
+PASS 24. el mensaje del aviso sustituido ya no ofrece botones para aprobar
+PASS 25. aviso obsoleto: no se publicó nada (ni el texto visto ni el editado)
+PASS 26. el intento queda auditado como aviso obsoleto
+PASS 27. llega el aviso vigente con otro código (GNHEFR) y el texto editado
+PASS 28. la confirmación muestra el texto del aviso vigente
+PASS 29. publicado (simulación) exactamente el texto que mostró el aviso vigente
+PASS 30. sin errores de JavaScript en las páginas (0)
+
+Errores de página: ninguno

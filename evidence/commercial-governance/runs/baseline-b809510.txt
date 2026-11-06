@@ -1,0 +1,11 @@
+# Línea base b809510 (PR #17), BD desechable
+## tsc
+tsc exit=0
+## unit
+ℹ tests 187
+ℹ pass 187
+ℹ fail 0
+## integration
+ℹ tests 270
+ℹ pass 270
+ℹ fail 0
