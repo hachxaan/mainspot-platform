@@ -17,10 +17,12 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { bootApi, type TestApi } from '../helpers/testdb.ts';
 import { TYPESAFE_CALL_MAX_COST_USD as MAX } from '../../src/ai/catalog.ts';
-import { AiDispatcher, type InvokeContext } from '../../src/ai/dispatcher.ts';
+import { AiDispatcher, type InvokeContext, type InvokeResult } from '../../src/ai/dispatcher.ts';
 import { TypeSafeLedger, typesafeSpentOn, type TypeSafeHold, type TypeSafeReservation } from '../../src/ai/typesafe-ledger.ts';
 import { MockJev } from '../../src/jev/mock.ts';
-import type { SystemOneRequest } from '../../src/jev/types.ts';
+import type { Answer, SystemOneRequest } from '../../src/jev/types.ts';
+
+type Classified = InvokeResult<{ answers: Record<string, Answer>; model: string }>;
 
 const USE_CASE = 'engagement.facebook.comment.classify';
 const STATE = { text: 'Me encantó el pastel, ¿hacen pedidos?' };
@@ -176,13 +178,18 @@ test('AC-TS01: 4 clasificaciones paralelas del AI Core con TypeSafe retenido ⇒
   const gate = new Promise<void>((resolve) => { release = resolve; });
   let twoSent: () => void = () => undefined;
   const bothSent = new Promise<void>((resolve) => { twoSent = resolve; });
-  typesafe.respond = async (request) => {
+  // Retenida hasta soltar la compuerta o hasta el deadline del propio cliente (así una regresión falla en vez de colgarse).
+  typesafe.respond = async (request, init) => {
     if (typesafe.calls - calls0 === 2) twoSent();
-    await gate;
+    await new Promise<void>((resolve, reject) => {
+      void gate.then(resolve);
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+    });
     return answer(request, { cost: 0.00004 });
   };
+  let pending: Promise<Classified>[] = [];
   try {
-    const pending = [0, 1, 2, 3].map(() => classify(dispatcher));
+    pending = [0, 1, 2, 3].map(() => classify(dispatcher));
     // Las dos sin reserva terminan solas mientras las otras dos siguen retenidas en el proveedor.
     await Promise.all([bothSent, firstSettled(pending, 2)]);
     assert.equal(typesafe.calls - calls0, 2, 'solo salen las dos reservadas');
@@ -205,6 +212,7 @@ test('AC-TS01: 4 clasificaciones paralelas del AI Core con TypeSafe retenido ⇒
     assert.ok(near(await spentToday(), base + 2 * 0.00004), 'el costo informado reemplaza la reserva');
   } finally {
     release();
+    await Promise.allSettled(pending);
     typesafe.respond = async (request) => answer(request, { cost: 0.00004 });
   }
 });
