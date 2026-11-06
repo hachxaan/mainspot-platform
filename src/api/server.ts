@@ -219,7 +219,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   });
   // AI Core: un despachador por proceso (ruta fijada por invocación, presupuesto y trazas).
   const registry = new AiRegistry(pool);
-  const aiLab = new AiLab({ pool, registry, environment: config.aiEnvironment });
+  const aiLab = new AiLab({ pool, registry, environment: config.aiEnvironment, appEnv: config.appEnv });
   const dispatcher = new AiDispatcher({ pool, config, registry, lab: aiLab });
   const aiJobs = new AiJobs({ pool, registry, environment: config.aiEnvironment, lab: aiLab });
   const brand = new BrandService({ pool, sink });

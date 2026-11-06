@@ -178,16 +178,20 @@ function textBetween(value: unknown, min: number, max: number, what: string): st
 
 export class AiLab {
   readonly environment: string;
-  /** Solo el entorno `lab` emite o acepta grants; en cualquier otro, todo grant es inválido (fail closed). */
+  /**
+   * Solo el entorno `lab` emite o acepta grants; en cualquier otro, todo grant es inválido (fail closed). Con
+   * `APP_ENV=production` el laboratorio nunca se habilita aunque `AI_ENVIRONMENT` sea (o quede por omisión) `lab`:
+   * está fuera de las cuotas comerciales y es solo de desarrollo (DEC-0074; DEC-0077 R5).
+   */
   readonly enabled: boolean;
   private readonly pool: Pool;
   private readonly registry: AiRegistry;
 
-  constructor(deps: { pool: Pool; registry: AiRegistry; environment: string }) {
+  constructor(deps: { pool: Pool; registry: AiRegistry; environment: string; appEnv: string }) {
     this.pool = deps.pool;
     this.registry = deps.registry;
     this.environment = deps.environment;
-    this.enabled = deps.environment === LAB_ENVIRONMENT;
+    this.enabled = deps.environment === LAB_ENVIRONMENT && deps.appEnv !== 'production';
   }
 
   // ------------------------------------------------------------------ lectura y validación (dispatcher, worker, API del negocio)

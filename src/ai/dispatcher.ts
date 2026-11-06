@@ -99,7 +99,7 @@ export class AiDispatcher {
     this.pool = deps.pool;
     this.config = deps.config;
     this.registry = deps.registry ?? new AiRegistry(deps.pool);
-    this.lab = deps.lab ?? new AiLab({ pool: deps.pool, registry: this.registry, environment: deps.config.aiEnvironment });
+    this.lab = deps.lab ?? new AiLab({ pool: deps.pool, registry: this.registry, environment: deps.config.aiEnvironment, appEnv: deps.config.appEnv });
     this.fetchImpl = deps.fetchImpl;
   }
 
