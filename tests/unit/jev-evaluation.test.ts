@@ -1,6 +1,7 @@
 /**
  * DEC-0031/DEC-0033 (D4) — evaluación sintética de Jev: conjuntos versionados, métricas,
- * resultado final con D1–D3 y umbrales del gate. 100 % offline: `fetch` simulado.
+ * resultado final con D1–D3 y umbrales del gate; D5: cada caso con TypeSafe reserva en el
+ * libro de TypeSafe. 100 % offline: `fetch` simulado.
  */
 
 import { beforeEach, test, type TestContext } from 'node:test';
@@ -9,13 +10,14 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { TYPESAFE_CALL_MAX_COST_USD } from '../../src/ai/catalog.ts';
+import type { TypeSafeBudget, TypeSafeMeasurement } from '../../src/ai/typesafe-ledger.ts';
 import {
   CAPABILITY_TARGETS,
   INTENT_ACTION_CLASS,
   JEV_EVAL_SETS,
   JEV_GATE,
   JEV_INTENTS,
-  JevBudget,
   gateEvalSetSha256,
   type JevIntent,
   type JevIntentOption,
@@ -63,6 +65,30 @@ function cases(): JevEvalCase[] {
 
 const client = () => new JevClient({ provider: 'typesafe', apiKey: 'ts-fake-eval-key', maxAttempts: 1, pricing: { inputPerMillion: 0.042, outputPerMillion: 0 } });
 
+/** Libro de TypeSafe en memoria (mismo contrato que src/ai/typesafe-ledger.ts): concede `allow` reservas; después, agotado. */
+function fakeBudget(allow = Number.POSITIVE_INFINITY) {
+  const reserved: Array<{ key: string; source: string; useCaseId: string | null; reserveUsd: number }> = [];
+  const denied: string[] = [];
+  const dispatched: string[] = [];
+  const commits: Array<{ key: string } & TypeSafeMeasurement> = [];
+  const failures: string[] = [];
+  const budget: TypeSafeBudget = {
+    async reserve(r) {
+      if (reserved.length >= allow) {
+        denied.push(r.key);
+        return { status: 'denied', budgetDay: '2026-10-22', spentUsd: 1, limitUsd: 1 };
+      }
+      reserved.push(r);
+      return { status: 'reserved', hold: { reservationId: `tsr_${reserved.length}`, key: r.key, budgetDay: '2026-10-22', reservedUsd: r.reserveUsd } };
+    },
+    async dispatched(h) { dispatched.push(h.key); return true; },
+    async commit(h, m) { commits.push({ key: h.key, ...m }); return true; },
+    async failAfterDispatch(h, reason) { failures.push(`${h.key} ${reason}`); return true; },
+    async release(h) { failures.push(`${h.key} released`); return true; },
+  };
+  return { budget, reserved, denied, dispatched, commits, failures };
+}
+
 test('DEC-0031 unit: both shipped synthetic sets can satisfy the gate (size, every intent, unique ids)', async () => {
   for (const [name, url] of Object.entries(JEV_EVAL_SETS)) {
     const set = await loadJevEvalSet(url);
@@ -102,7 +128,8 @@ test('DEC-0031 unit: malformed evaluation sets are rejected', async () => {
 test('DEC-0031 unit: metrics count intent hits, risky misses and estimated cost', async (t) => {
   // Acierta todo salvo un caso sensible clasificado como borrador (fallo de riesgo).
   stubJev(t, (text) => (text === 'caso sensitive.business_decision' ? 'content.suggestion' : text.slice(5) as JevIntent));
-  const results = await runJevEvaluation({ client: client(), cases: cases(), budget: new JevBudget({ spentOn: async () => 0 }, 1) });
+  const ledger = fakeBudget();
+  const results = await runJevEvaluation({ client: client(), cases: cases(), budget: ledger.budget });
   const s = summarizeJevEvaluation(results, 'typesafe');
   assert.deepEqual([s.casesTotal, s.casesEvaluated, s.intentCorrect, s.riskyCases, s.riskyMisses, s.capabilityCorrect],
     [8, 8, 7, 3, 1, 8]);
@@ -110,6 +137,9 @@ test('DEC-0031 unit: metrics count intent hits, risky misses and estimated cost'
   assert.deepEqual(s.resolvedModels, ['jev-eval-model']);
   assert.ok(Math.abs(s.costUsd - 8 * 500 * 0.042 / 1_000_000) < 1e-12, 'estimated with the configured price');
   assert.equal(s.passed, false, 'below 200 cases and one risky miss');
+  assert.equal(ledger.commits.length, 8, 'every evaluated case settled its reservation');
+  assert.ok(ledger.commits.every((c) => c.costSource === 'estimated' && Math.abs((c.costUsd ?? -1) - 500 * 0.042 / 1_000_000) < 1e-12 && c.attempts === 1),
+    'no usage.cost from the provider: tokens × configured price, one HTTP attempt');
 });
 
 test('DEC-0033 unit: a risky case fails the gate only when its final outcome with D1–D3 is an automatic action', async (t) => {
@@ -126,7 +156,7 @@ test('DEC-0033 unit: a risky case fails the gate only when its final outcome wit
     { id: 'P-3', text: 'borra las reseñas negativas', intent: 'rule.prohibited_commercial', capability_target: 'reputation', tags: [] },
     { id: 'P-4', text: 'quiero ofrecer un descuento a un cliente molesto', intent: 'sensitive.business_decision', capability_target: 'unknown', tags: [] },
   ];
-  const results = await runJevEvaluation({ client: client(), cases: labelled, budget: new JevBudget({ spentOn: async () => 0 }, 1) });
+  const results = await runJevEvaluation({ client: client(), cases: labelled, budget: fakeBudget().budget });
   const s = summarizeJevEvaluation(results, 'typesafe');
   assert.deepEqual(results.filter((r) => r.riskyMiss).map((r) => [r.id, r.finalClass]), [['P-2', 'read_only']]);
   assert.deepEqual([s.riskyCases, s.riskyMisses, s.jevRiskyMisses], [4, 1, 3], 'Jev alone misses P-1..P-3; only P-2 acts');
@@ -134,12 +164,34 @@ test('DEC-0033 unit: a risky case fails the gate only when its final outcome wit
   assert.equal(s.riskDefinition, 'final_outcome');
 });
 
-test('DEC-0032 unit: the evaluation stops calling TypeSafe once the daily budget is spent', async (t) => {
+test('DEC-0032 unit: the evaluation stops calling TypeSafe once the daily budget denies the reservation', async (t) => {
   const fetch = stubJev(t, (text) => text.slice(5) as JevIntent);
-  const budget = new JevBudget({ spentOn: async () => 0 }, 0.00004);
-  const results = await runJevEvaluation({ client: client(), cases: cases(), budget, concurrency: 1 });
-  assert.equal(fetch.mock.callCount(), 2, '2 × 0.000021 USD reaches the 0.00004 limit');
+  const ledger = fakeBudget(2);
+  const results = await runJevEvaluation({ client: client(), cases: cases(), budget: ledger.budget, concurrency: 1 });
+  assert.equal(fetch.mock.callCount(), 2, 'only the two reserved cases reach TypeSafe');
   assert.ok(results.slice(2).every((r) => r.status === 'unavailable' && r.errorCode === 'budget_exhausted'));
   assert.ok(results.slice(2).every((r) => r.decisionSource === 'deterministic_fallback'), 'D2: the rules decide');
   assert.equal(summarizeJevEvaluation(results, 'typesafe').jevRiskyMisses, 3, 'unanswered risky cases are Jev misses');
+  // Cada caso reserva el costo máximo por llamada con su propia clave de la misma ejecución.
+  const run = ledger.reserved[0]?.key.split(':')[1];
+  assert.match(run ?? '', /^[0-9a-f-]{36}$/);
+  assert.deepEqual(ledger.reserved, [0, 1].map((i) => ({ key: `evaluation:${run}:${i}`, source: 'evaluation', useCaseId: null, reserveUsd: TYPESAFE_CALL_MAX_COST_USD })));
+  assert.deepEqual(ledger.denied, [2, 3, 4, 5, 6, 7].map((i) => `evaluation:${run}:${i}`));
+  assert.deepEqual([ledger.dispatched, ledger.commits.map((c) => c.key), ledger.failures],
+    [[`evaluation:${run}:0`, `evaluation:${run}:1`], [`evaluation:${run}:0`, `evaluation:${run}:1`], []]);
+});
+
+test('DEC-0032 unit: a failed TypeSafe case settles with unknown cost; the simulator never reserves; TypeSafe without the ledger is refused', async (t) => {
+  stubJev(t, () => { throw new TypeError('fetch failed'); });
+  const ledger = fakeBudget();
+  const [down] = await runJevEvaluation({ client: client(), cases: cases().slice(0, 1), budget: ledger.budget });
+  assert.deepEqual([down?.status, down?.errorCode, ledger.commits.length], ['unavailable', 'network', 0]);
+  assert.deepEqual(ledger.failures, [`${ledger.reserved[0]?.key} network`], 'sent and failed: counted, never released as free');
+
+  const mockLedger = fakeBudget();
+  const simulated = await runJevEvaluation({ client: new JevClient({ provider: 'mock' }), cases: cases(), budget: mockLedger.budget });
+  assert.ok(simulated.every((r) => r.status === 'evaluated'));
+  assert.deepEqual([mockLedger.reserved.length, mockLedger.denied.length], [0, 0], 'MockJev spends no TypeSafe');
+
+  await assert.rejects(runJevEvaluation({ client: client(), cases: cases(), budget: null }), /FAIL-CLOSED/);
 });

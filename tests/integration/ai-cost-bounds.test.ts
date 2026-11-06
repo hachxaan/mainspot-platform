@@ -5,17 +5,20 @@
  * en memoria (fetch interceptado en todo el archivo; cualquier otra salida a la red falla y queda registrada).
  * SIMULATED_REGRESSION: nada de aquí acredita un proveedor real, su facturación ni su calidad.
  *
- * Cubre (AC previstos del delta 0.8.0: FR-0016 AC-16011, NFR-0006 AC-6004/AC-6005, FR-0019 AC-19005):
- *  (a) un comentario de Facebook con propuesta de IA no reserva ni consume `ai_review_replies` aunque la cuota valga 0
- *      o la revisión del plan no la defina, mientras la misma cuota sí bloquea «Redactar con IA» en Google;
+ * Cubre (AC previstos del delta 0.8.0: FR-0016 AC-16011, NFR-0006 AC-6004/AC-6005, FR-0019 AC-19005; DEC-0078):
+ *  (a) la IA de un comentario de Facebook nunca reserva ni consume `ai_review_replies` aunque la cuota valga 0 o la
+ *      revisión del plan no la defina: usa su propio medidor (DEC-0078 R5, fail-closed sin valor), mientras la cuota de
+ *      reseñas sigue bloqueando «Redactar con IA» en Google;
  *  (b) con el presupuesto técnico agotado (`tenant_day` por gasto real del negocio; tope diario TypeSafe DEC-0032) la
- *      redacción con IA de un comentario no llega al proveedor, queda trazada como bloqueada y el caso sigue sin IA;
- *  (c) las respuestas automáticas de Facebook respetan `max_auto_replies_per_hour` (ventana móvil de una hora) y cada
- *      redacción con IA, también la de los casos limitados, reserva contra el presupuesto técnico;
+ *      redacción con IA de un comentario (automática o a pedido) no llega al proveedor, queda trazada como bloqueada,
+ *      no descuenta el medidor y el caso sigue sin IA;
+ *  (c) FB-2 (DEC-0078 R2): las respuestas automáticas de Facebook respetan `max_auto_replies_per_hour` (ventana móvil de
+ *      una hora) y sin espacio en la hora no se redacta con IA para publicar;
  *  (d) laboratorio: sin grant válido (ausente, inexistente, caducado, revocado, de otro negocio, usuario o entorno,
  *      capacidad fuera de su allowlist o fuera de AI_ENVIRONMENT=lab) se rechaza antes de clasificar o generar; con
- *      grant válido la invocación reserva los mismos presupuestos técnicos (`tenant_day`, techo `lab_total`, tope
- *      TypeSafe) y al agotarse se bloquea; nunca toca el libro de cuotas comerciales.
+ *      grant válido la invocación reserva el presupuesto experimental del laboratorio (`lab_experiment`, FB-3) y nunca el
+ *      diario del negocio, bajo el techo global `lab_total` y el tope TypeSafe; al agotarse se bloquea; nunca toca el
+ *      libro de cuotas comerciales.
  */
 
 import { test, before, after } from 'node:test';
@@ -25,12 +28,12 @@ import { bootApi, authHeaders, api, login, type TestApi } from '../helpers/testd
 import { createTenantWithPlan, countRows, type TestTenant } from '../helpers/tenants.ts';
 import { setTenantPlan } from '../helpers/plans.ts';
 import { AiDispatcher } from '../../src/ai/dispatcher.ts';
-import { SPENT_SQL, reserveBudget } from '../../src/ai/governance.ts';
+import { SCOPE_SPENT_FILTER, SPENT_SQL, reserveBudget, type BudgetPurpose } from '../../src/ai/governance.ts';
 import { AiLab } from '../../src/ai/lab.ts';
 import { AiRegistry, type RouteParams } from '../../src/ai/registry.ts';
 import { AiEngagementSemantics, type EngagementSemantics } from '../../src/engagement/ai-semantics.ts';
 import { autoReplyText } from '../../src/engagement/classifier.ts';
-import { AUTO_REPLY_CONSENT } from '../../src/engagement/consent.ts';
+import { AUTO_REPLY_CONSENT, AUTO_SUGGEST_CONSENT } from '../../src/engagement/consent.ts';
 import { AI_REPLY_DISCLOSURE, EngagementService, type CaseRow } from '../../src/engagement/service.ts';
 import { currentStep, totpAt } from '../../src/platform/auth.ts';
 import type { AppConfig } from '../../src/shared/config.ts';
@@ -183,9 +186,9 @@ async function commercialLedger(tenant: string): Promise<{ rows: number; events:
   };
 }
 
-/** Gasto del negocio hoy con el mismo cálculo que aplica el presupuesto `tenant_day` (src/ai/governance.ts). */
+/** Gasto operativo del negocio hoy con el mismo predicado que aplica el presupuesto `tenant_day` (src/ai/governance.ts). */
 async function tenantSpentToday(tenant: string): Promise<number> {
-  const r = await t.pool.query<{ spent: string }>(`${SPENT_SQL} AND i.tenant_id = $1 AND i.created_at >= date_trunc('day', now())`, [tenant]);
+  const r = await t.pool.query<{ spent: string }>(`${SPENT_SQL} AND ${SCOPE_SPENT_FILTER.tenant_day}`, [tenant]);
   return Number(r.rows[0]?.spent ?? 0);
 }
 
@@ -195,19 +198,78 @@ async function setTenantDayBudget(tenant: string, limitUsd: number): Promise<voi
     [`bud_${randomUUID()}`, tenant, limitUsd]);
 }
 
+/** Gasto de laboratorio de hoy de todos los negocios: lo que cuenta para `lab_experiment` (una fila global). */
+async function labSpentToday(): Promise<number> {
+  return Number((await t.pool.query<{ spent: string }>(`${SPENT_SQL} AND ${SCOPE_SPENT_FILTER.lab_experiment}`)).rows[0]?.spent ?? 0);
+}
+
+/** Redondeo a 4 decimales hacia arriba / abajo, como guarda `ai_budget.limit_usd` (NUMERIC(12,4)), sin ruido de coma flotante. */
+function ceil4(value: number): number {
+  return Math.ceil(Math.round(value * 1e8) / 1e4) / 1e4;
+}
+function floor4(value: number): number {
+  return Math.floor(Math.round(value * 1e8) / 1e4) / 1e4;
+}
+
 /**
- * Ejecuta `run` con un gasto TypeSafe del día que ya alcanza el tope DEC-0032 (en pruebas `config.jev.mode = 'disabled'`
- * ⇒ límite USD 1) y lo retira al terminar: el tope es global y otros archivos clasifican después.
+ * Presupuesto experimental del laboratorio (FB-3) fijado por la plataforma (platform_admin con step-up): no hay valor
+ * sembrado. `limitUsd` se guarda con 4 decimales (NUMERIC(12,4)); quien llama lo retira con `clearLabExperimentBudget`.
  */
-async function withTypesafeDayExhausted<T>(tenant: string, run: () => Promise<T>): Promise<T> {
-  const id = `inv_fixture_${randomUUID()}`;
+async function setLabExperimentBudget(limitUsd: number): Promise<void> {
+  await t.pool.query('UPDATE platform_session SET step_up_at = now() WHERE platform_user_id = $1', [adminId]);
+  const put = await platform(adminToken, '/ai/budgets/lab_experiment', 'PUT', { limit_usd: limitUsd, reason: 'Prueba local: presupuesto experimental del laboratorio' });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+}
+
+/** Vuelve al estado sin configurar (sin fila), el de cualquier base recién migrada. */
+async function clearLabExperimentBudget(): Promise<void> {
+  await t.pool.query(`DELETE FROM ai_budget WHERE scope = 'lab_experiment'`);
+}
+
+/**
+ * Ejecuta `run` con el gasto TypeSafe del día ya en el tope DEC-0032 (en pruebas `config.jev.mode = 'disabled'` ⇒ límite
+ * USD 1): una llamada confirmada de USD 1 en el libro de TypeSafe (TS-1: la única fuente del tope), retirada al terminar
+ * porque el tope es global y otros archivos clasifican después.
+ */
+async function withTypesafeDayExhausted<T>(run: () => Promise<T>): Promise<T> {
+  const key = `ai_invocation:inv_fixture_${randomUUID()}`;
   await t.pool.query(
-    `INSERT INTO ai_invocation (invocation_id, request_id, idempotency_key, tenant_id, actor_id, actor_kind, origin, use_case_id, provider_id, policy_version, status, cost_usd, cost_source, trace_id, finished_at)
-     VALUES ($1, 'fixture', $1, $2, 'system:test', 'system', 'test.fixture', $3, 'typesafe', 'fixture', 'succeeded', 1, 'reported', 'fixture', now())`, [id, tenant, FB_CLASSIFY]);
+    `INSERT INTO typesafe_reservation (reservation_id, idempotency_key, source, use_case_id, budget_day, reserved_usd, status, dispatched_at,
+       attempts, cost_usd, cost_source, expires_at, settled_at)
+     VALUES ($1, $2, 'ai_core', $3, (now() AT TIME ZONE 'UTC')::date, 0.01, 'committed', now(), 1, 1, 'reported', now(), now())`,
+    [`tsr_fixture_${randomUUID()}`, key, FB_CLASSIFY]);
   try {
     return await run();
   } finally {
-    await t.pool.query('DELETE FROM ai_invocation WHERE invocation_id = $1', [id]);
+    await t.pool.query('DELETE FROM typesafe_reservation WHERE idempotency_key = $1', [key]);
+  }
+}
+
+/**
+ * Ejecuta `run` con la clasificación de `useCase` en `environment` servida por una copia de la candidata TypeSafe sembrada
+ * (`ts:jev-1.14.0`, aprobada, clave ficticia) y restaura después la ruta activa anterior. La simulada (MockJev) no gasta
+ * TypeSafe ni consulta su tope (TS-1): solo una ruta TypeSafe prueba el tope DEC-0032. Agotado, nada sale a la red.
+ */
+async function withTypesafeClassifier<T>(useCase: string, environment: string, run: () => Promise<T>): Promise<T> {
+  const reg = t.handle.dispatcher.registry;
+  const previous = (await reg.rollout(useCase, environment))?.active_route_id;
+  assert.ok(previous, `${useCase} tiene ruta activa en ${environment}`);
+  const seeded = (await t.pool.query<{ prompt_revision_id: string; params: RouteParams; max_cost_usd: string }>(
+    `SELECT prompt_revision_id, params, max_cost_usd FROM ai_route_revision WHERE use_case_id = $1 AND model_id = 'ts:jev-1.14.0' AND status <> 'RETIRED'
+      ORDER BY version LIMIT 1`, [useCase])).rows[0];
+  assert.ok(seeded, `candidata TypeSafe sembrada para ${useCase}`);
+  const route = await reg.createRoute({ useCaseId: useCase, modelId: 'ts:jev-1.14.0', promptRevisionId: seeded.prompt_revision_id, params: seeded.params,
+    maxCostUsd: Number(seeded.max_cost_usd), changeNote: 'Prueba de cotas: clasificación con TypeSafe (tope DEC-0032)', actor: ACTOR });
+  createdRoutes.push(route.route_id);
+  await approve(route.route_id);
+  await reg.activate(useCase, environment, route.route_id, ACTOR, 'Prueba de cotas: clasificación con TypeSafe', 'seed');
+  const prevKey = process.env.TYPESAFE_API_KEY;
+  process.env.TYPESAFE_API_KEY = 'ts-fake-key-cost-bounds';
+  try {
+    return await run();
+  } finally {
+    if (prevKey === undefined) delete process.env.TYPESAFE_API_KEY; else process.env.TYPESAFE_API_KEY = prevKey;
+    await reg.activate(useCase, environment, previous, ACTOR, 'Prueba de cotas: vuelve la clasificación simulada', 'seed');
   }
 }
 
@@ -322,21 +384,46 @@ function labReply(app: TestApi, token: string, body: Record<string, unknown>, gr
   return call(app, token, '/ai/lab/replies', 'POST', body, { 'Idempotency-Key': randomUUID(), ...(grant ? { 'X-AI-Lab-Grant': grant } : {}) });
 }
 
-// ------------------------------------------------------------------ (a) Facebook fuera de la cuota
+// ------------------------------------------------------------------ (a) Facebook fuera de la cuota de reseñas
 
-test('(a) AC-16011: la propuesta de IA de un comentario de Facebook no reserva ni consume ai_review_replies aunque la cuota valga 0 o falte; la misma cuota sí bloquea «Redactar con IA» en Google', async () => {
-  const zero = await createTenantWithPlan(t, { ai_review_replies: 0, reviews_managed: 0 }, 'client_cbz');
+/** Unidades confirmadas del medidor propio de Facebook (DEC-0078 R5) y filas de la cuota de reseñas (nunca se tocan). */
+async function meters(tenant: string): Promise<{ facebook: number; google: number }> {
+  const r = await t.pool.query<{ facebook: string; google: string }>(
+    `SELECT COALESCE(SUM(units) FILTER (WHERE capability = 'ai_facebook_suggestions' AND state = 'committed'), 0) AS facebook,
+            count(*) FILTER (WHERE capability = 'ai_review_replies') AS google
+       FROM quota_reservation WHERE tenant_id = $1`, [tenant]);
+  return { facebook: Number(r.rows[0]?.facebook), google: Number(r.rows[0]?.google) };
+}
+
+/** Sugerencias automáticas de comentarios de Facebook aceptando los términos vigentes (DEC-0078 R1). */
+async function autoSuggest(a: TestTenant): Promise<void> {
+  const r = await call(t, a.token, '/engagement/suggestions', 'PUT',
+    { origin: 'facebook_comment', mode: 'auto_suggest', consent: true, consent_version: AUTO_SUGGEST_CONSENT.facebook_comment.version });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+}
+
+test('(a) AC-16011 / DEC-0078 R5: la IA de un comentario de Facebook nunca reserva ni consume ai_review_replies aunque valga 0 o falte; usa su propio medidor y la cuota de reseñas sigue bloqueando «Redactar con IA» en Google', async () => {
+  const zero = await createTenantWithPlan(t, { ai_review_replies: 0, reviews_managed: 0, ai_facebook_suggestions: 1 }, 'client_cbz');
   const legacy = await createTenantWithPlan(t, { reviews_managed: 0 }, 'client_cbl');
-  // plan_piloto_1 sigue en su revisión previa a 0036: no define la cuota de respuestas con IA (fail-closed en reseñas).
+  // plan_piloto_1 sigue en su revisión previa a 0036 y 0038: no define ni la cuota de reseñas ni el medidor de Facebook.
   await setTenantPlan(t.pool, legacy.tenant, 'plan_piloto_1');
+  await autoSuggest(zero);
   for (const [a, limit] of [[zero, 0], [legacy, null]] as const) {
     const status0 = (await call(t, a.token, '/engagement/ai-replies')).body.ai_replies;
     assert.deepEqual([status0.limit, status0.usage], [limit, 0]);
 
     const comment = await commentViaApp(a, COMMENT);
-    assert.ok(comment.reply_invocation_id, 'el comentario trae su propuesta de IA');
-    const drafted = (await t.pool.query('SELECT use_case_id, status, provider_id FROM ai_invocation WHERE invocation_id = $1', [comment.reply_invocation_id])).rows[0];
-    assert.deepEqual(drafted, { use_case_id: FB_REPLY, status: 'succeeded', provider_id: 'simulated' });
+    if (a === zero) {
+      assert.ok(comment.reply_invocation_id, 'con sugerencias automáticas y medidor propio, el comentario trae su sugerencia');
+      const drafted = (await t.pool.query('SELECT use_case_id, status, provider_id FROM ai_invocation WHERE invocation_id = $1', [comment.reply_invocation_id])).rows[0];
+      assert.deepEqual(drafted, { use_case_id: FB_REPLY, status: 'succeeded', provider_id: 'simulated' });
+    } else {
+      // Sin medidor definido: a pedido tampoco hay IA de pago (fail-closed), con explicación.
+      assert.equal(comment.reply_invocation_id, null);
+      const denied = await call(t, a.token, `/engagement/cases/${comment.case_id}/ai-draft`, 'POST');
+      assert.deepEqual([denied.status, denied.body.error?.code], [403, 'limit_exceeded'], JSON.stringify(denied.body));
+      assert.match(denied.body.error.message, /Sugerencias con IA para comentarios de Facebook/);
+    }
 
     // Contraste: en el mismo negocio la cuota de reseñas sigue mandando sobre la IA de Google.
     const review = await reviewViaApp(a, 'Buen lugar, aunque la espera fue larga.', 3);
@@ -344,20 +431,21 @@ test('(a) AC-16011: la propuesta de IA de un comentario de Facebook no reserva n
     const denied = await call(t, a.token, `/engagement/cases/${review.case_id}/ai-draft`, 'POST');
     assert.deepEqual([denied.status, denied.body.error?.code], [403, 'limit_exceeded'], JSON.stringify(denied.body));
 
-    assert.deepEqual(await commercialLedger(a.tenant), { rows: 0, events: 0 }, 'ni reserva, ni consumo, ni evento de cuota');
-    const quotaDecisions = (await t.pool.query<{ resource: string; result: string }>(
-      `SELECT resource, result FROM audit_event WHERE tenant_id = $1 AND action = 'engagement.ai_reply'`, [a.tenant])).rows;
-    assert.deepEqual(quotaDecisions, [{ resource: `engagement_case/${review.case_id}`, result: 'limit_exceeded' }], 'solo la reseña consulta la cuota; el comentario nunca');
+    assert.deepEqual(await meters(a.tenant), { facebook: a === zero ? 1 : 0, google: 0 }, 'la cuota de reseñas no tiene ni una fila; Facebook gasta el suyo');
+    const reviewDecisions = (await t.pool.query<{ result: string }>(
+      `SELECT result FROM audit_event WHERE tenant_id = $1 AND action = 'engagement.ai_reply' AND resource = $2`, [a.tenant, `engagement_case/${review.case_id}`])).rows;
+    assert.deepEqual(reviewDecisions, [{ result: 'limit_exceeded' }]);
     assert.equal((await call(t, a.token, '/engagement/ai-replies')).body.ai_replies.usage, 0);
   }
 });
 
 // ------------------------------------------------------------------ (b) presupuesto técnico agotado
 
-test('(b) AC-16011/AC-6004: con el presupuesto diario del negocio agotado por su propio gasto, la redacción con IA del comentario no llega al proveedor, queda bloqueada y el caso sigue sin IA', async () => {
-  const a = await createTenantWithPlan(t, { ai_review_replies: 0, reviews_managed: 0 }, 'client_cbb');
+test('(b) AC-16011/AC-6004: con el presupuesto diario del negocio agotado por su propio gasto, la redacción con IA del comentario no llega al proveedor, queda bloqueada, no descuenta el medidor y el caso sigue sin IA', async () => {
+  const a = await createTenantWithPlan(t, { ai_review_replies: 0, reviews_managed: 0, ai_facebook_suggestions: 10 }, 'client_cbb');
   // Cabe exactamente una reserva (el costo máximo de la ruta); tras la primera, su costo real ya no deja margen.
   await setTenantDayBudget(a.tenant, maxCostUsd);
+  await autoSuggest(a);
   const service = cbService();
   const calls0 = provider.calls;
 
@@ -376,9 +464,14 @@ test('(b) AC-16011/AC-6004: con el presupuesto diario del negocio agotado por su
   const second = await service.classifyCase(await receivedComment(service, a.tenant, COMMENT));
   assert.deepEqual([second?.state, second?.decision, second?.reply_invocation_id], ['needs_human', 'human_review', null]);
   assert.ok(second && second.drafts.length === 3 && !second.drafts.includes(AI_TEXT), 'solo borradores sin IA');
-  // Sin vía alterna: «Redactar con IA» a pedido no existe para comentarios (solo reseñas de Google, con su cuota).
-  const onDemand = await call(t, a.token, `/engagement/cases/${second!.case_id}/ai-draft`, 'POST');
-  assert.deepEqual([onDemand.status, onDemand.body.error?.code], [409, 'validation_error'], JSON.stringify(onDemand.body));
+  // Tampoco por la vía a pedido (DEC-0078 R1): el presupuesto la bloquea antes del proveedor y no descuenta nada; la
+  // denegación dice que es el presupuesto (AC-FB04; revisión 1, F-05), no un fallo pasajero.
+  const onDemand = await service.requestAiDraft({ tenantId: a.tenant, userId: a.userId, role: 'administration', requestId: `req_${randomUUID()}` }, second!.case_id)
+    .then(() => null, (err: unknown) => err as { status?: number; code?: string; userMessage?: string });
+  assert.deepEqual([onDemand?.status, onDemand?.code], [429, 'limit_exceeded'], 'sin margen no hay propuesta a pedido');
+  assert.match(onDemand?.userMessage ?? '', /presupuesto diario de IA.*No se descontó de tu plan/);
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1 AND action = 'quota.released' AND result = 'ai_facebook_suggestions:1:ai_budget_exhausted'`, [a.tenant]), 1,
+    'la unidad liberada queda auditada con su motivo real');
   // Respuesta automática autorizada: sin margen, sale el texto seguro sin IA (sin el aviso de IA) y se publica.
   assert.equal((await facebookAutoPolicy(a)).status, 200);
   const auto = cbService('gratitude');
@@ -393,32 +486,37 @@ test('(b) AC-16011/AC-6004: con el presupuesto diario del negocio agotado por su
 
   assert.equal(provider.calls, calls0 + 1, 'agotado el presupuesto, el proveedor no recibe ninguna llamada más');
   const blocked = (await invocations(a.tenant, FB_REPLY)).filter((r) => r.status === 'blocked');
-  assert.deepEqual(blocked.map((r) => [r.idempotency_key, r.error_code, r.detail, r.route_id, Number(r.reserved_usd), r.cost_usd]), [
+  assert.deepEqual(blocked.map((r) => [r.idempotency_key.replace(/:reply:req_.*$/, ':reply:<petición>'), r.error_code, r.detail, r.route_id, Number(r.reserved_usd), r.cost_usd]), [
     [`case:${second!.case_id}:reply`, 'budget_exhausted', 'tenant_day', cbReplyRoute, 0, null],
+    [`case:${second!.case_id}:reply:<petición>`, 'budget_exhausted', 'tenant_day', cbReplyRoute, 0, null],
     [`case:${third!.case_id}:reply`, 'budget_exhausted', 'tenant_day', cbReplyRoute, 0, null],
   ], 'cada bloqueo queda trazado con su caso, su ruta y el ámbito agotado');
   assert.equal(await tenantSpentToday(a.tenant), spent, 'los bloqueos no suman gasto ni reservas');
   assert.equal(await countRows(t, `SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1 AND status = 'running'`, [a.tenant]), 0);
-  assert.deepEqual(await commercialLedger(a.tenant), { rows: 0, events: 0 });
+  assert.deepEqual(await meters(a.tenant), { facebook: 1, google: 0 }, 'solo la redacción que se guardó descuenta del medidor');
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM quota_reservation WHERE tenant_id = $1 AND state = 'reserved'`, [a.tenant]), 0, 'ninguna reserva queda colgada');
 });
 
 test('(b) AC-6004: con el tope diario de TypeSafe (DEC-0032) alcanzado, la lectura del comentario se bloquea y no se redacta con IA; el caso queda para revisión humana', async () => {
   const a = await createTenantWithPlan(t, { reviews_managed: 0 }, 'client_cbj');
   const service = cbService();
   const calls0 = provider.calls;
-  const c = await withTypesafeDayExhausted(a.tenant, async () => service.classifyCase(await receivedComment(service, a.tenant, COMMENT)));
+  const c = await withTypesafeClassifier(FB_CLASSIFY, CB_ENV, () =>
+    withTypesafeDayExhausted(async () => service.classifyCase(await receivedComment(service, a.tenant, COMMENT))));
   assert.deepEqual([c?.state, c?.decision, c?.reason, c?.semantic_source, c?.reply_invocation_id], ['needs_human', 'human_review', 'semantic_unavailable', 'unavailable', null]);
   const read = (await invocations(a.tenant, FB_CLASSIFY)).filter((r) => r.idempotency_key === `case:${c!.case_id}:read`);
-  assert.deepEqual(read.map((r) => [r.status, r.error_code, Number(r.cost_usd)]), [['failed', 'budget_exhausted', 0]]);
+  assert.deepEqual(read.map((r) => [r.provider_id, r.status, r.error_code, r.detail, Number(r.cost_usd)]), [['typesafe', 'failed', 'budget_exhausted', 'DEC-0032', 0]]);
+  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM typesafe_reservation WHERE idempotency_key = $1', [`ai_invocation:${read[0]!.invocation_id}`]), 0,
+    'la lectura denegada no reservó nada en el libro de TypeSafe');
   assert.deepEqual(await invocations(a.tenant, FB_REPLY), [], 'sin lectura semántica no hay redacción con IA');
   assert.equal(provider.calls, calls0);
   assert.deepEqual(await commercialLedger(a.tenant), { rows: 0, events: 0 });
 });
 
-// ------------------------------------------------------------------ (c) límite por hora
+// ------------------------------------------------------------------ (c) límite por hora (FB-2)
 
-test('(c) AC-16011: las respuestas automáticas de Facebook respetan max_auto_replies_per_hour (ventana móvil de 1 h); cada redacción con IA, también la de los casos limitados, reserva contra el presupuesto técnico', async () => {
-  const a = await createTenantWithPlan(t, { reviews_managed: 0 }, 'client_cbh');
+test('(c) AC-16011 / DEC-0078 R2 (FB-2): el máximo por hora acota la publicación Y el gasto: sin espacio en la hora no se redacta con IA para publicar', async () => {
+  const a = await createTenantWithPlan(t, { reviews_managed: 0, ai_facebook_suggestions: 10 }, 'client_cbh');
   for (const outOfRange of [0, 61]) {
     const r = await facebookAutoPolicy(a, outOfRange);
     assert.deepEqual([r.status, r.body.error?.code], [400, 'validation_error'], `límite ${outOfRange}: el máximo por hora va de 1 a 60`);
@@ -441,21 +539,21 @@ test('(c) AC-16011: las respuestas automáticas de Facebook respetan max_auto_re
   const published = (await t.pool.query<{ text: string }>(`SELECT text FROM sim_provider_reply WHERE tenant_id = $1 AND origin = 'facebook_comment'`, [a.tenant])).rows;
   assert.deepEqual(published.map((p) => p.text), [`${AI_TEXT}\n\n${AI_REPLY_DISCLOSURE}`, `${AI_TEXT}\n\n${AI_REPLY_DISCLOSURE}`], 'solo salen solas las dos de la hora, con el aviso de IA');
 
-  // El límite por hora acota la PUBLICACIÓN, no la redacción: los casos limitados también se redactaron con IA
-  // (comportamiento actual, service.ts classifyCase). Ese gasto lo acota el presupuesto técnico: cada redacción reservó.
-  assert.equal(provider.calls, calls0 + 4);
-  assert.ok(cases.slice(2).every((c) => c.reply_invocation_id && c.drafts[0] === AI_TEXT));
+  // FB-2: los casos limitados NO se redactan con IA (sin sugerencias automáticas no hay otro fin que lo justifique):
+  // solo las dos publicables llegaron al proveedor, reservaron y descontaron del medidor.
+  assert.equal(provider.calls, calls0 + 2);
+  assert.ok(cases.slice(2).every((c) => c.reply_invocation_id === null && !c.drafts.includes(AI_TEXT)));
   const replies = await invocations(a.tenant, FB_REPLY);
-  assert.equal(replies.length, 4);
+  assert.equal(replies.length, 2);
   assert.ok(replies.every((r) => r.status === 'succeeded' && r.provider_id === 'anthropic' && Number(r.reserved_usd) === maxCostUsd));
   const cost = replies.reduce((s, r) => s + Number(r.cost_usd), 0);
-  assert.ok(Math.abs((await tenantSpentToday(a.tenant)) - cost) < 1e-9, 'todas cuentan en el presupuesto diario del negocio');
+  assert.ok(Math.abs((await tenantSpentToday(a.tenant)) - cost) < 1e-9, 'el gasto del día es solo el de las publicables');
+  assert.deepEqual(await meters(a.tenant), { facebook: 2, google: 0 });
 
   // Ventana móvil: pasada la hora de las dos automáticas, la siguiente vuelve a salir sola.
   await t.pool.query(`UPDATE engagement_case SET classified_at = now() - interval '61 minutes' WHERE tenant_id = $1 AND decision = 'auto_reply'`, [a.tenant]);
   const next = await service.classifyCase(await receivedComment(service, a.tenant, '¡Gracias, todo excelente! (4)'));
   assert.deepEqual([next?.decision, next?.state], ['auto_reply', 'classified']);
-  assert.deepEqual(await commercialLedger(a.tenant), { rows: 0, events: 0 });
 });
 
 // ------------------------------------------------------------------ (d) laboratorio manual
@@ -512,39 +610,49 @@ test('(d) AC-19005: sin grant válido el laboratorio rechaza antes de clasificar
   for (const x of [a, b]) assert.deepEqual(await commercialLedger(x.tenant), { rows: 0, events: 0 });
 });
 
-test('(d) AC-6005/AC-19005: con grant válido la respuesta de laboratorio reserva el presupuesto diario del negocio, agotado se bloquea sin proveedor, revocar corta en seco y nunca toca el libro de cuotas', async () => {
+test('(d) AC-6005/AC-19005 · FB-3: con grant válido la respuesta de laboratorio reserva el presupuesto experimental del laboratorio y nunca el diario del negocio; agotado se bloquea sin proveedor, revocar corta en seco y nunca toca el libro de cuotas', async () => {
   const a = await createTenantWithPlan(lab, { ai_review_replies: 0, reviews_managed: 0 }, 'client_cblc');
   const grant = await issueGrant(a);
-  await setTenantDayBudget(a.tenant, maxCostUsd);
+  // Sin margen operativo: si el laboratorio reservara del diario del negocio, la primera respuesta ya se bloquearía.
+  await setTenantDayBudget(a.tenant, 0);
+  // Margen para una reserva sobre el gasto de laboratorio de hoy (la fila es global: otros archivos también prueban).
+  await setLabExperimentBudget(ceil4(await labSpentToday() + maxCostUsd));
   const calls0 = provider.calls;
+  try {
+    const ok = await labReply(lab, a.token, REVIEW, grant);
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.deepEqual([ok.body.review_required, ok.body.published, ok.body.simulated, ok.body.provider, ok.body.route_id, ok.body.reply.text],
+      [true, false, false, 'anthropic', labReplyRoute, AI_TEXT], 'propuesta para revisar; nada se publica');
+    assert.equal(provider.calls, calls0 + 1);
+    const [generated] = (await invocations(a.tenant, GOOGLE_REPLY)).filter((r) => r.invocation_id === ok.body.invocation_id);
+    assert.ok(generated);
+    assert.deepEqual([generated.status, generated.assignment, generated.lab_grant_id, Number(generated.reserved_usd), generated.cost_source],
+      ['succeeded', 'manual_lab', grant, maxCostUsd, 'estimated'], 'la invocación DRAFT reservó el costo máximo y queda trazada con su grant');
+    const [classified] = (await invocations(a.tenant, GOOGLE_CLASSIFY)).filter((r) => r.invocation_id === ok.body.classification_invocation_id);
+    assert.deepEqual([classified?.assignment, classified?.route_id, classified?.lab_grant_id], ['active', labClassifyRoute, grant], 'la clasificación sigue su ruta normal, revalidada con el grant');
+    assert.equal(await tenantSpentToday(a.tenant), 0, 'el laboratorio no cuenta en el presupuesto diario del negocio');
+    const ownLab = Number((await t.pool.query<{ spent: string }>(`${SPENT_SQL} AND i.tenant_id = $1 AND ${SCOPE_SPENT_FILTER.lab_experiment}`, [a.tenant])).rows[0]?.spent ?? 0);
+    assert.equal(ownLab, Number(generated.cost_usd), 'cuenta en el presupuesto experimental del laboratorio');
 
-  const ok = await labReply(lab, a.token, REVIEW, grant);
-  assert.equal(ok.status, 200, JSON.stringify(ok.body));
-  assert.deepEqual([ok.body.review_required, ok.body.published, ok.body.simulated, ok.body.provider, ok.body.route_id, ok.body.reply.text],
-    [true, false, false, 'anthropic', labReplyRoute, AI_TEXT], 'propuesta para revisar; nada se publica');
-  assert.equal(provider.calls, calls0 + 1);
-  const [generated] = (await invocations(a.tenant, GOOGLE_REPLY)).filter((r) => r.invocation_id === ok.body.invocation_id);
-  assert.ok(generated);
-  assert.deepEqual([generated.status, generated.assignment, generated.lab_grant_id, Number(generated.reserved_usd), generated.cost_source],
-    ['succeeded', 'manual_lab', grant, maxCostUsd, 'estimated'], 'la invocación DRAFT reservó el costo máximo y queda trazada con su grant');
-  const [classified] = (await invocations(a.tenant, GOOGLE_CLASSIFY)).filter((r) => r.invocation_id === ok.body.classification_invocation_id);
-  assert.deepEqual([classified?.assignment, classified?.route_id, classified?.lab_grant_id], ['active', labClassifyRoute, grant], 'la clasificación sigue su ruta normal, revalidada con el grant');
-  assert.equal(await tenantSpentToday(a.tenant), Number(generated.cost_usd), 'el laboratorio cuenta en el presupuesto diario del negocio');
+    // Agotado: la plataforma rebaja el presupuesto experimental a lo ya gastado hoy; no queda margen para otra reserva.
+    await setLabExperimentBudget(floor4(await labSpentToday()));
+    const exhausted = await labReply(lab, a.token, REVIEW, grant);
+    assert.deepEqual([exhausted.status, exhausted.body.error?.code], [429, 'limit_exceeded'], JSON.stringify(exhausted.body));
+    assert.match(exhausted.body.error.message, /presupuesto experimental del laboratorio/);
+    assert.equal(provider.calls, calls0 + 1, 'agotado: sin llamada al proveedor');
+    const blocked = (await invocations(a.tenant, GOOGLE_REPLY)).filter((r) => r.status === 'blocked');
+    assert.deepEqual(blocked.map((r) => [r.error_code, r.detail, r.assignment, r.lab_grant_id, r.route_id]), [['budget_exhausted', 'lab_experiment', 'manual_lab', grant, labReplyRoute]]);
 
-  const exhausted = await labReply(lab, a.token, REVIEW, grant);
-  assert.deepEqual([exhausted.status, exhausted.body.error?.code], [429, 'limit_exceeded'], JSON.stringify(exhausted.body));
-  assert.match(exhausted.body.error.message, /presupuesto interno de IA/);
-  assert.equal(provider.calls, calls0 + 1, 'agotado: sin llamada al proveedor');
-  const blocked = (await invocations(a.tenant, GOOGLE_REPLY)).filter((r) => r.status === 'blocked');
-  assert.deepEqual(blocked.map((r) => [r.error_code, r.detail, r.assignment, r.lab_grant_id, r.route_id]), [['budget_exhausted', 'tenant_day', 'manual_lab', grant, labReplyRoute]]);
-
-  // Revocar: la siguiente petición se rechaza antes de clasificar (revalidación en servidor en cada uso).
-  const before = await countRows(t, 'SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1', [a.tenant]);
-  assert.equal((await platform(adminToken, `/ai/lab/grants/${grant}/revoke`, 'POST', { reason: 'Fin de la sesión de laboratorio de la prueba' })).status, 200);
-  const afterRevoke = await labReply(lab, a.token, REVIEW, grant);
-  assert.deepEqual([afterRevoke.status, afterRevoke.body.error?.code], [403, 'permission_denied']);
-  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1', [a.tenant]), before);
-  assert.equal(provider.calls, calls0 + 1);
+    // Revocar: la siguiente petición se rechaza antes de clasificar (revalidación en servidor en cada uso).
+    const before = await countRows(t, 'SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1', [a.tenant]);
+    assert.equal((await platform(adminToken, `/ai/lab/grants/${grant}/revoke`, 'POST', { reason: 'Fin de la sesión de laboratorio de la prueba' })).status, 200);
+    const afterRevoke = await labReply(lab, a.token, REVIEW, grant);
+    assert.deepEqual([afterRevoke.status, afterRevoke.body.error?.code], [403, 'permission_denied']);
+    assert.equal(await countRows(t, 'SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1', [a.tenant]), before);
+    assert.equal(provider.calls, calls0 + 1);
+  } finally {
+    await clearLabExperimentBudget();
+  }
 
   // Con la cuota de reseñas en 0, el laboratorio generó una respuesta a reseña sin tocar el libro de cuotas.
   assert.deepEqual(await commercialLedger(a.tenant), { rows: 0, events: 0 });
@@ -554,7 +662,7 @@ test('(d) AC-6005/AC-19005: con grant válido la respuesta de laboratorio reserv
   assert.deepEqual(trail.map((e) => e.action), ['ai.lab.grant_issued', 'ai.lab.grant_revoked'], 'emisión y revocación visibles en la auditoría del negocio');
 });
 
-test('(d) AC-6005: los techos globales también bloquean un grant válido con margen diario del negocio: lab_total rebajado por la plataforma (step-up) y tope diario de TypeSafe', async () => {
+test('(d) AC-6005 · FB-3: los techos globales también bloquean un grant válido con margen propio: lab_total rebajado por la plataforma (step-up) y tope diario de TypeSafe', async () => {
   const a = await createTenantWithPlan(lab, { reviews_managed: 0 }, 'client_cbld');
   const grant = await issueGrant(a);
   const calls0 = provider.calls;
@@ -562,6 +670,8 @@ test('(d) AC-6005: los techos globales también bloquean un grant válido con ma
     `SELECT limit_usd, source, updated_by, updated_at FROM ai_budget WHERE budget_id = 'bud_lab_total'`)).rows[0];
   assert.ok(original, 'techo acumulado sembrado (DEC-0068)');
   try {
+    // El laboratorio tiene margen propio (fijado antes: no puede superar el techo vigente); el techo global manda igual.
+    await setLabExperimentBudget(ceil4(await labSpentToday() + maxCostUsd));
     // platform_admin con step-up fija el techo en lo ya gastado: no queda margen para otra reserva.
     const spent = Number((await t.pool.query<{ spent: string }>(SPENT_SQL)).rows[0]?.spent ?? 0);
     const put = await platform(adminToken, '/ai/budgets/lab_total', 'PUT', { limit_usd: Math.floor(spent * 1e4) / 1e4, reason: 'Prueba local: techo de laboratorio sin margen' });
@@ -574,34 +684,41 @@ test('(d) AC-6005: los techos globales también bloquean un grant válido con ma
   } finally {
     await t.pool.query(`UPDATE ai_budget SET limit_usd = $2, source = $3, updated_by = $4, updated_at = $5 WHERE budget_id = $1`,
       ['bud_lab_total', original.limit_usd, original.source, original.updated_by, original.updated_at]);
+    await clearLabExperimentBudget();
   }
 
-  // Tope TypeSafe alcanzado: la clasificación (ruta normal bajo el grant) se bloquea y no se llega a generar.
-  const r = await withTypesafeDayExhausted(a.tenant, () => labReply(lab, a.token, REVIEW, grant));
+  // Tope TypeSafe alcanzado: la clasificación (ruta normal bajo el grant, aquí con TypeSafe) se bloquea y no se llega a generar.
+  const r = await withTypesafeClassifier(GOOGLE_CLASSIFY, 'lab', () => withTypesafeDayExhausted(() => labReply(lab, a.token, REVIEW, grant)));
   assert.deepEqual([r.status, r.body.error?.code], [429, 'limit_exceeded'], JSON.stringify(r.body));
-  const reads = (await invocations(a.tenant, GOOGLE_CLASSIFY)).map((x) => [x.status, x.error_code, x.lab_grant_id]);
-  assert.deepEqual(reads, [['succeeded', null, grant], ['failed', 'budget_exhausted', grant]]);
+  const reads = (await invocations(a.tenant, GOOGLE_CLASSIFY)).map((x) => [x.provider_id, x.status, x.error_code, x.lab_grant_id]);
+  assert.deepEqual(reads, [['simulated', 'succeeded', null, grant], ['typesafe', 'failed', 'budget_exhausted', grant]]);
   assert.equal((await invocations(a.tenant, GOOGLE_REPLY)).length, 1, 'sin clasificación no hay generación');
   assert.equal(provider.calls, calls0, 'ningún techo agotado llegó al proveedor');
   assert.deepEqual(await commercialLedger(a.tenant), { rows: 0, events: 0 });
 });
 
-test('(e) NFR-0006 · AC-6004/AC-6005: sin techo no hay gasto — si falta el techo acumulado (lab_total) o el diario del negocio (tenant_day), la reserva de pago se deniega', async () => {
+test('(e) NFR-0006 · AC-6004/AC-6005 · FB-3: sin techo no hay gasto — si falta el techo acumulado (lab_total), el diario del negocio (tenant_day) en operación o el presupuesto experimental (lab_experiment) en laboratorio, la reserva de pago se deniega con ese ámbito', async () => {
   const a = await createTenantWithPlan(t, { reviews_managed: 0 }, 'client_cbe');
+  const labRoom = ceil4(await labSpentToday()) + 1;
   const client = await t.pool.connect();
-  const decision = async (tenant: string | null) => {
-    const d = await reserveBudget(client, tenant, 0.001);
+  const decision = async (tenant: string | null, purpose: BudgetPurpose = 'operational') => {
+    const d = await reserveBudget(client, { tenantId: tenant, purpose, reserveUsd: 0.001 });
     return d.allowed ? { allowed: true } : { allowed: false, exceeded: d.exceeded };
   };
   try {
     await client.query('BEGIN');
     assert.deepEqual(await decision(a.tenant), { allowed: true }, 'con los techos sembrados hay margen');
+    assert.deepEqual(await decision(a.tenant, 'lab'), { allowed: false, exceeded: 'lab_experiment' }, 'sin valor sembrado para el laboratorio, el laboratorio no gasta');
+    await client.query(`INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES ('bud_lab_experiment_e', 'lab_experiment', NULL, $1, 'prueba', 'prueba')`, [labRoom]);
+    assert.deepEqual(await decision(a.tenant, 'lab'), { allowed: true }, 'con su fila global, el laboratorio gasta');
     await client.query(`DELETE FROM ai_budget WHERE scope = 'tenant_day'`);
     assert.deepEqual(await decision(a.tenant), { allowed: false, exceeded: 'tenant_day' }, 'sin techo diario (propio ni por defecto) el negocio no gasta');
+    assert.deepEqual(await decision(a.tenant, 'lab'), { allowed: true }, 'el laboratorio nunca depende de tenant_day');
     assert.deepEqual(await decision(null), { allowed: true }, 'sin negocio solo aplica el techo acumulado');
     await client.query(`DELETE FROM ai_budget WHERE scope = 'lab_total'`);
     assert.deepEqual(await decision(null), { allowed: false, exceeded: 'lab_total' }, 'sin techo acumulado no hay gasto de pago');
     assert.deepEqual(await decision(a.tenant), { allowed: false, exceeded: 'lab_total' });
+    assert.deepEqual(await decision(a.tenant, 'lab'), { allowed: false, exceeded: 'lab_total' }, 'tampoco en el laboratorio');
     // Una fila de techo global asociada a un negocio (solo posible por SQL directo) nunca hace de techo de la plataforma.
     await client.query(`INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES ('bud_lab_total_tenant', 'lab_total', $1, 1000, 'prueba', 'prueba')`, [a.tenant]);
     assert.deepEqual(await decision(a.tenant), { allowed: false, exceeded: 'lab_total' }, 'una fila de negocio no sustituye al techo global');
@@ -611,6 +728,7 @@ test('(e) NFR-0006 · AC-6004/AC-6005: sin techo no hay gasto — si falta el te
     client.release();
   }
   assert.equal(await countRows(t, `SELECT count(*) AS n FROM ai_budget WHERE budget_id IN ('bud_lab_total','bud_tenant_day_default')`, []), 2, 'la prueba no deja huella');
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM ai_budget WHERE scope = 'lab_experiment'`, []), 0);
 });
 
 test('(f) DEC-0077 R5: con APP_ENV=production el laboratorio no se habilita aunque AI_ENVIRONMENT sea lab — un grant válido se rechaza (lab_disabled)', async () => {

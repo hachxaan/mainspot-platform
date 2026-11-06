@@ -61,6 +61,9 @@
       cases: [],
       /* DEC-0076: cuota de respuestas a reseñas con IA del ciclo vigente (GET /engagement/ai-replies). */
       aiReplies: null,
+      /* DEC-0078: modo de sugerencias con IA de comentarios de Facebook, su medidor y los términos de las automáticas. */
+      aiSuggestions: null,
+      suggestionTerms: null,
       dev: { simulator: false, telegram: false }
     };
   }
@@ -399,6 +402,8 @@
       S.agent.lastCheck = MS.mem.lastPoll || Date.now();
     }
     S.aiReplies = R.aiReplies || null;
+    S.aiSuggestions = R.aiSuggestions || null;
+    S.suggestionTerms = R.suggestionTerms || null;
 
     // Telegram
     var t = R.telegram;
@@ -440,6 +445,10 @@
       if (!MS.can('engagement.read')) return Promise.resolve({ ok: true });
       return API.get('/engagement/ai-replies').then(function (r) { if (r.ok) MS.R.aiReplies = r.data.ai_replies; return r; });
     },
+    aiSuggestions: function () {
+      if (!MS.can('engagement.read')) return Promise.resolve({ ok: true });
+      return API.get('/engagement/suggestions').then(function (r) { if (r.ok) { MS.R.aiSuggestions = r.data.ai_suggestions; MS.R.suggestionTerms = r.data.terms; } return r; });
+    },
     users: function () {
       if (!MS.can('user.manage')) return Promise.resolve({ ok: true });
       return API.get('/users').then(function (r) { if (r.ok) MS.R.users = r.data.users; return r; });
@@ -464,7 +473,7 @@
     googleConn: function () { return API.get('/connections/google').then(function (r) { if (r.ok) MS.R.googleConn = r.data; return r; }); },
     metaConn: function () { return API.get('/connections/meta').then(function (r) { if (r.ok) MS.R.metaConn = r.data; return r; }); }
   };
-  var ALL = ['ent', 'website', 'proposals', 'requests', 'phones', 'gbp', 'googleConn', 'metaConn', 'posts', 'cases', 'policies', 'aiReplies', 'telegram', 'devsim', 'tgChat', 'users'];
+  var ALL = ['ent', 'website', 'proposals', 'requests', 'phones', 'gbp', 'googleConn', 'metaConn', 'posts', 'cases', 'policies', 'aiReplies', 'aiSuggestions', 'telegram', 'devsim', 'tgChat', 'users'];
 
   function snapshot() {
     try { return JSON.stringify([MS.R, MS.mem.tgCode]); } catch (e) { return String(Math.random()); }
@@ -521,6 +530,6 @@
   MS.poll = function () {
     if (!MS.S.session || document.visibilityState !== 'visible') return;
     MS.mem.lastPoll = Date.now();
-    MS.refresh(['proposals', 'requests', 'website', 'cases', 'posts', 'telegram', 'policies', 'aiReplies', 'phones', 'gbp', 'googleConn', 'metaConn']);
+    MS.refresh(['proposals', 'requests', 'website', 'cases', 'posts', 'telegram', 'policies', 'aiReplies', 'aiSuggestions', 'phones', 'gbp', 'googleConn', 'metaConn']);
   };
 })();

@@ -273,10 +273,12 @@ function limitsOf(limits: readonly LegacyLimit[], planId: string): Record<string
 }
 
 /**
- * Parámetros que define 0034 (registro 1). Estas pruebas trabajan sobre BD con 0034/0035 sin 0036, así que la cuota
- * de respuestas con IA (registro 2, DEC-0076) no existe en ellas; su migración se prueba en commercial-quota-migration.
+ * Parámetros que define 0034 (registro 1). Estas pruebas trabajan sobre BD con 0034/0035 sin 0036 ni 0038, así que la
+ * cuota de respuestas con IA (registro 2, DEC-0076) y el medidor de sugerencias de Facebook (registro 3, DEC-0078) no
+ * existen en ellas; sus migraciones se prueban en commercial-quota-migration y facebook-ai-policy-migration.
  */
-const PARAMETERS_0034 = PLAN_PARAMETERS.filter((d) => d.key !== 'quota.ai_review_replies.max');
+const LATER_REGISTRY_KEYS: readonly string[] = ['quota.ai_review_replies.max', 'quota.ai_facebook_suggestions.max'];
+const PARAMETERS_0034 = PLAN_PARAMETERS.filter((d) => !LATER_REGISTRY_KEYS.includes(d.key));
 const PARAMETERS_BY_KEY = [...PARAMETERS_0034].sort((a, b) => (a.key < b.key ? -1 : 1));
 
 /** Tras aplicar 0034 sobre `legacy`: el catálogo versionado reproduce EXACTAMENTE sus valores y asignaciones. */

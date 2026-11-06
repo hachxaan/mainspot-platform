@@ -1,5 +1,57 @@
 # Functional Canon changelog
 
+## 0.9.0 — 2026-11-06
+- FR-0016, BR-0007, NFR-0006 y FR-0010 cambian por DEC-0078 (aprobación del propietario SRC-0018, copia byte a byte de
+  SRC-007 del repositorio documental cuyas expresiones literales son «Ok para 2, 3, 4…» y «Adelante.», y directiva
+  literal de la sesión SRC-0019; no nueva respuesta HDC). Registro P1 sin QS/ANS ni APR, con el contador `dec` y su
+  instantánea, como DEC-0073…DEC-0077. Estado: implementado y verificado localmente con proveedores y canales simulados
+  en la rama feat/facebook-ai-policy-20261106 (evidencia en `evidence/facebook-ai-policy/`); activación comercial de los
+  créditos de Facebook BLOCKED; valor de `lab_experiment` OPEN; particiones por canal OPEN; reapertura del modo
+  `primary` de Jev tras TS-1 OPEN (DEC-0033 sin cambio; requiere una evaluación de pago que autorice el propietario).
+- Precedencias: DEC-0077 R4 (Facebook fuera de `ai_review_replies`) se confirma; su efecto en el canon —el presupuesto
+  técnico como único control del gasto de Facebook, «el máximo por hora limita la publicación, no la redacción» y la
+  política del canal «para el futuro»— queda sustituido por R5 (créditos propios), R2 (FB-2, solo en la vía de
+  publicación) y R1, R2 y R5 (SUPERSEDES parcial de DEC-0077). DEC-0068 y DEC-0074 (laboratorio), DEC-0032 (TypeSafe) y
+  DEC-0076 (cuota periódica) conservan sus valores y reglas; en `links.yaml` figuran como `DERIVES_FROM` porque su
+  esquema no admite `CONSTRAINED_BY`. DEC-0077 R8 y R9 se aplican sin cambio.
+- Regla del delta: cada frase vigente que DEC-0078 vuelve falsa se reemplaza en su sitio con referencia explícita a
+  DEC-0078; el resto del texto y de los criterios se conserva byte a byte. Texto anterior reemplazado:
+  - FR-0016, párrafo de DEC-0076: «Los comentarios de Facebook conservan su propuesta de IA automática y quedan fuera de
+    esta cuota (pendiente de decisión del propietario).»; párrafo de DEC-0077: «, que son los que acotan el gasto; el
+    máximo por hora de su política limita cuántas respuestas automáticas se publican, no la redacción con IA, y la
+    política propia del canal queda para el futuro.»; AC-16011: «: ese máximo limita la publicación, no la redacción
+    ni el gasto».
+  - BR-0007: «Los comentarios de Facebook y el laboratorio no gastan cuotas comerciales, pero tampoco tienen IA
+    gratuita ni ilimitada: su gasto lo acotan los presupuestos técnicos, con los permisos y, en el laboratorio, el grant
+    (DEC-0077, R4 y R5; NFR-0006). El máximo por hora de las respuestas automáticas limita su publicación, no el
+    gasto.»
+  - NFR-0006: «y de cualquier cuota comercial», «esos presupuestos son los que acotan el gasto», «El máximo por hora de
+    las respuestas automáticas de Facebook (BR-0007) limita cuántas se publican, no cuántas se redactan con IA.», «La
+    política de medición propia de Facebook queda para el futuro.» y «o, para un negocio, cualquier techo diario
+    (`tenant_day` propio o por defecto)»; AC-6006 se acota: el techo diario del negocio se exige en la invocación
+    operativa. En la tabla de límites se nombran los ámbitos (`lab_total`, `tenant_day`), el de TypeSafe indica sus
+    reservas y se añaden `lab_experiment` y la atribución por canal.
+  - FR-0010: «Es el único parámetro periódico real: las demás capacidades conservan su semántica acumulada.» (AC-10006
+    sigue describiendo el registro de parámetros 2).
+- FR-0016: modos de sugerencias `off`, `on_demand` (predeterminado) y `auto_suggest` (opt-in) que nunca autorizan
+  publicar; FB-2 en la vía de publicación; filtros de relevancia (`no_text`, `mention_only`, `link`, `duplicate`); una
+  generación y un crédito por comentario; AC-16012…AC-16017 (AC-FB01, FB02, FB03, FB05, FB06 y FB08 del handoff).
+- BR-0007: opt-in informado de `auto_suggest` (`ai_suggestions.facebook_comment.v1`) y respuesta automática de Facebook
+  en `auto_reply.facebook_comment.v3` (las políticas anteriores siguen con el texto seguro sin IA hasta reconsentir).
+  Primera tabla de criterios del ítem: AC-7101 y AC-7102 (AC-FB04), en el subrango AC-71xx porque AC-7001…AC-7003 son
+  de NFR-0007.
+- NFR-0006: `lab_total` como techo global, `tenant_day` solo operativo, `lab_experiment` nuevo (sin valor ⇒ deny),
+  atribución por canal × propósito × caso de uso sin particiones y reservas atómicas de TypeSafe; AC-6007 (AC-FB07) y
+  AC-6008 (AC-TS01).
+- FR-0010: parámetro periódico nuevo `quota.ai_facebook_suggestions.max` (capacidad `ai_facebook_suggestions`, separado
+  de `ai_review_replies`, sugerido 0, ausente ⇒ deny); AC-10013 y AC-10014 (AC-FB04 y AC-FB05).
+- No decide cantidades de créditos, precios, reposiciones, cuotas por plan ni unidad de cobro, el valor de
+  `lab_experiment`, particiones por canal, montos ni umbrales nuevos, la recuperación de 60 días, la demostración
+  pública ni el Trial, pagos, la voz por Telegram, producción, migraciones reales, fusiones ni firmas de gates. Los
+  registros DEC/APR, QS/ANS y SRC previos se conservan byte a byte. El canon técnico no cambia en este delta: DAT-0001
+  y OPS-0001 no enumeran todavía `lab_experiment`, `typesafe_reservation`, `engagement_suggestion_setting` ni el canal
+  de `ai_use_case` (migraciones 0038–0040 reservadas).
+
 ## 0.8.0 — 2026-11-06
 - FR-0008, FR-0010, FR-0016, BR-0007 y NFR-0006 cambian y se crean FR-0020 y FR-0021 por DEC-0077 (directiva humana
   externa SRC-0017, que enumera con palabras del propietario las siete decisiones que confirmó en SRC-0016, copia byte

@@ -22,13 +22,16 @@
  * con la misma tabla que usa el determinista. Identidad, tenant, RBAC, cuotas,
  * gates humanos (preview, aprobación, bloqueo) y auditoría siguen en el backend.
  * Datos (DEC-0019): solo el texto del mensaje (≤ 8 KiB) de tenants listados en
- * JEV_SYNTHETIC_TENANTS. Presupuesto (DEC-0032): libro por proceso y día UTC,
- * sembrado desde la BD. Preguntas, opciones, umbrales y política viven juntos
- * en este módulo (hyper-jev).
+ * JEV_SYNTHETIC_TENANTS. Presupuesto (DEC-0032, TS-1): cada llamada reserva el costo
+ * máximo por llamada de TypeSafe en el libro global (src/ai/typesafe-ledger.ts) antes
+ * de enviarse. Preguntas, opciones, umbrales y política viven juntos en este módulo
+ * (hyper-jev).
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { TYPESAFE_CALL_MAX_COST_USD } from '../ai/catalog.ts';
+import { measuredCost, type TypeSafeBudget, type TypeSafeSource } from '../ai/typesafe-ledger.ts';
 import { ContractError, JevClient, JevHttpError, type SystemOneResult } from '../jev/client.ts';
 import { choice } from '../jev/helpers.ts';
 import { QuestionValidationError, type Answer } from '../jev/types.ts';
@@ -42,7 +45,7 @@ import type {
   JevDecisionSource,
   JevEvaluationRunRow,
   JevGateBinding,
-  JevLedgerStore,
+  JevGateStore,
 } from './jev-repository.ts';
 
 /**
@@ -326,43 +329,31 @@ export function utcDay(date: Date): string {
 }
 
 /**
- * D5 (DEC-0032): libro diario por proceso. Al empezar cada día UTC se siembra con
- * lo ya gastado en la BD (clasificaciones + evaluaciones); después suma en memoria
- * el coste de cada llamada. Agotado ⇒ Jev se trata como no disponible (D2).
+ * D5 (DEC-0032, TS-1): una llamada a TypeSafe bajo reserva del libro global, por el costo máximo por llamada de las
+ * rutas TypeSafe. Sin reserva no sale nada: tope agotado ⇒ `budget_exhausted`; la misma clave en curso o ya cerrada ⇒
+ * `duplicate_request`; reserva vencida antes de enviar ⇒ `reservation_expired` (Jev no disponible, D2). Tras enviar, una
+ * respuesta válida confirma su costo medido y cualquier fallo queda con costo desconocido (cuenta la reserva). Los
+ * errores del libro (BD) se propagan.
  */
-export class JevBudget {
-  readonly limitUsd: number;
-  private readonly store: Pick<JevLedgerStore, 'spentOn'>;
-  private readonly now: () => Date;
-  private day: string | null = null;
-  private spent = 0;
-
-  constructor(store: Pick<JevLedgerStore, 'spentOn'>, limitUsd: number, now: () => Date = () => new Date()) {
-    this.store = store;
-    this.limitUsd = limitUsd;
-    this.now = now;
+export async function reservedJevCall(
+  budget: TypeSafeBudget,
+  reservation: { key: string; source: Exclude<TypeSafeSource, 'ai_core'> },
+  send: () => Promise<SystemOneResult>,
+): Promise<{ ok: true; result: SystemOneResult } | { ok: false; errorCode: string }> {
+  const claim = await budget.reserve({ ...reservation, useCaseId: null, reserveUsd: TYPESAFE_CALL_MAX_COST_USD });
+  if (claim.status === 'denied') return { ok: false, errorCode: 'budget_exhausted' };
+  if (claim.status !== 'reserved') return { ok: false, errorCode: 'duplicate_request' };
+  if (!(await budget.dispatched(claim.hold))) return { ok: false, errorCode: 'reservation_expired' };
+  let result: SystemOneResult;
+  try {
+    result = await send();
+  } catch (err) {
+    const errorCode = jevErrorCode(err);
+    await budget.failAfterDispatch(claim.hold, errorCode);
+    return { ok: false, errorCode };
   }
-
-  async allows(): Promise<boolean> {
-    const today = utcDay(this.now());
-    if (this.day !== today) {
-      const spent = await this.store.spentOn(today);
-      if (this.day !== today) {
-        this.day = today;
-        this.spent = spent;
-      }
-    }
-    return this.spent < this.limitUsd;
-  }
-
-  /** Coste conocido de una llamada (informado o estimado con JEV_PRICING). */
-  record(costUsd: number | null): void {
-    if (costUsd !== null) this.spent += costUsd;
-  }
-
-  get spentUsd(): number {
-    return this.spent;
-  }
+  await budget.commit(claim.hold, measuredCost(result.meta));
+  return { ok: true, result };
 }
 
 type GateRun = Pick<JevEvaluationRunRow, 'cases_total' | 'intent_correct' | 'risky_misses' | 'risk_definition'> & { provider: string };
@@ -391,7 +382,7 @@ const CLOSED_GATE: JevGateState = { open: false, evaluatedModels: new Set(), run
  * conjunto, las reglas o la política invalida los aprobados (DEC-0033).
  */
 export class JevPrimaryGate {
-  private readonly store: Pick<JevLedgerStore, 'latestEvaluation'>;
+  private readonly store: JevGateStore;
   private readonly requestedModel: string;
   private readonly binding: JevGateBinding;
   private readonly ttlMs: number;
@@ -399,7 +390,7 @@ export class JevPrimaryGate {
   private cached: { at: number; state: JevGateState } | null = null;
 
   constructor(
-    store: Pick<JevLedgerStore, 'latestEvaluation'>,
+    store: JevGateStore,
     requestedModel: string,
     binding: JevGateBinding,
     ttlMs = JEV_GATE_TTL_MS,
@@ -464,7 +455,8 @@ export interface JevClassifierDeps {
   /** `all`: cualquier negocio (DEC-0067); `synthetic`: solo `syntheticTenants`. */
   dataScope: JevDataScope;
   syntheticTenants: readonly string[];
-  budget: JevBudget;
+  /** D5 (DEC-0032, TS-1): libro global de TypeSafe; cada llamada reserva antes de enviarse. */
+  budget: TypeSafeBudget;
   gate: JevPrimaryGate;
   now?: () => Date;
 }
@@ -477,7 +469,7 @@ export class JevClassifier {
   private readonly store: JevClassificationStore;
   /** null ⇒ alcance `all` (DEC-0067). */
   private readonly tenants: ReadonlySet<string> | null;
-  private readonly budget: JevBudget;
+  private readonly budget: TypeSafeBudget;
   private readonly gate: JevPrimaryGate;
   private readonly now: () => Date;
   private readonly pending = new Set<Promise<void>>();
@@ -521,11 +513,11 @@ export class JevClassifier {
 
   private shadow(input: JevDecideInput, reason: 'shadow' | 'primary_gated'): JevDecision {
     const outcome: PolicyOutcome = { classification: input.deterministic, source: 'deterministic', reason };
-    return { classification: input.deterministic, source: 'deterministic', audit: `;jev=${reason}`, ...this.recordAfterCommit(input, 'shadow', outcome, this.evaluate(input.text)) };
+    return { classification: input.deterministic, source: 'deterministic', audit: `;jev=${reason}`, ...this.recordAfterCommit(input, 'shadow', outcome, this.evaluate(input)) };
   }
 
   private async primary(input: JevDecideInput, gate: JevGateState): Promise<JevDecision> {
-    const evaluation = await this.evaluate(input.text);
+    const evaluation = await this.evaluate(input);
     let outcome: PolicyOutcome;
     if (evaluation.status === 'unavailable') outcome = decidePrimary(null, input.deterministic, 'jev_unavailable');
     else if (!gate.evaluatedModels.has(evaluation.result.meta.resolvedModel)) outcome = decidePrimary(null, input.deterministic, 'model_not_evaluated');
@@ -538,23 +530,22 @@ export class JevClassifier {
     };
   }
 
-  private async evaluate(text: string): Promise<JevEvaluation> {
+  private async evaluate(input: JevDecideInput): Promise<JevEvaluation> {
     const started = performance.now();
     const budgetDay = utcDay(this.now());
-    if (Buffer.byteLength(text, 'utf8') > JEV_MAX_MESSAGE_BYTES) {
+    if (Buffer.byteLength(input.text, 'utf8') > JEV_MAX_MESSAGE_BYTES) {
       return { status: 'unavailable', errorCode: 'message_too_large', latencyMs: 0, budgetDay };
     }
     if (this.inFlight >= JEV_MAX_IN_FLIGHT) return { status: 'unavailable', errorCode: 'saturated', latencyMs: 0, budgetDay };
     this.inFlight++;
     try {
-      if (!(await this.budget.allows())) {
-        return { status: 'unavailable', errorCode: 'budget_exhausted', latencyMs: Math.round(performance.now() - started), budgetDay };
-      }
-      // Estado mínimo: solo el texto del mensaje (sin tenant/actor/nombres).
-      const result = await this.client.systemOne({ message: text }, JEV_QUESTIONS);
-      this.budget.record(result.meta.cost.amount);
-      const reading = readJevAnswers(result.answers);
-      return { status: 'evaluated', reading, result, latencyMs: Math.round(performance.now() - started), budgetDay };
+      // Estado mínimo: solo el texto del mensaje (sin tenant/actor/nombres). La clave del libro es opaca y de un solo
+      // uso: el libro no tiene negocio y la anonimización (DEC-0027) exige que no quede ningún identificador suyo.
+      const call = await reservedJevCall(this.budget, { key: `pipeline:${randomUUID()}`, source: 'pipeline' },
+        () => this.client.systemOne({ message: input.text }, JEV_QUESTIONS));
+      if (!call.ok) return { status: 'unavailable', errorCode: call.errorCode, latencyMs: Math.round(performance.now() - started), budgetDay };
+      const reading = readJevAnswers(call.result.answers);
+      return { status: 'evaluated', reading, result: call.result, latencyMs: Math.round(performance.now() - started), budgetDay };
     } catch (err) {
       return { status: 'unavailable', errorCode: jevErrorCode(err), latencyMs: Math.round(performance.now() - started), budgetDay };
     } finally {
@@ -685,8 +676,11 @@ export function createJevClient(jev: EnabledJevConfig): JevClient {
   });
 }
 
-/** Construye el clasificador cuando JEV_MODE ≠ disabled; con disabled no hay cliente ni salida de datos. */
-export function createJevClassifier(jev: JevConfig, store: JevClassificationStore): JevClassifier | undefined {
+/**
+ * Construye el clasificador cuando JEV_MODE ≠ disabled; con disabled no hay cliente ni salida de datos. `budget` es el
+ * libro global de TypeSafe (DEC-0032): su límite diario es el de este JevConfig.
+ */
+export function createJevClassifier(jev: JevConfig, store: JevClassificationStore, budget: TypeSafeBudget): JevClassifier | undefined {
   if (jev.mode === 'disabled') return undefined;
   const client = createJevClient(jev);
   log.info('jev.enabled', `Jev classifier enabled in ${jev.mode} mode`, {
@@ -704,7 +698,7 @@ export function createJevClassifier(jev: JevConfig, store: JevClassificationStor
     mode: jev.mode,
     dataScope: jev.dataScope,
     syntheticTenants: jev.syntheticTenants,
-    budget: new JevBudget(store, jev.dailyBudgetUsd),
+    budget,
     gate: new JevPrimaryGate(store, client.defaultModel, {
       datasetSha256: gateEvalSetSha256(),
       decisionCodeSha256: decisionCodeSha256(),

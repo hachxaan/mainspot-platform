@@ -24,6 +24,7 @@ import type { WebsiteRepository } from '../website/repository.ts';
 import { normalizeWebsiteData, renderSite } from '../website/template.ts';
 import type { AiRegistry } from '../ai/registry.ts';
 import type { AiDispatcher, InvokeContext, InvokeResult } from '../ai/dispatcher.ts';
+import { budgetStatus, tenantLabBudget } from '../ai/governance.ts';
 import type { AiLab } from '../ai/lab.ts';
 import { redactContactData } from '../ai/minimize.ts';
 import { toClassification } from '../engagement/ai-semantics.ts';
@@ -97,9 +98,10 @@ export function aiRouter(deps: AiRouteDeps): Router {
   const generationError = (r: Extract<InvokeResult<unknown>, { ok: false }>): AppError => {
     const status = r.code === 'lab_grant_invalid' ? 403 : r.code === 'budget_exhausted' ? 429 : r.code === 'in_progress' ? 409 : 502;
     const message = r.code === 'lab_grant_invalid' ? 'La autorización de laboratorio venció, fue revocada o no permite esta ruta.'
-      : r.code === 'budget_exhausted' ? 'Se alcanzó un presupuesto interno de IA. Los créditos del proveedor no amplían ese límite.'
-        : r.code === 'in_progress' ? 'Esta ejecución ya está en curso o terminó. Revisa su resultado antes de iniciar otra.'
-          : `La ejecución no terminó (${r.code}). Revisa la traza en Engineering; no se cambió de proveedor ni se aprobó la ruta.`;
+      : r.code === 'budget_exhausted' && r.reason === 'lab_experiment' ? 'El presupuesto experimental del laboratorio no está configurado o ya se agotó hoy (día UTC): el laboratorio no puede gastar hasta que la plataforma lo configure o empiece el día siguiente. Las pruebas nunca usan el presupuesto de tu negocio.'
+        : r.code === 'budget_exhausted' ? 'Se alcanzó un presupuesto interno de IA. Los créditos del proveedor no amplían ese límite.'
+          : r.code === 'in_progress' ? 'Esta ejecución ya está en curso o terminó. Revisa su resultado antes de iniciar otra.'
+            : `La ejecución no terminó (${r.code}). Revisa la traza en Engineering; no se cambió de proveedor ni se aprobó la ruta.`;
     return new AppError(status, status === 403 ? 'permission_denied' : status === 429 ? DENY_CODES.LIMIT_EXCEEDED : 'validation_error', message);
   };
 
@@ -117,9 +119,9 @@ export function aiRouter(deps: AiRouteDeps): Router {
          LEFT JOIN ai_route_revision r ON r.route_id = ro.active_route_id LEFT JOIN ai_model m ON m.model_id = r.model_id
          LEFT JOIN ai_provider p ON p.provider_id = m.provider_id WHERE ro.environment = $1`, [deps.environment]);
     const byUc = new Map(rows.rows.map((r) => [r.use_case_id, r]));
-    const budget = await deps.pool.query<{ limit_usd: string | null; spent: string | null }>(
-      `SELECT (SELECT limit_usd FROM ai_budget WHERE scope = 'tenant_day' AND (tenant_id = $1 OR tenant_id IS NULL) ORDER BY tenant_id NULLS LAST LIMIT 1) AS limit_usd,
-              (SELECT COALESCE(SUM(COALESCE(cost_usd, reserved_usd)), 0) FROM ai_invocation WHERE tenant_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS spent`, [a.tenantId]);
+    // FB-3: el presupuesto del negocio es el operativo (`tenant_day` sin el gasto bajo grant), con el cálculo de la reserva.
+    const day = (await budgetStatus(deps.pool, { tenantId: a.tenantId, purpose: 'operational' })).find((s) => s.scope === 'tenant_day');
+    const lab = a.labGrantId ? await deps.lab.statusFor({ grantId: a.labGrantId, tenantId: a.tenantId, userId: a.userId }) : null;
     res.json({
       environment: deps.environment,
       // Falso fuera del entorno `lab` y siempre en producción (DEC-0077 R5): el panel no ofrece el laboratorio.
@@ -128,8 +130,9 @@ export function aiRouter(deps: AiRouteDeps): Router {
         const r = byUc.get(uc);
         return { use_case: uc, active: Boolean(r?.active_route_id), simulated: r?.kind === 'simulated' };
       }),
-      budget_today_usd: { limit: budget.rows[0]?.limit_usd === null || budget.rows[0]?.limit_usd === undefined ? null : Number(budget.rows[0].limit_usd), spent: Number(budget.rows[0]?.spent ?? 0) },
-      lab: a.labGrantId ? await deps.lab.statusFor({ grantId: a.labGrantId, tenantId: a.tenantId, userId: a.userId }) : null,
+      budget_today_usd: { limit: day?.limit_usd ?? null, spent: day?.spent_usd ?? 0, missing: day?.missing ?? true },
+      // Con un grant vigente, el presupuesto experimental aparte: límite global y gasto de laboratorio de ESTE negocio hoy.
+      lab: lab ? { ...lab, budget: await tenantLabBudget(deps.pool, a.tenantId) } : null,
     });
   }));
 

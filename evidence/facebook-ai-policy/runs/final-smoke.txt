@@ -1,0 +1,22 @@
+# npm run test:smoke — código d4bf8a4
+TEST_PASS AC-009 smoke login+me for admin (administration)
+TEST_PASS AC-009 smoke login+me for ops (operation)
+TEST_PASS AC-009 smoke login+me for reader (read_only)
+✔ AC-009 smoke: health + all three roles can log in and see their context (196.949622ms)
+TEST_PASS AC-008 interfaz integrada: shell, recursos y CSP
+✔ AC-008 smoke: la interfaz integrada carga completa (shell + recursos) con CSP sin scripts en línea (54.86823ms)
+TEST_PASS AC-009 smoke: GET /actions tenant-scoped listing works
+TEST_PASS AC-009 smoke: audited action -> audit row + API export consistent
+✔ AC-009 smoke: real evidence path works (API export mirrors DB audit rows) (60.771293ms)
+TEST_PASS AC-009 smoke: revoked session rejected (fail-closed)
+✔ AC-009 smoke: logout revokes the session (rollback of access path enabled) (48.691068ms)
+TEST_PASS IR-04 UI logout path revokes session in DB (token -> 401)
+✔ IR-04 smoke: UI logout path (/api/auth/logout) revokes the session in DB (49.45371ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 686.538894

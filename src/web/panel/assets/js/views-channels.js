@@ -366,22 +366,53 @@
     return { tab: 'atencion', screen: 'DS-15', title: 'Atención', html: html };
   };
 
-  /* DEC-0076: «Redactar con IA» en reseñas de Google que esperan decisión. Recibir la reseña y responder tú mismo
-     no consumen tu plan; cada propuesta redactada con IA consume 1 respuesta con IA del ciclo vigente. */
+  /* DEC-0076: «Redactar con IA» en reseñas de Google que esperan decisión (1 respuesta con IA del ciclo). DEC-0078:
+     «Sugerir con IA» en comentarios de Facebook (1 de sus sugerencias con IA, nunca las de reseñas), salvo que el negocio
+     las tenga desactivadas. Recibir y responder tú mismo no consumen tu plan. */
   function aiDraftBox(c) {
-    var q = S().aiReplies;
+    var fb = c.source === 'facebook_comment';
+    var q = fb ? S().aiSuggestions : S().aiReplies;
     if (!c.aiEligible || !q || !q.available || !MS.can('ai.generate')) return '';
     var n = function (v) { return Number(v).toLocaleString('es-MX'); };
     var renew = q.window ? MS.renewal(q.window.end) : '';
+    var unit = fb ? ['sugerencia con IA', 'sugerencias con IA'] : ['respuesta con IA', 'respuestas con IA'];
     var body, btn = '';
-    if (!q.subscription_active) body = 'Tu plan no está activo, así que la redacción con IA está en pausa. Puedes elegir una propuesta o escribir tu respuesta.';
-    else if (q.limit === null || q.limit === 0) body = 'Tu plan no incluye respuestas con IA. Puedes elegir una propuesta o escribir tu respuesta; eso no consume tu plan.';
-    else if (q.remaining === 0) body = 'Ya usaste ' + n(q.usage) + ' de ' + n(q.limit) + (q.limit === 1 ? ' respuesta' : ' respuestas') + ' con IA de este ciclo. Se renuevan el ' + renew + '. Mientras tanto puedes elegir una propuesta o escribir tu respuesta, sin consumir tu plan. Para ampliar tu plan, escribe a MainSpot.';
+    if (fb && q.setting && q.setting.mode === 'off') body = 'Las sugerencias con IA para comentarios de Facebook están desactivadas en tu negocio. Puedes elegir una propuesta o escribir tu respuesta, o cambiarlo en «Qué puede responder MainSpot por mí».';
+    else if (!q.subscription_active) body = 'Tu plan no está activo, así que la redacción con IA está en pausa. Puedes elegir una propuesta o escribir tu respuesta.';
+    else if (q.limit === null || q.limit === 0) body = 'Tu plan no incluye ' + unit[1] + (fb ? ' para comentarios de Facebook' : '') + '. Puedes elegir una propuesta o escribir tu respuesta; eso no consume tu plan.';
+    else if (q.remaining === 0) body = 'Ya usaste ' + n(q.usage) + ' de ' + n(q.limit) + ' ' + (q.limit === 1 ? unit[0] : unit[1]) + ' de este ciclo. Se renuevan el ' + renew + '. Mientras tanto puedes elegir una propuesta o escribir tu respuesta, sin consumir tu plan. Para ampliar tu plan, escribe a MainSpot.';
     else {
-      body = 'Usa 1 de tus respuestas con IA de este ciclo: ' + (q.remaining === 1 ? 'te queda ' : 'te quedan ') + n(q.remaining) + ' de ' + n(q.limit) + ' y se renuevan el ' + renew + '. Elegir una propuesta o escribir tu respuesta no consume tu plan.';
-      btn = '<div class="btn-row">' + UI.btn('Redactar con IA', { action: 'case-ai-draft', arg: c.id, id: 'case-ai-draft', style: 'secondary', icon: 'sparkles' }) + '</div>';
+      body = 'Usa 1 de tus ' + unit[1] + ' de este ciclo: ' + (q.remaining === 1 ? 'te queda ' : 'te quedan ') + n(q.remaining) + ' de ' + n(q.limit) + ' y se renuevan el ' + renew + '. Elegir una propuesta o escribir tu respuesta no consume tu plan.';
+      btn = '<div class="btn-row">' + UI.btn(fb ? 'Sugerir con IA' : 'Redactar con IA', { action: 'case-ai-draft', arg: c.id, id: 'case-ai-draft', style: 'secondary', icon: 'sparkles' }) + '</div>';
     }
-    return '<section class="card stack" aria-labelledby="ai-t" id="case-ai"><h2 id="ai-t" style="font-size:var(--fs-lg)">Respuesta con IA</h2><p class="muted" id="case-ai-text">' + esc(body) + '</p>' + btn + '</section>';
+    return '<section class="card stack" aria-labelledby="ai-t" id="case-ai"><h2 id="ai-t" style="font-size:var(--fs-lg)">' + (fb ? 'Sugerencia con IA' : 'Respuesta con IA') + '</h2><p class="muted" id="case-ai-text">' + esc(body) + '</p>' + btn + '</section>';
+  }
+
+  /* DEC-0078 (FB-1): cómo prepara MainSpot las SUGERENCIAS con IA de comentarios de Facebook. Solo prepara texto para
+     revisar; publicar sigue siendo tu aprobación o una respuesta automática que autorices aparte. */
+  function suggestionsCard(canEdit) {
+    var s = S().aiSuggestions;
+    if (!s || !s.setting) return '';
+    var n = function (v) { return Number(v).toLocaleString('es-MX'); };
+    var mode = s.setting.mode;
+    var included = s.subscription_active && s.credits_defined && s.limit > 0;
+    var state;
+    if (!s.subscription_active) state = 'Tu plan no está activo: no se preparan sugerencias con IA.';
+    else if (!included) state = 'Tu plan todavía no incluye sugerencias con IA para comentarios de Facebook: no se prepararán (ni automáticas ni a pedido) y no se descuenta nada. Responder a mano siempre funciona.';
+    else state = 'Este ciclo llevas ' + n(s.usage) + ' de ' + n(s.limit) + ' sugerencias con IA' + (s.window ? '; se renuevan el ' + MS.renewal(s.window.end) : '') + '. Cada comentario usa como máximo 1, aunque no publiques la sugerencia.';
+    var opts = [
+      ['off', 'Desactivadas', 'MainSpot no prepara sugerencias con IA. Eliges una propuesta sin IA o escribes tu respuesta.'],
+      ['on_demand', 'Bajo demanda' + (s.setting.default ? ' (predeterminado)' : ''), 'Solo cuando pulses «Sugerir con IA» en un comentario. Cada sugerencia usa 1.'],
+      ['auto_suggest', 'Automáticas (requieren tu autorización)', 'MainSpot prepara una sugerencia para cada comentario que la amerite (no para comentarios sin texto, con enlaces o repetidos) para que la revises. Usa 1 por comentario aunque no la publiques. No publica nada.']
+    ];
+    return '<section class="card stack" aria-labelledby="sg-t" id="suggestions-card"><h2 id="sg-t" style="font-size:var(--fs-lg)">Sugerencias con IA · Comentarios de Facebook</h2>' +
+      '<div class="drafts" role="radiogroup" aria-labelledby="sg-t">' + opts.map(function (o) {
+        var on = mode === o[0], blocked = !canEdit || (o[0] === 'auto_suggest' && !on && !included);
+        return '<label class="draft' + (on ? ' is-on' : '') + '"><input type="radio" id="sug-' + o[0] + '" name="sug-mode" value="' + o[0] + '" data-action="sug-set" data-arg="' + o[0] + '"' + (on ? ' checked' : '') + (blocked ? ' disabled' : '') + '><span><span class="d-tone">' + esc(o[1]) + '</span><span class="d-text">' + esc(o[2]) + '</span></span></label>';
+      }).join('') + '</div>' +
+      (mode === 'auto_suggest' && !s.setting.consent_current ? '<div class="banner banner-ocre">' + icon('shield-check') + '<span>Las condiciones de las sugerencias automáticas cambiaron. Mientras no las aceptes de nuevo, no se preparan solas.</span></div>' : '') +
+      '<p class="tiny" id="sug-state">' + esc(state) + '</p>' +
+      '<p class="tiny">Las sugerencias solo preparan texto para revisar: publicar sigue requiriendo tu aprobación o una respuesta automática que autorices abajo.</p></section>';
   }
 
   /* Opciones del caso: la propuesta pedida con IA (clave «ai») va aparte; las numeradas son las del aviso de Telegram. */
@@ -448,13 +479,16 @@
     return Object.assign({ title: src.label, html: html }, back);
   };
 
-  /* SEC-CONSENT-01: respuestas automáticas a reseñas autorizadas antes de la cuota compartida. Hasta aceptar los
-     términos vigentes salen con el texto seguro sin IA y no gastan respuestas con IA del plan. */
+  /* SEC-CONSENT-01: respuestas automáticas autorizadas antes de que su IA usara el medidor de su canal (reseñas de Google:
+     DEC-0077; comentarios de Facebook: DEC-0078). Hasta aceptar los términos vigentes salen con el texto seguro sin IA. */
   MS.ui.reconsentBanner = function () {
-    if (!(S().agent.reconsent || []).length) return '';
+    var pending = S().agent.reconsent || [];
+    if (!pending.length) return '';
     var canAccept = MS.can('engagement.policy.manage') && !MS.expired();
+    var channels = pending.map(function (r) { return r.origin; }).filter(function (o, i, all) { return all.indexOf(o) === i; })
+      .map(function (o) { return o === 'google_review' ? 'reseñas de Google (usan tus respuestas con IA)' : 'comentarios de Facebook (usan tus sugerencias con IA)'; });
     return '<div class="banner banner-ocre" id="reconsent-banner">' + icon('shield-check') + '<span><strong>Actualiza tu autorización de respuestas automáticas</strong>' +
-      'Las respuestas automáticas a reseñas de Google redactadas con IA ahora usan las respuestas con IA de tu plan. Mientras no aceptes las nuevas condiciones, MainSpot responde esas reseñas con un texto seguro sin IA.' +
+      'Las respuestas automáticas redactadas con IA en ' + esc(channels.join(' y ')) + ' ahora descuentan de tu plan. Mientras no aceptes las nuevas condiciones, MainSpot responde con un texto seguro sin IA.' +
       (canAccept ? '<br>' + UI.btn('Revisar y aceptar', { action: 'pol-reconsent', sm: true, style: 'secondary', id: 'reconsent-open' })
         : '<br>Solo quien administra tu negocio puede aceptarlas.') + '</span></div>';
   };
@@ -477,10 +511,13 @@
     html += '<div class="stack-lg">';
     html += MS.ui.reconsentBanner();
     html += '<div class="banner banner-lila">' + icon('info') + '<span><strong>Autorización por negocio</strong>Los canales reales publican respuestas visibles con las reglas que autorices. Los simulados no publican fuera de MainSpot. Por defecto, todo se revisa antes de publicarse.</span></div>';
+    html += suggestionsCard(canEdit);
     html += '<section class="card stack"><div class="row" style="justify-content:space-between"><div><h2 style="font-size:var(--fs-lg)">Respuestas automáticas</h2><p class="muted small">Si lo apagas, MainSpot te pregunta antes de cada respuesta.</p></div>' +
       '<button type="button" class="switch" id="pol-switch" role="switch" aria-checked="' + !!d.enabled + '" aria-label="Respuestas automáticas" data-action="pol-toggle"' + (canEdit ? '' : ' disabled') + '><span></span></button></div>' +
       // DEC-0076/DEC-0077: la respuesta automática a una reseña redactada con IA consume la misma cuota mensual que «Redactar con IA».
-      '<p class="tiny" id="pol-ai-quota">En reseñas de Google, cada respuesta automática redactada con IA usa 1 de tus respuestas con IA del ciclo (la misma bolsa que «Redactar con IA») y puede agotarlas; si no quedan, MainSpot responde con un texto seguro sin IA.</p></section>';
+      '<p class="tiny" id="pol-ai-quota">En reseñas de Google, cada respuesta automática redactada con IA usa 1 de tus respuestas con IA del ciclo (la misma bolsa que «Redactar con IA») y puede agotarlas; si no quedan, MainSpot responde con un texto seguro sin IA.</p>' +
+      // DEC-0078 (FB-2): en Facebook usa sus sugerencias con IA y solo redacta si todavía puede publicarse en esa hora.
+      '<p class="tiny" id="pol-fb-quota">En comentarios de Facebook, cada respuesta automática redactada con IA usa 1 de tus sugerencias con IA del ciclo (la misma bolsa que las sugerencias) y solo se redacta si todavía cabe en el máximo de respuestas automáticas por hora; si no quedan, MainSpot responde con un texto seguro sin IA.</p></section>';
     html += '<section class="card stack" aria-labelledby="rl-t"><h2 id="rl-t" style="font-size:var(--fs-lg)">Por tipo de mensaje</h2>' +
       opt('thanks', 'Agradecimientos y comentarios positivos', 'Sin compromisos ni promesas.') +
       opt('info', 'Preguntas sobre tu negocio', 'Solo con datos que tú confirmaste (por ejemplo, el teléfono de cada canal).') +

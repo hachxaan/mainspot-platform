@@ -14,12 +14,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { AppConfig } from '../shared/config.ts';
 import { runAtomic } from '../conversation/state-machine.ts';
-import { JevRepository } from '../conversation/jev-repository.ts';
 import { log } from '../shared/logger.ts';
-import { JevClient, JevHttpError } from '../jev/client.ts';
-import type { Questions, Answer } from '../jev/types.ts';
+import { JevClient, JevHttpError, type SystemOneResult } from '../jev/client.ts';
+import { validateRequest, type Questions, type Answer } from '../jev/types.ts';
+import { measuredCost, TypeSafeLedger, typesafeDailyLimitUsd, type TypeSafeBudget, type TypeSafeHold } from './typesafe-ledger.ts';
 import { OUTPUT_SCHEMAS } from './contracts.ts';
-import { checkDataPolicy, DATA_POLICY_VERSION, estimateCost, PAID_PROVIDER_KINDS, reserveBudget } from './governance.ts';
+import { budgetPurpose, checkDataPolicy, DATA_POLICY_VERSION, estimateCost, PAID_PROVIDER_KINDS, reserveBudget } from './governance.ts';
 import { PromptRenderError, renderPrompt } from './prompt.ts';
 import { AiLab, type LabGrantRoute } from './lab.ts';
 import { AiRegistry, type RouteBundle } from './registry.ts';
@@ -97,13 +97,16 @@ export class AiDispatcher {
   private readonly fetchImpl?: typeof fetch;
   private readonly failures = new Map<string, number[]>();
   private readonly openUntil = new Map<string, number>();
+  /** DEC-0032 (TS-1): libro de TypeSafe; las clasificaciones con TypeSafe reservan en él antes de llamar. */
+  private readonly typesafe: TypeSafeBudget;
 
-  constructor(deps: { pool: Pool; config: AppConfig; fetchImpl?: typeof fetch; registry?: AiRegistry; lab?: AiLab }) {
+  constructor(deps: { pool: Pool; config: AppConfig; fetchImpl?: typeof fetch; registry?: AiRegistry; lab?: AiLab; typesafe?: TypeSafeBudget }) {
     this.pool = deps.pool;
     this.config = deps.config;
     this.registry = deps.registry ?? new AiRegistry(deps.pool);
     this.lab = deps.lab ?? new AiLab({ pool: deps.pool, registry: this.registry, environment: deps.config.aiEnvironment, appEnv: deps.config.appEnv });
     this.fetchImpl = deps.fetchImpl;
+    this.typesafe = deps.typesafe ?? new TypeSafeLedger({ pool: deps.pool, dailyLimitUsd: () => typesafeDailyLimitUsd(deps.config.jev) });
   }
 
   /**
@@ -264,7 +267,7 @@ export class AiDispatcher {
     const reserve = AiDispatcher.paid(bundle) ? Number(bundle.route.max_cost_usd) : 0;
     const budgetOk = await runAtomic(this.pool, async (client) => {
       if (reserve > 0) {
-        const b = await reserveBudget(client, ctx.tenantId, reserve);
+        const b = await reserveBudget(client, { tenantId: ctx.tenantId, purpose: budgetPurpose(ctx), reserveUsd: reserve });
         if (!b.allowed) return b;
       }
       await client.query(
@@ -275,7 +278,7 @@ export class AiDispatcher {
         [invocationId, ctx.requestId, ctx.idempotencyKey, ctx.tenantId, ctx.actorId, ctx.actorKind, ctx.origin, useCaseId, ref.route_id, ref.route_version,
           ref.prompt_revision_id, ref.prompt_sha256, ref.model_id, ref.provider_id, ref.provider_model, assignment, DATA_POLICY_VERSION, ctx.consentRef ?? null,
           ctx.brandVersion ?? null, ctx.jobId ?? null, ctx.evalRunId ?? null, reserve, inputHash, ctx.requestId, ctx.labGrantId || null]);
-      return { allowed: true as const, limits: [] };
+      return { allowed: true as const };
     });
     if (!budgetOk.allowed) {
       await blockedRow('budget_exhausted', `${budgetOk.exceeded}`);
@@ -515,6 +518,10 @@ export class AiDispatcher {
   /**
    * Clasificación semántica con Jev. La revisión de prompt guarda las preguntas tipadas en JSON
    * (versionables en Prompt Studio); el estado enviado es SOLO el texto minimizado.
+   * DEC-0032 (TS-1): con TypeSafe se reserva el costo máximo de la ruta en el libro de TypeSafe ANTES de preparar la
+   * llamada; sin reserva no sale nada (`budget_exhausted`). Un fallo antes de enviar libera la reserva; tras enviar, la
+   * respuesta confirma su costo medido y cualquier fallo queda con costo desconocido (cuenta la reserva). El simulado
+   * (MockJev) no gasta TypeSafe y no reserva.
    */
   async invokeClassification(useCaseId: string, ctx: InvokeContext, state: Record<string, unknown>): Promise<InvokeResult<{ answers: Record<string, Answer>; model: string }>> {
     const begun = await this.begin(useCaseId, ctx, sha(state));
@@ -522,40 +529,57 @@ export class AiDispatcher {
     if ('ok' in begun) return begun;
     const s = begun;
     const usage: Usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, images: 0, costUsd: null };
-    try {
-      if (!(await this.jevBudgetAllows())) {
-        await this.finish(s, 'failed', { usage: { ...usage, costUsd: 0 }, errorCode: 'budget_exhausted' });
-        return { ok: false, code: 'budget_exhausted', reason: 'DEC-0032', invocationId: s.invocationId, route: s.ref, retryable: false };
-      }
-      const questions = JSON.parse(s.bundle.prompt.task_template) as Questions;
-      const isMock = s.bundle.provider.kind === 'simulated';
-      const key = s.bundle.provider.secret_ref ? process.env[s.bundle.provider.secret_ref] : undefined;
-      const client = isMock
-        ? new JevClient({ provider: 'mock' })
-        : new JevClient({ provider: 'typesafe', apiKey: key, model: s.bundle.model.provider_model, timeoutMs: this.timeout(s, ctx), maxAttempts: 3, pricing: { inputPerMillion: Number(s.bundle.model.pricing['input_per_mtok'] ?? 0.042), outputPerMillion: 0 } });
-      const res = await client.systemOne(state, questions);
-      const cost = isMock ? 0 : res.meta.cost.amount;
-      const u: Usage = { inputTokens: Number(res.usage.input_tokens ?? 0), outputTokens: Number(res.usage.output_tokens ?? 0), reasoningTokens: 0, images: 0, costUsd: cost };
-      this.noteSuccess(s.bundle.provider.provider_id);
-      const fin = await this.finish(s, 'succeeded', { usage: u, costSource: isMock ? 'none' : res.meta.cost.source, output: { answers: res.answers, model: res.model }, validation: { provider_meta: res.meta } });
-      return { ok: true, output: { answers: res.answers, model: res.model }, invocationId: s.invocationId, route: s.ref, usage: u, ...fin, replayed: false, simulated: isMock };
-    } catch (err) {
-      // 429/5xx ya se reintentaron (backoff acotado del cliente); aquí solo se clasifica el fallo final.
+    const isMock = s.bundle.provider.kind === 'simulated';
+    // Cierre sin llamar al proveedor (sin reserva, o vencida antes de enviar): nada salió, costo cero.
+    const notSent = async (code: FailureCode, reason: string, retryable: boolean): Promise<InvokeResult<never>> => {
+      await this.finish(s, 'failed', { usage: { ...usage, costUsd: 0 }, costSource: 'none', errorCode: code, validation: { detail: reason } });
+      return { ok: false, code, reason, invocationId: s.invocationId, route: s.ref, retryable };
+    };
+    // 429/5xx ya se reintentaron (backoff acotado del cliente); aquí solo se clasifica el fallo final.
+    const failed = async (err: unknown, sent: TypeSafeHold | null): Promise<InvokeResult<never>> => {
       const f = err instanceof JevHttpError
         ? (err.status === 401 || err.status === 403
           ? { code: 'provider_auth' as FailureCode, retryable: false, reason: `typesafe_http_${err.status}` }
           : this.providerFailure(s, new ProviderError(err.status === 429 ? 'rate_limited' : err.status >= 500 ? 'unavailable' : 'bad_request', err.status, `typesafe_http_${err.status}`)))
         : this.providerFailure(s, err);
+      if (sent) await this.typesafe.failAfterDispatch(sent, f.reason);
       await this.finish(s, 'failed', { usage, errorCode: f.code, validation: { detail: f.reason } });
       return { ok: false, code: f.code, reason: f.reason, invocationId: s.invocationId, route: s.ref, retryable: f.retryable };
+    };
+    let hold: TypeSafeHold | null = null;
+    if (!isMock) {
+      const reservation = await this.typesafe.reserve({ key: `ai_invocation:${s.invocationId}`, source: 'ai_core', useCaseId, reserveUsd: Number(s.bundle.route.max_cost_usd) });
+      if (reservation.status === 'denied') return notSent('budget_exhausted', 'DEC-0032', false);
+      if (reservation.status !== 'reserved') return notSent('in_progress', `typesafe_${reservation.status}`, false);
+      hold = reservation.hold;
     }
-  }
-
-  /** DEC-0032: TypeSafe ≤ USD 1/día (clasificaciones del pipeline + semánticas del AI Core). */
-  private async jevBudgetAllows(): Promise<boolean> {
-    const limit = this.config.jev.mode === 'disabled' ? 1 : this.config.jev.dailyBudgetUsd;
-    const spent = await new JevRepository(this.pool).spentOn(new Date().toISOString().slice(0, 10));
-    return spent < limit;
+    let send: () => Promise<SystemOneResult>;
+    try {
+      const questions = JSON.parse(s.bundle.prompt.task_template) as Questions;
+      const key = s.bundle.provider.secret_ref ? process.env[s.bundle.provider.secret_ref] : undefined;
+      const client = isMock
+        ? new JevClient({ provider: 'mock' })
+        : new JevClient({ provider: 'typesafe', apiKey: key, model: s.bundle.model.provider_model, timeoutMs: this.timeout(s, ctx), maxAttempts: 3, pricing: { inputPerMillion: Number(s.bundle.model.pricing['input_per_mtok'] ?? 0.042), outputPerMillion: 0 } });
+      // La misma validación que el cliente hace antes de cualquier envío: una petición inválida nunca sale ni cuenta.
+      validateRequest({ model: client.defaultModel, state, questions });
+      send = () => client.systemOne(state, questions);
+    } catch (err) {
+      if (hold) await this.typesafe.release(hold, 'not_sent');
+      return failed(err, null);
+    }
+    if (hold && !(await this.typesafe.dispatched(hold))) return notSent('timeout', 'typesafe_reservation_expired', true);
+    let res: SystemOneResult;
+    try {
+      res = await send();
+    } catch (err) {
+      return failed(err, hold);
+    }
+    if (hold) await this.typesafe.commit(hold, measuredCost(res.meta));
+    const cost = isMock ? 0 : res.meta.cost.amount;
+    const u: Usage = { inputTokens: Number(res.usage.input_tokens ?? 0), outputTokens: Number(res.usage.output_tokens ?? 0), reasoningTokens: 0, images: 0, costUsd: cost };
+    this.noteSuccess(s.bundle.provider.provider_id);
+    const fin = await this.finish(s, 'succeeded', { usage: u, costSource: isMock ? 'none' : res.meta.cost.source, output: { answers: res.answers, model: res.model }, validation: { provider_meta: res.meta } });
+    return { ok: true, output: { answers: res.answers, model: res.model }, invocationId: s.invocationId, route: s.ref, usage: u, ...fin, replayed: false, simulated: isMock };
   }
 
   /** Respuesta repetida (misma clave o paso de job ya terminado): misma salida y la ruta que la produjo, sin costo nuevo. */

@@ -1,0 +1,37 @@
+# E2E cuota de respuestas con IA (DEC-0076) — 2026-11-06T10:58:00.990Z
+# HEAD: 5354283a2783838632ef095aebc851230e95a4ed
+# Assets (sha256/16):
+#   a7d045f0bb3df84e  src/web/panel/assets/js/views-channels.js
+#   510494f7f621aa2b  src/web/panel/assets/js/views-app.js
+#   c1fc11218aafd608  src/web/panel/assets/js/agent.js
+#   3fd1f4427330c34c  src/web/panel/assets/js/main.js
+#   ec47875921f8e1e8  src/web/panel/assets/js/store.js
+# Origen: https://app.mainspot.local.io (proxy HTTPS, TLS verificado) · navegador: Chrome headless · AI Core: entorno test, rutas simuladas · proveedores reales: ninguno
+
+Origen https://app.mainspot.local.io; negocio client_e2e_cq_1c2af467 con plan_e2e_cq_40c1db (ai_review_replies = 2 por ciclo, reviews_managed = 0)
+PASS 1. llega la reseña 1 (simulada)
+PASS 2. llega la reseña 2 (simulada)
+PASS 3. llega la reseña 3 (simulada)
+PASS 4. el agente procesa las reseñas
+PASS 5. 3 casos esperan decisión, sin redacción automática con IA
+PASS 6. recibir 3 reseñas no consumió ninguna cuota (reviews_managed = 0 ya no bloquea)
+PASS 7. «Mi plan» muestra la cuota del ciclo y su renovación: «Lo que incluyePáginas weben toda la suscripción (no se reinicia)0 de 1 páginasPublicaciones en redesNo incluido en tu plan0 de 0 publicacionesAnuncios en redesNo incluido en tu plan0 de 0 anunciosReseñas gestionadasRecib…»
+PASS 8. «Reseñas gestionadas» se muestra sin límite (recibir no consume)
+PASS 9. las reglas de respuestas automáticas avisan que la IA consume la cuota del ciclo
+PASS 10. el caso ofrece «Redactar con IA» con el saldo del ciclo: «Usa 1 de tus respuestas con IA de este ciclo: te quedan 2 de 2 y se renuevan el 6 de diciembre, 5:57. Elegir una propuesta o escribir tu respuesta no consume tu plan.»
+PASS 11. la redacción con IA termina con aviso
+PASS 12. el caso guarda la propuesta de IA y la invocación que la redactó
+PASS 13. las opciones numeradas (las del aviso de Telegram) no cambian
+PASS 14. el texto de la propuesta de IA queda listo para revisar en «Tu respuesta»
+PASS 15. el caso ya no ofrece otra redacción (un caso consume como máximo 1)
+PASS 16. el libro registra exactamente 1 unidad consumida
+PASS 17. segunda redacción con IA (2 de 2)
+PASS 18. agotada: explica la renovación y la respuesta manual: «Ya usaste 2 de 2 respuestas con IA de este ciclo. Se renuevan el 6 de diciembre, 5:57. Mientras tanto puedes elegir una propuesta o escribir tu respuesta, sin consumir tu plan. Para ampliar tu plan, escribe a MainSpot.»
+PASS 19. agotada: no hay botón de IA
+PASS 20. la respuesta manual se publica (simulación)
+PASS 21. el caso queda respondido
+PASS 22. responder a mano no consumió: 2 unidades, ambas de IA
+PASS 23. vista móvil del caso sin desbordes horizontales (0px)
+PASS 24. sin errores de JavaScript en las páginas (0)
+
+Errores de página: ninguno

@@ -43,6 +43,7 @@ flowchart LR
 | Propuesta a pedido | `POST /api/backoffice/engagement/cases/:id/ai-draft` (`engagement.respond` + `ai.generate`; 201, o 200 si ya existía). Se guarda en `engagement_case.ai_draft`, **aparte** de las tres opciones numeradas: el aviso de Telegram y `/aprobar <caso> N` siguen significando lo mismo |
 | Saldo para el panel | `GET /api/backoffice/engagement/ai-replies` (`engagement.read`): `available`, `subscription_active`, `limit`, `usage`, `remaining`, `window` |
 | Fuera de esta cuota (pendiente G-SEM) | Comentarios de Facebook (siguen con propuesta de IA automática) y el laboratorio manual (DEC-0074) |
+| Fuera de esta cuota (DEC-0078, 2026-11-06) | Los comentarios de Facebook tienen su propio medidor `ai_facebook_suggestions` (`quota.ai_facebook_suggestions.max`, misma semántica periódica; sin valor aprobado ⇒ deny, activación comercial BLOCKED) y ya no reciben propuesta de IA automática salvo con sugerencias automáticas aceptadas: [`facebook-ai-policy.md`](facebook-ai-policy.md). Nunca consumen `ai_review_replies` |
 
 Panel del negocio: el caso de una reseña muestra «Respuesta con IA» con saldo y fecha de renovación, el botón «Redactar con IA» y, agotada, la explicación y la respuesta manual; la propuesta aparece como «Propuesta con IA» sin reemplazar lo que la persona haya escrito. «Mi plan» muestra la cuota del ciclo con su renovación («lo no usado no se acumula») y «Reseñas gestionadas: Sin límite». Las reglas de respuestas automáticas avisan del consumo.
 

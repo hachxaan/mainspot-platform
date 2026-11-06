@@ -23,7 +23,7 @@ import type { Pool } from 'pg';
 import { runAtomic } from '../conversation/state-machine.ts';
 import { promptSha256, type PromptVariable } from './prompt.ts';
 import { EDIT_SCHEMA_ID } from './contracts.ts';
-import { AiRegistry, type RouteParams } from './registry.ts';
+import { AiRegistry, type AiChannel, type RouteParams } from './registry.ts';
 
 const ANTHROPIC_PRICES = { source: 'anthropic_pricing_page', observedAt: '2026-11-03T06:00:00Z' } as const;
 const OPENAI_PRICES = { source: 'openai_pricing_page', observedAt: '2026-11-03T08:00:00Z' } as const;
@@ -38,25 +38,26 @@ const TERMS_BASIS = (dec: string) => `${dec}; docs/architecture/ai-providers-dat
 
 export const SEED_ACTOR = 'system:ai-catalog-seed';
 
-interface UseCaseSeed { id: string; title: string; description: string; modality: 'text' | 'image' | 'classification'; risk: 'low' | 'medium' | 'high'; schema: string; tools?: string[] }
+/** `channel`: canal de atribución del gasto (FB-3); el mismo mapa rellena las filas existentes en la migración 0039. */
+interface UseCaseSeed { id: string; title: string; description: string; modality: 'text' | 'image' | 'classification'; risk: 'low' | 'medium' | 'high'; schema: string; channel: AiChannel; tools?: string[] }
 
 export const USE_CASE_SEEDS: UseCaseSeed[] = [
-  { id: 'conversation.intent.classify', title: 'Clasificación semántica del mensaje del dueño', description: 'Jev: sentimiento, urgencia y alcance de edición web del mensaje del dueño. La intención principal sigue el gate de APR-0002.', modality: 'classification', risk: 'medium', schema: 'jev-answers/v1' },
-  { id: 'conversation.owner.assistant', title: 'Asistente del dueño con estado de su cuenta', description: 'Responde preguntas sobre la cuenta usando herramientas de solo lectura del propio negocio.', modality: 'text', risk: 'high', schema: 'owner-assistant/v1', tools: ['account_status', 'website_status', 'social_posts', 'attention_cases', 'activity_metrics', 'connections_status', 'brand_facts'] },
-  { id: 'website.initial.design', title: 'Diseño inicial de la página', description: 'Primera página personalizada en DSL de bloques con solicitudes de imagen.', modality: 'text', risk: 'medium', schema: 'site-design/v1' },
-  { id: 'website.edit.simple', title: 'Edición simple de la página', description: 'Cambios de texto, dato, estilo o imagen puntual como parche tipado.', modality: 'text', risk: 'low', schema: EDIT_SCHEMA_ID },
-  { id: 'website.edit.complex', title: 'Edición compleja o rediseño', description: 'Reestructura o rediseño de secciones e imágenes como parche tipado.', modality: 'text', risk: 'medium', schema: EDIT_SCHEMA_ID },
-  { id: 'website.image.generate', title: 'Imágenes de la página', description: 'Ilustraciones para secciones de la web.', modality: 'image', risk: 'medium', schema: 'image/v1' },
-  { id: 'social.facebook.post.compose', title: 'Publicación de Facebook', description: 'Variantes de copy con emojis moderados, CTA y hashtags, más propuesta visual.', modality: 'text', risk: 'medium', schema: 'social-compose/v1' },
-  { id: 'social.facebook.image.generate', title: 'Imagen para Facebook', description: 'Ilustración en formato de feed.', modality: 'image', risk: 'medium', schema: 'image/v1' },
-  { id: 'engagement.facebook.comment.classify', title: 'Clasificación de comentarios de Facebook', description: 'Jev: sentimiento, categoría, urgencia, riesgo y PII.', modality: 'classification', risk: 'high', schema: 'jev-answers/v1' },
-  { id: 'engagement.google.review.classify', title: 'Clasificación de reseñas de Google', description: 'Jev: sentimiento, categoría, urgencia, riesgo y PII; la calificación es señal aparte.', modality: 'classification', risk: 'high', schema: 'jev-answers/v1' },
-  { id: 'engagement.facebook.comment.reply', title: 'Respuesta a comentarios de Facebook', description: 'Respuesta breve basada en hechos verificados.', modality: 'text', risk: 'high', schema: 'engagement-reply/v1' },
-  { id: 'engagement.google.review.reply', title: 'Respuesta a reseñas de Google', description: 'Respuesta pública cuidando la reputación, sin compromisos comerciales.', modality: 'text', risk: 'high', schema: 'engagement-reply/v1' },
-  { id: 'marketing.campaign.plan', title: 'Plan de campaña', description: 'Plan con presupuesto PROPUESTO; nunca activa ni gasta.', modality: 'text', risk: 'high', schema: 'campaign-plan/v1' },
-  { id: 'marketing.campaign.creatives', title: 'Creatividades de campaña', description: 'Variantes de texto para anuncios propuestos.', modality: 'text', risk: 'medium', schema: 'social-compose/v1' },
-  { id: 'business.insights.generate', title: 'Resumen e ideas del negocio', description: 'Resumen con periodo y evidencia, o abstención.', modality: 'text', risk: 'medium', schema: 'insights/v1' },
-  { id: 'editorial.calendar.suggest', title: 'Calendario editorial', description: 'Ideas fechadas basadas en hechos aprobados.', modality: 'text', risk: 'low', schema: 'editorial/v1' },
+  { id: 'conversation.intent.classify', title: 'Clasificación semántica del mensaje del dueño', description: 'Jev: sentimiento, urgencia y alcance de edición web del mensaje del dueño. La intención principal sigue el gate de APR-0002.', modality: 'classification', risk: 'medium', schema: 'jev-answers/v1', channel: 'owner_intent' },
+  { id: 'conversation.owner.assistant', title: 'Asistente del dueño con estado de su cuenta', description: 'Responde preguntas sobre la cuenta usando herramientas de solo lectura del propio negocio.', modality: 'text', risk: 'high', schema: 'owner-assistant/v1', channel: 'assistant', tools: ['account_status', 'website_status', 'social_posts', 'attention_cases', 'activity_metrics', 'connections_status', 'brand_facts'] },
+  { id: 'website.initial.design', title: 'Diseño inicial de la página', description: 'Primera página personalizada en DSL de bloques con solicitudes de imagen.', modality: 'text', risk: 'medium', schema: 'site-design/v1', channel: 'website' },
+  { id: 'website.edit.simple', title: 'Edición simple de la página', description: 'Cambios de texto, dato, estilo o imagen puntual como parche tipado.', modality: 'text', risk: 'low', schema: EDIT_SCHEMA_ID, channel: 'website' },
+  { id: 'website.edit.complex', title: 'Edición compleja o rediseño', description: 'Reestructura o rediseño de secciones e imágenes como parche tipado.', modality: 'text', risk: 'medium', schema: EDIT_SCHEMA_ID, channel: 'website' },
+  { id: 'website.image.generate', title: 'Imágenes de la página', description: 'Ilustraciones para secciones de la web.', modality: 'image', risk: 'medium', schema: 'image/v1', channel: 'website' },
+  { id: 'social.facebook.post.compose', title: 'Publicación de Facebook', description: 'Variantes de copy con emojis moderados, CTA y hashtags, más propuesta visual.', modality: 'text', risk: 'medium', schema: 'social-compose/v1', channel: 'facebook_posts' },
+  { id: 'social.facebook.image.generate', title: 'Imagen para Facebook', description: 'Ilustración en formato de feed.', modality: 'image', risk: 'medium', schema: 'image/v1', channel: 'facebook_posts' },
+  { id: 'engagement.facebook.comment.classify', title: 'Clasificación de comentarios de Facebook', description: 'Jev: sentimiento, categoría, urgencia, riesgo y PII.', modality: 'classification', risk: 'high', schema: 'jev-answers/v1', channel: 'facebook_comments' },
+  { id: 'engagement.google.review.classify', title: 'Clasificación de reseñas de Google', description: 'Jev: sentimiento, categoría, urgencia, riesgo y PII; la calificación es señal aparte.', modality: 'classification', risk: 'high', schema: 'jev-answers/v1', channel: 'google_reviews' },
+  { id: 'engagement.facebook.comment.reply', title: 'Respuesta a comentarios de Facebook', description: 'Respuesta breve basada en hechos verificados.', modality: 'text', risk: 'high', schema: 'engagement-reply/v1', channel: 'facebook_comments' },
+  { id: 'engagement.google.review.reply', title: 'Respuesta a reseñas de Google', description: 'Respuesta pública cuidando la reputación, sin compromisos comerciales.', modality: 'text', risk: 'high', schema: 'engagement-reply/v1', channel: 'google_reviews' },
+  { id: 'marketing.campaign.plan', title: 'Plan de campaña', description: 'Plan con presupuesto PROPUESTO; nunca activa ni gasta.', modality: 'text', risk: 'high', schema: 'campaign-plan/v1', channel: 'campaigns' },
+  { id: 'marketing.campaign.creatives', title: 'Creatividades de campaña', description: 'Variantes de texto para anuncios propuestos.', modality: 'text', risk: 'medium', schema: 'social-compose/v1', channel: 'campaigns' },
+  { id: 'business.insights.generate', title: 'Resumen e ideas del negocio', description: 'Resumen con periodo y evidencia, o abstención.', modality: 'text', risk: 'medium', schema: 'insights/v1', channel: 'insights' },
+  { id: 'editorial.calendar.suggest', title: 'Calendario editorial', description: 'Ideas fechadas basadas en hechos aprobados.', modality: 'text', risk: 'low', schema: 'editorial/v1', channel: 'editorial' },
 ];
 
 interface ProviderSeed {
@@ -295,6 +296,12 @@ interface RouteSeed { useCase: string; model: string; params: RouteParams; maxCo
 const TEXT_DEFAULT = { timeout_ms: 90_000, repair_attempts: 1, reasoning_effort: 'low' } as const;
 
 /**
+ * Costo máximo por llamada de TypeSafe/Jev de las rutas `ts:jev-1.14.0`. El pipeline del chat y la evaluación
+ * sintética reservan este mismo importe en el libro de TypeSafe (DEC-0032, TS-1) antes de cada llamada.
+ */
+export const TYPESAFE_CALL_MAX_COST_USD = 0.01;
+
+/**
  * Candidatas de desarrollo (DEC-0074), nunca activadas por semilla: Anthropic directo en DRAFT con el prompt semilla
  * vigente, parámetros y precios ya registrados. Sonnet 5.5 en las tareas complejas (diseño inicial, rediseño, plan de
  * campaña) y Haiku 5.5 como opción eficiente en el resto; una ruta por caso de uso, de selección explícita en el
@@ -315,7 +322,7 @@ export const LAB_CANDIDATES: RouteSeed[] = [
   { useCase: 'business.insights.generate', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 1500 }, maxCost: 0.02, note: 'DEC-0074: análisis de negocio con Anthropic directo (Haiku 5.5)' },
   { useCase: 'editorial.calendar.suggest', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 3000 }, maxCost: 0.02, note: 'DEC-0074: calendario con Anthropic directo (Haiku 5.5)' },
   ...['website.image.generate', 'social.facebook.image.generate'].map((uc) => ({ useCase: uc, model: 'oa:gpt-image-2', params: { timeout_ms: 180_000, aspect_ratio: uc.startsWith('social') ? '1:1' : '16:9', quality: 'medium' as const }, maxCost: 0.08, note: 'gpt-image-2 directo (DEC-0069), calidad media' })),
-  ...['conversation.intent.classify', 'engagement.facebook.comment.classify', 'engagement.google.review.classify'].map((uc) => ({ useCase: uc, model: 'ts:jev-1.14.0', params: { timeout_ms: 15_000 }, maxCost: 0.01, note: 'Jev primario (versión fijada)' })),
+  ...['conversation.intent.classify', 'engagement.facebook.comment.classify', 'engagement.google.review.classify'].map((uc) => ({ useCase: uc, model: 'ts:jev-1.14.0', params: { timeout_ms: 15_000 }, maxCost: TYPESAFE_CALL_MAX_COST_USD, note: 'Jev primario (versión fijada)' })),
 ];
 
 /** Rutas simuladas del entorno `test` (regresión offline). */
@@ -337,11 +344,11 @@ export async function ensureAiCatalog(pool: Pool): Promise<{ created: string[] }
     for (const uc of USE_CASE_SEEDS) {
       // El contrato de salida sigue a la semilla (p. ej. site-edit/v2); las rutas que no lo usen se retiran abajo.
       const r = await client.query(
-        `INSERT INTO ai_use_case (use_case_id, title, description, modality, risk_level, owner, output_schema, tools)
-         VALUES ($1,$2,$3,$4,$5,'ingenieria-ia',$6,$7)
-         ON CONFLICT (use_case_id) DO UPDATE SET output_schema = EXCLUDED.output_schema, description = EXCLUDED.description, updated_at = now()
-           WHERE ai_use_case.output_schema IS DISTINCT FROM EXCLUDED.output_schema`,
-        [uc.id, uc.title, uc.description, uc.modality, uc.risk, uc.schema, JSON.stringify(uc.tools ?? [])]);
+        `INSERT INTO ai_use_case (use_case_id, title, description, modality, risk_level, owner, output_schema, tools, channel)
+         VALUES ($1,$2,$3,$4,$5,'ingenieria-ia',$6,$7,$8)
+         ON CONFLICT (use_case_id) DO UPDATE SET output_schema = EXCLUDED.output_schema, description = EXCLUDED.description, channel = EXCLUDED.channel, updated_at = now()
+           WHERE ai_use_case.output_schema IS DISTINCT FROM EXCLUDED.output_schema OR ai_use_case.channel IS DISTINCT FROM EXCLUDED.channel`,
+        [uc.id, uc.title, uc.description, uc.modality, uc.risk, uc.schema, JSON.stringify(uc.tools ?? []), uc.channel]);
       if (r.rowCount) created.push(`use_case:${uc.id}`);
     }
     for (const p of PROVIDER_SEEDS) {

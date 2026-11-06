@@ -1,0 +1,44 @@
+# E2E INC-002 + INC-003 — transcript (run 2026-11-06T10:58:11.593Z)
+# HEAD: 5354283a2783838632ef095aebc851230e95a4ed
+# canal: simulated (DEC-026); Telegram real requiere TELEGRAM_BOT_TOKEN
+# DB: mainspot_test (recreada por scripts/test-prep.ts)
+
+=== INC-002/INC-003 E2E (canal simulado) ===
+PASS 1. mensaje simulado recibido y clasificado
+PASS 2. clasificación = preview_required (intent website.edit)
+PASS 3. estado awaiting_confirmation
+PASS 4. confirmación detallada (AC-006)
+PASS 5. propuesta creada
+PASS 6. confirmación → preview_ready
+PASS 7. enlace seguro de preview generado
+PASS 8. GET preview público responde
+PASS 9. preview muestra el nuevo teléfono
+PASS 10. aprobación humana → publicado
+PASS 11. primera publicación (no replay)
+PASS 12. versión del sitio incrementada
+PASS 13. teléfono publicado en la web del cliente
+PASS 14. contenido publicado versionado (website_content)
+PASS 15. segunda aprobación → already_published
+PASS 16. UNA sola publicación (no duplica)
+PASS 17. contenido publicado UNA vez por propuesta (sin duplicado por replay)
+PASS 18a. auditoría del mensaje contiene conversation.received (request_id=cdc6934b…)
+PASS 18a. auditoría del mensaje contiene conversation.classified (request_id=cdc6934b…)
+PASS 18a. auditoría del mensaje contiene conversation.proposal.created (request_id=cdc6934b…)
+PASS 18b. auditoría de la propuesta contiene conversation.confirmed
+PASS 18b. auditoría de la propuesta contiene conversation.preview.created
+PASS 18b. auditoría de la propuesta contiene conversation.approved
+PASS 18b. auditoría de la propuesta contiene conversation.published
+PASS 18c. replay auditado como already_published
+PASS 19. eventos del mensaje correlacionados por request_id
+PASS 20. subdominio simulado provisto al publicar
+PASS 21. DNS + certificado simulados activos
+
+=== Resumen E2E ===
+solicitud: request_id=cdc6934b-0fba-4854-8f96-9bef017c4b47
+propuesta: prop_4f9fa765-6987-451d-97dc-82da03d04740
+preview: /preview/pv_27446a2dc9d2f189c091b1166245380069f14688a9900577
+publicación: pub_prop_4f9fa765-6987-451d-97dc-82da03d04740_1 (el-sol.sim.mainspot.local::website:v2)
+audit events correlacionados: 6
+=== Fin E2E ===
+
+# Fin de transcript

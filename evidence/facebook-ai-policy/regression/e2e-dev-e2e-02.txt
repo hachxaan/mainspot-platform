@@ -1,0 +1,59 @@
+# E2E DEV-E2E-02 — transcript (run 2026-11-06T11:33:34.011Z)
+# HEAD: 4673061be432330cdaa005c11c330dedf2ed6dbe
+# procesos reales: servidor, CLI invite-owner, worker independiente
+# proveedores: simulated (Google, Meta, Telegram); ningún resultado es real
+# DB: mainspot_test (recreada por scripts/test-prep.ts)
+
+servidor real en http://127.0.0.1:33545 (worker en proceso, ciclo 1 s) [simulated]
+
+-- FLOW-01: alta asistida --
+PASS 1. CLI de operación crea negocio + invitación de un solo uso
+PASS 2. invitación válida muestra solo el nombre del negocio
+PASS 3. dueña elige contraseña; cuenta Administración creada
+PASS 4. la invitación no se puede reutilizar
+PASS 5. acceso con correo + contraseña, SIN tenant_id
+
+-- FLOW-02: teléfono principal + «Otro número» por integración --
+PASS 6. número inválido para el país → error por campo
+   efectivos: web=+529831111111 google=+529832222222 facebook=+12125550123
+PASS 7. tres integraciones con número propio e independiente
+PASS 8. ficha de Google simulada usa el número de Google
+
+-- FLOW-02: Página Web --
+PASS 9. el negocio crea su página web (cuota website del plan piloto)
+PASS 10. solicitud de cambio web → propuesta (website.edit)
+PASS 11. vista previa con el teléfono efectivo de la Página Web
+PASS 12. aprobación → publicado una sola vez (desarrollo)
+
+-- Agente: políticas opt-in, Telegram y post de Facebook --
+PASS 13. opt-in explícito por origen y categoría (versión 1)
+PASS 14. webhook sin la cabecera del secreto: 401 (también en desarrollo)
+PASS 15. Telegram vinculado con código de un solo uso (simulado)
+PASS 16. publicación de Facebook aprobada y publicada (simulado)
+
+-- AG-01..03: el worker atiende sin navegador --
+PASS 17. AG-01 reseña simple respondida sola (política v1, simulated)
+PASS 18. AG-03 pregunta en Facebook respondida con el número de Facebook
+PASS 19. AG-02/03 casos delicados esperan decisión humana
+PASS 20. un aviso de Telegram por caso delicado (simulado)
+PASS 21. la publicación previa no cambia
+PASS 22. aprobación desde Telegram con el botón del aviso (su código, alternativa 1)
+PASS 23. rechazo desde el panel (mismo caso)
+PASS 24. panel refleja la decisión tomada en Telegram
+
+-- AG-04: caída del servidor y worker independiente --
+   servidor terminado con SIGKILL
+   estado de g-crash al morir el servidor: aún no ingerido
+   envíos interrumpidos a recuperar: 0 (lease vencida forzada)
+PASS 25. worker independiente (proceso propio) ejecuta un ciclo
+PASS 26. caso recibido antes de la caída queda respondido
+PASS 27. reentrega del mismo update_id tras reiniciar: duplicate (sin actuar)
+   respuestas públicas simuladas: fb-q, g-crash, g-risk, g-simple
+PASS 28. reinicio sin dobles respuestas (una por caso, rechazado sin respuesta)
+PASS 29. sin avisos duplicados tras el reinicio
+
+-- Aislamiento multi-tenant --
+PASS 30. otro negocio recibe el mismo 404 que un caso inexistente
+PASS 31. chat no vinculado no puede decidir
+
+# Fin de transcript

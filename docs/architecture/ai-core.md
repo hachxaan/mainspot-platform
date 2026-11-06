@@ -149,14 +149,33 @@ flowchart LR
   certifica asesoría legal ni configuración privada de opt-in/ZDR.
 - Jev del intake: `dev-panel.sh` fija `JEV_MODE=primary`, `JEV_DATA_SCOPE=all`,
   `JEV_MODEL=jev-1.14.0` cuando existe clave. El gate de versión/código/corpus sigue siendo obligatorio;
-  permisos y acciones permanecen en el backend.
+  permisos y acciones permanecen en el backend. TS-1 (DEC-0078) cambió `src/conversation/jev-classifier.ts`, que
+  entra en la huella del código decisorio (`decisionCodeSha256`): la única evaluación aprobada (DEC-0033,
+  `evidence/ai-core/jev-gate-dev-2026-11-03.json`) ya no corresponde, así que `primary` queda cerrado (decide el
+  clasificador determinista y TypeSafe sigue leyendo en sombra, con costo) hasta una evaluación nueva de pago que
+  solo puede autorizar el propietario (DEC-0074).
 - Presupuestos: generativo de laboratorio **USD 25 acumulados**, incluyendo OpenRouter histórico
-  (DEC-0068). Registro tras las evaluaciones OpenAI de DEC-0073: USD 0.096726; ninguna generación directa
-  exitosa acreditada por el agente. Las invocaciones `manual_lab` bajo grant reservan y descuentan igual; los
-  créditos declarados por el propietario no amplían el techo. Las llamadas rechazadas por saldo/cuota no
-  acreditan calidad ni disponibilidad operativa. No es una autorización mensual recurrente ni de Ads.
-  TypeSafe: USD 1/día UTC (DEC-0032), compartido entre `jev_classification`, `jev_evaluation_run` y
-  `ai_invocation` TypeSafe.
+  (DEC-0068): `lab_total` es el techo global estricto de TODO el gasto de pago, de operación y de laboratorio.
+  Registro tras las evaluaciones OpenAI de DEC-0073: USD 0.096726; ninguna generación directa
+  exitosa acreditada por el agente. Por debajo (FB-3, DEC-0078, migración 0039) el gasto se separa por
+  propósito: la operación comercial (sin grant ni evaluación) reserva contra el `tenant_day` de su negocio (fila
+  propia o la por defecto de OPS-0001); las invocaciones `manual_lab` bajo grant y las evaluaciones de rutas
+  (`ai_eval_run`) son gasto experimental y reservan contra `lab_experiment`, una fila global por día UTC **sin
+  valor sembrado**: hasta que un platform_admin la fija (step-up, motivo y auditoría; nunca por encima de
+  `lab_total`) ni el laboratorio ni las evaluaciones de pago gastan (`budget_exhausted`, detalle
+  `lab_experiment`). Ninguno consume el del otro y ambos siguen bajo `lab_total` (y `platform_month`, opcional);
+  las ventanas diaria y mensual son UTC. El gasto se atribuye por propósito y canal (`ai_use_case.channel`, uno por
+  caso de uso) en `GET /api/platform/ai/spend` (Engineering › Costos y Administration › Salud), sin límites ni
+  particiones por canal. Reversión de 0039: `scripts/ai-budget-segregation-rollback.sql` (se niega si
+  `lab_experiment` está configurado). Los créditos declarados por el propietario no amplían el techo. Las llamadas
+  rechazadas por saldo/cuota no acreditan calidad ni disponibilidad operativa. No es una autorización mensual
+  recurrente ni de Ads.
+  TypeSafe: USD 1/día UTC (DEC-0032). Desde TS-1 (migración 0040) el libro `typesafe_reservation` es la única
+  fuente del tope: cada llamada (pipeline del chat, AI Core, evaluaciones Jev y `jev:evaluate`) reserva antes de
+  enviar, bajo un candado, el costo máximo por llamada; al responder se confirma el costo medido y un fallo tras
+  enviar cuenta la reserva. El saldo previo a 0040 (`jev_classification`, `jev_evaluation_run`, `ai_invocation`
+  TypeSafe) se trasladó como filas heredadas. Reversión: `scripts/typesafe-reservation-rollback.sql`. La
+  herramienta de CanonFlow `scripts/canonflow-jev.py` usa su propia credencial y no pasa por este libro.
 - Contabilidad: costo directo estimado por uso × precio publicado; TypeSafe conserva la procedencia
   informada por su cliente. Un fallo de red/timeout generativo no acredita costo cero: reserva retenida
   con costo desconocido. Los presupuestos de plataforma/tenant existentes siguen limitando operaciones;

@@ -537,16 +537,25 @@
           { label: 'Cancelar', style: 'secondary' }]
       });
     },
-    /* SEC-CONSENT-01: aceptar las condiciones vigentes para respuestas automáticas autorizadas antes de la cuota compartida. */
+    /* SEC-CONSENT-01: aceptar las condiciones vigentes de cada canal cuyas respuestas automáticas se autorizaron antes de
+       que su IA descontara del plan (reseñas de Google: DEC-0077; comentarios de Facebook: DEC-0078). */
     'pol-reconsent': function () {
-      var t = (MS.S.agent.consentTerms || {}).google_review;
-      if (!t) { toast('No pudimos cargar las condiciones. Recarga la página.', 'info'); return; }
+      var all = MS.S.agent.consentTerms || {};
+      var origins = (MS.S.agent.reconsent || []).map(function (r) { return r.origin; }).filter(function (o, i, list) { return list.indexOf(o) === i; });
+      if (!origins.length || origins.some(function (o) { return !all[o]; })) { toast('No pudimos cargar las condiciones. Recarga la página.', 'info'); return; }
+      var label = function (o) { return o === 'google_review' ? 'Reseñas de Google' : 'Comentarios de Facebook'; };
       UI.sheet({
         title: 'Actualiza tu autorización de respuestas automáticas',
-        html: '<p>Las respuestas automáticas a reseñas de Google que redacta la IA ahora usan las <strong>respuestas con IA de tu plan</strong>, la misma bolsa que «Redactar con IA», y pueden agotarla antes de que se renueve.</p>' +
-          '<p>Mientras no aceptes, MainSpot sigue respondiendo esas reseñas con un texto seguro <strong>sin IA</strong> y no usa tus respuestas con IA.</p>' +
-          '<p class="small" style="margin-top:10px"><strong>Condiciones · Reseñas de Google</strong></p>' +
-          '<blockquote class="consent-terms" id="reconsent-terms" data-consent-version="' + MS.esc(t.version) + '">' + MS.esc(t.text) + '</blockquote>' +
+        html: origins.map(function (o) {
+          return o === 'google_review'
+            ? '<p>Las respuestas automáticas a reseñas de Google que redacta la IA ahora usan las <strong>respuestas con IA de tu plan</strong>, la misma bolsa que «Redactar con IA», y pueden agotarla antes de que se renueve.</p>'
+            : '<p>Las respuestas automáticas a comentarios de Facebook que redacta la IA ahora usan las <strong>sugerencias con IA para comentarios de Facebook de tu plan</strong>, la misma bolsa que las sugerencias, y solo se redactan si todavía pueden publicarse en esa hora.</p>';
+        }).join('') +
+          '<p>Mientras no aceptes, MainSpot sigue respondiendo con un texto seguro <strong>sin IA</strong> y no descuenta nada de tu plan.</p>' +
+          origins.map(function (o, i) {
+            return '<p class="small" style="margin-top:10px"><strong>Condiciones · ' + label(o) + '</strong></p>' +
+              '<blockquote class="consent-terms" id="' + (i === 0 ? 'reconsent-terms' : 'reconsent-terms-' + o) + '" data-consent-version="' + MS.esc(all[o].version) + '">' + MS.esc(all[o].text) + '</blockquote>';
+          }).join('') +
           '<label class="check" style="margin-top:12px"><input type="checkbox" id="reconsent-check"><span>Acepto estas condiciones para ' + MS.esc(MS.DATA.business) + '</span></label>' +
           '<p class="field-error" id="reconsent-err" hidden>' + MS.icon('circle-alert') + '<span>Marca la casilla para aceptarlas.</span></p>' +
           UI.note('Si prefieres revisar cada respuesta, apaga las respuestas automáticas en «Qué puede responder MainSpot por mí».'),
@@ -555,11 +564,52 @@
             var cb = document.getElementById('reconsent-check');
             if (!cb || !cb.checked) { document.getElementById('reconsent-err').hidden = false; if (cb) cb.focus(); return; }
             UI.closeSheet(true);
-            MS.agent.reconsent(t.version).then(function (r) {
+            var chain = Promise.resolve({ ok: true });
+            origins.forEach(function (o) {
+              chain = chain.then(function (prev) { return prev.ok ? MS.agent.reconsent(all[o].version) : prev; });
+            });
+            chain.then(function (r) {
               toast(r.ok ? 'Guardamos tu autorización con las condiciones vigentes' : r.message, r.ok ? 'circle-check' : 'info');
             });
           } },
           { label: 'Ahora no', style: 'secondary' }]
+      });
+    },
+    /* DEC-0078 (FB-1): modo de sugerencias con IA de comentarios de Facebook. «Automáticas» muestra antes el texto literal
+       de la autorización y el estado del medidor; desactivar o volver a «bajo demanda» se aplica directamente. */
+    'sug-set': function (el) {
+      var mode = el.dataset.arg, s = MS.S.aiSuggestions;
+      if (!s || !s.setting || s.setting.mode === mode && (mode !== 'auto_suggest' || s.setting.consent_current)) return;
+      var done = function (r, msg) {
+        MS.emit();
+        toast(r.ok ? msg : r.message, r.ok ? 'circle-check' : 'info');
+      };
+      if (mode !== 'auto_suggest') {
+        MS.agent.setSuggestionMode(mode).then(function (r) {
+          done(r, mode === 'off' ? 'Listo: MainSpot ya no prepara sugerencias con IA para comentarios de Facebook' : 'Listo: las sugerencias con IA se preparan solo cuando las pidas');
+        });
+        return;
+      }
+      var t = (MS.S.suggestionTerms || {}).facebook_comment;
+      if (!t) { toast('No pudimos cargar las condiciones. Recarga la página.', 'info'); MS.emit(); return; }
+      var n = function (v) { return Number(v).toLocaleString('es-MX'); };
+      UI.sheet({
+        title: '¿Activas las sugerencias automáticas?',
+        html: '<p>MainSpot preparará con IA, sin que lo pidas, una sugerencia para cada comentario de Facebook que la amerite. <strong>No publica nada</strong>: tú decides cada respuesta.</p>' +
+          '<p id="sug-cost">Cada sugerencia usa <strong>1 de tus ' + n(s.limit) + ' sugerencias con IA del ciclo</strong> aunque no la publiques' +
+          (s.limit !== null ? ' (llevas ' + n(s.usage) + ')' : '') + (s.window ? '; se renuevan el ' + MS.renewal(s.window.end) : '') + '. Cuando se acaben, no se preparan más hasta la renovación. Puedes desactivarlas cuando quieras.</p>' +
+          '<p class="small" style="margin-top:10px"><strong>Condiciones · Sugerencias automáticas</strong></p>' +
+          '<blockquote class="consent-terms" id="sug-terms" data-consent-version="' + MS.esc(t.version) + '">' + MS.esc(t.text) + '</blockquote>' +
+          '<label class="check" style="margin-top:12px"><input type="checkbox" id="sug-consent"><span>Acepto estas condiciones para ' + MS.esc(MS.DATA.business) + '</span></label>' +
+          '<p class="field-error" id="sug-consent-err" hidden>' + MS.icon('circle-alert') + '<span>Marca la casilla para activarlas.</span></p>',
+        actions: [
+          { label: 'Activar sugerencias automáticas', style: 'primary', keepOpen: true, fn: function () {
+            var cb = document.getElementById('sug-consent');
+            if (!cb || !cb.checked) { document.getElementById('sug-consent-err').hidden = false; if (cb) cb.focus(); return; }
+            UI.closeSheet(true);
+            MS.agent.setSuggestionMode('auto_suggest', t.version).then(function (r) { done(r, 'Listo: MainSpot preparará sugerencias para que las revises'); });
+          } },
+          { label: 'Cancelar', style: 'secondary', fn: function () { MS.emit(); } }]
       });
     }
   });

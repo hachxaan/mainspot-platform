@@ -17,7 +17,7 @@ import { randomUUID } from 'node:crypto';
 import { bootApi, authHeaders, api, login, type TestApi } from '../helpers/testdb.ts';
 import { createTenantWithPlan, countRows, type TestTenant as Tenant } from '../helpers/tenants.ts';
 import { EngagementService, type CaseRow, type PolicyRow } from '../../src/engagement/service.ts';
-import type { EngagementSemantics } from '../../src/engagement/ai-semantics.ts';
+import type { EngagementSemantics, ReplyOutcome } from '../../src/engagement/ai-semantics.ts';
 import { AUTO_REPLY_CONSENT, REVIEW_REQUIRED_CONSENT, consentSha256 } from '../../src/engagement/consent.ts';
 
 let t: TestApi;
@@ -85,10 +85,10 @@ function stubSemantics(during?: () => Promise<void>, needsHuman = false): Engage
         classification: { category: 'gratitude' as const, risk_flags: [], confidence: 0.95, sentiment: 'positive' as const, info_topic: null } };
     },
     async replyAvailable() { return true; },
-    async reply(row: CaseRow) {
+    async reply(row: CaseRow): Promise<ReplyOutcome> {
       stub.replies += 1;
       if (during) await during();
-      return { text: `¡Gracias, ${row.author_label}! Te esperamos pronto.`, needsHuman, invocationId: `inv_stub_${randomUUID()}` };
+      return { ok: true, text: `¡Gracias, ${row.author_label}! Te esperamos pronto.`, needsHuman, invocationId: `inv_stub_${randomUUID()}` };
     },
   };
   return stub;
@@ -153,7 +153,8 @@ test('AC-16008: aceptar los términos vigentes exige la versión mostrada, guard
     [{ consent: true }, 400],
     [{ consent: false, consent_version: GOOGLE.version }, 400],
     [{ consent: true, consent_version: 'auto_reply.google_review.v1' }, 409],
-    [{ consent: true, consent_version: AUTO_REPLY_CONSENT.facebook_comment.version }, 409],
+    // DEC-0078 R6: la versión vigente de Facebook es válida, pero solo para Facebook: pedirla como Google no vale.
+    [{ origin: 'google_review', consent: true, consent_version: AUTO_REPLY_CONSENT.facebook_comment.version }, 409],
   ] as const) {
     const r = await call(a.token, '/engagement/policies/consent', 'POST', body);
     assert.equal(r.status, status, JSON.stringify(r.body));
@@ -162,7 +163,7 @@ test('AC-16008: aceptar los términos vigentes exige la versión mostrada, guard
 
   const ok = await call(a.token, '/engagement/policies/consent', 'POST', { consent: true, consent_version: GOOGLE.version });
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
-  assert.deepEqual([ok.body.updated, ok.body.reconsent_required], [2, false]);
+  assert.deepEqual([ok.body.updated, ok.body.reconsent_required], [2, true], 'Facebook sigue pendiente: cada canal acepta sus propios términos');
   const rows = (await policyRows(a.tenant)).rows;
   const fresh = rows.filter((r) => r.origin === 'google_review' && r.version === 2);
   assert.equal(fresh.length, 2);
@@ -172,7 +173,7 @@ test('AC-16008: aceptar los términos vigentes exige la versión mostrada, guard
   assert.deepEqual(fresh.map((r) => [r.category, r.max_auto_replies_per_hour]).sort(), [['basic_info', 4], ['gratitude', 7]], 'conserva el límite por hora de cada regla');
   const dbHash = await t.pool.query<{ ok: boolean }>(`SELECT bool_and(consent_sha256 = encode(sha256(convert_to(consent_text, 'UTF8')), 'hex')) AS ok FROM engagement_policy WHERE tenant_id = $1 AND consent_version IS NOT NULL`, [a.tenant]);
   assert.equal(dbHash.rows[0]?.ok, true, 'la huella guardada es la del texto guardado');
-  assert.equal(rows.find((r) => r.policy_id === fb)?.consent_version, null, 'Facebook no necesita reconsentir (no gasta esta cuota)');
+  assert.equal(rows.find((r) => r.policy_id === fb)?.consent_version, null, 'aceptar los términos de Google no toca la regla de Facebook');
   const audits = await t.pool.query<{ result: string; evidence_ref: string }>(
     `SELECT result, evidence_ref FROM audit_event WHERE tenant_id = $1 AND action = 'engagement.policy.changed' ORDER BY evidence_ref`, [a.tenant]);
   assert.deepEqual(audits.rows.map((r) => r.result), [`safe_auto_reply:v2:reconsent:${GOOGLE.version}`, `safe_auto_reply:v2:reconsent:${GOOGLE.version}`]);
@@ -181,6 +182,10 @@ test('AC-16008: aceptar los términos vigentes exige la versión mostrada, guard
   const again = await call(a.token, '/engagement/policies/consent', 'POST', { consent: true, consent_version: GOOGLE.version });
   assert.deepEqual([again.status, again.body.updated], [200, 0]);
   assert.equal((await policyRows(a.tenant)).rows.length, before + 2, 'repetir no crea versiones');
+  const fbOk = await call(a.token, '/engagement/policies/consent', 'POST', { consent: true, consent_version: AUTO_REPLY_CONSENT.facebook_comment.version });
+  assert.deepEqual([fbOk.status, fbOk.body.updated, fbOk.body.reconsent_required], [200, 1, false]);
+  const fbRow = (await policyRows(a.tenant)).rows.find((r) => r.origin === 'facebook_comment' && r.version === 2);
+  assert.deepEqual([fbRow?.consent_version, fbRow?.consent_sha256], [AUTO_REPLY_CONSENT.facebook_comment.version, AUTO_REPLY_CONSENT.facebook_comment.sha256]);
 
   const stub = stubSemantics();
   const service = new EngagementService({ ...t.handle.engagement.deps, semantics: stub });
@@ -290,15 +295,16 @@ test('SEC-CONSENT-01: una política con la versión vigente pero OTRO texto (y s
   assert.equal(view.body.reconsent_required, true);
 });
 
-test('Facebook: el consentimiento previo sigue cubriendo sus respuestas automáticas, fuera de la cuota de reseñas', async () => {
+test('Facebook (DEC-0078 R6): un consentimiento anterior a los términos versionados no cubre la IA de su medidor; responde sin IA, no toca la cuota de reseñas y pide reconsentir', async () => {
   const a = await newTenant('client_cs7', 0);
   await legacyPolicy(a.tenant, 'facebook_comment', 'gratitude');
   const stub = stubSemantics();
   const service = new EngagementService({ ...t.handle.engagement.deps, semantics: stub });
   const c = await service.classifyCase(await receivedCase(service, a.tenant, 'facebook_comment'));
-  assert.deepEqual([c?.decision, Boolean(c?.reply_invocation_id), stub.replies], ['auto_reply', true, 1]);
+  assert.deepEqual([c?.decision, c?.reply_invocation_id, stub.replies], ['auto_reply', null, 0], 'texto seguro sin IA: la política no se cambia sola');
   assert.deepEqual(await ledger(a), { committed: 0, reserved: 0, rows: 0 });
-  assert.equal((await call(a.token, '/engagement/policies')).body.reconsent_required, false);
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM quota_reservation WHERE tenant_id = $1`, [a.tenant]), 0, 'ni su medidor ni la cuota de reseñas');
+  assert.equal((await call(a.token, '/engagement/policies')).body.reconsent_required, true);
 });
 
 test('BD: la política es append-only; una automática nueva sin versión o con huella que no es la de su texto se rechaza', async () => {

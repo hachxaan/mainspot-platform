@@ -210,6 +210,8 @@ Cuotas comerciales de reseñas (DEC-0076: recibir y responder a mano sin cuota; 
 
 Salvaguardas de la cuota de respuestas con IA (DEC-0077, migración `0037`): consentimiento versionado antes de que una respuesta automática gaste la cuota (`GET|PUT /api/backoffice/engagement/policies`, `POST /api/backoffice/engagement/policies/consent`) y aprobación por Telegram con el código de cada aviso (`/aprobar <código> N`, `/rechazar <código>`), que no publica nada si las propuestas cambiaron. Desde el panel, `POST /api/backoffice/engagement/cases/:id/approve` exige `{text}` o `{draft_number, drafts_revision}` (sin ellos 400; revisión vieja 409). Detalle en [`docs/architecture/commercial-governance-safeguards.md`](docs/architecture/commercial-governance-safeguards.md).
 
+Política de IA de comentarios de Facebook (DEC-0078, migraciones `0038`–`0040`): modo de sugerencias por negocio (`GET|PUT /api/backoffice/engagement/suggestions`: `off`, `on_demand` predeterminado, `auto_suggest` con consentimiento versionado), «Sugerir con IA» con `POST /api/backoffice/engagement/cases/:id/ai-draft`, medidor propio `quota.ai_facebook_suggestions.max` (sin valor ⇒ deny), presupuesto de laboratorio `lab_experiment` aparte de `tenant_day` bajo `lab_total` (`GET /api/platform/ai/spend`, `PUT /api/platform/ai/budgets/:scope`) y reservas atómicas de TypeSafe. Detalle en [`docs/architecture/facebook-ai-policy.md`](docs/architecture/facebook-ai-policy.md).
+
 Rutas INC-007 base (analítica):
 
 | Ruta | Protegida | Acción |

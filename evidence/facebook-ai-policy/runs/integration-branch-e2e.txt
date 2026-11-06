@@ -1,0 +1,323 @@
+# Rama de integración sola — npm run test:e2e — código 5354283; navegador por https://app.mainspot.local.io (TLS verificado; mainspot-local detenido y reiniciado al terminar)
+Origen https://app.mainspot.local.io; negocio client_e2e_cq_1c2af467 con plan_e2e_cq_40c1db (ai_review_replies = 2 por ciclo, reviews_managed = 0)
+PASS 1. llega la reseña 1 (simulada)
+PASS 2. llega la reseña 2 (simulada)
+PASS 3. llega la reseña 3 (simulada)
+PASS 4. el agente procesa las reseñas
+PASS 5. 3 casos esperan decisión, sin redacción automática con IA
+PASS 6. recibir 3 reseñas no consumió ninguna cuota (reviews_managed = 0 ya no bloquea)
+PASS 7. «Mi plan» muestra la cuota del ciclo y su renovación: «Lo que incluyePáginas weben toda la suscripción (no se reinicia)0 de 1 páginasPublicaciones en redesNo incluido en tu plan0 de 0 publicacionesAnuncios en redesNo incluido en tu plan0 de 0 anunciosReseñas gestionadasRecib…»
+PASS 8. «Reseñas gestionadas» se muestra sin límite (recibir no consume)
+PASS 9. las reglas de respuestas automáticas avisan que la IA consume la cuota del ciclo
+PASS 10. el caso ofrece «Redactar con IA» con el saldo del ciclo: «Usa 1 de tus respuestas con IA de este ciclo: te quedan 2 de 2 y se renuevan el 6 de diciembre, 5:57. Elegir una propuesta o escribir tu respuesta no consume tu plan.»
+PASS 11. la redacción con IA termina con aviso
+PASS 12. el caso guarda la propuesta de IA y la invocación que la redactó
+PASS 13. las opciones numeradas (las del aviso de Telegram) no cambian
+PASS 14. el texto de la propuesta de IA queda listo para revisar en «Tu respuesta»
+PASS 15. el caso ya no ofrece otra redacción (un caso consume como máximo 1)
+PASS 16. el libro registra exactamente 1 unidad consumida
+PASS 17. segunda redacción con IA (2 de 2)
+PASS 18. agotada: explica la renovación y la respuesta manual: «Ya usaste 2 de 2 respuestas con IA de este ciclo. Se renuevan el 6 de diciembre, 5:57. Mientras tanto puedes elegir una propuesta o escribir tu respuesta, sin consumir tu plan. Para ampliar tu plan, escribe a MainSpot.»
+PASS 19. agotada: no hay botón de IA
+PASS 20. la respuesta manual se publica (simulación)
+PASS 21. el caso queda respondido
+PASS 22. responder a mano no consumió: 2 unidades, ambas de IA
+PASS 23. vista móvil del caso sin desbordes horizontales (0px)
+PASS 24. sin errores de JavaScript en las páginas (0)
+✔ E2E DEC-0076: recibir reseñas no consume; «Redactar con IA» consume 1 del ciclo; agotada solo bloquea la IA y se responde a mano (3630.944344ms)
+servidor real en http://127.0.0.1:41809 (worker en proceso, ciclo 1 s) [simulated]
+
+-- FLOW-01: alta asistida --
+PASS 1. CLI de operación crea negocio + invitación de un solo uso
+PASS 2. invitación válida muestra solo el nombre del negocio
+PASS 3. dueña elige contraseña; cuenta Administración creada
+PASS 4. la invitación no se puede reutilizar
+PASS 5. acceso con correo + contraseña, SIN tenant_id
+
+-- FLOW-02: teléfono principal + «Otro número» por integración --
+PASS 6. número inválido para el país → error por campo
+   efectivos: web=+529831111111 google=+529832222222 facebook=+12125550123
+PASS 7. tres integraciones con número propio e independiente
+PASS 8. ficha de Google simulada usa el número de Google
+
+-- FLOW-02: Página Web --
+PASS 9. el negocio crea su página web (cuota website del plan piloto)
+PASS 10. solicitud de cambio web → propuesta (website.edit)
+PASS 11. vista previa con el teléfono efectivo de la Página Web
+PASS 12. aprobación → publicado una sola vez (desarrollo)
+
+-- Agente: políticas opt-in, Telegram y post de Facebook --
+PASS 13. opt-in explícito por origen y categoría (versión 1)
+PASS 14. webhook sin la cabecera del secreto: 401 (también en desarrollo)
+PASS 15. Telegram vinculado con código de un solo uso (simulado)
+PASS 16. publicación de Facebook aprobada y publicada (simulado)
+
+-- AG-01..03: el worker atiende sin navegador --
+PASS 17. AG-01 reseña simple respondida sola (política v1, simulated)
+PASS 18. AG-03 pregunta en Facebook respondida con el número de Facebook
+PASS 19. AG-02/03 casos delicados esperan decisión humana
+PASS 20. un aviso de Telegram por caso delicado (simulado)
+PASS 21. la publicación previa no cambia
+PASS 22. aprobación desde Telegram con el botón del aviso (su código, alternativa 1)
+PASS 23. rechazo desde el panel (mismo caso)
+PASS 24. panel refleja la decisión tomada en Telegram
+
+-- AG-04: caída del servidor y worker independiente --
+   servidor terminado con SIGKILL
+   estado de g-crash al morir el servidor: aún no ingerido
+   envíos interrumpidos a recuperar: 0 (lease vencida forzada)
+PASS 25. worker independiente (proceso propio) ejecuta un ciclo
+PASS 26. caso recibido antes de la caída queda respondido
+PASS 27. reentrega del mismo update_id tras reiniciar: duplicate (sin actuar)
+   respuestas públicas simuladas: fb-q, g-crash, g-risk, g-simple
+PASS 28. reinicio sin dobles respuestas (una por caso, rechazado sin respuesta)
+PASS 29. sin avisos duplicados tras el reinicio
+
+-- Aislamiento multi-tenant --
+PASS 30. otro negocio recibe el mismo 404 que un caso inexistente
+PASS 31. chat no vinculado no puede decidir
+EVIDENCE_SAVED evidence/e2e-dev-e2e-02.txt (HEAD 5354283a2783838632ef095aebc851230e95a4ed)
+✔ E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram → caída/reinicio → aislamiento (4585.469461ms)
+Origen https://app.mainspot.local.io; negocio client_e2e_gov_a981c113; regla automática previa a la cuota compartida: pol_6d1bf2f9-c3ad-49ce-8c51-6a8b27950413 (sin versión de consentimiento)
+
+-- SEC-CONSENT-01: reconsentimiento informado y versionado --
+PASS 1. Atención muestra el aviso para aceptar las nuevas condiciones
+PASS 2. la hoja muestra literalmente el texto de las condiciones que guarda el servidor
+PASS 3. versión mostrada: auto_reply.google_review.v2
+PASS 4. las condiciones informan la cuota compartida y que puede agotarse
+PASS 5. sin marcar la casilla no se acepta
+PASS 6. nada se registró sin aceptación explícita
+PASS 7. aceptación confirmada
+PASS 8. nueva versión de la regla con la versión de condiciones aceptada
+PASS 9. guarda el texto literal, su huella sha256 y quién aceptó
+PASS 10. auditado: safe_auto_reply:v2:reconsent:auto_reply.google_review.v2
+PASS 11. el aviso desaparece al aceptar
+PASS 12. el historial de reglas muestra la versión nueva
+PASS 13. activar Facebook muestra sus condiciones literales y su versión
+PASS 14. reglas guardadas
+PASS 15. la regla de Facebook guarda la versión de sus condiciones
+
+-- SEC-TG-APPROVAL-01: el aviso antiguo no publica lo que no mostró --
+PASS 16. chat de Telegram simulado vinculado a la dueña
+PASS 17. llega una reseña delicada (simulada)
+PASS 18. el agente la procesa y avisa por Telegram
+PASS 19. caso humano con tres propuestas
+PASS 20. el aviso muestra las opciones y su código (WNFZMD)
+PASS 21. Operación guarda la opción 1 editada
+PASS 22. las propuestas cambian de revisión
+PASS 23. el aviso ya enviado queda invalidado
+PASS 24. el mensaje del aviso sustituido ya no ofrece botones para aprobar
+PASS 25. aviso obsoleto: no se publicó nada (ni el texto visto ni el editado)
+PASS 26. el intento queda auditado como aviso obsoleto
+PASS 27. llega el aviso vigente con otro código (PLLK6Y) y el texto editado
+PASS 28. la confirmación muestra el texto del aviso vigente
+PASS 29. publicado (simulación) exactamente el texto que mostró el aviso vigente
+PASS 30. sin errores de JavaScript en las páginas (0)
+✔ E2E DEC-0077: reconsentimiento informado y versionado; /aprobar de un aviso antiguo no publica el texto editado (3295.131552ms)
+=== INC-002/INC-003 E2E (canal simulado) ===
+PASS 1. mensaje simulado recibido y clasificado
+PASS 2. clasificación = preview_required (intent website.edit)
+PASS 3. estado awaiting_confirmation
+PASS 4. confirmación detallada (AC-006)
+PASS 5. propuesta creada
+PASS 6. confirmación → preview_ready
+PASS 7. enlace seguro de preview generado
+PASS 8. GET preview público responde
+PASS 9. preview muestra el nuevo teléfono
+PASS 10. aprobación humana → publicado
+PASS 11. primera publicación (no replay)
+PASS 12. versión del sitio incrementada
+PASS 13. teléfono publicado en la web del cliente
+PASS 14. contenido publicado versionado (website_content)
+PASS 15. segunda aprobación → already_published
+PASS 16. UNA sola publicación (no duplica)
+PASS 17. contenido publicado UNA vez por propuesta (sin duplicado por replay)
+PASS 18a. auditoría del mensaje contiene conversation.received (request_id=cdc6934b…)
+PASS 18a. auditoría del mensaje contiene conversation.classified (request_id=cdc6934b…)
+PASS 18a. auditoría del mensaje contiene conversation.proposal.created (request_id=cdc6934b…)
+PASS 18b. auditoría de la propuesta contiene conversation.confirmed
+PASS 18b. auditoría de la propuesta contiene conversation.preview.created
+PASS 18b. auditoría de la propuesta contiene conversation.approved
+PASS 18b. auditoría de la propuesta contiene conversation.published
+PASS 18c. replay auditado como already_published
+PASS 19. eventos del mensaje correlacionados por request_id
+PASS 20. subdominio simulado provisto al publicar
+PASS 21. DNS + certificado simulados activos
+
+=== Resumen E2E ===
+solicitud: request_id=cdc6934b-0fba-4854-8f96-9bef017c4b47
+propuesta: prop_4f9fa765-6987-451d-97dc-82da03d04740
+preview: /preview/pv_27446a2dc9d2f189c091b1166245380069f14688a9900577
+publicación: pub_prop_4f9fa765-6987-451d-97dc-82da03d04740_1 (el-sol.sim.mainspot.local::website:v2)
+audit events correlacionados: 6
+=== Fin E2E ===
+TEST_PASS E2E INC-002/INC-003 full journey with simulated channel
+EVIDENCE_SAVED evidence/e2e-inc002-inc003.txt (HEAD 5354283a2783838632ef095aebc851230e95a4ed)
+✔ E2E INC-002/INC-003: mensaje simulado → clasificación → confirmación → preview → aprobación → publicación idempotente → auditoría (214.948961ms)
+=== E2E INC-004 + INC-005 + INC-006 (proveedores simulados) ===
+
+-- INC-004: reputación --
+PASS 1. sync de reseñas simulado (4 por tenant)
+PASS 2. reseña negativa (<4) detectada y sugerida sin publicar
+PASS 3. escalamiento humano (awaiting_human)
+PASS 4. edición de borrador antes de aprobar
+PASS 5. aprobación humana de la respuesta → propuesta
+PASS 6. preview preparado (cambio visible, DEC-011)
+PASS 7. respuesta pública aprobada → publicada
+PASS 8. repetir aprobación NO vuelve a publicar (UNA vez)
+PASS 9. publicaciones totales = 1
+
+-- INC-005: publicaciones Facebook (simulado) --
+PASS 10. borrador de publicación creado
+PASS 11. aprobación del contenido → propuesta de preview
+PASS 12. enlace de vista previa seguro
+PASS 13. publicación aprobada → published
+PASS 14. segundo intento → already_published (idempotente)
+PASS 15. UNA sola publicación social
+
+-- INC-006: suscripciones y límites (catálogo versionado, DEC-024/DEC-0075) --
+PASS 16a. el negocio ya no se asigna planes (403, SRC-0013)
+PASS 16. plan Básico asignado por Administration, fijado a su revisión v1 (sin precio)
+PASS 17. límite social_posts = 3 visibile para operación
+PASS 18. base=1 post E2E previo + límite 3 ⇒ 2 creaciones OK y la 3ra excede el límite (201,201,403,403)
+PASS 19. exceso auditado como deny/limit_exceeded
+
+=== Resumen E2E INC-004/005/006 ===
+review escalada y publicada: rev_d37c288a-7643-4a1d-afdf-c503f33b72d1 (proposal prop_68bc95af-f2fa-4fac-9686-2acbd27bb50a)
+post publicado: post_6a853081-882e-4a7b-972b-327366f58aaa (proposal prop_c0605516-45db-4cff-9068-40da1981df17)
+plan asignado y límite verificado: plan_basico (social_posts=3)
+=== Fin E2E INC-004/005/006 ===
+TEST_PASS E2E INC-004/005/006 full journeys with simulated providers
+EVIDENCE_SAVED evidence/e2e-inc004-006.txt (HEAD 5354283a2783838632ef095aebc851230e95a4ed)
+✔ E2E INC-004/005/006: reseña → humanos → publica una vez; post → preview → publicado; plan → límite deny (362.786242ms)
+Origen https://app.mainspot.local.io; usuarios de plataforma creados: ai_engineer, platform_admin, platform_support
+PASS 1. soporte llega a Planes y ve el catálogo (plan_piloto_1, plan_basico, plan_completo)
+PASS 2. soporte no ve el formulario de crear plan
+PASS 3. soporte solo ve la pestaña Planes en Engineering Console (las de IA no son de su rol)
+PASS 4. soporte no tiene ninguna acción de escritura en el detalle
+PASS 5. el plan plan_plan_e2e_054c_1e6457 nace deshabilitado
+PASS 6. los 6 valores copiados quedan SIN confirmar
+PASS 7. la cuota de respuestas con IA (sin valor en el piloto) llega sugerida en 0 y SIN confirmar (DEC-0076)
+PASS 8. publicar está deshabilitado mientras falten confirmaciones
+PASS 9. website=5 se marca inválido en línea (techo 1) y no se envía
+PASS 10. «1,000» se rechaza en línea (solo dígitos) en lugar de guardarse como 1
+PASS 11. cambiar el valor desmarca «Confirmo este valor»
+PASS 12. con el step-up caducado, guardar pide el código TOTP
+PASS 13. borrador guardado tras el step-up
+PASS 14. social_posts=7 confirmado por la persona (actor de plataforma)
+PASS 15. con un valor cambiado sin guardar se avisa junto a Publicar
+PASS 16. publicar con cambios sin guardar se bloquea (v1 sigue en borrador)
+PASS 17. al deshacer el cambio desaparece el aviso
+PASS 18. v1 publicada
+PASS 19. plan habilitado
+PASS 20. publicar v2 deja v1 como reemplazada (inmutable)
+PASS 21. Administration asigna el plan
+PASS 22. la suscripción queda fijada a v2
+PASS 23. con 3 de 3 publicaciones el siguiente borrador se deniega (Se alcanzó el límite del plan para publicaciones en redes: 3 de 3 publicaciones en toda la suscripción (no se reinicia). Para ampliarlo, consulta con el administrador del plan de MainSpot.)
+PASS 24. el negocio no puede asignarse planes (403)
+PASS 25. publicar v3 NO cambia al negocio (sigue en v2)
+PASS 26. la vista previa muestra el uso por encima del nuevo límite (publicaciones: usa 3; nuevo límite 1)
+PASS 27. un motivo con el id de un negocio se rechaza en el formulario y no migra nada
+PASS 28. Administration migra la suscripción
+PASS 29. migrado a v3 sin borrar publicaciones existentes
+PASS 30. historial revision_migration con actor de plataforma
+PASS 31. rollback publica v4 con los valores de v2
+PASS 32. v4 = valores de v2, origen rollback; historial conserva v1..v4
+PASS 33. cada escritura dejó evento con motivo y diff (12)
+PASS 34. el panel del negocio muestra uso de máximo de su revisión fijada v3 (solo lectura): «Lo que incluyePáginas weben toda la suscripción (no se reinicia)1 de 1 páginas CompletoPublicaciones en redesen toda la suscripción (no se reinicia) · Lo que ya…»
+PASS 35. el panel no ofrece asignar ni editar planes
+PASS 36. editor sin desplazamiento horizontal a 390 px (exceso 0 px)
+PASS 37. cada campo del editor tiene etiqueta y descripción asociada
+PASS 38. conflicto de edición: se muestra el valor que guardó la otra persona y el cambio propio queda sin enviar
+PASS 39. tras el conflicto, la confirmación dada a un valor que cambió en el servidor no se conserva (no se confirma un valor no visto)
+PASS 40. descartar sin marcar la confirmación no envía nada
+PASS 41. con la confirmación marcada el borrador se descarta
+PASS 42. el borrador queda DISCARDED (no se borra)
+PASS 43. sin errores de JavaScript en las páginas (0)
+plan de prueba: plan_plan_e2e_054c_1e6457
+✔ E2E Planes: catálogo versionado por permisos, confirmación explícita, publicación, asignación fijada, migración y rollback (44482.820437ms)
+servidor real detrás de https://app.mainspot.local.io (upstream :3100) · Chrome headless · worker en proceso [proveedores simulated]
+
+-- FLOW-01: invitación de un solo uso y alta en la interfaz de Claude --
+PASS 1. invitación DS-02 muestra el negocio y retira el token de la barra
+PASS 2. contraseña débil: error en el campo, sin llamar a la API
+PASS 3. invitación usada = misma respuesta neutra que una inventada
+PASS 4. la contraseña no queda en sessionStorage ni localStorage
+PASS 5. datos del alta → página creada (cuota website) y primera versión con vista previa, sin publicar
+
+-- Telegram simulado: mismo webhook que el bot real --
+PASS 6. chat vinculado con código de un solo uso (el chat no es el teléfono público)
+
+-- Primera página: vista previa → aprobación → publicación (sin 502) --
+PASS 7. primera página publicada una vez (versión 1), en el entorno de desarrollo
+PASS 8. recarga: la sesión y el estado vienen del backend (sin volver a entrar)
+
+-- TEL-01..04: tres «Otro número» independientes --
+   Mi negocio → web=+52 983 111 1111 google=+52 983 222 2222 facebook=+52 983 333 3333
+PASS 9. TEL-01 tres números distintos guardados y mostrados por canal
+PASS 10. TEL-02 cambiar solo Facebook no toca Página web ni Google
+PASS 11. TEL-03 el principal cambia solo los canales en «Usar mi número»
+PASS 12. TEL-04 other→own→other recupera el número propio de la web
+PASS 13. TEL-04 número inválido para el país → 400 con error por campo
+
+-- Página web: el número nuevo se publica con vista previa --
+PASS 14. versión 2 publicada con el teléfono propio de la Página web
+
+-- Chat: una sola fuente del teléfono; cambio de horario con vista previa --
+PASS 15. «cambia el teléfono» por chat dirige a «Teléfonos de contacto» sin crear propuesta
+PASS 16. chat → confirmación → vista previa → aprobación → publicado una vez; repetir no duplica
+
+-- Google (ficha simulada) y Facebook (publicación simulada) --
+PASS 17. ficha de Google persistida; muestra el teléfono propio de Google
+PASS 18. borrador de Facebook incluye el teléfono propio de Facebook
+PASS 19. publicación de Facebook aprobada y publicada en el simulador
+
+-- Agente: reglas opt-in con consentimiento explícito --
+PASS 20. API: respuesta automática sin consentimiento → 400
+PASS 21. UI: «Autorizar» sin marcar la casilla no guarda
+PASS 22. reglas guardadas como versiones con consentimiento (Google y Facebook, agradecimientos y datos)
+
+-- AG-01..03: el worker atiende con el navegador CERRADO --
+   navegador del dueño cerrado; solo el servidor sigue
+PASS 23. AG-01 agradecimiento y pregunta simple respondidos solos (regla v1, simulated)
+PASS 24. AG-03 la pregunta en Facebook se responde con el número de Facebook
+PASS 25. AG-02 queja y amenaza → casos humanos con un aviso por Telegram cada uno (simulado)
+
+-- Telegram y panel deciden el MISMO caso; otra sesión lo ve --
+PASS 26. caso aprobado desde Telegram (opción 1, con segundo toque)
+PASS 27. la otra sesión abierta muestra la misma resolución sin recargar
+PASS 28. caso delicado descartado desde el panel (sin respuesta pública)
+
+-- Reinicio del servidor: estado persistente, sin duplicados --
+PASS 29. tras SIGKILL y reinicio: misma sesión, 4 casos, 3 respuestas simuladas y 2 avisos (sin duplicados)
+
+-- Roles: Administración crea Operación y Solo lectura; RBAC en UI y API --
+PASS 30. equipo creado desde «Mi negocio» con su perfil
+PASS 31. Operación prepara la vista previa pero no puede aprobar (UI sin botón; API 403)
+PASS 32. Solo lectura ve la vista previa sin controles; enviar por API → 403
+PASS 33. Administración descarta la propuesta de Operación (nada se publica)
+
+-- Aislamiento entre negocios --
+PASS 34. otro negocio: la UI no encuentra el caso y la API responde el mismo 404 que uno inexistente
+
+-- Cuenta nueva sin página: crearla antes de editar o publicar --
+PASS 35. sin página: el chat orienta a crearla (sin propuesta) y la API responde 409 website_missing, no 502
+PASS 36. cuenta nueva: «Crear mi página» → vista previa → publicada (versión 1) con su teléfono
+
+-- Errores 401/404/429 y contenido escapado --
+PASS 37. 404: enlace de vista previa inexistente → mensaje claro
+PASS 38. texto de clientes con HTML se muestra escapado (sin ejecutar)
+PASS 39. CSP del panel: solo scripts propios (sin inline)
+PASS 40. 429: demasiados intentos de acceso → mensaje con espera, sin revelar cuentas
+PASS 41. 401: sesión inválida → vuelve a «Entrar»
+PASS 42. sin errores de JavaScript en el navegador
+✔ E2E DEV-E2E-03: interfaz de Claude Design en navegador contra servidor, worker y PostgreSQL reales (24506.181377ms)
+EVIDENCE_SAVED evidence/e2e-dev-e2e-03.txt (HEAD 5354283a2783838632ef095aebc851230e95a4ed)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 87013.329055
