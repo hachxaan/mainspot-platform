@@ -20,12 +20,12 @@
 
 import type { Pool, PoolClient } from 'pg';
 import type { AuditSink } from '../audit/sink.ts';
-import { AppError } from '../shared/errors.ts';
+import { AppError, DENY_CODES } from '../shared/errors.ts';
 import { newConversationIds, type ActionProposalRow, type ConversationRepository } from '../conversation/repositories.ts';
 import { confirmAndPreparePreview, rejectProposal, runAtomic, type StateMachineDeps } from '../conversation/state-machine.ts';
 import { formatInternational, type ContactPhoneService } from '../contact/phones.ts';
 import { restoreRefOf } from '../publishing/website.ts';
-import { normalizeWebsiteData, type WebsiteData } from './template.ts';
+import { normalizeWebsiteData, sameVisiblePage, type WebsiteData } from './template.ts';
 import type { ClientWebsiteRow, WebsiteRepository } from './repository.ts';
 
 export const INITIAL_PROPOSAL_TYPE = 'website.initial';
@@ -91,6 +91,8 @@ export interface SiteProposalOutcome {
 interface Draft {
   summary: string;
   detail: Record<string, unknown>;
+  /** Solicitud de la conversación que originó el cambio: la propuesta queda en ella (sin crear otra). */
+  linkRequestId?: string;
 }
 
 async function requireSite(deps: SiteProposalDeps, tenantId: string): Promise<ClientWebsiteRow> {
@@ -119,13 +121,24 @@ async function openOrCreate(
     const row = open.rows[0];
     if (row && !stale(row)) return { proposal: row, created: false, replaced: null };
     const ids = newConversationIds();
-    await deps.repo.createRequest({
-      requestId: ids.requestId, tenantId: input.tenantId, actorId: input.actorId, channel: 'simulated',
-      rawMessage: draft.summary, intent: type, capabilityTarget: 'website', actionClass: 'preview_required',
-      status: 'awaiting_confirmation', responseMessage: null, proposalId: ids.proposalId,
-    }, client);
+    let requestId = ids.requestId;
+    const linked = draft.linkRequestId
+      ? await client.query<{ request_id: string }>(
+        `UPDATE conversation_request SET proposal_id = $3, status = 'awaiting_confirmation', action_class = 'preview_required'
+          WHERE tenant_id = $1 AND request_id = $2 AND proposal_id IS NULL RETURNING request_id`,
+        [input.tenantId, draft.linkRequestId, ids.proposalId])
+      : null;
+    if (linked?.rows[0]) {
+      requestId = linked.rows[0].request_id;
+    } else {
+      await deps.repo.createRequest({
+        requestId, tenantId: input.tenantId, actorId: input.actorId, channel: 'simulated',
+        rawMessage: draft.summary, intent: type, capabilityTarget: 'website', actionClass: 'preview_required',
+        status: 'awaiting_confirmation', responseMessage: null, proposalId: ids.proposalId,
+      }, client);
+    }
     const created = await deps.repo.createProposal({
-      proposalId: ids.proposalId, tenantId: input.tenantId, requestId: ids.requestId,
+      proposalId: ids.proposalId, tenantId: input.tenantId, requestId,
       capabilityTarget: 'website', proposalType: type, actionClass: 'preview_required', summary: draft.summary,
       detail: draft.detail, status: 'awaiting_confirmation', createdBy: input.actorId,
     }, client);
@@ -195,19 +208,25 @@ export async function preparePhoneUpdate(deps: SiteProposalDeps, input: SiteProp
 export const AI_DESIGN_PROPOSAL_TYPE = 'website.ai_design' as const;
 export const AI_EDIT_PROPOSAL_TYPE = 'website.ai_edit' as const;
 
+/** Ruta de IA usada en un cambio (DRAFT/TESTED con `manual_lab` = laboratorio; el panel lo muestra). */
+export interface AiRouteUse { use_case_id: string; route_id: string; model_id: string; assignment: string; status: string }
+
 export interface AiSiteChange {
   type: typeof AI_DESIGN_PROPOSAL_TYPE | typeof AI_EDIT_PROPOSAL_TYPE;
   after: WebsiteData;
   summary: string;
   sentences: string[];
-  /** Trazabilidad: invocaciones, versión de marca y job (nunca prompts ni salidas crudas). */
-  ai: { job_id: string; invocation_ids: string[]; brand_version: number | null; route_ids: string[] };
+  /** Trazabilidad: invocaciones, versión de marca, job y rutas (nunca prompts ni salidas crudas). */
+  ai: { job_id: string; invocation_ids: string[]; brand_version: number | null; route_ids: string[]; routes: AiRouteUse[] };
+  /** Solicitud del chat que pidió el cambio (la propuesta queda ligada a ella). */
+  conversationRequestId?: string;
 }
 
 /**
  * Diseño o edición generada por el AI Core: misma vista previa/aprobación humana que cualquier
  * cambio. Guarda la versión publicada sobre la que se generó (`base_version`): si al aprobar hay
  * otra encima, el publicador responde 409 y no pisa nada. Un job nuevo reemplaza la abierta.
+ * Un cambio que no altera nada visible de la página publicada no se propone (409 `no_visible_change`).
  */
 export async function prepareAiSiteChange(deps: SiteProposalDeps, input: SiteProposalInput, change: AiSiteChange): Promise<SiteProposalOutcome> {
   const site = await requireSite(deps, input.tenantId);
@@ -215,9 +234,13 @@ export async function prepareAiSiteChange(deps: SiteProposalDeps, input: SitePro
   if (change.type === AI_EDIT_PROPOSAL_TYPE && base === 0) {
     throw new AppError(409, 'validation_error', 'Tu página todavía no está publicada: primero publica su primera versión.');
   }
+  if (base > 0 && sameVisiblePage(deps.websiteRepo.dataOf(site), change.after)) {
+    throw new AppError(409, DENY_CODES.NO_VISIBLE_CHANGE, 'Ese cambio no modifica nada visible de tu página; no preparé ninguna propuesta.');
+  }
   const out = await openOrCreate(deps, input, change.type, {
     summary: change.summary.slice(0, 240),
     detail: { after: change.after, diff_sentences: change.sentences.slice(0, 20), patches: [], base_version: base, ai: change.ai },
+    linkRequestId: change.conversationRequestId,
   }, (open) => (open.detail as { ai?: { job_id?: unknown } }).ai?.job_id !== change.ai.job_id);
   // Página sin publicar: el diseño reemplaza a la «primera versión» clásica pendiente (una sola
   // primera publicación). Se descarta sin publicar nada.

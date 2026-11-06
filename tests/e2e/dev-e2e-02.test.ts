@@ -95,6 +95,10 @@ function call(path: string, opts: { method?: string; token?: string; body?: unkn
 function telegram(updateId: number, chatId: number, text: string, headers: Record<string, string> = WEBHOOK_HEADERS) {
   return call('/api/telegram/webhook', { method: 'POST', headers, body: { update_id: updateId, message: { chat: { id: chatId }, text } } });
 }
+/** Pulsación del botón «Publicar esta respuesta» de un aviso (callback_query con su código y opción), como la entrega Telegram. */
+function pressApprove(updateId: number, chatId: number, code: string | undefined, option = 1) {
+  return call('/api/telegram/webhook', { method: 'POST', headers: WEBHOOK_HEADERS, body: { update_id: updateId, callback_query: { id: `cbq_${updateId}`, data: `na:${code}:${option}`, message: { message_id: 1, chat: { id: chatId } } } } });
+}
 async function page(path: string): Promise<{ status: number; html: string }> {
   const res = await fetch(`${base}${path}`);
   return { status: res.status, html: await res.text() };
@@ -190,7 +194,7 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   say('\n-- FLOW-02: Página Web --');
   const site = await call('/api/backoffice/website', { method: 'POST', token, body: { slug: `dona-mary-${Date.now()}`, site_name: 'Cocina Doña Mary' } });
   check(site.status === 201, 'el negocio crea su página web (cuota website del plan piloto)');
-  const msg = await call('/api/backoffice/conversation/messages', { method: 'POST', token, body: { text: 'necesito cambiar el horario a lunes a sábado de 8 a 16', channel: 'simulated' } });
+  const msg = await call('/api/backoffice/conversation/messages', { method: 'POST', token, body: { text: 'necesito cambiar el horario a lunes a sábado de 8:00 a 16:00', channel: 'simulated' } });
   const proposalId = String(msg.body.proposal_id ?? '');
   check(msg.status === 201 && msg.body.request.action_class === 'preview_required' && proposalId !== '', `solicitud de cambio web → propuesta (${msg.body.request?.intent})`);
   const conf = await call(`/api/backoffice/conversation/proposals/${proposalId}/confirm`, { method: 'POST', token });
@@ -241,8 +245,8 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   const gRisk = cs.get('g-risk');
   // El código del aviso que salió por el chat (el canal simulado vive en el proceso del servidor: se lee su instantánea).
   const notice = (await pool.query<{ code: string }>('SELECT code FROM engagement_approval_offer WHERE case_id = $1 AND chat_id = $2 ORDER BY created_at DESC LIMIT 1', [gRisk?.case_id, String(chat)])).rows[0]?.code;
-  const approve = await telegram(upd + 2, chat, `/aprobar ${notice} 1`);
-  check(approve.body.handled === 'approved', 'aprobación desde Telegram con el código del aviso (alternativa 1)');
+  const approve = await pressApprove(upd + 2, chat, notice);
+  check(approve.body.handled === 'approved', 'aprobación desde Telegram con el botón del aviso (su código, alternativa 1)');
   const reject = await call(`/api/backoffice/engagement/cases/${cs.get('fb-risk')?.case_id}/reject`, { method: 'POST', token, body: {} });
   check(reject.body.case.state === 'rejected', 'rechazo desde el panel (mismo caso)');
   cs = await casesOf(token);
@@ -270,7 +274,7 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   base = server.base;
   await waitWorkerCycles(cli.tenant_id, 2);
   // Telegram reentrega la MISMA aprobación tras el reinicio (otro proceso): dedupe durable, sin segunda publicación.
-  const redelivered = await telegram(upd + 2, chat, `/aprobar ${notice} 1`);
+  const redelivered = await pressApprove(upd + 2, chat, notice);
   check(redelivered.status === 200 && redelivered.body.handled === 'duplicate', 'reentrega del mismo update_id tras reiniciar: duplicate (sin actuar)');
   const replies = (await call('/api/backoffice/dev/simulator/replies', { token })).body.replies as Array<{ target_ref: string }>;
   const refs = replies.map((r) => r.target_ref).sort();
@@ -285,7 +289,7 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   const foreign = await call(`/api/backoffice/engagement/cases/${gRisk?.case_id}`, { token: String(other.body.token) });
   const ghost = await call('/api/backoffice/engagement/cases/case_inexistente', { token: String(other.body.token) });
   check(foreign.status === 404 && JSON.stringify(foreign.body) === JSON.stringify(ghost.body), 'otro negocio recibe el mismo 404 que un caso inexistente');
-  const foreignTg = await telegram(upd + 3, chat + 1, `/aprobar ${notice} 1`);
+  const foreignTg = await pressApprove(upd + 3, chat + 1, notice);
   check(foreignTg.body.handled === 'unlinked_chat', 'chat no vinculado no puede decidir');
   await kill(server.proc, 'SIGTERM');
 });

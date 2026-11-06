@@ -147,7 +147,7 @@ export async function approveAndPublish(
   deps: StateMachineDeps,
   input: {
     tenantId: string; proposalId: string; actorId: string; requestId: string;
-    source?: 'backoffice' | 'preview'; actorRole?: string | null;
+    source?: 'backoffice' | 'preview' | 'telegram'; actorRole?: string | null;
   },
 ): Promise<PublishOutcome> {
   const found = await deps.repo.findProposalScoped(input.tenantId, input.proposalId);

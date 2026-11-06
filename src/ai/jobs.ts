@@ -56,6 +56,7 @@ export class AiJobs {
   private readonly lab: AiLab;
   private readonly environment: string;
   private readonly handlers = new Map<string, JobHandler>();
+  private readonly settledListeners: Array<(job: AiJobRow) => Promise<void>> = [];
   private timer: NodeJS.Timeout | null = null;
   private running = false;
 
@@ -77,16 +78,26 @@ export class AiJobs {
     this.handlers.set(kind, handler);
   }
 
+  /** Avisa cuando un job termina (con éxito o con un fallo terminal); un listener que falla no afecta al job. */
+  onSettled(listener: (job: AiJobRow) => Promise<void>): void {
+    this.settledListeners.push(listener);
+  }
+
+  private async settled(jobId: string): Promise<void> {
+    if (!this.settledListeners.length) return;
+    const row = (await this.pool.query<AiJobRow>('SELECT * FROM ai_job WHERE job_id = $1', [jobId])).rows[0];
+    if (!row || (row.status !== 'succeeded' && row.status !== 'failed')) return;
+    for (const listener of this.settledListeners) {
+      await listener(row).catch((err: unknown) => log.warn('ai.job.listener_failed', 'job settled listener failed', { job_id: jobId, error_name: err instanceof Error ? err.name : 'unknown' }));
+    }
+  }
+
   /**
-   * Crea (o devuelve, por idempotencia) un job; fija la ruta vigente de cada caso de uso. `useCases` enumera las
-   * ramas POSIBLES del job (no todas se ejecutan). Con grant: valida el grant para el negocio y el usuario creador
-   * (403 si no es válido: sin fallback) y fija solo las generativas autorizadas más la clasificación normal.
+   * Rutas que fijaría un job sin crearlo. Con grant: valida el grant para el negocio y el usuario (403 si no es válido:
+   * sin fallback) y fija solo las generativas autorizadas más la clasificación normal; sin grant, el rollout del entorno.
    */
-  async enqueue(input: { tenantId: string; kind: string; idempotencyKey: string; input: Record<string, unknown>; useCases: string[]; createdBy: string; labGrantId?: string | null }): Promise<{ job: AiJobRow; created: boolean }> {
-    if (!this.handlers.has(input.kind)) throw new AppError(400, 'validation_error', 'Tipo de trabajo desconocido.');
+  async plan(input: { tenantId: string; useCases: string[]; createdBy: string; labGrantId?: string | null }): Promise<{ grant: LabGrantView | null; pinned: Record<string, string> }> {
     const grant = await this.lab.authorize({ grantId: input.labGrantId ?? null, tenantId: input.tenantId, userId: input.createdBy });
-    const existing = await this.pool.query<AiJobRow>('SELECT * FROM ai_job WHERE tenant_id = $1 AND kind = $2 AND idempotency_key = $3', [input.tenantId, input.kind, input.idempotencyKey]);
-    if (existing.rows[0]) return this.replay(existing.rows[0], grant?.grant_id ?? null, input.createdBy);
     const pinned: Record<string, string> = {};
     for (const uc of input.useCases) {
       if (grant) {
@@ -97,6 +108,18 @@ export class AiJobs {
       const resolved = await this.registry.resolve(uc, this.environment, input.tenantId);
       if (resolved) pinned[uc] = resolved.routeId;
     }
+    return { grant, pinned };
+  }
+
+  /**
+   * Crea (o devuelve, por idempotencia) un job; fija la ruta vigente de cada caso de uso (`plan`). `useCases` enumera las
+   * ramas POSIBLES del job (no todas se ejecutan).
+   */
+  async enqueue(input: { tenantId: string; kind: string; idempotencyKey: string; input: Record<string, unknown>; useCases: string[]; createdBy: string; labGrantId?: string | null }): Promise<{ job: AiJobRow; created: boolean }> {
+    if (!this.handlers.has(input.kind)) throw new AppError(400, 'validation_error', 'Tipo de trabajo desconocido.');
+    const { grant, pinned } = await this.plan(input);
+    const existing = await this.pool.query<AiJobRow>('SELECT * FROM ai_job WHERE tenant_id = $1 AND kind = $2 AND idempotency_key = $3', [input.tenantId, input.kind, input.idempotencyKey]);
+    if (existing.rows[0]) return this.replay(existing.rows[0], grant?.grant_id ?? null, input.createdBy);
     const r = await this.pool.query<AiJobRow>(
       `INSERT INTO ai_job (job_id, tenant_id, kind, idempotency_key, input, pinned, lab_grant_id, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (tenant_id, kind, idempotency_key) DO NOTHING RETURNING *`,
@@ -144,10 +167,12 @@ export class AiJobs {
     const owned = (sql: string, params: unknown[]) => this.pool.query(`${sql} AND job_id = $${params.length + 1} AND claim_token = $${params.length + 2}`, [...params, job.job_id, job.claim_token]);
     if (!handler) {
       await owned(`UPDATE ai_job SET status = 'failed', error_code = 'unknown_kind', finished_at = now(), updated_at = now() WHERE true`, []);
+      await this.settled(job.job_id);
       return;
     }
     if (job.attempts > JOB_MAX_ATTEMPTS) {
       await owned(`UPDATE ai_job SET status = 'failed', error_code = COALESCE(error_code, 'attempts_exhausted'), finished_at = now(), updated_at = now() WHERE true`, []);
+      await this.settled(job.job_id);
       return;
     }
     if (job.lab_grant_id) {
@@ -158,6 +183,7 @@ export class AiJobs {
       if (!check.ok) {
         log.warn('ai.job.lab_grant_invalid', 'job refused: lab grant no longer valid', { job_id: job.job_id, kind: job.kind, reason: check.reason });
         await owned(`UPDATE ai_job SET status = 'failed', error_code = 'lab_grant_invalid', claim_token = NULL, lease_until = NULL, finished_at = now(), updated_at = now() WHERE true`, []);
+        await this.settled(job.job_id);
         return;
       }
     }
@@ -171,6 +197,7 @@ export class AiJobs {
       const result = await handler(ctx);
       const r = await owned(`UPDATE ai_job SET status = 'succeeded', result = $1, error_code = NULL, claim_token = NULL, lease_until = NULL, finished_at = now(), updated_at = now() WHERE status = 'running'`, [JSON.stringify(result)]);
       if (!r.rowCount) log.warn('ai.job.claim_lost', 'job finished after losing its lease; result discarded', { job_id: job.job_id });
+      else await this.settled(job.job_id);
     } catch (err) {
       const code = err instanceof AiJobError ? err.code : err instanceof AppError ? err.code : 'job_exception';
       const retryable = err instanceof AiJobError ? err.retryable : !(err instanceof AppError);
@@ -181,6 +208,7 @@ export class AiJobs {
           ? `UPDATE ai_job SET status = 'failed', error_code = $1, claim_token = NULL, lease_until = NULL, finished_at = now(), updated_at = now() WHERE true`
           : `UPDATE ai_job SET status = 'queued', error_code = $1, claim_token = NULL, lease_until = NULL, next_attempt_at = now() + interval '15 seconds', updated_at = now() WHERE true`,
         [code.slice(0, 80)]);
+      if (terminal) await this.settled(job.job_id);
     }
   }
 

@@ -79,12 +79,19 @@ export class AiBusinessService {
 
   // ------------------------------------------------------------------ social (FR-0015)
 
-  async requestCompose(a: BizActor, input: { request?: unknown; with_image?: unknown; editorial_id?: unknown }, idempotencyKey: string) {
+  /**
+   * Propuestas de publicación con IA. `conversation_request_id` liga el job a la solicitud del chat que lo pidió (p. ej.
+   * Telegram), para avisar allí al terminar.
+   */
+  async requestCompose(a: BizActor, input: { request?: unknown; with_image?: unknown; editorial_id?: unknown; conversation_request_id?: unknown }, idempotencyKey: string) {
     const request = typeof input.request === 'string' ? input.request.trim() : '';
     if (!request || request.length > 1000) throw new AppError(400, 'validation_error', 'Cuéntanos qué quieres publicar (hasta 1000 caracteres).');
     return this.deps.jobs.enqueue({
       tenantId: a.tenantId, kind: 'social.compose', idempotencyKey, createdBy: a.userId, labGrantId: a.labGrantId ?? null,
-      input: { request, with_image: input.with_image === true, editorial_id: typeof input.editorial_id === 'string' ? input.editorial_id : null, actor_role: a.role },
+      input: {
+        request, with_image: input.with_image === true, editorial_id: typeof input.editorial_id === 'string' ? input.editorial_id : null, actor_role: a.role,
+        ...(typeof input.conversation_request_id === 'string' ? { conversation_request_id: input.conversation_request_id } : {}),
+      },
       useCases: input.with_image === true ? ['social.facebook.post.compose', 'social.facebook.image.generate'] : ['social.facebook.post.compose'],
     });
   }
@@ -135,8 +142,12 @@ export class AiBusinessService {
     };
   }
 
-  /** El dueño elige una variante: se crea un BORRADOR normal (cuota + aprobación social existentes). */
-  async draftFromCompose(a: BizActor, jobId: string, variantIndex: unknown, editedText: unknown, useImage: unknown): Promise<{ post: SocialPostRow; replayed: boolean }> {
+  /**
+   * El dueño elige una variante: se crea un BORRADOR normal (cuota + aprobación social existentes). La clave de cuota
+   * es por variante (`compose:<job>:<i>`) salvo que el canal fije otra: Telegram usa una por job, así una tarjeta de
+   * propuestas crea como mucho un borrador aunque se pulse otra variante o se repita la pulsación.
+   */
+  async draftFromCompose(a: BizActor, jobId: string, variantIndex: unknown, editedText: unknown, useImage: unknown, idempotencyKey?: string): Promise<{ post: SocialPostRow; replayed: boolean }> {
     const job = await this.deps.jobs.get(a.tenantId, jobId);
     if (!job || job.kind !== 'social.compose') throw new AppError(404, DENY_CODES.NOT_FOUND, 'No encontramos esa propuesta de publicación.');
     if (job.status !== 'succeeded' || !job.result) throw new AppError(409, 'validation_error', 'La propuesta todavía no está lista.');
@@ -155,7 +166,7 @@ export class AiBusinessService {
     // Política de publicación de OpenAI: una imagen generada se publica indicando que es de IA.
     const postText = assetId ? `${text}\n\n${AI_IMAGE_LABEL}` : text;
     if (postText.length > 2000) throw new AppError(400, 'validation_error', 'La publicación admite hasta 2000 caracteres (incluido el aviso de imagen generada con IA).');
-    const out = await this.deps.social.createDraft(a.tenantId, a.userId, a.requestId, { text: postText, idempotencyKey: `compose:${jobId}:${i}`, actorRole: a.role });
+    const out = await this.deps.social.createDraft(a.tenantId, a.userId, a.requestId, { text: postText, idempotencyKey: idempotencyKey ?? `compose:${jobId}:${i}`, actorRole: a.role });
     if (!out.replayed) {
       await this.deps.pool.query(
         'UPDATE social_post SET media_asset_id = $3, generation = $4, brand_version = $5, updated_at = now() WHERE post_id = $1 AND tenant_id = $2',

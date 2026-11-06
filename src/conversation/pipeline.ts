@@ -23,7 +23,9 @@ import type { CapabilityTarget, ClassificationResult, IngestOutcome, ProposalDra
 import type { JevClassifier } from './jev-classifier.ts';
 import { ConversationRepository, newConversationIds, type ConversationRequestRow } from './repositories.ts';
 import { buildReadOnlyAnswer } from './read-answers.ts';
-import { editWebsiteByInstruction, sentenceList } from '../website/edit-mapper.ts';
+import { editWebsiteByInstruction, isPreciseEdit, sentenceList } from '../website/edit-mapper.ts';
+import { sameVisiblePage } from '../website/template.ts';
+import type { AiSiteService, EditAvailability } from '../website/ai-site.ts';
 import type { WebsiteRepository } from '../website/repository.ts';
 import { formatInternational, type ContactPhoneService } from '../contact/phones.ts';
 import { runAtomic } from './state-machine.ts';
@@ -37,6 +39,8 @@ export interface IngestInput {
   requestId: string;
   /** DEC-0005: clave de idempotencia (cabecera Idempotency-Key o el request_id). */
   idempotencyKey?: string;
+  /** Laboratorio (DEC-0074): autorización elegida por la persona; solo afecta a la edición con IA. */
+  labGrantId?: string | null;
 }
 
 export interface PipelineDeps {
@@ -52,7 +56,12 @@ export interface PipelineDeps {
   jev?: JevClassifier;
   /** DEV-E2E-02: si la web tiene teléfono configurado por canal, el chat no lo edita (una sola fuente). */
   phones?: ContactPhoneService;
+  /** Edición web con IA (Jev + parche site-edit/v2) para lo que el editor determinista no resuelve. */
+  aiEdit?: Pick<AiSiteService, 'editAvailability' | 'requestEdit'>;
 }
+
+export const AI_EDIT_PREPARING = 'Estoy preparando el cambio con IA. Aquí te aviso cuando la vista previa esté lista; nada se publica sin tu aprobación.';
+export const AI_EDIT_UNAVAILABLE = 'Sin la edición con IA solo puedo aplicar cambios simples (horario, nombre, dirección, giro, un servicio o una sección). La edición con IA todavía no está activa en tu cuenta: el equipo de MainSpot puede darte una autorización de laboratorio en «IA de tu negocio → Laboratorio».';
 
 /** Senencia de confirmación detallada (AC-006) en lenguaje claro. */
 export function confirmationText(draft: ProposalDraft): string {
@@ -268,21 +277,37 @@ export class ConversationPipeline {
         if (webPhone) {
           return answer(`El teléfono de tu página se cambia en «Teléfonos de contacto» → Página web (hoy muestra ${formatInternational(webPhone)}); así no cambia el de Google ni el de Facebook.`, 'phone_managed_by_channel');
         }
-        const draft: ProposalDraft = {
-          proposalType: classification.proposalType ?? 'website.edit',
-          capabilityTarget: 'website',
-          actionClass: 'preview_required',
-          summary: edit.sentences.join(' ') || 'Cambio visible en la página web.',
-          detail: { after: edit.after, diff_sentences: edit.sentences, patches: edit.patches },
-          patches: sentenceList(edit.patches),
-        };
-        const outcome = await this.createProposal(input, ids, classification.intent, draft, { status: 'awaiting_confirmation', responseMessage: confirmationText(draft), blocked: false }, reservation);
-        await sink.write({
-          tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole,
-          action: 'conversation.proposal.created', resource: `action_proposal/${outcome.proposalId}`,
-          request_id: input.requestId, decision: 'allow', result: 'awaiting_confirmation',
-        });
-        return outcome;
+        // El editor determinista es un atajo: solo decide si su cambio es exacto (o si no hay IA y el cambio es visible).
+        // Todo lo demás lo interpreta la edición con IA; nunca se propone algo que no cambia la página. La IA (y la
+        // autorización de laboratorio elegida) solo se consulta cuando hace falta: un atajo exacto no depende de ella.
+        const visible = !sameVisiblePage(current, edit.after);
+        const published = Number(site.published_version) > 0;
+        const precise = visible && isPreciseEdit(edit, input.text);
+        const ai = !precise && this.deps.aiEdit && published
+          ? await this.deps.aiEdit.editAvailability({ tenantId: input.tenantId, userId: input.actorId, role: input.actorRole, requestId: input.requestId, labGrantId: input.labGrantId ?? null })
+          : null;
+        if (precise || (visible && !ai?.available)) {
+          const draft: ProposalDraft = {
+            proposalType: classification.proposalType ?? 'website.edit',
+            capabilityTarget: 'website',
+            actionClass: 'preview_required',
+            summary: edit.sentences.join(' ') || 'Cambio visible en la página web.',
+            detail: { after: edit.after, diff_sentences: edit.sentences, patches: edit.patches },
+            patches: sentenceList(edit.patches),
+          };
+          const outcome = await this.createProposal(input, ids, classification.intent, draft, { status: 'awaiting_confirmation', responseMessage: confirmationText(draft), blocked: false }, reservation);
+          await sink.write({
+            tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole,
+            action: 'conversation.proposal.created', resource: `action_proposal/${outcome.proposalId}`,
+            request_id: input.requestId, decision: 'allow', result: 'awaiting_confirmation',
+          });
+          return outcome;
+        }
+        const aiEdit = this.deps.aiEdit;
+        if (!ai?.available || !aiEdit) {
+          return answer(published ? AI_EDIT_UNAVAILABLE : 'Primero publica la primera versión de tu página; después podrás pedirme cualquier cambio.', published ? 'ai_edit_unavailable' : 'website_unpublished');
+        }
+        return this.startAiEdit(input, classification, ai, aiEdit, reservation);
       }
       default: {
         // Fail-closed: clase desconocida nunca es default-allow.
@@ -316,6 +341,51 @@ export class ConversationPipeline {
       await this.consumeReservation(client, reservation, input);
       return request;
     });
+  }
+
+  /**
+   * Edición con IA: la solicitud del chat se guarda primero (con su cuota) y después se crea el job ligado a ella, así
+   * la propuesta que prepare el job siempre encuentra su solicitud. La autorización de laboratorio ya se validó en
+   * `editAvailability`; si aun así el job no se puede crear, la solicitud queda respondida con el motivo.
+   */
+  private async startAiEdit(
+    input: IngestInput,
+    classification: ClassificationResult,
+    ai: EditAvailability,
+    aiEdit: NonNullable<PipelineDeps['aiEdit']>,
+    reservation: QuotaReservationRow | null,
+  ): Promise<IngestOutcome> {
+    const request = await runAtomic(this.deps.pool, async (client) => {
+      const r = await this.deps.repo.createRequest({
+        requestId: input.requestId, tenantId: input.tenantId, actorId: input.actorId, channel: input.channel, rawMessage: input.text,
+        intent: classification.intent, capabilityTarget: 'website', actionClass: 'preview_required', status: 'classified',
+        responseMessage: AI_EDIT_PREPARING,
+      }, client);
+      await this.consumeReservation(client, reservation, input);
+      return r;
+    });
+    let job: Awaited<ReturnType<typeof aiEdit.requestEdit>>['job'];
+    try {
+      ({ job } = await aiEdit.requestEdit(
+        { tenantId: input.tenantId, userId: input.actorId, role: input.actorRole, requestId: input.requestId, labGrantId: input.labGrantId ?? null },
+        input.text, `chat:${input.idempotencyKey ?? input.requestId}`, { conversationRequestId: request.request_id }));
+    } catch (err) {
+      const reason = err instanceof AppError ? err.userMessage : 'No pude iniciar la edición con IA. Inténtalo de nuevo.';
+      await this.deps.repo.answerRequest(input.tenantId, request.request_id, reason);
+      log.warn('conversation.ai_edit.not_started', 'ai edit job could not be created', { tenant_id: input.tenantId, request_id: input.requestId, code: err instanceof AppError ? err.code : 'exception' });
+      return { requestId: request.request_id, actionClass: 'read_only', intent: classification.intent, capabilityTarget: 'website', requestStatus: 'answered', responseText: reason };
+    }
+    await this.deps.repo.linkAiJob(input.tenantId, request.request_id, job.job_id);
+    await this.deps.sink.write({
+      tenant_id: input.tenantId, actor_id: input.actorId, actor_role: input.actorRole,
+      action: 'conversation.ai_edit.started', resource: `ai_job/${job.job_id}`,
+      request_id: input.requestId, decision: 'allow', result: ai.lab ? 'lab_grant' : 'rollout',
+    });
+    return {
+      requestId: request.request_id, actionClass: 'preview_required', intent: classification.intent, capabilityTarget: 'website',
+      requestStatus: 'classified', responseText: AI_EDIT_PREPARING,
+      aiJob: { job_id: job.job_id, status: job.status, lab: ai.lab, routes: ai.routes },
+    };
   }
 
   /** Bloqueo (prohibited): sin propuesta, sin efecto, con auditoría deny. */

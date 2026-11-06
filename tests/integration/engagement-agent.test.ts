@@ -10,10 +10,15 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { bootApi, authHeaders, api, login, type TestApi } from '../helpers/testdb.ts';
 import { createTenantWithPlan } from '../helpers/tenants.ts';
-import type { SimulatedChannel } from '../../src/channels/simulated.ts';
+import type { OutboxEntry, SimulatedChannel } from '../../src/channels/simulated.ts';
+import { htmlToPlain } from '../../src/channels/types.ts';
 import { AUTO_REPLY_CONSENT } from '../../src/engagement/consent.ts';
 import type { CaseRow } from '../../src/engagement/service.ts';
 import { UPDATE_LEASE_SECONDS } from '../../src/engagement/telegram.ts';
+import { helpMessage, linkedMessage } from '../../src/engagement/telegram-ui.ts';
+
+const HELP_MARK = htmlToPlain(helpMessage({ available: false, active: false }).html).slice(0, 20);
+const LINKED_MARK = htmlToPlain(linkedMessage().html).slice(0, 30);
 
 interface SimReply { origin: string; target_ref: string; text: string; external_ref: string }
 
@@ -35,10 +40,27 @@ after(async () => {
 
 const LIMITS = { reviews_managed: 100 };
 
-function transcript(): Array<{ to: string; text: string }> {
+function transcript(): OutboxEntry[] {
   const ch = t.handle.channel;
   assert.equal(ch.name, 'simulated', 'los avisos de Telegram en pruebas son simulados');
   return [...(ch as SimulatedChannel).transcript()];
+}
+
+/** Mensajes del chat con algún botón sobre `id` (caso o propuesta). */
+function about(chat: number, id: string, list: readonly OutboxEntry[] = transcript()): OutboxEntry[] {
+  return list.filter((m) => m.to === String(chat) && m.buttons.flat().some((b) => b.action.includes(id)));
+}
+
+interface Btn { message_id: string; action: string; label: string }
+
+/** Botón visible en el chat (el mensaje más reciente que lo tenga) cuya etiqueta coincide (y que actúa sobre `id`). */
+function buttonIn(chat: number, label: RegExp, id?: string): Btn {
+  for (const m of transcript().filter((x) => x.to === String(chat)).reverse()) {
+    for (const b of m.buttons.flat()) {
+      if (label.test(b.label) && (!id || b.action.includes(id))) return { message_id: m.message_id, action: b.action, label: b.label };
+    }
+  }
+  assert.fail(`no hay botón ${label} en el chat`);
 }
 
 async function newTenant(prefix: string) {
@@ -96,6 +118,13 @@ async function webhook(update: unknown, headers: Record<string, string> = WEBHOO
 }
 async function telegram(chatId: number, text: string, updateId = nextUpdateId++) {
   return webhook({ update_id: updateId, message: { chat: { id: chatId }, text } });
+}
+/** Pulsación de un botón como la entrega Telegram (callback_query), desde el chat `chatId`. */
+function pressUpdate(chatId: number, btn: Pick<Btn, 'message_id' | 'action'>, updateId: number) {
+  return { update_id: updateId, callback_query: { id: `cbq_${updateId}`, data: btn.action, message: { message_id: Number(btn.message_id), chat: { id: chatId } } } };
+}
+async function press(chatId: number, btn: Pick<Btn, 'message_id' | 'action'>, updateId = nextUpdateId++) {
+  return webhook(pressUpdate(chatId, btn, updateId));
 }
 async function publishedPost(tenant: string, text = 'Menú de la semana') {
   const postId = `post_${randomUUID().slice(0, 8)}`;
@@ -493,14 +522,14 @@ test('Webhook Telegram: entregas repetidas/concurrentes del mismo update no dupl
   const again = await telegram(chat, `/start ${code.body.code}`, base + 1);
   assert.equal(again.status, 200);
   assert.equal(again.body.handled, 'duplicate');
-  assert.equal(sent('Listo: este chat'), 1, 'la reentrega no vuelve a responder');
+  assert.equal(sent(LINKED_MARK), 1, 'la reentrega no vuelve a responder');
 
-  // Texto libre entregado 4 veces a la vez con el mismo update_id: una sola ayuda.
-  const helps = await Promise.all(Array.from({ length: 4 }, () => telegram(chat, 'hola', base + 2)));
+  // /ayuda entregado 4 veces a la vez con el mismo update_id: una sola ayuda.
+  const helps = await Promise.all(Array.from({ length: 4 }, () => telegram(chat, '/ayuda', base + 2)));
   const outcomes = (rs: Array<{ status: number; body: { handled?: string } }>) => JSON.stringify(rs.map((r) => [r.status, r.body.handled]));
   assert.equal(helps.filter((r) => r.status === 200 && r.body.handled === 'help').length, 1, outcomes(helps));
   assert.ok(helps.every((r) => (r.status === 200 && (r.body.handled === 'help' || r.body.handled === 'duplicate')) || (r.status === 409 && r.body.handled === 'in_progress')), outcomes(helps));
-  assert.equal(sent('Comandos disponibles'), 1);
+  assert.equal(sent(HELP_MARK), 1);
 
   // Caso humano; 5 entregas concurrentes de la MISMA aprobación: una decisión, una publicación, una confirmación.
   await injectReview(a.token, 'Me enfermé con la comida, exijo reembolso', 1, 'wh2');
@@ -554,15 +583,15 @@ test('Webhook Telegram: entregas repetidas/concurrentes del mismo update no dupl
   // Reclamo vivo de otro intento: 409 (sin responder) para que Telegram reintente; reclamo abandonado
   // (lease vencida: proceso caído a mitad) se reprocesa una vez.
   await t.pool.query(`INSERT INTO telegram_update (update_id, claim_token, status, received_at) VALUES ($1, 'other-attempt', 'processing', now())`, [base + 5]);
-  const inFlight = await telegram(chat, 'hola', base + 5);
+  const inFlight = await telegram(chat, '/ayuda', base + 5);
   assert.equal(inFlight.status, 409);
   assert.equal(inFlight.body.handled, 'in_progress');
-  assert.equal(sent('Comandos disponibles'), 1, 'sin respuesta mientras otro intento lo procesa');
+  assert.equal(sent(HELP_MARK), 1, 'sin respuesta mientras otro intento lo procesa');
   await t.pool.query('UPDATE telegram_update SET received_at = now() - make_interval(secs => $2) WHERE update_id = $1', [base + 5, UPDATE_LEASE_SECONDS + 1]);
-  assert.equal((await telegram(chat, 'hola', base + 5)).body.handled, 'help');
-  assert.equal(sent('Comandos disponibles'), 2);
-  assert.equal((await telegram(chat, 'hola', base + 5)).body.handled, 'duplicate');
-  assert.equal(sent('Comandos disponibles'), 2);
+  assert.equal((await telegram(chat, '/ayuda', base + 5)).body.handled, 'help');
+  assert.equal(sent(HELP_MARK), 2);
+  assert.equal((await telegram(chat, '/ayuda', base + 5)).body.handled, 'duplicate');
+  assert.equal(sent(HELP_MARK), 2);
 
   // El reclamo no retiene conexión ni candado mientras se procesa: con un pool de UNA conexión,
   // 8 entregas simultáneas (5 de la misma aprobación + 3 del mismo texto) terminan todas sin
@@ -575,18 +604,96 @@ test('Webhook Telegram: entregas repetidas/concurrentes del mismo update no dupl
   try {
     const burst = await Promise.all([
       ...Array.from({ length: 5 }, () => webhook({ update_id: base + 6, message: { chat: { id: chat }, text: `/aprobar ${code3} 2` } }, WEBHOOK_HEADERS, tiny.baseUrl)),
-      ...Array.from({ length: 3 }, () => webhook({ update_id: base + 7, message: { chat: { id: chat }, text: 'gracias' } }, WEBHOOK_HEADERS, tiny.baseUrl)),
+      ...Array.from({ length: 3 }, () => webhook({ update_id: base + 7, message: { chat: { id: chat }, text: '/ayuda' } }, WEBHOOK_HEADERS, tiny.baseUrl)),
     ]);
     assert.equal(burst.filter((r) => r.status === 200 && r.body.handled === 'approved').length, 1, outcomes(burst));
     assert.equal(burst.filter((r) => r.status === 200 && r.body.handled === 'help').length, 1, outcomes(burst));
     assert.ok(burst.every((r) => r.status === 200 || (r.status === 409 && r.body.handled === 'in_progress')), outcomes(burst));
     const tinySent = (tiny.handle.channel as SimulatedChannel).transcript().filter((m) => m.to === String(chat));
     assert.equal(tinySent.filter((m) => m.text.includes('Respuesta publicada')).length, 1);
-    assert.equal(tinySent.filter((m) => m.text.includes('Comandos disponibles')).length, 1);
+    assert.equal(tinySent.filter((m) => m.text.includes(HELP_MARK)).length, 1);
   } finally {
     await tiny.close();
   }
   assert.equal((await replies(a.token)).filter((r) => r.target_ref === 'wh2c').length, 1, 'una sola respuesta pública con pool mínimo');
   assert.equal(one(await cases(a.token), 'wh2c').state, 'responded');
   console.log('TEST_PASS Webhook Telegram secreto/dedupe/concurrencia/durabilidad/recuperación [simulated]');
+});
+
+test('Telegram conversa con MainSpot: mensaje libre → tarjeta con botones → ver cómo queda → publicar (sin comandos; RBAC, auditoría, origen telegram)', async () => {
+  const a = await createTenantWithPlan(t, { conversations: 20, website: 1, reviews_managed: 100 }, 'client_tgc');
+  const chat = 740_000_777;
+  const last = () => transcript().filter((m) => m.to === String(chat)).at(-1)!;
+  const msg = (id: string) => transcript().find((m) => m.message_id === id)!;
+  const labels = (m: OutboxEntry) => m.buttons.map((row) => row.map((b) => b.label));
+  const call = (path: string, method = 'GET', body?: unknown) => api(t.baseUrl, `/api/backoffice${path}`, { method, headers: authHeaders(a.token), body: body === undefined ? undefined : JSON.stringify(body) });
+  const version = async () => Number((await t.pool.query<{ v: number }>('SELECT published_version AS v FROM client_website WHERE tenant_id = $1', [a.tenant])).rows[0]?.v);
+  assert.equal((await call('/website', 'POST', { slug: a.tenant.replaceAll('_', '-'), site_name: 'Taquería Prueba', data: { line: 'Tacos de noche', hours: 'Lunes a sábado: 18:00 a 23:00' } })).status, 201);
+  const first = await call('/website/first-publication', 'POST');
+  assert.equal((await call(`/conversation/proposals/${first.body.proposal.proposal_id}/approve`, 'POST')).body.status, 'published');
+
+  assert.equal((await telegram(chat, 'Cambia el horario a 9:00 a 18:00')).body.handled, 'unlinked_chat', 'un chat sin vincular no conversa');
+  const code = await call('/telegram/link-code', 'POST');
+  assert.equal((await telegram(chat, `/start ${code.body.code}`)).body.handled, 'linked');
+  assert.deepEqual(labels(last()), [['📋 Ver pendientes']]);
+
+  const ask = await telegram(chat, 'Cambia el horario a 9:00 a 18:00');
+  assert.equal(ask.body.handled, 'conversation:awaiting_confirmation', JSON.stringify(ask.body));
+  const req = await t.pool.query<{ channel: string; proposal_id: string }>(`SELECT channel, proposal_id FROM conversation_request WHERE tenant_id = $1 AND raw_message = $2`, [a.tenant, 'Cambia el horario a 9:00 a 18:00']);
+  assert.equal(req.rows[0]?.channel, 'telegram', 'la solicitud queda registrada con su canal');
+  const pid = req.rows[0]!.proposal_id;
+  const card = about(chat, pid)[0]!;
+  assert.match(card.text, /Cambio para tu página[\s\S]*9:00 a 18:00/);
+  assert.doesNotMatch(card.text, /CONFIRMAR|RECHAZAR|prop_/, 'nada que teclear');
+  assert.deepEqual(labels(card), [['👀 Ver cómo queda'], ['✖️ Cancelar']]);
+
+  // Una decisión escrita suelta («publicar», «opción 2») no adivina: muestra los pendientes como botones.
+  for (const loose of ['publicar', 'Opción 2']) {
+    assert.equal((await telegram(chat, loose)).body.handled, 'pending_listed');
+    assert.ok(last().buttons.flat().some((b) => b.action === `pv:${pid}`), 'el pendiente se abre con un botón');
+  }
+  assert.equal((await press(chat, { message_id: card.message_id, action: `pp:${pid}` })).body.handled, 'stale_action', 'sin vista previa no se publica');
+  assert.equal((await t.pool.query(`SELECT status FROM action_proposal WHERE proposal_id = $1`, [pid])).rows[0]?.status, 'awaiting_confirmation');
+
+  // «Ver cómo queda» convierte la MISMA tarjeta en la vista previa con «Publicar» / «Descartar».
+  assert.equal((await press(chat, buttonIn(chat, /Ver cómo queda/, pid))).body.handled, 'confirmed');
+  assert.match(msg(card.message_id).text, /Así quedará tu página[\s\S]*¿Lo publico\?/);
+  assert.ok(msg(card.message_id).html.includes(`#/vista-previa/${pid}"`));
+  assert.deepEqual(labels(msg(card.message_id)), [['🚀 Publicar'], ['🗑 Descartar']]);
+  const before = await version();
+  const publish = buttonIn(chat, /Publicar/, pid);
+  assert.equal((await press(chat, publish)).body.handled, 'published');
+  assert.match(msg(card.message_id).text, /Publicado[\s\S]*Tu página ya muestra el cambio \(versión \d+\)/);
+  assert.deepEqual(msg(card.message_id).buttons, [], 'decidido: sin botones');
+  const site = await t.pool.query<{ v: number; hours: string }>(`SELECT published_version AS v, data->>'hours' AS hours FROM client_website WHERE tenant_id = $1`, [a.tenant]);
+  assert.equal(Number(site.rows[0]?.v), before + 1);
+  assert.match(site.rows[0]?.hours ?? '', /9:00 a 18:00/);
+  const pub = await t.pool.query<{ source: string }>('SELECT source FROM publication WHERE tenant_id = $1 AND proposal_id = $2', [a.tenant, pid]);
+  assert.equal(pub.rows[0]?.source, 'telegram');
+  assert.equal((await press(chat, publish)).body.handled, 'stale_action', 'un botón viejo no vuelve a publicar');
+  assert.equal(await version(), before + 1);
+
+  // Sin edición con IA disponible, una petición que el editor simple no entiende se explica y no crea propuesta.
+  const image = await telegram(chat, 'Agrega una imagen de una panadería francesa en la portada de mi página');
+  assert.equal(image.body.handled, 'conversation:answered', JSON.stringify(image.body));
+  assert.match(last().text, /edición con IA todavía no está activa/);
+  assert.equal((await telegram(chat, '¿Qué tengo pendiente?')).body.handled, 'pending_listed');
+  assert.match(last().text, /No tienes nada pendiente/);
+  assert.equal((await telegram(chat, 'ayuda')).body.handled, 'help');
+  assert.deepEqual(labels(last()), [['📋 Ver pendientes'], ['📣 Publicar en Facebook']], 'sin autorización de laboratorio no se ofrece el laboratorio');
+  assert.equal((await press(chat, { message_id: last().message_id, action: 'lab:on' })).body.handled, 'lab_none');
+
+  // Perfil sin permiso de publicar: el botón lo explica y queda auditado.
+  await t.pool.query(`UPDATE user_role SET role_id = 'operation' WHERE user_id = $1 AND tenant_id = $2`, [a.userId, a.tenant]);
+  try {
+    assert.equal((await telegram(chat, 'Cambia el horario a 10:00 a 19:00')).body.handled, 'conversation:awaiting_confirmation');
+    const next = (await t.pool.query<{ proposal_id: string }>(`SELECT proposal_id FROM conversation_request WHERE tenant_id = $1 AND raw_message = $2`, [a.tenant, 'Cambia el horario a 10:00 a 19:00'])).rows[0]!.proposal_id;
+    assert.equal((await press(chat, buttonIn(chat, /Ver cómo queda/, next))).body.handled, 'confirmed');
+    assert.equal((await press(chat, buttonIn(chat, /Publicar/, next))).body.handled, 'permission_denied');
+    assert.match((t.handle.channel as SimulatedChannel).actionNotices().at(-1)?.notice ?? '', /no permite publicar/);
+    const deny = await t.pool.query(`SELECT count(*)::int AS n FROM audit_event WHERE tenant_id = $1 AND action = 'access.deny' AND resource = 'telegram:operation.approve'`, [a.tenant]);
+    assert.equal(deny.rows[0].n, 1);
+  } finally {
+    await t.pool.query(`UPDATE user_role SET role_id = 'administration' WHERE user_id = $1 AND tenant_id = $2`, [a.userId, a.tenant]);
+  }
 });

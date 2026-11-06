@@ -30,6 +30,9 @@ import { DEFAULT_SCHEDULER_TIMEZONE, formatInZone } from './timezone.ts';
 
 export const SCHEDULER_ACTOR = 'social_scheduler';
 
+/** Resultado final de una publicación programada (para avisar a quien la aprobó). */
+export interface SocialOutcome { tenantId: string; postId: string; status: 'published' | 'failed' }
+
 export interface SocialSchedulerDeps {
   pool: Pool;
   sink: AuditSink;
@@ -82,6 +85,7 @@ export class SocialScheduler {
   private readonly deps: Required<Omit<SocialSchedulerDeps, 'timezone'>> & { timezone: string };
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private readonly outcomeListeners: Array<(outcome: SocialOutcome) => Promise<void> | void> = [];
 
   constructor(deps: SocialSchedulerDeps) {
     this.deps = { ...DEFAULTS, timezone: DEFAULT_SCHEDULER_TIMEZONE, ...deps };
@@ -109,6 +113,21 @@ export class SocialScheduler {
   stop(): void {
     clearInterval(this.timer ?? undefined);
     this.timer = null;
+  }
+
+  /** Aviso tras publicar o fallar definitivamente (best effort: un aviso fallido no cambia el resultado). */
+  onOutcome(listener: (outcome: SocialOutcome) => Promise<void> | void): void {
+    this.outcomeListeners.push(listener);
+  }
+
+  private async emitOutcome(outcome: SocialOutcome): Promise<void> {
+    for (const listener of this.outcomeListeners) {
+      try {
+        await listener(outcome);
+      } catch (err) {
+        log.warn('social.scheduler.outcome_listener_failed', 'outcome listener failed', { tenant_id: outcome.tenantId, post_id: outcome.postId, error_name: err instanceof Error ? err.name : 'unknown' });
+      }
+    }
   }
 
   /** Un ciclo: recupera leases vencidos, reclama vencidas/inciertas y las procesa una a una. */
@@ -259,7 +278,7 @@ export class SocialScheduler {
       const timeout = sleep(this.deps.publishTimeoutMs, 'timeout' as const, { ref: false, signal: timer.signal }).catch(() => 'aborted' as const);
       const winner = await Promise.race([
         this.deps.provider.publishPost({
-          tenantId: row.tenant_id, text: post.text, imageUrl: post.image_url, contentType: post.content_type, idempotencyKey: row.publish_key,
+          tenantId: row.tenant_id, text: post.text, imageUrl: post.image_url, mediaAssetId: post.media_asset_id, contentType: post.content_type, idempotencyKey: row.publish_key,
         }),
         timeout,
       ]);
@@ -343,6 +362,7 @@ export class SocialScheduler {
         publish_at_utc: new Date(row.publish_at).toISOString(), publish_at_local: `${formatInZone(new Date(row.publish_at), this.deps.timezone)} ${this.deps.timezone}`,
         result,
       });
+      await this.emitOutcome({ tenantId: row.tenant_id, postId: post.post_id, status: 'published' });
     }
   }
 
@@ -398,6 +418,7 @@ export class SocialScheduler {
     log.error('social.scheduler.failed', 'scheduled post needs human review', {
       tenant_id: row.tenant_id, scheduled_post_id: row.scheduled_post_id, post_id: row.post_id, code: error.slice(0, 80),
     });
+    await this.emitOutcome({ tenantId: row.tenant_id, postId: row.post_id, status: 'failed' });
   }
 
   private async release(row: ClaimedRow, status: 'skipped' | 'blocked' | 'failed', error: string, db: Pool | PoolClient = this.deps.pool): Promise<void> {

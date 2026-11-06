@@ -85,6 +85,8 @@ export interface AppConfig {
   // INC-002 channels (DEC-016, DEC-026)
   channelPrimary: ChannelPrimary;
   telegramBotToken: string;
+  /** Usuario público del bot (sin @) para el enlace t.me/<bot>?start=<código>; vacío = sin enlace directo. */
+  telegramBotUsername: string;
   telegramBaseUrl: string;
   previewTokenTtlMinutes: number;
   // INC-002 approval rate limiting (sensitive approvals)
@@ -112,6 +114,18 @@ export interface AppConfig {
   metaGraphVersion: string;
   metaAppId: string;
   metaAppSecret: string;
+  /**
+   * Configuración de Facebook Login for Business (META_LOGIN_CONFIG_ID). Las apps nuevas con el caso de uso
+   * «Administrar todo en tu página» usan ese producto: con la configuración, el diálogo pide sus permisos por
+   * `config_id` (lo que recomienda Meta) en lugar de `scope`. Vacío = `scope` con los permisos requeridos.
+   */
+  metaLoginConfigId: string;
+  /**
+   * URI pública a la que Meta devuelve el navegador tras autorizar (META_OAUTH_REDIRECT_URI), p. ej.
+   * `https://meta.mainspot.io/api/connections/meta/callback` publicada por el KVM y el túnel. Vacía = la del panel
+   * (`PUBLIC_BASE_URL`). Debe ser exactamente la registrada en la app de Meta.
+   */
+  metaOAuthRedirectUri: string;
   metaAdsCheckEnabled: boolean;
   /** Scheduler de publicaciones aprobadas (SOCIAL_SCHEDULER=on|off, intervalo, zona del negocio). */
   socialSchedulerEnabled: boolean;
@@ -264,6 +278,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     // INC-002: canal primario (DEC-016/026) + preview token (TENTATIVA: expiración configurable).
     channelPrimary: enumValue<ChannelPrimary>('CHANNEL_PRIMARY', process.env.CHANNEL_PRIMARY, CHANNEL_PRIMARYS, 'simulated'),
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? '',
+    telegramBotUsername: /^[A-Za-z0-9_]{5,32}$/.test((process.env.TELEGRAM_BOT_USERNAME ?? '').replace(/^@/, '')) ? (process.env.TELEGRAM_BOT_USERNAME ?? '').replace(/^@/, '') : '',
     telegramBaseUrl: process.env.TELEGRAM_BASE_URL ?? 'https://api.telegram.org',
     previewTokenTtlMinutes: Number(process.env.PREVIEW_TOKEN_TTL_MINUTES ?? 1440),
     // INC-002: rate limiting de aprobaciones sensibles (operador + recurso).
@@ -287,6 +302,8 @@ export function loadConfig(overrides: Partial<AppConfig> = {}, opts: LoadConfigO
     metaGraphVersion: (process.env.META_GRAPH_VERSION ?? 'v26.0').trim(),
     metaAppId: process.env.META_APP_ID ?? '',
     metaAppSecret: process.env.META_APP_SECRET ?? '',
+    metaLoginConfigId: (process.env.META_LOGIN_CONFIG_ID ?? '').trim(),
+    metaOAuthRedirectUri: (process.env.META_OAUTH_REDIRECT_URI ?? '').trim(),
     metaAdsCheckEnabled: (process.env.META_ADS_CHECK ?? 'off') === 'on',
     socialSchedulerEnabled: (process.env.SOCIAL_SCHEDULER ?? 'on') !== 'off',
     socialSchedulerIntervalMs: Math.max(1000, Number(process.env.SOCIAL_SCHEDULER_INTERVAL_MS ?? 15_000)),

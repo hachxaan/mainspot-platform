@@ -66,17 +66,27 @@ function design(values: Record<string, unknown>): unknown {
 
 function edit(values: Record<string, unknown>): unknown {
   const instruction = String(values['instruction'] ?? '').toLowerCase();
+  const op = (o: Record<string, unknown>) => ({ op: 'set_block_field', block_index: null, field: null, theme_field: null, fact_field: null, value: null, to_index: null, new_block: null, items: [], image: null, ...o });
+  if (/imagen|foto/.test(instruction)) {
+    const library = Array.isArray(values['library']) ? (values['library'] as Array<{ asset_id?: unknown }>) : [];
+    const own = /biblioteca/.test(instruction) && typeof library[0]?.asset_id === 'string' ? String(library[0].asset_id) : null;
+    return { summary: 'Agregar una imagen en la portada.', needs_clarification: null, operations: [op({
+      op: 'set_image', block_index: 0,
+      image: own
+        ? { source: 'library', asset_id: own, subject: '', style: '', alt: 'Foto del negocio en la portada', aspect: '16:9' }
+        : { source: 'generate', asset_id: '', subject: String(values['instruction'] ?? '').slice(0, 300).padEnd(10, '.'), style: 'fotografía editorial cálida', alt: 'Ilustración para la portada', aspect: '16:9' },
+    })] };
+  }
   if (/horario|abrimos|cerramos|s[aá]bado|domingo/.test(instruction)) {
-    const m = /(?:a|al|de)\s+(\d{1,2}(?::\d{2})?\s*(?:a|-)\s*\d{1,2}(?::\d{2})?)/.exec(instruction);
-    return { summary: 'Actualizar el horario mostrado en la página.', needs_clarification: m ? null : null, operations: [{ op: 'set_fact', block_index: null, field: null, theme_field: null, fact_field: 'hours', value: String(values['instruction'] ?? '').replace(/^.*?horario\s*(?:del?|a)?\s*/i, '').slice(0, 200) || 'Horario actualizado', block: null, items: null, to_index: null }] };
+    return { summary: 'Actualizar el horario mostrado en la página.', needs_clarification: null, operations: [op({ op: 'set_fact', fact_field: 'hours', value: String(values['instruction'] ?? '').replace(/^.*?horario\s*(?:del?|a)?\s*/i, '').slice(0, 200) || 'Horario actualizado' })] };
   }
   if (/color|oscuro|moderno|redise/.test(instruction)) {
     return { summary: 'Cambiar el color principal y el estilo de la portada.', needs_clarification: null, operations: [
-      { op: 'set_theme', block_index: null, field: null, theme_field: 'palette.primary', fact_field: null, value: '#1f2937', block: null, items: null, to_index: null },
-      { op: 'set_block_field', block_index: 0, field: 'variant', theme_field: null, fact_field: null, value: 'overlay', block: null, items: null, to_index: null },
+      op({ op: 'set_theme', theme_field: 'palette.primary', value: '#1f2937' }),
+      op({ op: 'set_block_field', block_index: 0, field: 'variant', value: 'overlay' }),
     ] };
   }
-  return { summary: 'Actualizar el título de la portada.', needs_clarification: null, operations: [{ op: 'set_block_field', block_index: 0, field: 'subheading', theme_field: null, fact_field: null, value: String(values['instruction'] ?? '').slice(0, 170), block: null, items: null, to_index: null }] };
+  return { summary: 'Actualizar el título de la portada.', needs_clarification: null, operations: [op({ op: 'set_block_field', block_index: 0, field: 'subheading', value: String(values['instruction'] ?? '').slice(0, 170) })] };
 }
 
 function compose(values: Record<string, unknown>): unknown {

@@ -85,6 +85,7 @@ export class SocialPublisher implements Publisher {
       tenantId: ctx.tenantId,
       text: post.text,
       imageUrl: post.image_url,
+      mediaAssetId: post.media_asset_id,
       contentType: post.content_type,
       idempotencyKey: `post:${postId}`,
     });

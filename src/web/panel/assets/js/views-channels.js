@@ -14,7 +14,8 @@
   function head(title, sub, extra) {
     return '<div class="page-head"><h1 tabindex="-1" data-focus>' + esc(title) + '</h1>' + (sub ? '<p>' + esc(sub) + '</p>' : '') + (extra || '') + '</div>';
   }
-  function simTag(mode) { return UI.sim(mode === 'not_verified' ? 'Conexión real no verificada' : 'Simulación'); }
+  /** Etiqueta de entorno: nada cuando el canal es real; «Simulación» o «no verificada» en los demás casos. */
+  function simTag(mode) { return mode === 'real' ? '' : UI.sim(mode === 'not_verified' ? 'Conexión real no verificada' : 'Simulación'); }
   function stars(n) {
     if (!n) return '';
     var s = '';
@@ -196,21 +197,36 @@
   }
   var POST_ST = { draft: ['Espera aprobación', 'rosa'], awaiting_approval: ['Espera aprobación', 'rosa'], scheduled: ['Programada', 'lila'], publishing: ['Publicando', 'ocre'], published: ['Publicada (simulado)', 'nopal'], failed: ['No se publicó', 'alerta'], rejected: ['Descartada', 'neutral'] };
 
+  // Resultado del callback de Facebook (`#/facebook/conectar?conexion=…`) en lenguaje claro.
+  var META_CONN_MSG = {
+    elegir_pagina: ['nopal', 'Facebook autorizó a MainSpot. Ahora elige la página que quieres conectar.'],
+    faltan_permisos: ['alerta', 'Facebook no concedió todos los permisos. Vuelve a conectar y acepta todos los permisos de la página.'],
+    cancelada: ['alerta', 'Cancelaste la autorización en Facebook. No se conectó nada.'],
+    estado_invalido: ['alerta', 'La autorización venció o ya se usó. Vuelve a pulsar «Conectar página de Facebook».'],
+    error_proveedor: ['alerta', 'Facebook no completó la autorización. Inténtalo de nuevo en unos minutos.'],
+    no_habilitado: ['alerta', 'La conexión real con Facebook no está habilitada en este entorno.']
+  };
   function metaConnectionCard(q) {
     var m = S().metaConn;
     if (!m) return '';
     var c = m.connection, status = c ? c.status : 'disconnected';
+    // Una conexión desconectada (fila sin tokens) equivale a no tener conexión: solo se ofrece conectar.
+    var linked = !!c && status !== 'disconnected';
     var labels = { connected: 'Página conectada', needs_authorization: 'Falta autorizar o elegir página', permission_missing: 'Faltan permisos de Facebook',
-      disconnected: 'Facebook sin conectar', failed: 'La conexión falló', provider_unavailable: 'Facebook no responde' };
-    var html = '<section class="card stack"><h2>Conexión con Facebook</h2><p>' + UI.tag(labels[status] || status, status === 'connected' ? 'nopal' : 'neutral') + '</p>';
-    if (q && q.conexion) html += '<p role="status">Resultado de autorización: ' + esc(q.conexion) + '</p>';
-    if (c && c.page_name) html += '<p>Página: <strong>' + esc(c.page_name) + '</strong></p>';
-    if (!m.enabled || !m.oauth_configured) html += '<p class="muted small">La conexión real necesita SOCIAL_PROVIDER=meta, CONNECTOR_TOKEN_KEY y una app autorizada (META_APP_ID, META_APP_SECRET).</p>';
+      disconnected: 'Página de Facebook sin conectar', failed: 'La conexión falló', provider_unavailable: 'Facebook no responde' };
+    var html = '<section class="card stack"><h2>Página de Facebook</h2><p class="muted small">Conecta la página de tu negocio para publicar y responder comentarios desde MainSpot. Es una autorización de tu página; no cambia cómo entras a MainSpot.</p><p>' + UI.tag(labels[status] || status, status === 'connected' ? 'nopal' : 'neutral') + '</p>';
+    // El aviso del retorno de Facebook solo vale mientras coincide con el estado real (p. ej. no tras desconectar).
+    var choosing = linked && status !== 'connected';
+    var res = q && q.conexion && (q.conexion !== 'elegir_pagina' || choosing) ? META_CONN_MSG[q.conexion] : null;
+    if (res) html += '<div class="banner banner-' + res[0] + '" role="status">' + icon(res[0] === 'nopal' ? 'circle-check' : 'circle-alert') + '<span>' + esc(res[1]) + '</span></div>';
+    if (linked && c.page_name) html += '<p>Página: <strong>' + esc(c.page_name) + '</strong></p>';
+    if (!m.enabled || !m.oauth_configured) html += '<p class="muted small">La conexión real todavía no está disponible en este entorno: falta la configuración de la app de Meta (la prepara el equipo de MainSpot).</p>';
     if (MS.can('editData')) {
-      html += '<div class="btn-row">' + UI.btn('Conectar Facebook', { action: 'meta-connect', disabled: !m.enabled || !m.oauth_configured }) +
-        (m.enabled ? UI.btn('Elegir página', { action: 'meta-pages', style: 'secondary' }) : '') +
-        (c ? UI.btn('Comprobar', { action: 'meta-verify', style: 'secondary' }) + UI.btn('Desconectar', { action: 'meta-disconnect', style: 'danger' }) : '') + '</div>';
-      if (MS.mem.metaPages) html += '<ul class="list">' + MS.mem.metaPages.map(function (p) {
+      var ready = m.enabled && m.oauth_configured;
+      html += '<div class="btn-row">' + (ready ? UI.btn(linked ? 'Volver a conectar' : 'Conectar página de Facebook', { action: 'meta-connect', style: status === 'connected' ? 'secondary' : 'primary' }) : '') +
+        (ready && choosing ? UI.btn('Elegir página', { action: 'meta-pages', style: 'secondary' }) : '') +
+        (ready && linked ? UI.btn('Comprobar', { action: 'meta-verify', style: 'secondary' }) + UI.btn('Desconectar', { action: 'meta-disconnect', style: 'danger' }) : '') + '</div>';
+      if (choosing && MS.mem.metaPages) html += '<ul class="list">' + MS.mem.metaPages.map(function (p) {
         return '<li class="list-row static"><span class="grow">' + esc(p.name) + '</span>' + UI.btn('Usar esta página', { action: 'meta-pick-page', arg: p.page_id, style: 'secondary', sm: true }) + '</li>';
       }).join('') + '</ul>';
     }
@@ -250,13 +266,24 @@
       var now = new Date(Date.now() + 864e5);
       var defDate = d.date || now.toISOString().slice(0, 10), defTime = d.time || '08:00';
       var canApprove = MS.can('social.approve');
-      html += '<div class="stack-lg"><section aria-labelledby="fbp-t"><h2 id="fbp-t" style="font-size:var(--fs-lg);margin-bottom:10px">Así se verá en Facebook</h2>' + postCard({ text: d.text, status: 'draft' }) + '</section>' +
+      // Imagen opcional de la biblioteca del negocio (con Facebook real se sube como foto de la publicación).
+      if (MS.mem.fbMedia === undefined && MS.can('media.read')) {
+        MS.mem.fbMedia = null;
+        MS.api.get('/ai/media').then(function (r) { MS.mem.fbMedia = r.ok ? r.data.assets.filter(function (a) { return a.status !== 'archived'; }) : []; MS.emit(); });
+      }
+      var media = MS.mem.fbMedia || [];
+      var chosen = media.filter(function (a) { return a.asset_id === d.mediaAssetId; })[0] || null;
+      html += '<div class="stack-lg"><section aria-labelledby="fbp-t"><h2 id="fbp-t" style="font-size:var(--fs-lg);margin-bottom:10px">Así se verá en Facebook</h2>' + (chosen ? '<img src="' + esc(chosen.url) + '" alt="' + esc(chosen.alt_text || '') + '" style="max-width:100%;border-radius:12px;margin-bottom:8px">' : '') + postCard({ text: d.text, status: 'draft' }) + '</section>' +
         '<form class="card stack" data-form="fb-confirm">' +
           '<div class="field"><label for="fb-text">Puedes ajustar el texto</label><textarea class="textarea" id="fb-text" rows="5" maxlength="2000">' + esc(d.text) + '</textarea></div>' +
           '<fieldset class="fieldset ph-modes"><legend>¿Cuándo?</legend>' +
             '<label class="radio-row' + (d.when !== 'later' ? ' is-on' : '') + '"><input type="radio" id="fb-when-now" name="fb-when" value="now" data-action="fb-when" data-arg="now"' + (d.when !== 'later' ? ' checked' : '') + '><span><span class="rr-t">Publicar ahora</span></span></label>' +
             '<label class="radio-row' + (d.when === 'later' ? ' is-on' : '') + '"><input type="radio" id="fb-when-later" name="fb-when" value="later" data-action="fb-when" data-arg="later"' + (d.when === 'later' ? ' checked' : '') + '><span><span class="rr-t">Programar</span></span></label>' +
           '</fieldset>' +
+          (media.length ? '<fieldset class="fieldset"><legend>Imagen (opcional)</legend><div class="row-wrap">' +
+            '<button type="button" class="chip" aria-pressed="' + !d.mediaAssetId + '" data-action="fb-media" data-arg="">Sin imagen</button>' +
+            media.slice(0, 12).map(function (a) { return '<button type="button" class="chip" aria-pressed="' + (d.mediaAssetId === a.asset_id) + '" data-action="fb-media" data-arg="' + esc(a.asset_id) + '" title="' + esc(a.alt_text || '') + '"><img src="' + esc(a.url) + '" alt="" width="40" height="40" style="object-fit:cover;border-radius:6px;vertical-align:middle"> ' + esc((a.alt_text || 'Imagen').slice(0, 24)) + (a.is_illustration ? ' (IA)' : '') + '</button>'; }).join('') +
+            '</div><p class="hint">Las imágenes salen de tu biblioteca («IA de tu negocio → Biblioteca»).</p></fieldset>' : (MS.mem.fbMedia ? '<p class="hint">Para acompañar la publicación con una foto, súbela antes a tu <a href="#/ia/biblioteca">biblioteca</a>.</p>' : '')) +
           (d.when === 'later' ? '<div class="hours-grid" style="grid-template-columns:1fr 1fr"><div class="field"><label for="fb-date">Día</label><input class="input" type="date" id="fb-date" value="' + defDate + '"></div><div class="field"><label for="fb-time">Hora</label><input class="input" type="time" id="fb-time" value="' + defTime + '"></div></div>' : '') +
           (d.when === 'later' ? '<p class="hint">Zona horaria: ' + esc(S().metaConn && S().metaConn.scheduler_timezone || 'America/Cancun') + '. Una hora inexistente o repetida por cambio de horario se rechaza.</p>' : '') +
           (d.error ? '<div class="field-error" role="alert">' + icon('circle-alert') + '<span>' + esc(d.error) + '</span></div>' : '') +

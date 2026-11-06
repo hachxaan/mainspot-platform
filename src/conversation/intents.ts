@@ -68,4 +68,6 @@ export interface IngestOutcome {
   requestStatus: RequestStatus;
   /** DEC-0005: resultado de una petición anterior con la misma clave de idempotencia. */
   replayed?: boolean;
+  /** Edición con IA en curso: job, si corre con autorización de laboratorio y con qué rutas. */
+  aiJob?: { job_id: string; status: string; lab: boolean; routes: Array<{ use_case_id: string; route_id: string; model_id: string; status: string }> };
 }

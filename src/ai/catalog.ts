@@ -1,7 +1,9 @@
 /**
  * Catálogo semilla del AI Core (FR-0012). Se aplica de forma idempotente al preparar la BD:
- * inserta lo que falta y NUNCA modifica revisiones existentes (son inmutables). Después de la
- * semilla, prompts, rutas y despliegues se gestionan desde la Engineering Console.
+ * inserta lo que falta y NUNCA modifica revisiones existentes (son inmutables): si el texto de un prompt
+ * semilla cambia, se crea una revisión nueva y sus candidatas DRAFT nuevas; las candidatas semilla DRAFT del
+ * prompt anterior se retiran (nunca se probaron). Después de la semilla, prompts, rutas y despliegues se
+ * gestionan desde la Engineering Console.
  *
  * Entornos de rollout:
  *  - `test`: rutas SIMULADAS activas (regresión offline; etiquetadas como simuladas).
@@ -19,7 +21,8 @@
 
 import type { Pool } from 'pg';
 import { runAtomic } from '../conversation/state-machine.ts';
-import type { PromptVariable } from './prompt.ts';
+import { promptSha256, type PromptVariable } from './prompt.ts';
+import { EDIT_SCHEMA_ID } from './contracts.ts';
 import { AiRegistry, type RouteParams } from './registry.ts';
 
 const ANTHROPIC_PRICES = { source: 'anthropic_pricing_page', observedAt: '2026-11-03T06:00:00Z' } as const;
@@ -41,8 +44,8 @@ export const USE_CASE_SEEDS: UseCaseSeed[] = [
   { id: 'conversation.intent.classify', title: 'Clasificación semántica del mensaje del dueño', description: 'Jev: sentimiento, urgencia y alcance de edición web del mensaje del dueño. La intención principal sigue el gate de APR-0002.', modality: 'classification', risk: 'medium', schema: 'jev-answers/v1' },
   { id: 'conversation.owner.assistant', title: 'Asistente del dueño con estado de su cuenta', description: 'Responde preguntas sobre la cuenta usando herramientas de solo lectura del propio negocio.', modality: 'text', risk: 'high', schema: 'owner-assistant/v1', tools: ['account_status', 'website_status', 'social_posts', 'attention_cases', 'activity_metrics', 'connections_status', 'brand_facts'] },
   { id: 'website.initial.design', title: 'Diseño inicial de la página', description: 'Primera página personalizada en DSL de bloques con solicitudes de imagen.', modality: 'text', risk: 'medium', schema: 'site-design/v1' },
-  { id: 'website.edit.simple', title: 'Edición simple de la página', description: 'Cambios de texto, dato o estilo puntual como parche tipado.', modality: 'text', risk: 'low', schema: 'site-edit/v1' },
-  { id: 'website.edit.complex', title: 'Edición compleja o rediseño', description: 'Reestructura o rediseño de secciones como parche tipado.', modality: 'text', risk: 'medium', schema: 'site-edit/v1' },
+  { id: 'website.edit.simple', title: 'Edición simple de la página', description: 'Cambios de texto, dato, estilo o imagen puntual como parche tipado.', modality: 'text', risk: 'low', schema: EDIT_SCHEMA_ID },
+  { id: 'website.edit.complex', title: 'Edición compleja o rediseño', description: 'Reestructura o rediseño de secciones e imágenes como parche tipado.', modality: 'text', risk: 'medium', schema: EDIT_SCHEMA_ID },
   { id: 'website.image.generate', title: 'Imágenes de la página', description: 'Ilustraciones para secciones de la web.', modality: 'image', risk: 'medium', schema: 'image/v1' },
   { id: 'social.facebook.post.compose', title: 'Publicación de Facebook', description: 'Variantes de copy con emojis moderados, CTA y hashtags, más propuesta visual.', modality: 'text', risk: 'medium', schema: 'social-compose/v1' },
   { id: 'social.facebook.image.generate', title: 'Imagen para Facebook', description: 'Ilustración en formato de feed.', modality: 'image', risk: 'medium', schema: 'image/v1' },
@@ -122,16 +125,24 @@ Redacción:
 - Prohibido inventar precios, descuentos, promociones, premios, años de experiencia, cifras o testimonios. Si un precio está en los hechos confirmados puedes citarlo literal; si no, no menciones precios.
 - SEO: título ≤ 60 caracteres con nombre y giro; descripción 120–155 caracteres honesta.`;
 
-const EDIT_SYSTEM = `Editas el diseño existente de la página de un micronegocio aplicando EXACTAMENTE lo que pide el dueño y nada más.
+const EDIT_SYSTEM = `Editas la página de un micronegocio aplicando EXACTAMENTE lo que pide el dueño y nada más.
 
-Reglas:
-- Devuelve operaciones tipadas sobre el diseño actual; no reescribas bloques que no se mencionan.
-- set_block_field cambia un campo de un bloque existente (heading, subheading, body, cta_label, cta_action, tone, variant) indicando block_index.
-- set_theme cambia un token del tema (paleta en hex #RRGGBB, fuentes, radio, densidad, mood).
-- set_fact cambia un dato de la página (hours, address, email, line, about) con el texto nuevo completo. El teléfono NO se cambia aquí: si lo piden, explica en needs_clarification que se cambia en «Teléfonos de contacto».
-- add_block inserta un bloque completo en to_index; remove_block quita el bloque block_index; move_block lo mueve a to_index; set_items reemplaza los elementos de una lista.
-- Si la instrucción es ambigua o pide algo imposible, devuelve operations vacío y una pregunta breve en needs_clarification.
+Formato (site-edit/v2):
+- Devuelves operaciones tipadas sobre el diseño actual; no reescribas bloques que no se mencionan. Las operaciones se aplican en orden y block_index es la posición del bloque en ese momento (desde 0).
+- En cada operación llena solo los campos que usa; los demás van en null (block_index, field, theme_field, fact_field, value, to_index, new_block, image) e items va como lista vacía.
+- set_block_field cambia un campo de un bloque existente (heading, subheading, body, cta_label, cta_action, tone, variant) con block_index y value.
+- set_theme cambia un token del tema (paleta en hex #RRGGBB, fuentes, radio, densidad, mood) con theme_field y value.
+- set_fact cambia un dato de la página (hours, address, email, line, about) con fact_field y el texto nuevo completo en value. El teléfono NO se cambia aquí: si lo piden, explica en needs_clarification que se cambia en «Teléfonos de contacto».
+- add_block inserta una sección nueva en to_index (null = antes del contacto) descrita en new_block (type, variant, heading, subheading, body, cta_label, cta_action, tone; cadena vacía o "none" cuando no aplica) con sus elementos en items. No agregues otra portada (hero).
+- remove_block quita el bloque block_index; move_block lo mueve a to_index; set_items reemplaza los elementos de una lista (icon "none" si no aplica).
+- set_image pone una imagen en el bloque block_index. Si el dueño se refiere a una foto de su biblioteca, usa image.source "library" con su asset_id. Si pide una imagen nueva, usa image.source "generate", asset_id vacío, una escena concreta en subject y un estilo en style. alt describe la imagen en una frase; aspect 16:9 en la portada y 4:3 o 1:1 en otras secciones. Una ilustración generada no muestra el local real, texto, logotipos ni personas reconocibles.
+- Si la instrucción es ambigua o pide algo imposible, devuelve operations vacío y una pregunta breve en needs_clarification; si no, needs_clarification va en null.
 - No inventes precios, promociones, teléfonos ni cifras. summary describe el cambio en una frase para el dueño.`;
+
+const EDIT_TASK = 'Diseño actual (bloques numerados desde 0):\n{{current_design}}\n\nDatos actuales de la página:\n{{page_facts}}\n\nFotos de la biblioteca del dueño (asset_id y descripción):\n{{library}}\n\nPetición del dueño:\n{{instruction}}';
+function editVariables(): PromptVariable[] {
+  return [v('current_design', 'json', false, 30_000, 'diseño vigente'), v('page_facts', 'json', true, 4_000, 'datos de la página'), v('library', 'json', true, 6_000, 'fotos de la biblioteca del dueño'), v('instruction', 'string', true, 1_000, 'petición del dueño')];
+}
 
 const IMAGE_STYLE = 'Imagen para la web o redes de un micronegocio mexicano. Sin texto, letras ni números en la imagen; sin logotipos ni marcas; sin personas reconocibles ni rostros en primer plano; composición limpia con espacio negativo; iluminación natural cálida; estilo editorial contemporáneo. Es una ilustración genérica, no una foto del local real.';
 
@@ -249,15 +260,10 @@ export const PROMPT_SEEDS: PromptSeed[] = [
     task: 'Hechos confirmados del negocio:\n{{brand_facts}}\n\nHechos sin confirmar (solo para el tono; nunca como dato):\n{{unconfirmed_facts}}\n\nPreferencias del dueño para su página:\n{{brief}}\n\nDiseña la página.',
     variables: [v('brand_facts', 'json', true, 12_000, 'hechos confirmados de la marca'), v('unconfirmed_facts', 'json', true, 4_000, 'hechos sin confirmar'), v('brief', 'string', true, 1_500, 'preferencias del dueño')],
   },
+  { useCase: 'website.edit.simple', system: EDIT_SYSTEM, task: EDIT_TASK, variables: editVariables() },
   {
-    useCase: 'website.edit.simple', system: EDIT_SYSTEM,
-    task: 'Diseño actual (bloques numerados desde 0):\n{{current_design}}\n\nDatos actuales de la página:\n{{page_facts}}\n\nPetición del dueño:\n{{instruction}}',
-    variables: [v('current_design', 'json', false, 30_000, 'diseño vigente'), v('page_facts', 'json', true, 4_000, 'datos de la página'), v('instruction', 'string', true, 1_000, 'petición del dueño')],
-  },
-  {
-    useCase: 'website.edit.complex', system: `${EDIT_SYSTEM}\n\nEsta petición es un cambio grande: puedes reorganizar, añadir o quitar bloques y ajustar el tema completo, manteniendo los datos confirmados y las imágenes existentes cuando sigan teniendo sentido.`,
-    task: 'Diseño actual (bloques numerados desde 0):\n{{current_design}}\n\nDatos actuales de la página:\n{{page_facts}}\n\nPetición del dueño:\n{{instruction}}',
-    variables: [v('current_design', 'json', false, 30_000, 'diseño vigente'), v('page_facts', 'json', true, 4_000, 'datos de la página'), v('instruction', 'string', true, 1_000, 'petición del dueño')],
+    useCase: 'website.edit.complex', system: `${EDIT_SYSTEM}\n\nEsta petición es un cambio grande: puedes reorganizar, añadir o quitar bloques, poner imágenes y ajustar el tema completo, manteniendo los datos confirmados y las imágenes existentes cuando sigan teniendo sentido.`,
+    task: EDIT_TASK, variables: editVariables(),
   },
   { useCase: 'website.image.generate', system: IMAGE_STYLE, task: 'Escena: {{subject}}\nEstilo: {{style}}\nColores dominantes sugeridos: {{palette}}', variables: [v('subject', 'string', false, 600, 'escena'), v('style', 'string', false, 300, 'estilo'), v('palette', 'string', false, 200, 'colores')] },
   { useCase: 'social.facebook.image.generate', system: `${IMAGE_STYLE} Formato de feed de Facebook, sujeto centrado y legible en móvil.`, task: 'Escena: {{subject}}\nEstilo: {{style}}\nColores dominantes sugeridos: {{palette}}', variables: [v('subject', 'string', false, 600, 'escena'), v('style', 'string', false, 300, 'estilo'), v('palette', 'string', false, 200, 'colores')] },
@@ -289,10 +295,10 @@ interface RouteSeed { useCase: string; model: string; params: RouteParams; maxCo
 const TEXT_DEFAULT = { timeout_ms: 90_000, repair_attempts: 1, reasoning_effort: 'low' } as const;
 
 /**
- * Candidatas de desarrollo (DEC-0074), nunca activadas por semilla: Anthropic directo en DRAFT con los prompts v1,
- * parámetros y precios ya registrados. Sonnet 5.5 en las tareas complejas (diseño inicial, rediseño, plan de campaña)
- * y Haiku 5.5 como opción eficiente en el resto; una ruta por caso de uso, de selección explícita en el laboratorio,
- * nunca fallback. Las revisiones Anthropic retiradas por DEC-0073 no se reviven: se crean revisiones nuevas.
+ * Candidatas de desarrollo (DEC-0074), nunca activadas por semilla: Anthropic directo en DRAFT con el prompt semilla
+ * vigente, parámetros y precios ya registrados. Sonnet 5.5 en las tareas complejas (diseño inicial, rediseño, plan de
+ * campaña) y Haiku 5.5 como opción eficiente en el resto; una ruta por caso de uso, de selección explícita en el
+ * laboratorio, nunca fallback. Las revisiones Anthropic retiradas por DEC-0073 no se reviven: se crean revisiones nuevas.
  * Los modelos de texto de OpenAI están deshabilitados y no se siembran rutas con ellos.
  */
 const HAIKU = 'an:claude-haiku-5-5';
@@ -329,9 +335,12 @@ export async function ensureAiCatalog(pool: Pool): Promise<{ created: string[] }
   await runAtomic(pool, async (client) => {
     await client.query(`SELECT pg_advisory_xact_lock(hashtext('ai_catalog_seed'))`);
     for (const uc of USE_CASE_SEEDS) {
+      // El contrato de salida sigue a la semilla (p. ej. site-edit/v2); las rutas que no lo usen se retiran abajo.
       const r = await client.query(
         `INSERT INTO ai_use_case (use_case_id, title, description, modality, risk_level, owner, output_schema, tools)
-         VALUES ($1,$2,$3,$4,$5,'ingenieria-ia',$6,$7) ON CONFLICT (use_case_id) DO NOTHING`,
+         VALUES ($1,$2,$3,$4,$5,'ingenieria-ia',$6,$7)
+         ON CONFLICT (use_case_id) DO UPDATE SET output_schema = EXCLUDED.output_schema, description = EXCLUDED.description, updated_at = now()
+           WHERE ai_use_case.output_schema IS DISTINCT FROM EXCLUDED.output_schema`,
         [uc.id, uc.title, uc.description, uc.modality, uc.risk, uc.schema, JSON.stringify(uc.tools ?? [])]);
       if (r.rowCount) created.push(`use_case:${uc.id}`);
     }
@@ -363,32 +372,45 @@ export async function ensureAiCatalog(pool: Pool): Promise<{ created: string[] }
        ON CONFLICT DO NOTHING`, [SEED_ACTOR]);
   });
 
-  // Prompts v1 y rutas: solo si el caso de uso no tiene ninguna revisión todavía.
+  // Prompts: la semilla es la versión vigente; si su texto cambió se crea una revisión nueva (las anteriores no se tocan).
+  const seedPrompt = new Map<string, string>();
   for (const p of PROMPT_SEEDS) {
-    const has = await pool.query('SELECT 1 FROM ai_prompt_revision WHERE use_case_id = $1 LIMIT 1', [p.useCase]);
-    if (has.rowCount) continue;
-    await registry.createPromptRevision(p.useCase, { system_text: p.system, task_template: p.task, variables: p.variables }, 'Versión inicial (semilla del canon AI Core 0.2.0).', SEED_ACTOR);
-    created.push(`prompt:${p.useCase}:v1`);
+    const content = { system_text: p.system, task_template: p.task, variables: p.variables };
+    const sha = promptSha256(content);
+    const found = await pool.query<{ revision_id: string }>('SELECT revision_id FROM ai_prompt_revision WHERE use_case_id = $1 AND sha256 = $2', [p.useCase, sha]);
+    if (found.rows[0]) { seedPrompt.set(p.useCase, found.rows[0].revision_id); continue; }
+    const first = !(await pool.query('SELECT 1 FROM ai_prompt_revision WHERE use_case_id = $1 LIMIT 1', [p.useCase])).rowCount;
+    const rev = await registry.createPromptRevision(p.useCase, content,
+      first ? 'Versión inicial (semilla del canon AI Core 0.2.0).' : `Semilla actualizada del catálogo (${USE_CASE_SEEDS.find((u) => u.id === p.useCase)?.schema ?? 'contrato vigente'}).`, SEED_ACTOR);
+    seedPrompt.set(p.useCase, rev.revision_id);
+    created.push(`prompt:${p.useCase}:v${rev.version}`);
   }
 
-  const promptV1 = async (uc: string) => (await pool.query<{ revision_id: string }>('SELECT revision_id FROM ai_prompt_revision WHERE use_case_id = $1 AND version = 1', [uc])).rows[0]?.revision_id;
-
-  // Entorno test: rutas simuladas activas (si el caso de uso aún no tiene rollout de test).
+  // Entorno test: rutas simuladas activas. Se siembran si falta el rollout o si la ruta simulada semilla activa usa un
+  // prompt que ya no es el vigente (su contrato cambió); las rutas que activó otra persona no se tocan.
   for (const r of testRoutes()) {
-    const rollout = await registry.rollout(r.useCase, 'test');
-    if (rollout?.active_route_id) continue;
-    const prompt = await promptV1(r.useCase);
+    const prompt = seedPrompt.get(r.useCase);
     if (!prompt) continue;
+    const rollout = await registry.rollout(r.useCase, 'test');
+    if (rollout?.active_route_id) {
+      const active = await registry.bundle(rollout.active_route_id);
+      if (!active || active.route.created_by !== SEED_ACTOR || active.prompt.revision_id === prompt) continue;
+    }
     const route = await registry.createRoute({ useCaseId: r.useCase, modelId: r.model, promptRevisionId: prompt, params: r.params, maxCostUsd: r.maxCost, changeNote: r.note, actor: SEED_ACTOR });
     await pool.query(`UPDATE ai_route_revision SET status = 'APPROVED', approved_by = $2, approved_at = now() WHERE route_id = $1`, [route.route_id, SEED_ACTOR]);
     await registry.activate(r.useCase, 'test', route.route_id, SEED_ACTOR, 'Semilla: ruta simulada de regresión', 'seed');
     created.push(`route:test:${r.useCase}`);
   }
 
-  // Entorno lab: candidatas reales en DRAFT (una por modelo y caso de uso).
+  // Entorno lab: candidatas reales en DRAFT (una por modelo y caso de uso) con el prompt vigente. Las candidatas semilla
+  // DRAFT de un prompt anterior nunca se probaron y ya no corresponden al contrato: se retiran.
   for (const r of LAB_CANDIDATES) {
-    const prompt = await promptV1(r.useCase);
+    const prompt = seedPrompt.get(r.useCase);
     if (!prompt) continue;
+    const stale = await pool.query<{ route_id: string }>(
+      `UPDATE ai_route_revision SET status = 'RETIRED' WHERE use_case_id = $1 AND created_by = $2 AND status = 'DRAFT' AND prompt_revision_id <> $3 RETURNING route_id`,
+      [r.useCase, SEED_ACTOR, prompt]);
+    stale.rows.forEach((row) => created.push(`route:retired-stale-draft:${r.useCase}:${row.route_id}`));
     const exists = await pool.query(`SELECT 1 FROM ai_route_revision WHERE use_case_id = $1 AND model_id = $2 AND prompt_revision_id = $3 AND params = $4::jsonb AND max_cost_usd = $5 AND status <> 'RETIRED' LIMIT 1`, [r.useCase, r.model, prompt, JSON.stringify(r.params), r.maxCost]);
     if (exists.rowCount) continue;
     await registry.createRoute({ useCaseId: r.useCase, modelId: r.model, promptRevisionId: prompt, params: r.params, maxCostUsd: r.maxCost, changeNote: r.note, actor: SEED_ACTOR });

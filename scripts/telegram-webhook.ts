@@ -6,8 +6,8 @@
  *   node scripts/telegram-webhook.ts register --confirm-bot <username> --ready-for-webhook-registration
  *       [--replace-webhook-from <url-actual-exacta>]
  *       setWebhook https://tg.mainspot.io/telegram/webhook con secret_token, allowed_updates
- *       mínimos (["message"]: lo único que procesa TelegramLinkService), drop_pending_updates=false
- *       y max_connections=1; después confirma con getWebhookInfo.
+ *       mínimos (["message","callback_query"]: mensajes y botones, lo único que procesa TelegramLinkService),
+ *       drop_pending_updates=false y max_connections=1; después confirma con getWebhookInfo.
  *
  * Salvaguardas (fail closed):
  *  - Token y secreto SOLO desde el archivo protegido (MAINSPOT_TELEGRAM_ENV_FILE o
@@ -27,7 +27,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 export const WEBHOOK_URL = 'https://tg.mainspot.io/telegram/webhook';
-export const ALLOWED_UPDATES = ['message'] as const;
+export const ALLOWED_UPDATES = ['message', 'callback_query'] as const;
 const FORBIDDEN_METHODS: Record<string, true> = { getUpdates: true, deleteWebhook: true };
 
 export interface TelegramWebhookDeps {

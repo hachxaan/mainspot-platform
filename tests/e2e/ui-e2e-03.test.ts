@@ -258,7 +258,7 @@ test('E2E DEV-E2E-03: interfaz de Claude Design en navegador contra servidor, wo
   await page.locator('#tg-code').waitFor();
   await page.locator('a[href^="#/chat?inicio="]').click();
   await page.locator('[data-action="tg-start"]').click();
-  await page.getByText('Listo: este chat recibirá los avisos de MainSpot').waitFor();
+  await page.getByText('Listo, este chat ya está conectado a MainSpot.').waitFor();
   const link = await one<{ chat_id: string }>(`SELECT chat_id FROM telegram_link WHERE tenant_id = $1 AND status = 'active'`, [tenant]);
   // El chat simulado tiene un id opaco `sim-<12 hex>`, nunca un número de teléfono (antes se buscaban 10 dígitos
   // seguidos, que un id hexadecimal también puede contener: fallaba en ~1,6 % de las ejecuciones).

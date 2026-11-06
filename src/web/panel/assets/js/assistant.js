@@ -30,7 +30,51 @@
   };
 
   /* ---------- Conversación del panel, reconstruida del backend ---------- */
-  var SYSTEM_INTENTS = /^(website\.initial|website\.phone|website\.restore|social\.)/;
+  // Las propuestas que prepara MainSpot por su cuenta (primera página, teléfono, restauración, IA desde «IA de tu
+  // negocio») no son mensajes del chat; las ediciones con IA pedidas en el chat sí (quedan en la misma solicitud).
+  var SYSTEM_INTENTS = /^(website\.initial|website\.phone|website\.restore|website\.ai_|social\.)/;
+
+  /** Qué ruta de IA preparó (o prepara) el cambio; una ruta en borrador del laboratorio se nombra como tal. */
+  MS.aiBadge = function (routes, lab) {
+    var gen = (routes || []).filter(function (x) { return x && x.use_case_id && x.use_case_id !== 'conversation.intent.classify'; });
+    if (!gen.length) return lab ? 'Laboratorio de IA' : '';
+    var draft = gen.some(function (x) { return x.status === 'DRAFT' || x.status === 'TESTED'; });
+    var models = gen.map(function (x) { return String(x.model_id || '').replace(/^[a-z]+:/, ''); }).filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+    return (lab || draft ? 'Laboratorio · ruta en borrador (' + (draft ? 'DRAFT' : 'autorizada') + ')' : 'IA activa') + ' · ' + models.join(', ');
+  };
+
+  var AI_JOB_ERR = {
+    no_active_route: 'La edición con IA no está activa en tu cuenta (no hay una ruta aprobada). Puedes probarla con una autorización de laboratorio.',
+    lab_grant_invalid: 'Tu autorización de laboratorio venció o fue revocada. Elige otra en «IA de tu negocio → Laboratorio».',
+    provider_auth: 'El proveedor de IA rechazó la solicitud (credencial o saldo). No preparé nada.',
+    provider_unavailable: 'El proveedor de IA no respondió. No preparé nada; puedes intentarlo de nuevo.',
+    timeout: 'El proveedor de IA tardó demasiado. No preparé nada; puedes intentarlo de nuevo.',
+    circuit_open: 'El proveedor de IA está fallando ahora. No preparé nada; intenta en unos minutos.',
+    budget_exhausted: 'Se alcanzó el presupuesto de IA. No preparé nada.',
+    blocked_external: 'La IA real está desactivada en este entorno. No preparé nada.',
+    invalid_output: 'La IA propuso un cambio que no cumple las reglas de tu página (por ejemplo, un dato inventado). No preparé nada; intenta decirlo de otra forma.',
+    no_visible_change: 'Ese cambio no modificaría nada visible de tu página, así que no preparé ninguna propuesta.',
+    image_not_in_library: 'La foto elegida ya no está en tu biblioteca. No preparé nada.',
+    website_missing: 'Todavía no tienes página.'
+  };
+  function aiJobText(job) {
+    if (job.status === 'queued' || job.status === 'running') {
+      var step = job.step || '';
+      return step.indexOf('image') === 0 ? 'Estoy generando la imagen…' : step === 'proposal' ? 'Estoy preparando la vista previa…' : 'Estoy preparando el cambio con IA…';
+    }
+    if (job.status === 'failed') {
+      var code = job.error_code || '';
+      if (code.indexOf('image_') === 0 && code !== 'image_not_in_library') {
+        return 'No pude obtener la imagen' + (job.image_reason ? ' (' + job.image_reason + ')' : ' (' + code.slice(6) + ')') + '. No creé ninguna propuesta: puedes subir una foto a tu biblioteca y pedirme que la use.';
+      }
+      return AI_JOB_ERR[code] || ('No se pudo preparar el cambio (' + code + '). Tu página no cambió.');
+    }
+    var r = job.result || {};
+    if (r.status === 'needs_clarification') return r.question || '¿Puedes describir el cambio con más detalle?';
+    if (r.status === 'not_web_edit') return r.message || 'Ese mensaje no pide un cambio en tu página.';
+    return 'La propuesta está lista.';
+  }
+
   MS.buildConvo = function (requests, reqById) {
     var meId = S().me ? S().me.user_id : null;
     var list = requests.filter(function (r) { return r.channel === 'simulated' && !SYSTEM_INTENTS.test(r.intent || ''); })
@@ -40,11 +84,13 @@
       var at = MS.ts(r.created_at) || Date.now();
       out.push({ id: 'u-' + r.request_id, from: 'me', text: r.raw_message, at: at, who: r.actor_id === meId ? MS.me().short : 'Tu equipo' });
       var p = r.proposal_id ? reqById[r.proposal_id] : null;
+      var job = r.ai_job || null;
       var m = { id: 'b-' + r.request_id, from: 'bot', at: at + 1, actions: [], text: '' };
-      if (p && p.kind === 'change') {
+      if (p && (p.kind === 'change' || p.kind === 'ai')) {
         var sum = p.summary;
         m.changes = p.changes.filter(function (c) { return c.field !== 'generic'; });
         m.reqId = p.id;
+        if (p.kind === 'ai') m.badge = MS.aiBadge(p.aiRoutes, job && job.lab);
         var canDecide = MS.can('approve');
         switch (p.status) {
           case 'awaiting_confirm':
@@ -63,10 +109,18 @@
           case 'failed': m.text = sum + '\nNo se pudo publicar. Tu página no cambió.'; m.actions = [{ label: 'Ver qué pasó', act: 'open', arg: '#/cambios/' + p.id, style: 'secondary' }]; break;
           default: m.text = sum;
         }
+      } else if (job) {
+        m.text = aiJobText(job);
+        m.pending = job.status === 'queued' || job.status === 'running';
+        m.error = job.status === 'failed';
+        m.badge = MS.aiBadge(job.routes, job.lab);
+        if (job.result && job.result.proposal_id) m.actions = [{ label: 'Ver vista previa', act: 'open', arg: '#/vista-previa/' + job.result.proposal_id, style: 'primary' }];
+        else if (job.status === 'failed' && (job.error_code === 'no_active_route' || job.error_code === 'lab_grant_invalid')) m.actions = [{ label: 'Ir al laboratorio', act: 'open', arg: '#/ia/laboratorio', style: 'secondary' }];
       } else {
         m.text = r.response_message || 'Recibimos tu mensaje.';
         if (/Teléfonos de contacto/.test(m.text)) m.actions = [{ label: 'Cambiar el teléfono de mi página', act: 'open', arg: '#/pagina?ir=phone-website', style: 'secondary' }];
         if (/Todavía no tienes página/.test(m.text)) m.actions = [{ label: 'Crear mi página', act: 'open', arg: '#/pagina/crear', style: 'primary' }];
+        if (/autorización de laboratorio/.test(m.text)) m.actions = [{ label: 'Ir al laboratorio', act: 'open', arg: '#/ia/laboratorio', style: 'secondary' }];
         if (p && p.kind === 'sensitive') m.actions = [{ label: 'Ver la solicitud', act: 'open', arg: '#/cambios/' + p.id, style: 'secondary' }];
       }
       out.push(m);
@@ -213,7 +267,7 @@
     generate: function () {
       return API.post('/telegram/link-code').then(function (res) {
         if (!res.ok) return { ok: false, message: res.error.message };
-        MS.mem.tgCode = { code: res.data.code, expiresAt: MS.ts(res.data.expires_at), channel_mode: res.data.channel_mode, instructions: res.data.instructions, revoked: false };
+        MS.mem.tgCode = { code: res.data.code, expiresAt: MS.ts(res.data.expires_at), channel_mode: res.data.channel_mode, instructions: res.data.instructions, bot_username: res.data.bot_username || null, deep_link: res.data.deep_link || null, revoked: false };
         MS.derive();
         MS.emit();
         return { ok: true };
@@ -250,7 +304,7 @@
       MS.mem.busy.tg = true;
       MS.emit();
       return API.post('/dev/simulator/telegram', { text: text }).then(function (res) {
-        return MS.refresh(['tgChat', 'telegram', 'cases'], true).then(function () {
+        return MS.refresh(['tgChat', 'telegram', 'cases', 'proposals', 'requests'], true).then(function () {
           finishLocal('tg');
           delete MS.mem.busy.tg;
           if (!res.ok) MS.ui.toast(res.error.message, 'info');
@@ -268,16 +322,17 @@
       return m ? m[1] : null;
     },
     /**
-     * Mensajes del chat simulado. Solo los avisos vigentes (`active`) de casos abiertos llevan botones, con las opciones
-     * de la instantánea de ESE aviso que guarda el servidor (no el texto del mensaje ni el estado actual del caso):
-     * confirmar envía /aprobar CÓDIGO N, que solo publica si el aviso sigue vigente. Un aviso sustituido o ya usado
-     * queda como en Telegram: se puede escribir su comando, pero el servidor no publica nada y envía el vigente.
+     * Mensajes del chat simulado. Los avisos de casos solo llevan botones si su aviso sigue vigente (`active`) y el caso
+     * está abierto, con las opciones de la instantánea de ESE aviso que guarda el servidor (no el texto del mensaje ni el
+     * estado actual del caso): confirmar envía /aprobar CÓDIGO N, que solo publica si el aviso sigue vigente. Un aviso
+     * sustituido o ya usado queda como en Telegram: se puede escribir su comando, pero el servidor no publica nada y envía
+     * el vigente. El resto de mensajes del bot llevan los MISMOS botones que envía el bot real (un botón por fila).
      */
     build: function (messages, notices) {
       var byCode = {};
       (notices || []).forEach(function (n) { byCode[n.code] = n; });
       return (messages || []).map(function (m, i) {
-        var out = { id: 'tg-' + i + '-' + m.at, from: m.from, text: m.text, at: MS.ts(m.at), actions: [] };
+        var out = { id: 'tg-' + (m.id || i) + '-' + m.at, from: m.from, text: m.text, at: MS.ts(m.at), actions: [] };
         var code = m.from === 'bot' ? MS.tg.noticeCode(m.text) : null;
         var n = code ? byCode[code] : null;
         if (n) {
@@ -287,7 +342,11 @@
             out.actions.push({ label: 'No responder', act: 'case-reject', arg: code });
           }
           out.actions.push({ label: 'Ver en el panel', act: 'open', arg: '#/caso/' + n.case_id });
+          return out;
         }
+        (m.buttons || []).forEach(function (row) {
+          row.forEach(function (b) { out.actions.push({ label: b.label, act: 'tg-press', arg: m.id + '|' + b.action }); });
+        });
         return out;
       });
     },
@@ -296,6 +355,11 @@
       if (!m || !m.actions || !m.actions[idx] || MS.mem.busy.tg) return;
       var a = m.actions[idx];
       if (a.act === 'open') { location.hash = a.arg; return; }
+      if (a.act === 'tg-press') {
+        var cut = a.arg.indexOf('|');
+        MS.tg.press(a.arg.slice(0, cut), a.arg.slice(cut + 1));
+        return;
+      }
       var parts = String(a.arg || '').split('|');
       if (a.act === 'case-pick') {
         // Segundo toque en Telegram antes de publicar (la decisión es de la persona), con el texto que mostró el aviso.
@@ -306,6 +370,20 @@
       if (a.act === 'case-no') { MS.mem.local.tg = [{ id: localId('tgn'), from: 'system', at: Date.now(), text: 'El caso sigue esperando tu decisión.' }]; MS.emit(); return; }
       if (a.act === 'case-yes') { MS.tg.send('/aprobar ' + parts[0] + ' ' + parts[1]); return; }
       if (a.act === 'case-reject') { MS.tg.send('/rechazar ' + parts[0]); }
+    },
+    /** Pulsación de un botón del bot: el servidor la autoriza y edita el mensaje con el resultado. */
+    press: function (messageId, action) {
+      MS.mem.busy.tg = true;
+      MS.emit();
+      return API.post('/dev/simulator/telegram', { press: { message_id: messageId, action: action } }).then(function (res) {
+        return MS.refresh(['tgChat', 'telegram', 'cases', 'proposals', 'requests', 'website'], true).then(function () {
+          delete MS.mem.busy.tg;
+          if (!res.ok) MS.ui.toast(res.error.message, 'info');
+          else if (res.data.notice) MS.ui.toast(res.data.notice, 'info');
+          MS.emit();
+          return res;
+        });
+      });
     }
   };
 })();

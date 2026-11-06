@@ -154,7 +154,7 @@ export function securityHeaders(): (req: Request, res: Response, next: NextFunct
   };
 }
 
-export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?: Mailer } = {}): AppHandle {
+export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?: Mailer; /** Pruebas: Graph API falsa (sin red). */ metaFetch?: typeof fetch } = {}): AppHandle {
   const config = overrides.config ?? loadConfig();
   const pool = overrides.pool ?? getPool({ connectionString: config.databaseUrl });
   const sink = new AuditSink(pool);
@@ -190,8 +190,10 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   // INC-004/005: publishers de reputación y social (solo tras aprobación humana).
   const reputationProvider = config.reputationProvider === 'google_business_profile' ? google.reputationProvider : new SimulatedReviews(pool);
   publishers.register(new ReputationPublisher(pool, reputationProvider, sink));
-  // DEV-E2E-04 §2B: el proveedor real publica con la Page y el token cifrado de CADA negocio.
-  const socialProvider = createSocialProvider(config, connections);
+  // DEV-E2E-04 §2B: el proveedor real publica con la Page y el token cifrado de CADA negocio; las fotos salen de la
+  // biblioteca del propio negocio.
+  const media = new MediaService({ pool, sink });
+  const socialProvider = createSocialProvider(config, connections, overrides.metaFetch, media);
   publishers.register(new SocialPublisher(pool, socialProvider, sink));
   // DEV-E2E-04 P4: scheduler automático de publicaciones aprobadas (arranca en main; el
   // tick manual /social/process-due usa su mismo reclamo acotado al tenant de la sesión).
@@ -223,7 +225,6 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   const dispatcher = new AiDispatcher({ pool, config, registry, lab: aiLab });
   const aiJobs = new AiJobs({ pool, registry, environment: config.aiEnvironment, lab: aiLab });
   const brand = new BrandService({ pool, sink });
-  const media = new MediaService({ pool, sink });
   // DEC-0076: la redacción con IA de respuestas a reseñas consume `ai_review_replies` del ciclo mensual; su reserva
   // dura lo que puede durar la redacción (AI_REPLY_RESERVATION_TTL_MS), no los 120 s de una clasificación.
   const engagement = new EngagementService({
@@ -236,7 +237,6 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
     comments: realMeta ? new MetaCommentSource(pool, socialProvider) : new SimulatedCommentSource(pool),
     pollIntervalMs: config.engagementPollIntervalMs,
   });
-  const telegram = new TelegramLinkService({ pool, sink, channel, engagement });
   const gbp = new GbpProfileService({ pool, sink, phones, mode: realGoogle ? 'real' : 'simulated', google: google.location, connections });
   const machine: StateMachineDeps = {
     pool,
@@ -248,9 +248,23 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   // APR-0002: Jev como clasificador — UN cliente por proceso, solo con
   // JEV_MODE=shadow|primary y solo para tenants sintéticos (DEC-0019).
   const jev = createJevClassifier(config.jev, new JevRepository(pool));
-  const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo, quota, jev, phones });
   const aiSite = new AiSiteService({ pool, dispatcher, jobs: aiJobs, brand, media, site: { pool, sink, repo: conversationRepo, machine, websiteRepo, phones } });
+  const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo, quota, jev, phones, aiEdit: aiSite });
   const aiBusiness = new AiBusinessService({ pool, sink, dispatcher, jobs: aiJobs, brand, media, social: socialService });
+  // Telegram: avisos y decisiones de atención + conversación con el mismo pipeline del panel. Una edición con IA o unas
+  // propuestas de publicación pedidas desde el chat avisan ahí al terminar; también el resultado final en Facebook.
+  const telegram = new TelegramLinkService({
+    pool, sink, channel, engagement,
+    conversation: {
+      pipeline, machine, lab: aiLab, panelUrl: `${config.publicBaseUrl}/panel`,
+      social: {
+        business: aiBusiness, posts: socialService, jobs: aiJobs, timezone: config.socialSchedulerTimezone,
+        page: (tenantId) => socialProvider.getPage(tenantId).then((p) => p.page_name, () => null),
+      },
+    },
+  });
+  aiJobs.onSettled((job) => telegram.notifyAiJob(job));
+  socialScheduler.onOutcome((outcome) => telegram.notifySocialOutcome(outcome));
   const platformAuth = new PlatformAuth({ pool, mfaKey: config.platformMfaKey, jwtSecret: config.jwtSecret, ttlMinutes: config.platformSessionTtlMinutes });
   const approvalRateLimiter = new ActionRateLimiter(
     config.approvalRateLimitMax,
@@ -280,9 +294,9 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
     approvalRateLimiter,
     websiteRepo,
     domainService,
-    channel,
     quota,
     phones,
+    telegram,
   };
 
   const app = express();
