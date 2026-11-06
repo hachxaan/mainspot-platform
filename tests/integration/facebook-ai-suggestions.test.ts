@@ -297,6 +297,22 @@ test('AC-FB05: replay del proveedor, peticiones simultáneas y cambio de modo du
   assert.deepEqual([retried?.state, retried?.reply_invocation_id, switching.replies], ['needs_human', null, 1], 'con el modo nuevo no se prepara');
 });
 
+test('AC-FB05: si la redacción automática falla con una excepción, la unidad se libera al momento y el reintento del caso prepara la sugerencia', async () => {
+  const a = await newTenant('client_fbs12', 3);
+  assert.equal((await setMode(a, 'auto_suggest')).status, 200);
+  const failing: EngagementSemantics = { ...stubSemantics(), async reply(): Promise<ReplyOutcome> { throw new Error('fallo inesperado de la redacción'); } };
+  const broken = serviceWith(failing);
+  const row = await receivedComment(broken, a);
+  await assert.rejects(broken.classifyCase(row), /fallo inesperado de la redacción/);
+  assert.deepEqual(await credits(a), { committed: 0, reserved: 0, google: 0 }, 'ninguna unidad queda reservada hasta su vencimiento');
+  const still = await broken.getCase(a.tenant, row.case_id);
+  assert.equal(still?.state, 'received', 'el caso sigue pendiente de clasificar');
+  const stub = stubSemantics();
+  const retried = await serviceWith(stub).classifyCase(still!);
+  assert.deepEqual([retried?.state, stub.replies, retried?.drafts[0] === retried?.ai_draft], ['needs_human', 1, true], 'el reintento prepara la sugerencia');
+  assert.deepEqual(await credits(a), { committed: 1, reserved: 0, google: 0 });
+});
+
 test('FB-2: sin texto, solo menciones, con enlaces o repetido no se gasta IA automática; pedirla a mano sigue disponible', async () => {
   const a = await newTenant('client_fbs8', 10);
   assert.equal((await setMode(a, 'auto_suggest')).status, 200);

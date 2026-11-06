@@ -470,6 +470,8 @@ test('(b) AC-16011/AC-6004: con el presupuesto diario del negocio agotado por su
     .then(() => null, (err: unknown) => err as { status?: number; code?: string; userMessage?: string });
   assert.deepEqual([onDemand?.status, onDemand?.code], [429, 'limit_exceeded'], 'sin margen no hay propuesta a pedido');
   assert.match(onDemand?.userMessage ?? '', /presupuesto diario de IA.*No se descontó de tu plan/);
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM audit_event WHERE tenant_id = $1 AND action = 'quota.released' AND result = 'ai_facebook_suggestions:1:ai_budget_exhausted'`, [a.tenant]), 1,
+    'la unidad liberada queda auditada con su motivo real');
   // Respuesta automática autorizada: sin margen, sale el texto seguro sin IA (sin el aviso de IA) y se publica.
   assert.equal((await facebookAutoPolicy(a)).status, 200);
   const auto = cbService('gratitude');

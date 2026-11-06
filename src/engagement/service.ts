@@ -24,7 +24,7 @@ import { log } from '../shared/logger.ts';
 import { loadPinnedPolicy } from '../plans/policy.ts';
 import type { QuotaLedger, QuotaReservationRow } from '../subscriptions/quota.ts';
 import { autoReplyText, classify, decide, humanDrafts, type Classification, type Decision, type EngagementCategory, type EngagementOrigin, type InfoTopic, type PolicySnapshot } from './classifier.ts';
-import type { EngagementSemantics } from './ai-semantics.ts';
+import type { EngagementSemantics, ReplyOutcome } from './ai-semantics.ts';
 import {
   AUTO_REPLY_CONSENT, AUTO_SUGGEST_CONSENT, REVIEW_REQUIRED_CONSENT, autoReplyOriginOfVersion, consentCoversAiSpend, consentIsCurrent,
   reconsentRequired, suggestionConsentIsCurrent,
@@ -747,7 +747,14 @@ export class EngagementService {
     if (claim.kind === 'denied') return { generated: null, reservation: null };
     // Unidad ya confirmada para este caso sin que el caso la refleje: no se redacta otra sin medir (fail-closed).
     if (claim.kind === 'replay') return { generated: null, reservation: null };
-    const generated = await semantics.reply(row, classification, facts);
+    let generated: ReplyOutcome;
+    try {
+      generated = await semantics.reply(row, classification, facts);
+    } catch (err) {
+      // Un fallo inesperado de la redacción tampoco retiene la unidad: el reintento del caso puede volver a reservarla.
+      await this.deps.quota.release(claim.reservation, who.actorRole, 'ai_reply_failed');
+      throw err;
+    }
     if (!generated.ok) {
       await this.deps.quota.release(claim.reservation, who.actorRole, 'ai_reply_failed');
       return { generated: null, reservation: null };
@@ -813,15 +820,18 @@ export class EngagementService {
     const business = await this.businessName(actor.tenantId);
     const verified = await this.verifiedAnswer(actor.tenantId, found.origin, classification.info_topic);
     let consumed = false;
+    let releaseReason = 'ai_draft_not_saved';
     try {
       const generated = await semantics.reply(found, classification, { name: business, verified_answer: verified }, { requestId: actor.requestId, actorId: actor.userId });
       if (!generated.ok) {
         // AC-FB04: un presupuesto técnico agotado se explica como tal (no como un fallo genérico del proveedor).
         if (generated.code === 'budget_exhausted') {
+          releaseReason = 'ai_budget_exhausted';
           throw new AppError(429, DENY_CODES.LIMIT_EXCEEDED, generated.reason === 'tenant_day'
             ? 'Tu negocio alcanzó su presupuesto diario de IA (se renueva cada día, hora UTC). No se descontó de tu plan; puedes elegir una propuesta o escribir tu respuesta.'
             : 'MainSpot alcanzó su presupuesto de IA por ahora. No se descontó de tu plan; puedes elegir una propuesta o escribir tu respuesta.');
         }
+        releaseReason = 'ai_draft_failed';
         throw new AppError(502, 'validation_error', 'No se pudo redactar con IA en este momento. No se descontó de tu plan; puedes elegir una propuesta o escribir tu respuesta.');
       }
       const updated = await runAtomic(this.deps.pool, async (client) => {
@@ -851,7 +861,7 @@ export class EngagementService {
       consumed = true;
       return { case: updated, already: false };
     } finally {
-      if (!consumed) await this.deps.quota.release(claim.reservation, actor.role, 'ai_draft_not_saved');
+      if (!consumed) await this.deps.quota.release(claim.reservation, actor.role, releaseReason);
     }
   }
 
