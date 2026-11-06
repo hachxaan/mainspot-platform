@@ -1,10 +1,12 @@
 -- MainSpot FB-3 (DEC-0078; SRC-007) — REVERSIÓN de migrations/0039_ai_budget_segregation.sql ÚNICAMENTE.
--- No revierte las anteriores: el orden es 0039 (este script) → 0038 (si está registrada) → 0037
--- (consent-approval-binding-rollback.sql) → 0036 → 0035 → 0034.
+-- No revierte las demás: el orden completo es 0040 (typesafe-reservation-rollback.sql) → 0039 (este script) → 0038
+-- (facebook-ai-suggestions-rollback.sql) → 0037 (consent-approval-binding-rollback.sql) → 0036 → 0035 → 0034.
 --
--- EXIGE EL CÓDIGO ANTERIOR (base 122e74d o equivalente) desplegado junto con este cambio. Ese código no conoce el
--- presupuesto experimental del laboratorio: tras revertir, las pruebas con grant vuelven a gastar el `tenant_day` del
--- negocio y el gasto deja de atribuirse por canal. Solo sirve para volver a un estado de laboratorio.
+-- EXIGE EL CÓDIGO ANTERIOR A FB-3 QUE YA CONOCE 0038 (`2905d1d` o equivalente) desplegado junto con este cambio. El de
+-- 122e74d/7bbea3d no sirve mientras 0038 siga aplicada: su registro de parámetros (v2) no coincide con la BD y bloquea
+-- toda escritura del catálogo de planes. El código de `2905d1d` no conoce el presupuesto experimental del laboratorio:
+-- tras revertir, las pruebas con grant vuelven a gastar el `tenant_day` del negocio, las evaluaciones cuentan como
+-- operación y el gasto deja de atribuirse por canal. Solo sirve para volver a un estado de laboratorio.
 --
 -- Uso, con la aplicación y los workers DETENIDOS y una copia de seguridad reciente (ON_ERROR_STOP: cualquier aborto
 -- sale con código distinto de 0):

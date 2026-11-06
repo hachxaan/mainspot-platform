@@ -1,10 +1,12 @@
 -- MainSpot DEC-0078 (SRC-007, TS-1) — REVERSIÓN de migrations/0040_typesafe_reservation.sql ÚNICAMENTE.
 -- No revierte migraciones anteriores: cada una tiene su propio script y se revierten en orden inverso (0040 primero).
 --
--- EXIGE EL CÓDIGO ANTERIOR (PR #18, `7bbea3d` o equivalente) desplegado junto con este cambio: ese código vuelve a
--- comprobar el tope de TypeSafe (DEC-0032) sumando jev_classification, jev_evaluation_run y ai_invocation, sin reserva
--- (HUECO-TS-1 reabierto). Con el código de TS-1 sobre el esquema revertido, toda llamada a TypeSafe falla al reservar
--- (fail-closed). Solo sirve para volver a un estado de laboratorio; nunca para producción.
+-- EXIGE EL CÓDIGO ANTERIOR A TS-1 QUE YA CONOCE 0038 Y 0039 (`3368a31` o equivalente) desplegado junto con este cambio.
+-- El de 122e74d/7bbea3d no sirve mientras 0038 siga aplicada (registro de parámetros v2: el catálogo de planes queda
+-- bloqueado para escribir). El código de `3368a31` vuelve a comprobar el tope de TypeSafe (DEC-0032) sumando
+-- jev_classification, jev_evaluation_run y ai_invocation, sin reserva (HUECO-TS-1 reabierto). Con el código de TS-1
+-- sobre el esquema revertido, toda llamada a TypeSafe falla al reservar (fail-closed). Solo sirve para volver a un
+-- estado de laboratorio; nunca para producción.
 --
 -- Uso, con la aplicación y los workers DETENIDOS y una copia de seguridad reciente (ON_ERROR_STOP: cualquier aborto
 -- sale con código distinto de 0):

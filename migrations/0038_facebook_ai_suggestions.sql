@@ -13,7 +13,7 @@
 --      (SEC-CONSENT-01); la BD rechaza una huella que no sea la del texto y cualquier UPDATE. Sin fila, el modo efectivo
 --      es `on_demand` (predeterminado de DEC-0078 R1). El modo nunca autoriza publicar: eso sigue en engagement_policy.
 -- No toca revisiones, valores, suscripciones, políticas, casos ni el libro de cuotas. Sin precios ni cobros.
--- Reversión (solo mientras ninguna configuración, valor ni reserva use lo nuevo): scripts/facebook-ai-policy-rollback.sql.
+-- Reversión (solo mientras ninguna configuración, valor ni reserva use lo nuevo): scripts/facebook-ai-suggestions-rollback.sql.
 
 INSERT INTO plan_parameter_definition
   (parameter_key, capability, category, label, description, unit, value_type, semantics, period_kind, window_seconds,
