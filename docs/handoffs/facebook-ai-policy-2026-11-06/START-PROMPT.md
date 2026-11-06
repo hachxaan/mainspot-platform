@@ -14,7 +14,7 @@
 >
 > Inspecciona HEAD, worktrees y commits ajenos antes de trabajar. Formaliza decisión canónica trazable posterior a DEC-0077 con precedencia explícita sin reescribir historia.
 >
-> Implementa tres modos independientes de publicación: sugerencias IA desactivadas, bajo demanda (default) y automáticas opt-in para REVISIÓN humana. Mantén publicación automática como permiso separado. Las sugerencias automáticas tienen costo informado y límite técnico; no se ejecutan sin consentimiento/budget. Controla replays, duplicados, carreras, comentarios poco relevantes y aislación de tenants.
+> Implementa tres modos de GENERACIÓN DE SUGERENCIAS, no de publicación: IA desactivada, bajo demanda (default) y sugerencias automáticas opt-in para REVISIÓN humana. Mantén publicación automática como permiso separado. Las sugerencias automáticas tienen costo informado y límite técnico; no se ejecutan sin consentimiento/budget. Controla replays, duplicados, carreras, comentarios poco relevantes y aislación de tenants.
 >
 > FB-2: antes de gastar para publicación automática, comprueba elegibilidad y límite de publicaciones. No gastar para publicar si ya no se puede. Una sugerencia automática opt-in para revisión sí puede generarse con presupuesto aunque auto-publicación esté limitada, pero nunca publica por sí sola.
 >
