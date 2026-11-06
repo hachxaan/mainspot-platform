@@ -151,10 +151,19 @@ flowchart LR
   `JEV_MODEL=jev-1.14.0` cuando existe clave. El gate de versión/código/corpus sigue siendo obligatorio;
   permisos y acciones permanecen en el backend.
 - Presupuestos: generativo de laboratorio **USD 25 acumulados**, incluyendo OpenRouter histórico
-  (DEC-0068). Registro tras las evaluaciones OpenAI de DEC-0073: USD 0.096726; ninguna generación directa
-  exitosa acreditada por el agente. Las invocaciones `manual_lab` bajo grant reservan y descuentan igual; los
-  créditos declarados por el propietario no amplían el techo. Las llamadas rechazadas por saldo/cuota no
-  acreditan calidad ni disponibilidad operativa. No es una autorización mensual recurrente ni de Ads.
+  (DEC-0068): `lab_total` es el techo global estricto de TODO el gasto de pago, de operación y de laboratorio.
+  Registro tras las evaluaciones OpenAI de DEC-0073: USD 0.096726; ninguna generación directa
+  exitosa acreditada por el agente. Por debajo (FB-3, DEC-0078, migración 0039) el gasto se separa por
+  propósito: la operación comercial (sin grant) reserva contra el `tenant_day` de su negocio (fila propia o la
+  por defecto de OPS-0001) y las invocaciones `manual_lab` bajo grant contra `lab_experiment`, una fila global
+  por día UTC **sin valor sembrado**: hasta que un platform_admin la fija (step-up, motivo y auditoría; nunca por
+  encima de `lab_total`) el laboratorio no gasta (`budget_exhausted`, detalle `lab_experiment`). Ninguno consume
+  el del otro y ambos siguen bajo `lab_total` (y `platform_month`, opcional); las ventanas diaria y mensual son
+  UTC. El gasto se atribuye por propósito y canal (`ai_use_case.channel`, uno por caso de uso) en
+  `GET /api/platform/ai/spend` (Engineering › Costos y Administration › Salud), sin límites ni particiones por
+  canal. Reversión de 0039: `scripts/ai-budget-segregation-rollback.sql` (se niega si `lab_experiment` está
+  configurado). Los créditos declarados por el propietario no amplían el techo. Las llamadas rechazadas por
+  saldo/cuota no acreditan calidad ni disponibilidad operativa. No es una autorización mensual recurrente ni de Ads.
   TypeSafe: USD 1/día UTC (DEC-0032), compartido entre `jev_classification`, `jev_evaluation_run` y
   `ai_invocation` TypeSafe.
 - Contabilidad: costo directo estimado por uso × precio publicado; TypeSafe conserva la procedencia

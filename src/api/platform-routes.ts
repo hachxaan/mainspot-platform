@@ -3,7 +3,8 @@
  * del panel del negocio (otra sesión, otra clave, otra auditoría).
  * - platform_admin: negocios, asignación de planes (fija la revisión publicada), clasificación de datos, salud, presupuestos.
  * - ai_engineer: catálogo, prompts, rutas, evaluaciones, rollout/rollback, trazas y jobs.
- * - platform_admin | ai_engineer: laboratorio manual (DEC-0074): grants temporales, evidencia y revisión manual.
+ * - platform_admin | ai_engineer: laboratorio manual (DEC-0074): grants temporales, evidencia y revisión manual; gasto de
+ *   IA atribuido por propósito y canal (FB-3).
  * - Planes (DEC-0075): permisos explícitos plans.read/edit/publish y subscriptions.assign (src/platform/permissions.ts,
  *   rutas en plan-catalog-routes.ts).
  * - platform_support: lectura de salud, del catálogo de planes y acceso de soporte con motivo y caducidad (visible al negocio).
@@ -16,11 +17,14 @@ import { Router, type Request, type Response } from 'express';
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import type { AuditSink } from '../audit/sink.ts';
+import { runAtomic } from '../conversation/state-machine.ts';
+import { JevRepository } from '../conversation/jev-repository.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/logger.ts';
 import { PlatformAuth, assertPlatformReason, requirePlatform, serverRequestId, writePlatformAudit, type PlatformRequest, type PlatformRole, type PlatformSession } from '../platform/auth.ts';
 import type { AiDispatcher } from '../ai/dispatcher.ts';
 import { runEvalSuite } from '../ai/evals.ts';
+import { isBudgetScope, LAB_PURPOSE_SQL, platformBudgetStatus, spendBreakdown, tenantDayStatus } from '../ai/governance.ts';
 import type { AiLab } from '../ai/lab.ts';
 import type { RouteParams } from '../ai/registry.ts';
 import type { SubscriptionRepository } from '../subscriptions/entitlements.ts';
@@ -229,6 +233,7 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
 
   router.get('/health', guard(anyRole, 'platform.health.read'), ah(async (_req, res) => {
     const q = async (sql: string) => (await pool.query(sql)).rows;
+    const spend = await spendBreakdown(pool);
     res.json({
       db: (await q('SELECT now() AS now'))[0],
       jobs: await q(`SELECT status, count(*) AS n FROM ai_job WHERE created_at > now() - interval '24 hours' GROUP BY status`),
@@ -237,12 +242,14 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
       engagement_backlog: (await q(`SELECT count(*) FILTER (WHERE state = 'received') AS received, count(*) FILTER (WHERE state = 'retry_pending') AS retry, count(*) FILTER (WHERE state = 'needs_human') AS human FROM engagement_case`))[0],
       scheduler_backlog: (await q(`SELECT count(*) FILTER (WHERE status = 'scheduled' AND publish_at < now()) AS overdue, count(*) FILTER (WHERE status = 'uncertain') AS uncertain FROM scheduled_post`))[0],
       budgets: await q(`SELECT scope, tenant_id, limit_usd, source, updated_at FROM ai_budget ORDER BY scope`),
-      // DEC-0068: techo acumulado de IA generativa (incluye el historial de OpenRouter); TypeSafe va aparte (DEC-0032).
-      spend: (await q(`SELECT COALESCE(sum(COALESCE(cost_usd, reserved_usd)) FILTER (WHERE created_at >= date_trunc('day', now())), 0) AS today,
-                              COALESCE(sum(COALESCE(cost_usd, reserved_usd)) FILTER (WHERE created_at >= date_trunc('month', now())), 0) AS month,
-                              COALESCE(sum(COALESCE(cost_usd, reserved_usd)), 0) AS lab_total
-                         FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
-                        WHERE p.kind IN ('anthropic','openai','openrouter') AND i.status IN ('running','succeeded','failed')`))[0],
+      // FB-3: cada ámbito, también el que falta (sin fila no hay gasto), con el mismo cálculo que la reserva.
+      budget_status: await platformBudgetStatus(pool),
+      // DEC-0068: gasto de pago bajo el techo global acumulado (incluye el historial de OpenRouter), día y mes UTC, con
+      // la operación y el laboratorio por separado (cada invocación cuenta una vez). TypeSafe va aparte (DEC-0032).
+      spend: {
+        today: spend.total.today_usd, month: spend.total.month_usd, lab_total: spend.total.total_usd,
+        by_purpose: spend.by_purpose.map((p) => ({ purpose: p.purpose, today_usd: p.today_usd, month_usd: p.month_usd, total_usd: p.total_usd })),
+      },
       spend_by_provider: await q(`SELECT p.provider_id, p.display_name, p.status, i.cost_source, COALESCE(sum(COALESCE(i.cost_usd, i.reserved_usd)), 0) AS usd, count(*) AS n
                                     FROM ai_invocation i JOIN ai_provider p ON p.provider_id = i.provider_id
                                    WHERE p.kind IN ('anthropic','openai','openrouter','typesafe') AND i.status IN ('running','succeeded','failed')
@@ -255,18 +262,47 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
     res.json({ events: (await pool.query(`SELECT at, actor_id, actor_roles, action, resource, tenant_id, decision, result, reason FROM platform_audit_event ORDER BY at DESC LIMIT 200`)).rows });
   }));
 
+  /**
+   * Presupuestos de IA (platform_admin, step-up, motivo, auditoría en la misma transacción). `lab_experiment` y
+   * `platform_month` se crean si faltan (fila global); `lab_total` y el `tenant_day` por defecto solo se actualizan.
+   * FB-3: el presupuesto experimental del laboratorio nunca supera el techo global `lab_total`.
+   */
   router.put('/ai/budgets/:scope', guard(['platform_admin'], 'platform.budget.update', true), ah(async (req, res) => {
     const s = sessionOf(req);
     const scope = req.params['scope'];
-    const limit = Number((req.body ?? {})['limit_usd']);
+    const raw = (req.body ?? {})['limit_usd'];
+    // Un número JSON o un texto numérico: null, booleanos o vacío nunca valen 0 por accidente.
+    const limit = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : Number.NaN;
     const reason = reasonOf(req.body);
-    if (scope !== 'lab_total' && scope !== 'platform_month' && scope !== 'tenant_day') throw new AppError(400, 'validation_error', 'Alcance inválido.');
-    if (!Number.isFinite(limit) || limit < 0) throw new AppError(400, 'validation_error', 'Límite inválido.');
+    if (!isBudgetScope(scope)) throw new AppError(400, 'validation_error', 'Alcance inválido.');
+    // NUMERIC(12,4): lo que la columna no puede guardar se rechaza aquí y no como error de la base de datos.
+    if (!Number.isFinite(limit) || limit < 0 || limit >= 1e8) throw new AppError(400, 'validation_error', 'Límite inválido.');
     if (scope === 'lab_total' && limit > LAB_TOTAL_CAP_USD) throw new AppError(403, 'permission_denied', `El techo del laboratorio es USD ${LAB_TOTAL_CAP_USD} por decisión del propietario.`);
-    const r = await pool.query(`UPDATE ai_budget SET limit_usd = $2, source = $3, updated_by = $4, updated_at = now() WHERE scope = $1 AND tenant_id IS NULL RETURNING scope, limit_usd`, [scope, limit, `console:${reason.slice(0, 80)}`, s.platform_user_id]);
-    if (!r.rowCount) throw new AppError(404, 'not_found', 'No hay presupuesto de ese alcance.');
-    await audit(s, req, 'platform.budget.update', `ai_budget/${scope}`, String(limit), { reason });
-    res.json({ budget: r.rows[0] });
+    const source = `console:${reason.slice(0, 80)}`;
+    const out = await runAtomic(pool, async (client) => {
+      if (scope === 'lab_experiment') {
+        // FOR SHARE: el techo no cambia hasta el COMMIT; la comparación usa el valor ya redondeado como lo guarda la columna.
+        const cap = (await client.query<{ limit_usd: string; fits: boolean }>(
+          `SELECT limit_usd, $1::numeric(12,4) <= limit_usd AS fits FROM ai_budget WHERE scope = 'lab_total' AND tenant_id IS NULL FOR SHARE`, [limit])).rows[0];
+        if (!cap) throw new AppError(409, 'validation_error', 'Falta el techo global lab_total: sin él ninguna IA de pago gasta. Configúralo antes que el presupuesto del laboratorio.');
+        if (!cap.fits) throw new AppError(409, 'validation_error', `El presupuesto del laboratorio no puede superar el techo global lab_total (USD ${Number(cap.limit_usd)}).`);
+      }
+      const previous = (await client.query<{ limit_usd: string }>('SELECT limit_usd FROM ai_budget WHERE scope = $1 AND tenant_id IS NULL', [scope])).rows[0];
+      const r = scope === 'lab_experiment' || scope === 'platform_month'
+        ? await client.query<{ scope: string; limit_usd: string }>(
+          `INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES ($1, $2, NULL, $3, $4, $5)
+           ON CONFLICT (scope, (COALESCE(tenant_id, '-'))) DO UPDATE SET limit_usd = EXCLUDED.limit_usd, source = EXCLUDED.source, updated_by = EXCLUDED.updated_by, updated_at = now()
+           RETURNING scope, limit_usd`, [`bud_${scope}`, scope, limit, source, s.platform_user_id])
+        : await client.query<{ scope: string; limit_usd: string }>(
+          `UPDATE ai_budget SET limit_usd = $2, source = $3, updated_by = $4, updated_at = now() WHERE scope = $1 AND tenant_id IS NULL RETURNING scope, limit_usd`,
+          [scope, limit, source, s.platform_user_id]);
+      const budget = r.rows[0];
+      if (!budget) throw new AppError(404, 'not_found', 'No hay presupuesto de ese alcance.');
+      await writePlatformAudit(client, { actorId: s.platform_user_id, actorRoles: s.roles, action: 'platform.budget.update', resource: `ai_budget/${scope}`,
+        decision: 'allow', result: `${previous ? previous.limit_usd : 'sin configurar'} → ${budget.limit_usd}`, reason, requestId: serverRequestId(req) });
+      return { budget, created: !previous };
+    });
+    res.json(out);
   }));
 
   // ------------------------------------------------------------------ Engineering Console
@@ -381,12 +417,32 @@ export function platformRouter(deps: PlatformRouteDeps): Router {
   }));
 
   router.get('/ai/costs', guard(engRead, 'ai.cost.read'), ah(async (_req, res) => {
-    const byDay = await pool.query(`SELECT (created_at AT TIME ZONE 'UTC')::date AS day, provider_id, count(*) AS calls, COALESCE(sum(cost_usd), 0) AS cost_usd
-                                      FROM ai_invocation WHERE created_at > now() - interval '30 days' GROUP BY 1,2 ORDER BY 1 DESC, 2`);
-    const byUc = await pool.query(`SELECT use_case_id, model_id, count(*) AS calls, COALESCE(sum(cost_usd), 0) AS cost_usd, round(avg(latency_ms)) AS avg_ms,
-                                          percentile_disc(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95_ms
-                                     FROM ai_invocation WHERE created_at > now() - interval '30 days' GROUP BY 1,2 ORDER BY 4 DESC`);
-    res.json({ by_day: byDay.rows, by_use_case: byUc.rows, budgets: (await pool.query('SELECT scope, tenant_id, limit_usd, source FROM ai_budget ORDER BY scope')).rows });
+    // Costo registrado de cualquier proveedor (sin reservas en curso), por propósito: cada invocación cuenta una vez.
+    const purpose = `CASE WHEN ${LAB_PURPOSE_SQL} THEN 'lab' ELSE 'operational' END`;
+    const byDay = await pool.query(`SELECT (i.created_at AT TIME ZONE 'UTC')::date AS day, i.provider_id, ${purpose} AS purpose, count(*) AS calls, COALESCE(sum(i.cost_usd), 0) AS cost_usd
+                                      FROM ai_invocation i WHERE i.created_at > now() - interval '30 days' GROUP BY 1,2,3 ORDER BY 1 DESC, 2, 3`);
+    const byUc = await pool.query(`SELECT i.use_case_id, uc.channel, i.model_id, ${purpose} AS purpose, count(*) AS calls, COALESCE(sum(i.cost_usd), 0) AS cost_usd,
+                                          round(avg(i.latency_ms)) AS avg_ms, percentile_disc(0.95) WITHIN GROUP (ORDER BY i.latency_ms) AS p95_ms
+                                     FROM ai_invocation i JOIN ai_use_case uc ON uc.use_case_id = i.use_case_id
+                                    WHERE i.created_at > now() - interval '30 days' GROUP BY 1,2,3,4 ORDER BY 6 DESC`);
+    res.json({ by_day: byDay.rows, by_use_case: byUc.rows, budgets: (await pool.query('SELECT scope, tenant_id, limit_usd, source FROM ai_budget ORDER BY scope')).rows,
+      budget_status: await platformBudgetStatus(pool) });
+  }));
+
+  /**
+   * FB-3: gasto de IA de pago por propósito (operación / laboratorio) × canal × caso de uso (hoy y mes UTC, acumulado) y
+   * estado de cada ámbito con el cálculo de la reserva. Solo atribuye: no hay límites por canal. TypeSafe es su propia
+   * línea (DEC-0032), fuera de estos presupuestos.
+   */
+  router.get('/ai/spend', guard(engRead, 'ai.cost.read'), ah(async (_req, res) => {
+    const day = new Date().toISOString().slice(0, 10);
+    res.json({
+      timezone: 'UTC',
+      budgets: await platformBudgetStatus(pool),
+      tenant_day: await tenantDayStatus(pool),
+      spend: await spendBreakdown(pool),
+      typesafe: { decision: 'DEC-0032', day, spent_usd: await new JevRepository(pool).spentOn(day) },
+    });
   }));
 
   router.get('/ai/jobs', guard(engRead, 'ai.jobs.read'), ah(async (req, res) => {

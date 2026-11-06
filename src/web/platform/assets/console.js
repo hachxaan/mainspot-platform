@@ -141,17 +141,75 @@
     return html;
   }
 
+  /* ---------- Presupuestos de IA (DEC-0068; FB-3): techo global y, debajo, operación y laboratorio por separado ---------- */
+  var SCOPE_LABEL = { lab_total: 'Techo global de IA de pago', platform_month: 'Mensual de plataforma', tenant_day: 'Diario por negocio (operación)', lab_experiment: 'Laboratorio experimental' };
+  var SCOPE_COUNTS = { all: 'todo el gasto de pago', operational: 'solo operación (sin grant)', lab: 'solo pruebas con grant' };
+  var SCOPE_WINDOW = { accumulated: 'acumulado, sin reinicio', utc_month: 'mes UTC', utc_day: 'día UTC' };
+  var SCOPE_MISSING = { lab_total: 'Sin configurar: ninguna IA de pago puede gastar', platform_month: 'Sin configurar (opcional): no se aplica', tenant_day: 'Sin configurar: un negocio sin límite propio no puede gastar', lab_experiment: 'Sin configurar: el laboratorio no puede gastar' };
+  var PURPOSE_LABEL = { operational: 'Operación comercial', lab: 'Laboratorio (experimental)' };
+  var CHANNEL_LABEL = { owner_intent: 'Intención del dueño', assistant: 'Asistente del dueño', website: 'Página web', facebook_posts: 'Publicaciones de Facebook', facebook_comments: 'Comentarios de Facebook', google_reviews: 'Reseñas de Google', campaigns: 'Campañas', insights: 'Resumen del negocio', editorial: 'Calendario editorial' };
+  /** Estado de cada ámbito tal como lo calcula la reserva: un ámbito sin fila se muestra y explica (sin fila no hay gasto). */
+  function budgetTable(statuses) {
+    return '<div class="pc-scroll"><table class="pc-table"><caption class="sr-only">Presupuestos de IA</caption><thead><tr><th scope="col">Ámbito</th><th scope="col">Cuenta</th><th scope="col">Ventana</th><th scope="col">Límite</th><th scope="col">Gastado</th><th scope="col">Disponible</th><th scope="col">Estado</th></tr></thead><tbody>' +
+      statuses.map(function (b) {
+        var state = b.missing ? tag(SCOPE_MISSING[b.scope] || 'Sin configurar', b.required ? 'alerta' : 'ocre')
+          : b.remaining_usd === null ? '<span class="tiny">margen por negocio</span>' : b.remaining_usd <= 0 ? tag('Agotado', 'alerta') : tag('Con margen', 'nopal');
+        return '<tr><td>' + esc(SCOPE_LABEL[b.scope] || b.scope) + '<div class="pc-mono muted">' + esc(b.scope) + '</div></td><td>' + esc(SCOPE_COUNTS[b.counts] || b.counts) + '</td><td>' + esc(SCOPE_WINDOW[b.window] || b.window) + '</td>' +
+          '<td>' + (b.missing ? '—' : money(b.limit_usd)) + '</td><td>' + money(b.spent_usd) + '</td><td>' + (b.remaining_usd === null ? '—' : money(b.remaining_usd)) + '</td><td>' + state + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  /** Solo platform_admin; el servidor pide el código de verificación (step-up) y deja la auditoría. Sin valores sugeridos. */
+  function budgetForm(statuses) {
+    var cap = statuses.filter(function (b) { return b.scope === 'lab_total'; })[0];
+    return '<form class="stack" data-form="budget" novalidate style="margin-top:12px"><h3>Cambiar un presupuesto</h3>' + formError() +
+      '<p class="tiny">El laboratorio experimental no puede superar el techo global' + (cap && !cap.missing ? ' (hoy ' + money(cap.limit_usd) + ')' : '') + '. Laboratorio y mensual se crean si faltan; el diario por negocio cambia solo el valor por defecto; el techo global no se sube por encima de lo que fijó el propietario.</p>' +
+      '<div class="pc-grid"><div class="field"><label for="bud-scope">Ámbito</label><select class="select" id="bud-scope" required><option value="">Elige un ámbito</option>' +
+      ['lab_experiment', 'lab_total', 'platform_month', 'tenant_day'].map(function (s) { return '<option value="' + s + '">' + esc(SCOPE_LABEL[s]) + ' (' + s + ')</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label for="bud-limit">Límite (USD)</label><input class="input" id="bud-limit" type="number" min="0" step="0.0001" inputmode="decimal" required></div></div>' +
+      reasonField('bud-reason', 'Motivo') + '<div class="btn-row">' + btn('Guardar presupuesto', { type: 'submit' }) + '</div></form>';
+  }
+  /** Gasto de pago por propósito › canal › caso de uso (hoy y mes UTC, acumulado). Solo atribución: no hay límites por canal. */
+  function spendTable(sp) {
+    var cells = function (x) { return '<td>' + money(x.today_usd) + '</td><td>' + money(x.month_usd) + '</td><td>' + money(x.total_usd) + '</td><td>' + esc(x.calls_today + ' / ' + x.calls_month + ' / ' + x.calls_total) + '</td>'; };
+    var rows = sp.by_purpose.map(function (p) {
+      return '<tr><th scope="row" colspan="3">' + esc(PURPOSE_LABEL[p.purpose] || p.purpose) + '</th>' + cells(p) + '</tr>' + sp.by_channel.filter(function (c) { return c.purpose === p.purpose; }).map(function (c) {
+        return '<tr><td></td><td colspan="2">' + esc(CHANNEL_LABEL[c.channel] || c.channel) + '</td>' + cells(c) + '</tr>' + sp.by_use_case.filter(function (u) { return u.purpose === p.purpose && u.channel === c.channel; }).map(function (u) {
+          return '<tr><td></td><td></td><td class="pc-mono">' + esc(u.use_case_id) + '</td>' + cells(u) + '</tr>';
+        }).join('');
+      }).join('');
+    }).join('');
+    return '<div class="pc-scroll"><table class="pc-table"><caption class="sr-only">Gasto de IA de pago por propósito y canal</caption><thead><tr><th scope="col">Propósito</th><th scope="col">Canal</th><th scope="col">Caso de uso</th><th scope="col">Hoy</th><th scope="col">Mes</th><th scope="col">Acumulado</th><th scope="col">Llamadas (hoy / mes / total)</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="7" class="muted">Sin gasto de pago registrado.</td></tr>') + '<tr><th scope="row" colspan="3">Total (techo global)</th>' + cells(sp.total) + '</tr></tbody></table></div>';
+  }
+  function tenantDayTable(list) {
+    if (!list.length) return '<p class="muted">Ningún negocio con gasto operativo hoy ni con límite propio.</p>';
+    return '<div class="pc-scroll"><table class="pc-table"><caption class="sr-only">Presupuesto diario por negocio</caption><thead><tr><th scope="col">Negocio</th><th scope="col">Límite</th><th scope="col">Gastado hoy</th><th scope="col">Disponible</th></tr></thead><tbody>' +
+      list.map(function (t) { return '<tr><td class="pc-mono">' + esc(t.tenant_id) + '</td><td>' + (t.missing ? tag(SCOPE_MISSING.tenant_day, 'alerta') : money(t.limit_usd) + ' <span class="tiny">' + (t.own_limit ? 'propio' : 'por defecto') + '</span>') + '</td><td>' + money(t.spent_usd) + '</td><td>' + (t.remaining_usd === null ? '—' : t.remaining_usd <= 0 ? tag('Agotado', 'alerta') : money(t.remaining_usd)) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+  }
+
   function healthView() {
     var d = load('health', '/health');
+    // El informe por canal es de quien puede leer costos (platform_admin o ai_engineer); soporte ve el resto.
+    var sp = has('platform_admin') ? load('spend', '/ai/spend') : null;
     var html = '<h1 tabindex="-1" data-focus>Salud y presupuesto</h1>';
     if (!d) return html + '<div class="skeleton" style="height:240px"></div>';
     if (d.error) return html + '<div class="banner banner-alerta">' + esc(d.error) + '</div>';
+    var byPurpose = {};
+    d.spend.by_purpose.forEach(function (p) { byPurpose[p.purpose] = p; });
+    var split = function (key) { return ' <span class="tiny">(operación ' + money((byPurpose.operational || {})[key]) + ' · laboratorio ' + money((byPurpose.lab || {})[key]) + ')</span>'; };
     html += '<div class="pc-grid">' +
-      '<section class="card stack"><h2>Gasto de IA generativa</h2><p class="tiny">Anthropic y OpenAI directos más el historial de OpenRouter (DEC-0068). TypeSafe tiene su propio límite diario (DEC-0032).</p><dl class="pc-kv"><dt>Hoy</dt><dd>' + money(d.spend.today) + '</dd><dt>Mes</dt><dd>' + money(d.spend.month) + '</dd><dt>Laboratorio acumulado</dt><dd>' + money(d.spend.lab_total) + '</dd></dl>' +
-        '<ul>' + d.budgets.map(function (b) { return '<li>' + esc(b.scope) + (b.tenant_id ? ' (' + esc(b.tenant_id) + ')' : '') + ': USD ' + esc(b.limit_usd) + ' <span class="tiny">' + esc(b.source) + '</span></li>'; }).join('') + '</ul></section>' +
+      '<section class="card stack"><h2>Gasto de IA de pago</h2><p class="tiny">Anthropic y OpenAI directos más el historial de OpenRouter, todo bajo el techo global (DEC-0068). Día y mes en UTC. TypeSafe tiene su propio límite diario (DEC-0032).</p><dl class="pc-kv"><dt>Hoy</dt><dd>' + money(d.spend.today) + split('today_usd') + '</dd><dt>Mes</dt><dd>' + money(d.spend.month) + split('month_usd') + '</dd><dt>Acumulado (techo global)</dt><dd>' + money(d.spend.lab_total) + split('total_usd') + '</dd></dl></section>' +
       '<section class="card stack"><h2>Jobs (24 h)</h2><ul>' + d.jobs.map(function (j) { return '<li>' + esc(j.status) + ': ' + esc(j.n) + '</li>'; }).join('') + '</ul><p>Atascados (lease vencido): ' + esc(d.jobs_stuck.n) + '</p></section>' +
       '<section class="card stack"><h2>Atención y publicaciones</h2><dl class="pc-kv"><dt>Por clasificar</dt><dd>' + esc(d.engagement_backlog.received) + '</dd><dt>Reintentos</dt><dd>' + esc(d.engagement_backlog.retry) + '</dd><dt>Humanos</dt><dd>' + esc(d.engagement_backlog.human) + '</dd><dt>Publicaciones vencidas</dt><dd>' + esc(d.scheduler_backlog.overdue) + '</dd><dt>Inciertas</dt><dd>' + esc(d.scheduler_backlog.uncertain) + '</dd></dl></section>' +
-      '</div><section class="card stack" style="margin-top:16px"><h2>Invocaciones (24 h)</h2><div class="pc-scroll"><table class="pc-table"><thead><tr><th>Proveedor</th><th>Estado</th><th>N</th><th>Promedio ms</th></tr></thead><tbody>' +
+      '</div>';
+    html += '<section class="card stack" style="margin-top:16px" aria-labelledby="bud-t"><h2 id="bud-t" tabindex="-1">Presupuestos de IA</h2><p class="tiny">El techo global cuenta todo el gasto de pago. Debajo, la operación de cada negocio responde ante su presupuesto diario y las pruebas con grant ante el presupuesto experimental del laboratorio; ninguna consume el del otro. Un ámbito obligatorio sin configurar bloquea el gasto (fail-closed).</p>' +
+      budgetTable(d.budget_status) +
+      '<ul class="tiny">' + d.budgets.map(function (b) { return '<li>' + esc(b.scope) + (b.tenant_id ? ' (' + esc(b.tenant_id) + ')' : '') + ': USD ' + esc(b.limit_usd) + ' · ' + esc(b.source) + ' · ' + esc(when(b.updated_at)) + '</li>'; }).join('') + '</ul>' +
+      (has('platform_admin') ? budgetForm(d.budget_status) : '') + '</section>';
+    if (sp) {
+      html += '<section class="card stack" style="margin-top:16px"><h2>Gasto por propósito y canal</h2>' + (sp.error ? '<div class="banner banner-alerta">' + esc(sp.error) + '</div>' : spendTable(sp.spend)) + '</section>';
+    }
+    html += '<section class="card stack" style="margin-top:16px"><h2>Invocaciones (24 h)</h2><div class="pc-scroll"><table class="pc-table"><thead><tr><th>Proveedor</th><th>Estado</th><th>N</th><th>Promedio ms</th></tr></thead><tbody>' +
       d.invocations_24h.map(function (i) { return '<tr><td>' + esc(i.provider_id) + '</td><td>' + esc(i.status) + '</td><td>' + esc(i.n) + '</td><td>' + esc(i.avg_ms) + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
     var SOURCE = { reported: 'cargo informado', estimated: 'estimado (uso × precio)', unknown: 'sin precio', none: 'sin costo' };
     html += '<section class="card stack" style="margin-top:16px"><h2>Proveedores</h2><div class="pc-scroll"><table class="pc-table"><thead><tr><th>Proveedor</th><th>Estado</th><th>Datos de negocios reales</th><th>Base</th></tr></thead><tbody>' +
@@ -191,7 +249,7 @@
     if (d.error) return html + '<div class="banner banner-alerta">' + esc(d.error) + '</div>';
     var ro = d.rollout || {};
     var eng = has('ai_engineer');
-    html += '<h1 tabindex="-1" data-focus>' + esc(d.use_case.title) + '</h1><p class="pc-mono">' + esc(d.use_case.use_case_id) + ' · esquema ' + esc(d.use_case.output_schema) + ' · riesgo ' + esc(d.use_case.risk_level) + '</p>';
+    html += '<h1 tabindex="-1" data-focus>' + esc(d.use_case.title) + '</h1><p class="pc-mono">' + esc(d.use_case.use_case_id) + ' · esquema ' + esc(d.use_case.output_schema) + ' · riesgo ' + esc(d.use_case.risk_level) + ' · canal de gasto ' + esc(CHANNEL_LABEL[d.use_case.channel] || d.use_case.channel) + '</p>';
     var byRoute = {};
     d.routes.forEach(function (r) { byRoute[r.route_id] = r; });
     var rl = function (id) { var r = byRoute[id]; return r ? 'v' + r.version + ' · ' + r.model.display_name : (id || '—'); };
@@ -288,12 +346,16 @@
 
   function costsView() {
     var d = load('costs', '/ai/costs');
+    var sp = load('spend', '/ai/spend');
     var html = '<h1 tabindex="-1" data-focus>Costos</h1>';
-    if (!d) return html + '<div class="skeleton" style="height:240px"></div>';
-    if (d.error) return html + '<div class="banner banner-alerta">' + esc(d.error) + '</div>';
-    return html + '<section class="card stack"><h2>Presupuestos</h2><ul>' + d.budgets.map(function (b) { return '<li>' + esc(b.scope) + ': USD ' + esc(b.limit_usd) + ' <span class="tiny">' + esc(b.source) + '</span></li>'; }).join('') + '</ul></section>' +
-      '<section class="card card-flush" style="margin-top:16px"><div class="pc-scroll"><table class="pc-table"><caption class="sr-only">Costo por caso de uso</caption><thead><tr><th>Caso de uso</th><th>Modelo</th><th>Llamadas</th><th>Costo</th><th>Promedio ms</th><th>p95 ms</th></tr></thead><tbody>' +
-      d.by_use_case.map(function (r) { return '<tr><td class="pc-mono">' + esc(r.use_case_id) + '</td><td>' + esc(r.model_id) + '</td><td>' + esc(r.calls) + '</td><td>' + money(r.cost_usd) + '</td><td>' + esc(r.avg_ms) + '</td><td>' + esc(r.p95_ms) + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
+    if (!d || !sp) return html + '<div class="skeleton" style="height:240px"></div>';
+    if (d.error || sp.error) return html + '<div class="banner banner-alerta">' + esc(d.error || sp.error) + '</div>';
+    return html + '<section class="card stack"><h2>Presupuestos</h2><p class="tiny">Mismo cálculo que la reserva previa a cada llamada de pago. Los cambios se hacen en Administration › Salud (platform_admin con código de verificación).</p>' + budgetTable(sp.budgets) +
+      '<p class="tiny">TypeSafe (DEC-0032) tiene su propio tope diario, fuera de estos presupuestos: ' + money(sp.typesafe.spent_usd) + ' el ' + esc(sp.typesafe.day) + ' (UTC).</p></section>' +
+      '<section class="card stack" style="margin-top:16px"><h2>Presupuesto diario por negocio (operación, hoy UTC)</h2>' + tenantDayTable(sp.tenant_day) + '</section>' +
+      '<section class="card stack" style="margin-top:16px"><h2>Gasto de pago por propósito y canal</h2><p class="tiny">Atribución para calibrar con datos reales; ningún canal tiene límite propio. Incluye lo reservado en curso y los costos desconocidos (cuentan su reserva).</p>' + spendTable(sp.spend) + '</section>' +
+      '<section class="card card-flush" style="margin-top:16px"><div class="pc-scroll"><table class="pc-table"><caption class="sr-only">Costo registrado por caso de uso (30 días)</caption><thead><tr><th>Caso de uso</th><th>Canal</th><th>Propósito</th><th>Modelo</th><th>Llamadas</th><th>Costo registrado</th><th>Promedio ms</th><th>p95 ms</th></tr></thead><tbody>' +
+      d.by_use_case.map(function (r) { return '<tr><td class="pc-mono">' + esc(r.use_case_id) + '</td><td>' + esc(CHANNEL_LABEL[r.channel] || r.channel) + '</td><td>' + esc(PURPOSE_LABEL[r.purpose] || r.purpose) + '</td><td>' + esc(r.model_id) + '</td><td>' + esc(r.calls) + '</td><td>' + money(r.cost_usd) + '</td><td>' + esc(r.avg_ms) + '</td><td>' + esc(r.p95_ms) + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
   }
 
   function jobsView() {
@@ -610,7 +672,7 @@
       '<li>Plazo de 5 a 120 minutos (60 por omisión). Revocable en cualquier momento. El ID no es un permiso por sí mismo: el servidor revalida tenant, usuario, emisor, ruta y vigencia en cada llamada.</li>' +
       '<li>La persona debe entrar a su panel y pulsar «Usar rutas de laboratorio» en <a href="' + esc(panelLink) + '" target="_blank" rel="noopener">' + esc(panelLink) + '</a>. Nada se activa solo ni se publica.</li>' +
       '<li>Cada prueba se cobra al proveedor real y se registra con ID de invocación; la aceptación se hace en el caso de uso (Evidencia manual).</li></ul></section>' +
-      '<section class="card stack"><h2>Presupuestos</h2>' + (costs && costs.budgets ? '<ul>' + costs.budgets.map(function (b) { return '<li>' + esc(b.scope) + ': USD ' + esc(b.limit_usd) + ' <span class="tiny">' + esc(b.source) + '</span></li>'; }).join('') + '</ul>' : (costs && costs.error ? '<p class="tiny">' + esc(costs.error) + '</p>' : '<div class="skeleton" style="height:60px"></div>')) + '<p class="tiny">Costo máximo por llamada según cada ruta (tabla de abajo). El gasto acumulado se ve en <a href="#/costos">Costos</a>.</p></section></div>';
+      '<section class="card stack"><h2>Presupuestos</h2>' + (costs && costs.budget_status ? budgetTable(costs.budget_status.filter(function (b) { return b.scope === 'lab_experiment' || b.scope === 'lab_total'; })) : (costs && costs.error ? '<p class="tiny">' + esc(costs.error) + '</p>' : '<div class="skeleton" style="height:60px"></div>')) + '<p class="tiny">Cada prueba con grant reserva del presupuesto experimental del laboratorio (día UTC) y del techo global; nunca del presupuesto diario del negocio. Sin presupuesto experimental configurado, el laboratorio no puede gastar: lo fija un platform_admin en Administration › Salud. Costo máximo por llamada según cada ruta (tabla de abajo); el gasto por canal se ve en <a href="#/costos">Costos</a>.</p></section></div>';
     // Emisión
     if (canIssue) {
       var t0 = d.tenants[0];
@@ -847,6 +909,27 @@
         if (!r.ok) { failed(form, r); return; }
         succeeded(form, 'as-t');
         toast(r.data.changed ? 'Plan asignado y fijado a su revisión publicada' : 'El negocio ya tenía ese plan y revisión'); refreshCurrent();
+      });
+    },
+    /** Presupuesto de IA (platform_admin): el servidor pide el código de verificación; nunca se propone un valor. */
+    budget: function (form) {
+      clearFormError(form);
+      var sel = document.getElementById('bud-scope'), input = document.getElementById('bud-limit');
+      if (!sel.value) { showFormError(form, 'Elige el ámbito del presupuesto.', sel); return; }
+      var raw = input.value.trim(), limit = Number(raw);
+      if (raw === '' || !isFinite(limit) || limit < 0) { showFormError(form, 'Escribe el límite en USD (0 o más).', input); return; }
+      var reason = reasonOk(form, 'bud-reason');
+      if (reason === null) return;
+      var scope = sel.value;
+      busy(form, true);
+      act('PUT', '/ai/budgets/' + encodeURIComponent(scope), { limit_usd: limit, reason: reason }, function (r) {
+        if (!r.ok) { failed(form, r); return; }
+        succeeded(form, 'bud-t');
+        input = document.getElementById('bud-limit');
+        if (input) input.value = '';
+        toast((r.data.created ? 'Presupuesto creado: ' : 'Presupuesto actualizado: ') + scope + ' = ' + money(r.data.budget.limit_usd));
+        // Recarga conservando lo pintado hasta que llegan los datos nuevos (el formulario no desaparece mientras tanto).
+        delete S.data.costs; load('health', '/health', true); if (S.data.spend) load('spend', '/ai/spend', true);
       });
     },
     'plan-create': function (form) {

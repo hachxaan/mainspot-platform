@@ -16,8 +16,9 @@
  *      una hora) y sin espacio en la hora no se redacta con IA para publicar;
  *  (d) laboratorio: sin grant válido (ausente, inexistente, caducado, revocado, de otro negocio, usuario o entorno,
  *      capacidad fuera de su allowlist o fuera de AI_ENVIRONMENT=lab) se rechaza antes de clasificar o generar; con
- *      grant válido la invocación reserva los mismos presupuestos técnicos (`tenant_day`, techo `lab_total`, tope
- *      TypeSafe) y al agotarse se bloquea; nunca toca el libro de cuotas comerciales.
+ *      grant válido la invocación reserva el presupuesto experimental del laboratorio (`lab_experiment`, FB-3) y nunca el
+ *      diario del negocio, bajo el techo global `lab_total` y el tope TypeSafe; al agotarse se bloquea; nunca toca el
+ *      libro de cuotas comerciales.
  */
 
 import { test, before, after } from 'node:test';
@@ -27,7 +28,7 @@ import { bootApi, authHeaders, api, login, type TestApi } from '../helpers/testd
 import { createTenantWithPlan, countRows, type TestTenant } from '../helpers/tenants.ts';
 import { setTenantPlan } from '../helpers/plans.ts';
 import { AiDispatcher } from '../../src/ai/dispatcher.ts';
-import { SPENT_SQL, reserveBudget } from '../../src/ai/governance.ts';
+import { SCOPE_SPENT_FILTER, SPENT_SQL, reserveBudget, type BudgetPurpose } from '../../src/ai/governance.ts';
 import { AiLab } from '../../src/ai/lab.ts';
 import { AiRegistry, type RouteParams } from '../../src/ai/registry.ts';
 import { AiEngagementSemantics, type EngagementSemantics } from '../../src/engagement/ai-semantics.ts';
@@ -185,9 +186,9 @@ async function commercialLedger(tenant: string): Promise<{ rows: number; events:
   };
 }
 
-/** Gasto del negocio hoy con el mismo cálculo que aplica el presupuesto `tenant_day` (src/ai/governance.ts). */
+/** Gasto operativo del negocio hoy con el mismo predicado que aplica el presupuesto `tenant_day` (src/ai/governance.ts). */
 async function tenantSpentToday(tenant: string): Promise<number> {
-  const r = await t.pool.query<{ spent: string }>(`${SPENT_SQL} AND i.tenant_id = $1 AND i.created_at >= date_trunc('day', now())`, [tenant]);
+  const r = await t.pool.query<{ spent: string }>(`${SPENT_SQL} AND ${SCOPE_SPENT_FILTER.tenant_day}`, [tenant]);
   return Number(r.rows[0]?.spent ?? 0);
 }
 
@@ -195,6 +196,34 @@ async function tenantSpentToday(tenant: string): Promise<number> {
 async function setTenantDayBudget(tenant: string, limitUsd: number): Promise<void> {
   await t.pool.query(`INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES ($1, 'tenant_day', $2, $3, 'test: prueba de cotas', 'test')`,
     [`bud_${randomUUID()}`, tenant, limitUsd]);
+}
+
+/** Gasto de laboratorio de hoy de todos los negocios: lo que cuenta para `lab_experiment` (una fila global). */
+async function labSpentToday(): Promise<number> {
+  return Number((await t.pool.query<{ spent: string }>(`${SPENT_SQL} AND ${SCOPE_SPENT_FILTER.lab_experiment}`)).rows[0]?.spent ?? 0);
+}
+
+/** Redondeo a 4 decimales hacia arriba / abajo, como guarda `ai_budget.limit_usd` (NUMERIC(12,4)), sin ruido de coma flotante. */
+function ceil4(value: number): number {
+  return Math.ceil(Math.round(value * 1e8) / 1e4) / 1e4;
+}
+function floor4(value: number): number {
+  return Math.floor(Math.round(value * 1e8) / 1e4) / 1e4;
+}
+
+/**
+ * Presupuesto experimental del laboratorio (FB-3) fijado por la plataforma (platform_admin con step-up): no hay valor
+ * sembrado. `limitUsd` se guarda con 4 decimales (NUMERIC(12,4)); quien llama lo retira con `clearLabExperimentBudget`.
+ */
+async function setLabExperimentBudget(limitUsd: number): Promise<void> {
+  await t.pool.query('UPDATE platform_session SET step_up_at = now() WHERE platform_user_id = $1', [adminId]);
+  const put = await platform(adminToken, '/ai/budgets/lab_experiment', 'PUT', { limit_usd: limitUsd, reason: 'Prueba local: presupuesto experimental del laboratorio' });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+}
+
+/** Vuelve al estado sin configurar (sin fila), el de cualquier base recién migrada. */
+async function clearLabExperimentBudget(): Promise<void> {
+  await t.pool.query(`DELETE FROM ai_budget WHERE scope = 'lab_experiment'`);
 }
 
 /**
@@ -543,39 +572,49 @@ test('(d) AC-19005: sin grant válido el laboratorio rechaza antes de clasificar
   for (const x of [a, b]) assert.deepEqual(await commercialLedger(x.tenant), { rows: 0, events: 0 });
 });
 
-test('(d) AC-6005/AC-19005: con grant válido la respuesta de laboratorio reserva el presupuesto diario del negocio, agotado se bloquea sin proveedor, revocar corta en seco y nunca toca el libro de cuotas', async () => {
+test('(d) AC-6005/AC-19005 · FB-3: con grant válido la respuesta de laboratorio reserva el presupuesto experimental del laboratorio y nunca el diario del negocio; agotado se bloquea sin proveedor, revocar corta en seco y nunca toca el libro de cuotas', async () => {
   const a = await createTenantWithPlan(lab, { ai_review_replies: 0, reviews_managed: 0 }, 'client_cblc');
   const grant = await issueGrant(a);
-  await setTenantDayBudget(a.tenant, maxCostUsd);
+  // Sin margen operativo: si el laboratorio reservara del diario del negocio, la primera respuesta ya se bloquearía.
+  await setTenantDayBudget(a.tenant, 0);
+  // Margen para una reserva sobre el gasto de laboratorio de hoy (la fila es global: otros archivos también prueban).
+  await setLabExperimentBudget(ceil4(await labSpentToday() + maxCostUsd));
   const calls0 = provider.calls;
+  try {
+    const ok = await labReply(lab, a.token, REVIEW, grant);
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.deepEqual([ok.body.review_required, ok.body.published, ok.body.simulated, ok.body.provider, ok.body.route_id, ok.body.reply.text],
+      [true, false, false, 'anthropic', labReplyRoute, AI_TEXT], 'propuesta para revisar; nada se publica');
+    assert.equal(provider.calls, calls0 + 1);
+    const [generated] = (await invocations(a.tenant, GOOGLE_REPLY)).filter((r) => r.invocation_id === ok.body.invocation_id);
+    assert.ok(generated);
+    assert.deepEqual([generated.status, generated.assignment, generated.lab_grant_id, Number(generated.reserved_usd), generated.cost_source],
+      ['succeeded', 'manual_lab', grant, maxCostUsd, 'estimated'], 'la invocación DRAFT reservó el costo máximo y queda trazada con su grant');
+    const [classified] = (await invocations(a.tenant, GOOGLE_CLASSIFY)).filter((r) => r.invocation_id === ok.body.classification_invocation_id);
+    assert.deepEqual([classified?.assignment, classified?.route_id, classified?.lab_grant_id], ['active', labClassifyRoute, grant], 'la clasificación sigue su ruta normal, revalidada con el grant');
+    assert.equal(await tenantSpentToday(a.tenant), 0, 'el laboratorio no cuenta en el presupuesto diario del negocio');
+    const ownLab = Number((await t.pool.query<{ spent: string }>(`${SPENT_SQL} AND i.tenant_id = $1 AND ${SCOPE_SPENT_FILTER.lab_experiment}`, [a.tenant])).rows[0]?.spent ?? 0);
+    assert.equal(ownLab, Number(generated.cost_usd), 'cuenta en el presupuesto experimental del laboratorio');
 
-  const ok = await labReply(lab, a.token, REVIEW, grant);
-  assert.equal(ok.status, 200, JSON.stringify(ok.body));
-  assert.deepEqual([ok.body.review_required, ok.body.published, ok.body.simulated, ok.body.provider, ok.body.route_id, ok.body.reply.text],
-    [true, false, false, 'anthropic', labReplyRoute, AI_TEXT], 'propuesta para revisar; nada se publica');
-  assert.equal(provider.calls, calls0 + 1);
-  const [generated] = (await invocations(a.tenant, GOOGLE_REPLY)).filter((r) => r.invocation_id === ok.body.invocation_id);
-  assert.ok(generated);
-  assert.deepEqual([generated.status, generated.assignment, generated.lab_grant_id, Number(generated.reserved_usd), generated.cost_source],
-    ['succeeded', 'manual_lab', grant, maxCostUsd, 'estimated'], 'la invocación DRAFT reservó el costo máximo y queda trazada con su grant');
-  const [classified] = (await invocations(a.tenant, GOOGLE_CLASSIFY)).filter((r) => r.invocation_id === ok.body.classification_invocation_id);
-  assert.deepEqual([classified?.assignment, classified?.route_id, classified?.lab_grant_id], ['active', labClassifyRoute, grant], 'la clasificación sigue su ruta normal, revalidada con el grant');
-  assert.equal(await tenantSpentToday(a.tenant), Number(generated.cost_usd), 'el laboratorio cuenta en el presupuesto diario del negocio');
+    // Agotado: la plataforma rebaja el presupuesto experimental a lo ya gastado hoy; no queda margen para otra reserva.
+    await setLabExperimentBudget(floor4(await labSpentToday()));
+    const exhausted = await labReply(lab, a.token, REVIEW, grant);
+    assert.deepEqual([exhausted.status, exhausted.body.error?.code], [429, 'limit_exceeded'], JSON.stringify(exhausted.body));
+    assert.match(exhausted.body.error.message, /presupuesto experimental del laboratorio/);
+    assert.equal(provider.calls, calls0 + 1, 'agotado: sin llamada al proveedor');
+    const blocked = (await invocations(a.tenant, GOOGLE_REPLY)).filter((r) => r.status === 'blocked');
+    assert.deepEqual(blocked.map((r) => [r.error_code, r.detail, r.assignment, r.lab_grant_id, r.route_id]), [['budget_exhausted', 'lab_experiment', 'manual_lab', grant, labReplyRoute]]);
 
-  const exhausted = await labReply(lab, a.token, REVIEW, grant);
-  assert.deepEqual([exhausted.status, exhausted.body.error?.code], [429, 'limit_exceeded'], JSON.stringify(exhausted.body));
-  assert.match(exhausted.body.error.message, /presupuesto interno de IA/);
-  assert.equal(provider.calls, calls0 + 1, 'agotado: sin llamada al proveedor');
-  const blocked = (await invocations(a.tenant, GOOGLE_REPLY)).filter((r) => r.status === 'blocked');
-  assert.deepEqual(blocked.map((r) => [r.error_code, r.detail, r.assignment, r.lab_grant_id, r.route_id]), [['budget_exhausted', 'tenant_day', 'manual_lab', grant, labReplyRoute]]);
-
-  // Revocar: la siguiente petición se rechaza antes de clasificar (revalidación en servidor en cada uso).
-  const before = await countRows(t, 'SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1', [a.tenant]);
-  assert.equal((await platform(adminToken, `/ai/lab/grants/${grant}/revoke`, 'POST', { reason: 'Fin de la sesión de laboratorio de la prueba' })).status, 200);
-  const afterRevoke = await labReply(lab, a.token, REVIEW, grant);
-  assert.deepEqual([afterRevoke.status, afterRevoke.body.error?.code], [403, 'permission_denied']);
-  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1', [a.tenant]), before);
-  assert.equal(provider.calls, calls0 + 1);
+    // Revocar: la siguiente petición se rechaza antes de clasificar (revalidación en servidor en cada uso).
+    const before = await countRows(t, 'SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1', [a.tenant]);
+    assert.equal((await platform(adminToken, `/ai/lab/grants/${grant}/revoke`, 'POST', { reason: 'Fin de la sesión de laboratorio de la prueba' })).status, 200);
+    const afterRevoke = await labReply(lab, a.token, REVIEW, grant);
+    assert.deepEqual([afterRevoke.status, afterRevoke.body.error?.code], [403, 'permission_denied']);
+    assert.equal(await countRows(t, 'SELECT count(*) AS n FROM ai_invocation WHERE tenant_id = $1', [a.tenant]), before);
+    assert.equal(provider.calls, calls0 + 1);
+  } finally {
+    await clearLabExperimentBudget();
+  }
 
   // Con la cuota de reseñas en 0, el laboratorio generó una respuesta a reseña sin tocar el libro de cuotas.
   assert.deepEqual(await commercialLedger(a.tenant), { rows: 0, events: 0 });
@@ -585,7 +624,7 @@ test('(d) AC-6005/AC-19005: con grant válido la respuesta de laboratorio reserv
   assert.deepEqual(trail.map((e) => e.action), ['ai.lab.grant_issued', 'ai.lab.grant_revoked'], 'emisión y revocación visibles en la auditoría del negocio');
 });
 
-test('(d) AC-6005: los techos globales también bloquean un grant válido con margen diario del negocio: lab_total rebajado por la plataforma (step-up) y tope diario de TypeSafe', async () => {
+test('(d) AC-6005 · FB-3: los techos globales también bloquean un grant válido con margen propio: lab_total rebajado por la plataforma (step-up) y tope diario de TypeSafe', async () => {
   const a = await createTenantWithPlan(lab, { reviews_managed: 0 }, 'client_cbld');
   const grant = await issueGrant(a);
   const calls0 = provider.calls;
@@ -593,6 +632,8 @@ test('(d) AC-6005: los techos globales también bloquean un grant válido con ma
     `SELECT limit_usd, source, updated_by, updated_at FROM ai_budget WHERE budget_id = 'bud_lab_total'`)).rows[0];
   assert.ok(original, 'techo acumulado sembrado (DEC-0068)');
   try {
+    // El laboratorio tiene margen propio (fijado antes: no puede superar el techo vigente); el techo global manda igual.
+    await setLabExperimentBudget(ceil4(await labSpentToday() + maxCostUsd));
     // platform_admin con step-up fija el techo en lo ya gastado: no queda margen para otra reserva.
     const spent = Number((await t.pool.query<{ spent: string }>(SPENT_SQL)).rows[0]?.spent ?? 0);
     const put = await platform(adminToken, '/ai/budgets/lab_total', 'PUT', { limit_usd: Math.floor(spent * 1e4) / 1e4, reason: 'Prueba local: techo de laboratorio sin margen' });
@@ -605,6 +646,7 @@ test('(d) AC-6005: los techos globales también bloquean un grant válido con ma
   } finally {
     await t.pool.query(`UPDATE ai_budget SET limit_usd = $2, source = $3, updated_by = $4, updated_at = $5 WHERE budget_id = $1`,
       ['bud_lab_total', original.limit_usd, original.source, original.updated_by, original.updated_at]);
+    await clearLabExperimentBudget();
   }
 
   // Tope TypeSafe alcanzado: la clasificación (ruta normal bajo el grant) se bloquea y no se llega a generar.
@@ -617,22 +659,28 @@ test('(d) AC-6005: los techos globales también bloquean un grant válido con ma
   assert.deepEqual(await commercialLedger(a.tenant), { rows: 0, events: 0 });
 });
 
-test('(e) NFR-0006 · AC-6004/AC-6005: sin techo no hay gasto — si falta el techo acumulado (lab_total) o el diario del negocio (tenant_day), la reserva de pago se deniega', async () => {
+test('(e) NFR-0006 · AC-6004/AC-6005 · FB-3: sin techo no hay gasto — si falta el techo acumulado (lab_total), el diario del negocio (tenant_day) en operación o el presupuesto experimental (lab_experiment) en laboratorio, la reserva de pago se deniega con ese ámbito', async () => {
   const a = await createTenantWithPlan(t, { reviews_managed: 0 }, 'client_cbe');
+  const labRoom = ceil4(await labSpentToday()) + 1;
   const client = await t.pool.connect();
-  const decision = async (tenant: string | null) => {
-    const d = await reserveBudget(client, tenant, 0.001);
+  const decision = async (tenant: string | null, purpose: BudgetPurpose = 'operational') => {
+    const d = await reserveBudget(client, { tenantId: tenant, purpose, reserveUsd: 0.001 });
     return d.allowed ? { allowed: true } : { allowed: false, exceeded: d.exceeded };
   };
   try {
     await client.query('BEGIN');
     assert.deepEqual(await decision(a.tenant), { allowed: true }, 'con los techos sembrados hay margen');
+    assert.deepEqual(await decision(a.tenant, 'lab'), { allowed: false, exceeded: 'lab_experiment' }, 'sin valor sembrado para el laboratorio, el laboratorio no gasta');
+    await client.query(`INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES ('bud_lab_experiment_e', 'lab_experiment', NULL, $1, 'prueba', 'prueba')`, [labRoom]);
+    assert.deepEqual(await decision(a.tenant, 'lab'), { allowed: true }, 'con su fila global, el laboratorio gasta');
     await client.query(`DELETE FROM ai_budget WHERE scope = 'tenant_day'`);
     assert.deepEqual(await decision(a.tenant), { allowed: false, exceeded: 'tenant_day' }, 'sin techo diario (propio ni por defecto) el negocio no gasta');
+    assert.deepEqual(await decision(a.tenant, 'lab'), { allowed: true }, 'el laboratorio nunca depende de tenant_day');
     assert.deepEqual(await decision(null), { allowed: true }, 'sin negocio solo aplica el techo acumulado');
     await client.query(`DELETE FROM ai_budget WHERE scope = 'lab_total'`);
     assert.deepEqual(await decision(null), { allowed: false, exceeded: 'lab_total' }, 'sin techo acumulado no hay gasto de pago');
     assert.deepEqual(await decision(a.tenant), { allowed: false, exceeded: 'lab_total' });
+    assert.deepEqual(await decision(a.tenant, 'lab'), { allowed: false, exceeded: 'lab_total' }, 'tampoco en el laboratorio');
     // Una fila de techo global asociada a un negocio (solo posible por SQL directo) nunca hace de techo de la plataforma.
     await client.query(`INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES ('bud_lab_total_tenant', 'lab_total', $1, 1000, 'prueba', 'prueba')`, [a.tenant]);
     assert.deepEqual(await decision(a.tenant), { allowed: false, exceeded: 'lab_total' }, 'una fila de negocio no sustituye al techo global');
@@ -642,6 +690,7 @@ test('(e) NFR-0006 · AC-6004/AC-6005: sin techo no hay gasto — si falta el te
     client.release();
   }
   assert.equal(await countRows(t, `SELECT count(*) AS n FROM ai_budget WHERE budget_id IN ('bud_lab_total','bud_tenant_day_default')`, []), 2, 'la prueba no deja huella');
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM ai_budget WHERE scope = 'lab_experiment'`, []), 0);
 });
 
 test('(f) DEC-0077 R5: con APP_ENV=production el laboratorio no se habilita aunque AI_ENVIRONMENT sea lab — un grant válido se rechaza (lab_disabled)', async () => {

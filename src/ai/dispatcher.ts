@@ -19,7 +19,7 @@ import { log } from '../shared/logger.ts';
 import { JevClient, JevHttpError } from '../jev/client.ts';
 import type { Questions, Answer } from '../jev/types.ts';
 import { OUTPUT_SCHEMAS } from './contracts.ts';
-import { checkDataPolicy, DATA_POLICY_VERSION, estimateCost, PAID_PROVIDER_KINDS, reserveBudget } from './governance.ts';
+import { budgetPurpose, checkDataPolicy, DATA_POLICY_VERSION, estimateCost, PAID_PROVIDER_KINDS, reserveBudget } from './governance.ts';
 import { PromptRenderError, renderPrompt } from './prompt.ts';
 import { AiLab, type LabGrantRoute } from './lab.ts';
 import { AiRegistry, type RouteBundle } from './registry.ts';
@@ -264,7 +264,7 @@ export class AiDispatcher {
     const reserve = AiDispatcher.paid(bundle) ? Number(bundle.route.max_cost_usd) : 0;
     const budgetOk = await runAtomic(this.pool, async (client) => {
       if (reserve > 0) {
-        const b = await reserveBudget(client, ctx.tenantId, reserve);
+        const b = await reserveBudget(client, { tenantId: ctx.tenantId, purpose: budgetPurpose(ctx.labGrantId), reserveUsd: reserve });
         if (!b.allowed) return b;
       }
       await client.query(
@@ -275,7 +275,7 @@ export class AiDispatcher {
         [invocationId, ctx.requestId, ctx.idempotencyKey, ctx.tenantId, ctx.actorId, ctx.actorKind, ctx.origin, useCaseId, ref.route_id, ref.route_version,
           ref.prompt_revision_id, ref.prompt_sha256, ref.model_id, ref.provider_id, ref.provider_model, assignment, DATA_POLICY_VERSION, ctx.consentRef ?? null,
           ctx.brandVersion ?? null, ctx.jobId ?? null, ctx.evalRunId ?? null, reserve, inputHash, ctx.requestId, ctx.labGrantId || null]);
-      return { allowed: true as const, limits: [] };
+      return { allowed: true as const };
     });
     if (!budgetOk.allowed) {
       await blockedRow('budget_exhausted', `${budgetOk.exceeded}`);

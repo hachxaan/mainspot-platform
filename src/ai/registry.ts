@@ -16,9 +16,16 @@ import { promptSha256, validatePromptRevision, type PromptRevisionContent, type 
 
 export type RouteStatus = 'DRAFT' | 'TESTED' | 'APPROVED' | 'CANARY' | 'ACTIVE' | 'RETIRED';
 
+/**
+ * Canal al que se atribuye el gasto de cada caso de uso (FB-3, migración 0039): uno por caso de uso, mismo CHECK que
+ * `ai_use_case.channel`. Solo atribuye: ningún canal tiene límite ni partición propia (calibración con datos reales).
+ */
+export const AI_CHANNELS = ['owner_intent', 'assistant', 'website', 'facebook_posts', 'facebook_comments', 'google_reviews', 'campaigns', 'insights', 'editorial'] as const;
+export type AiChannel = (typeof AI_CHANNELS)[number];
+
 export interface UseCaseRow {
   use_case_id: string; title: string; description: string; modality: 'text' | 'image' | 'classification';
-  risk_level: string; owner: string; output_schema: string; tools: string[]; status: string;
+  risk_level: string; owner: string; output_schema: string; tools: string[]; status: string; channel: AiChannel;
 }
 export interface ProviderRow { provider_id: string; display_name: string; kind: 'anthropic' | 'openai' | 'typesafe' | 'simulated' | 'openrouter'; base_url: string | null; secret_ref: string | null; data_policy: string; terms_url: string | null; status: string; real_data: 'blocked' | 'allowed'; real_data_basis: string | null; terms_verified_at: string | null }
 export interface ModelRow { model_id: string; provider_id: string; provider_model: string; display_name: string; modality: string; capabilities: Record<string, unknown>; pricing: Record<string, number>; price_source: string; price_observed_at: string; status: string }

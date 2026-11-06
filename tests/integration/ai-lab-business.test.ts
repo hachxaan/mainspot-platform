@@ -10,6 +10,7 @@ import sharp from 'sharp';
 import { api, authHeaders, bootApi, type TestApi } from '../helpers/testdb.ts';
 import { createTenantWithPlan } from '../helpers/tenants.ts';
 import { currentStep, totpAt } from '../../src/platform/auth.ts';
+import { SCOPE_SPENT_FILTER, SPENT_SQL } from '../../src/ai/governance.ts';
 
 let t: TestApi;
 let engineer: string;
@@ -109,6 +110,11 @@ test('imagen manual conserva biblioteca y costo al repetir la misma acción; rev
     return originalFetch(input, init);
   };
   try {
+    // FB-3: sin valor sembrado el laboratorio no gasta; fixture del presupuesto experimental (fila global) con margen
+    // sobre lo ya gastado hoy, retirada al terminar. La consola la fija con step-up (cubierto en ai-budget-segregation).
+    const labSpent = Number((await t.pool.query<{ spent: string }>(`${SPENT_SQL} AND ${SCOPE_SPENT_FILTER.lab_experiment}`)).rows[0]?.spent ?? 0);
+    await t.pool.query(`INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES ('bud_lab_experiment_fixture', 'lab_experiment', NULL, $1, 'test: imagen de laboratorio', 'test')`,
+      [Math.ceil(labSpent * 1e4) / 1e4 + 1]);
     const body = { purpose: 'website', subject: 'Una taza de café sobre madera', style: 'Editorial contemporáneo', aspect_ratio: '4:3' };
     const key = randomUUID();
     const first = await back(owner.token, '/ai/lab/images', body, grant, key);
@@ -133,5 +139,6 @@ test('imagen manual conserva biblioteca y costo al repetir la misma acción; rev
   } finally {
     globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalKey;
+    await t.pool.query(`DELETE FROM ai_budget WHERE scope = 'lab_experiment'`);
   }
 });

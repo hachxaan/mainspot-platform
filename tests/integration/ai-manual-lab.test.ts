@@ -18,6 +18,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { bootApi, api, type TestApi } from '../helpers/testdb.ts';
 import { createTenantWithPlan, countRows } from '../helpers/tenants.ts';
 import { AiDispatcher, type InvokeContext } from '../../src/ai/dispatcher.ts';
+import { SCOPE_SPENT_FILTER, SPENT_SQL } from '../../src/ai/governance.ts';
 import { currentStep, totpAt } from '../../src/platform/auth.ts';
 import { AppError } from '../../src/shared/errors.ts';
 
@@ -47,9 +48,15 @@ before(async () => {
   assert.ok(adminToken && engToken && supportToken, 'sesiones de plataforma');
   assert.equal((await platform(adminToken, '/auth/step-up', 'POST', { code: totpAt(admin.totp_secret, step + 1) })).status, 200);
   assert.equal((await platform(engToken, '/auth/step-up', 'POST', { code: totpAt(eng.totp_secret, step + 1) })).status, 200);
+  // FB-3: sin valor sembrado el laboratorio no gasta. La plataforma fija su presupuesto experimental (fila global) con
+  // margen para las pocas invocaciones de pago de este archivo, sobre lo ya gastado hoy; se retira en after().
+  const labSpent = Number((await t.pool.query<{ spent: string }>(`${SPENT_SQL} AND ${SCOPE_SPENT_FILTER.lab_experiment}`)).rows[0]?.spent ?? 0);
+  const budget = await platform(adminToken, '/ai/budgets/lab_experiment', 'PUT', { limit_usd: Math.ceil(labSpent * 1e4) / 1e4 + 1, reason: 'Prueba local: presupuesto experimental del laboratorio' });
+  assert.equal(budget.status, 200, JSON.stringify(budget.body));
 });
 
 after(async () => {
+  await t.pool.query(`DELETE FROM ai_budget WHERE scope = 'lab_experiment'`);
   t.handle.aiJobs.stop();
   await t.close();
 });
