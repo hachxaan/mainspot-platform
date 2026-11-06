@@ -8,9 +8,9 @@
  *  - Presupuesto (DEC-0068; FB-3, DEC-0078): reserva del costo máximo de la ruta bajo un candado global; la suma de lo
  *    gastado (costo real o estimado) + lo reservado (en curso) no puede superar ningún límite que aplique. `lab_total`
  *    es el techo global estricto y acumulado (incluye el consumo histórico de OpenRouter) de TODO el gasto de pago.
- *    Por debajo, el gasto se separa por propósito: la operación comercial (sin grant) responde ante el `tenant_day`
- *    de su negocio y el laboratorio (con grant, DEC-0074) ante el `lab_experiment` global; ninguno consume el del
- *    otro. TypeSafe va aparte (DEC-0032).
+ *    Por debajo, el gasto se separa por propósito: la operación comercial (sin grant ni evaluación) responde ante el
+ *    `tenant_day` de su negocio y el gasto experimental (grant del laboratorio, DEC-0074, o evaluación de una ruta)
+ *    ante el `lab_experiment` global; ninguno consume el del otro. TypeSafe va aparte (DEC-0032).
  */
 
 import type { PoolClient, Pool } from 'pg';
@@ -63,7 +63,7 @@ export function budgetPurpose(ctx: { labGrantId?: string | null; evalRunId?: str
 /**
  * Regla de cada ámbito: qué gasto cuenta, en qué ventana y si su fila es obligatoria donde aplica. `lab_total` y
  * `platform_month` (opcional) cuentan todo; `tenant_day` solo la operación de su negocio (fila propia o la por
- * defecto) y `lab_experiment` todo el laboratorio (una fila global, sin valor sembrado).
+ * defecto) y `lab_experiment` todo el gasto experimental: laboratorio y evaluaciones (una fila global, sin valor sembrado).
  */
 export const SCOPE_RULES: Readonly<Record<BudgetScope, { counts: 'all' | BudgetPurpose; window: 'accumulated' | 'utc_month' | 'utc_day'; required: boolean }>> = {
   lab_total: { counts: 'all', window: 'accumulated', required: true },

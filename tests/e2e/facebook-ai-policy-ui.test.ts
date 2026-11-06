@@ -105,10 +105,11 @@ async function newPage(width = 1280, height = 900): Promise<{ ctx: BrowserContex
   page.on('pageerror', (err) => pageErrors.push(`${page.url()} :: ${err.message}`));
   return { ctx, page };
 }
+/** Captura de evidencia con las animaciones CSS terminadas (una hoja a medio aparecer saldría translúcida). */
 async function shot(page: Page, name: string): Promise<void> {
   if (!SHOTS) return;
   mkdirSync(SHOT_DIR, { recursive: true });
-  await page.screenshot({ path: `${SHOT_DIR}/${name}.png`, fullPage: true });
+  await page.screenshot({ path: `${SHOT_DIR}/${name}.png`, fullPage: true, animations: 'disabled' });
 }
 async function go(page: Page, hash: string): Promise<void> {
   await page.evaluate((h) => { (globalThis as unknown as { location: { hash: string } }).location.hash = h; }, hash);
