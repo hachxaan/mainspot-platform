@@ -8,7 +8,7 @@
  *
  * Recorrido: soporte solo lee → ingeniería crea un plan clonado (deshabilitado, valores copiados SIN
  * confirmar) → validación en línea del techo → cambiar un valor desmarca su confirmación → publicar
- * bloqueado hasta confirmar los 7 (registro 2: la cuota de IA llega sugerida en 0 y sin confirmar) → step-up TOTP cuando caduca → publicar v1 → habilitar → v2 →
+ * bloqueado hasta confirmar los 8 (registro 3: las cuotas de IA de reseñas y de comentarios de Facebook llegan sugeridas en 0 y sin confirmar) → step-up TOTP cuando caduca → publicar v1 → habilitar → v2 →
  * Administration asigna el plan (fijado a v2) → ingeniería publica v3 (downgrade) → el negocio sigue en
  * v2 → vista previa con uso por encima del límite → Administration migra → rollback a v2 (v4) → el panel
  * del negocio muestra plan y uso en solo lectura y no puede asignarse planes → móvil sin desbordes →
@@ -29,6 +29,10 @@ import pg from 'pg';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { TEST_URL, SEED } from '../helpers/testdb.ts';
 import { PlatformAuth, currentStep, totpAt, type PlatformRole } from '../../src/platform/auth.ts';
+import { PLAN_PARAMETERS } from '../../src/plans/registry.ts';
+
+/** Sufijo de los controles del editor por parámetro del registro (`quota.social_posts.max` → `social-posts`). */
+const PARAMETER_KEYS = PLAN_PARAMETERS.map((d) => d.key.replace(/^quota\.|\.max$/g, '').replace(/_/g, '-'));
 
 const BASE = (process.env.E2E_BASE_URL ?? 'https://app.mainspot.local.io').replace(/\/$/, '');
 const UPSTREAM_PORT = Number(process.env.E2E_UPSTREAM_PORT ?? 3100);
@@ -247,14 +251,14 @@ test('E2E Planes: catálogo versionado por permisos, confirmación explícita, p
   check(/solo dígitos/.test((await e.page.locator('#pe-quota-social-ads-max').textContent()) ?? ''), '«1,000» se rechaza en línea (solo dígitos) en lugar de guardarse como 1');
   await e.page.locator('#pv-quota-social-ads-max').fill(adsServer);
 
-  // Cambiar un valor desmarca su confirmación; confirmar los 7 uno a uno.
+  // Cambiar un valor desmarca su confirmación; confirmar los 8 uno a uno.
   await e.page.locator('#pc-quota-social-posts-max').check();
   await e.page.locator('#pv-quota-social-posts-max').fill('7');
   check(!(await e.page.locator('#pc-quota-social-posts-max').isChecked()), 'cambiar el valor desmarca «Confirmo este valor»');
-  for (const key of ['website', 'social-posts', 'social-ads', 'reviews-managed', 'ai-review-replies', 'conversations', 'agents']) await e.page.locator(`#pc-quota-${key}-max`).check();
+  for (const key of PARAMETER_KEYS) await e.page.locator(`#pc-quota-${key}-max`).check();
   // Step-up caducado: la siguiente escritura debe pedir el código.
   await pool.query(`UPDATE platform_session SET step_up_at = now() - interval '11 minutes' WHERE platform_user_id = (SELECT platform_user_id FROM platform_user WHERE login = $1)`, [eng.login]);
-  await e.page.locator('#pdr-reason').fill('E2E: confirmar los siete valores revisados');
+  await e.page.locator('#pdr-reason').fill('E2E: confirmar los ocho valores revisados');
   await e.page.locator('form[data-form="plan-draft"] button[type="submit"]').click();
   check(await stepUpIfAsked(e.page, eng), 'con el step-up caducado, guardar pide el código TOTP');
   check(await toastWith(e.page, 'Borrador guardado'), 'borrador guardado tras el step-up');
@@ -291,7 +295,7 @@ test('E2E Planes: catálogo versionado por permisos, confirmación explícita, p
     await stepUpIfAsked(e.page, eng);
     await e.page.locator('form[data-form="plan-draft"]').waitFor();
     await e.page.locator('#pv-quota-social-posts-max').fill(value);
-    for (const key of ['website', 'social-posts', 'social-ads', 'reviews-managed', 'ai-review-replies', 'conversations', 'agents']) await e.page.locator(`#pc-quota-${key}-max`).check();
+    for (const key of PARAMETER_KEYS) await e.page.locator(`#pc-quota-${key}-max`).check();
     await e.page.locator('#pdr-reason').fill(`E2E: ${label}`);
     await e.page.locator('form[data-form="plan-draft"] button[type="submit"]').click();
     await stepUpIfAsked(e.page, eng);
