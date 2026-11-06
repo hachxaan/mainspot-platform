@@ -296,6 +296,12 @@ interface RouteSeed { useCase: string; model: string; params: RouteParams; maxCo
 const TEXT_DEFAULT = { timeout_ms: 90_000, repair_attempts: 1, reasoning_effort: 'low' } as const;
 
 /**
+ * Costo máximo por llamada de TypeSafe/Jev de las rutas `ts:jev-1.14.0`. El pipeline del chat y la evaluación
+ * sintética reservan este mismo importe en el libro de TypeSafe (DEC-0032, TS-1) antes de cada llamada.
+ */
+export const TYPESAFE_CALL_MAX_COST_USD = 0.01;
+
+/**
  * Candidatas de desarrollo (DEC-0074), nunca activadas por semilla: Anthropic directo en DRAFT con el prompt semilla
  * vigente, parámetros y precios ya registrados. Sonnet 5.5 en las tareas complejas (diseño inicial, rediseño, plan de
  * campaña) y Haiku 5.5 como opción eficiente en el resto; una ruta por caso de uso, de selección explícita en el
@@ -316,7 +322,7 @@ export const LAB_CANDIDATES: RouteSeed[] = [
   { useCase: 'business.insights.generate', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 1500 }, maxCost: 0.02, note: 'DEC-0074: análisis de negocio con Anthropic directo (Haiku 5.5)' },
   { useCase: 'editorial.calendar.suggest', model: HAIKU, params: { ...TEXT_DEFAULT, max_tokens: 3000 }, maxCost: 0.02, note: 'DEC-0074: calendario con Anthropic directo (Haiku 5.5)' },
   ...['website.image.generate', 'social.facebook.image.generate'].map((uc) => ({ useCase: uc, model: 'oa:gpt-image-2', params: { timeout_ms: 180_000, aspect_ratio: uc.startsWith('social') ? '1:1' : '16:9', quality: 'medium' as const }, maxCost: 0.08, note: 'gpt-image-2 directo (DEC-0069), calidad media' })),
-  ...['conversation.intent.classify', 'engagement.facebook.comment.classify', 'engagement.google.review.classify'].map((uc) => ({ useCase: uc, model: 'ts:jev-1.14.0', params: { timeout_ms: 15_000 }, maxCost: 0.01, note: 'Jev primario (versión fijada)' })),
+  ...['conversation.intent.classify', 'engagement.facebook.comment.classify', 'engagement.google.review.classify'].map((uc) => ({ useCase: uc, model: 'ts:jev-1.14.0', params: { timeout_ms: 15_000 }, maxCost: TYPESAFE_CALL_MAX_COST_USD, note: 'Jev primario (versión fijada)' })),
 ];
 
 /** Rutas simuladas del entorno `test` (regresión offline). */

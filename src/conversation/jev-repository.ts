@@ -1,12 +1,14 @@
 /**
  * Persistencia de Jev (APR-0002): una fila de `jev_classification` por solicitud
- * clasificada con Jev (tenant-scoped), las ejecuciones de evaluación sintética
- * (`jev_evaluation_run`, gate D4) y el gasto diario (D5). Nunca guarda
- * cabeceras ni la credencial.
+ * clasificada con Jev (tenant-scoped) y las ejecuciones de evaluación sintética
+ * (`jev_evaluation_run`, gate D4). Su costo queda como evidencia: el gasto diario
+ * (D5, DEC-0032) lo aplica el libro de TypeSafe (`src/ai/typesafe-ledger.ts`).
+ * Nunca guarda cabeceras ni la credencial.
  */
 
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
+import { typesafeSpentOn } from '../ai/typesafe-ledger.ts';
 import type { ActionClass, CapabilityTarget } from './intents.ts';
 
 export type JevDecisionSource = 'deterministic' | 'jev' | 'deterministic_fallback' | 'human_escalation';
@@ -152,10 +154,8 @@ export interface JevGateBinding {
   decisionCodeSha256: string;
 }
 
-/** Consultas que necesitan el gate (D4) y el presupuesto (D5). */
-export interface JevLedgerStore {
-  /** USD DEC-0032 en el día UTC `day`: clasificaciones, evaluaciones y AI Core TypeSafe. */
-  spentOn(day: string): Promise<number>;
+/** Consulta que necesita el gate (D4). */
+export interface JevGateStore {
   /**
    * Última evaluación para la política y los bytes ligados cuyo modelo es `model`: pedida
    * con ese mismo nombre, o pedida con un alias y respondida entera por esa versión fijada
@@ -165,7 +165,7 @@ export interface JevLedgerStore {
   latestEvaluation(policyVersion: string, model: string, binding: JevGateBinding): Promise<JevEvaluationRunRow | null>;
 }
 
-export interface JevClassificationStore extends JevLedgerStore {
+export interface JevClassificationStore extends JevGateStore {
   createClassification(input: JevClassificationInsert): Promise<JevClassificationRow>;
 }
 
@@ -219,18 +219,9 @@ export class JevRepository implements JevClassificationStore {
     return res.rows[0] as JevEvaluationRunRow;
   }
 
+  /** USD DEC-0032 del día UTC `day` según el libro de TypeSafe (pipeline, evaluaciones y AI Core; gasto anterior incluido). */
   async spentOn(day: string): Promise<number> {
-    const res = await this.pool.query<{ spent: string }>(
-      `SELECT (COALESCE((SELECT SUM(cost_usd) FROM jev_classification WHERE budget_day = $1), 0)
-             + COALESCE((SELECT SUM(cost_usd) FROM jev_evaluation_run WHERE budget_day = $1), 0)
-             + COALESCE((SELECT SUM(i.cost_usd) FROM ai_invocation i
-                           JOIN ai_provider p ON p.provider_id = i.provider_id
-                          WHERE p.kind = 'typesafe'
-                            AND i.created_at >= ($1::date::timestamp AT TIME ZONE 'UTC')
-                            AND i.created_at < (($1::date + 1)::timestamp AT TIME ZONE 'UTC')), 0))::text AS spent`,
-      [day],
-    );
-    return Number(res.rows[0]?.spent ?? 0);
+    return typesafeSpentOn(this.pool, day);
   }
 
   async latestEvaluation(policyVersion: string, model: string, binding: JevGateBinding): Promise<JevEvaluationRunRow | null> {

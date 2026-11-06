@@ -9,9 +9,10 @@
  * anterior) se calcula como información. El gate se recalcula con `evaluationPasses`.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import type { JevClient } from '../jev/client.ts';
+import type { TypeSafeBudget } from '../ai/typesafe-ledger.ts';
+import type { JevClient, SystemOneResult } from '../jev/client.ts';
 import { classifyIntent } from './classifier.ts';
 import type { ActionClass, CapabilityTarget, ClassificationResult } from './intents.ts';
 import {
@@ -26,7 +27,7 @@ import {
   evaluationPasses,
   jevErrorCode,
   readJevAnswers,
-  type JevBudget,
+  reservedJevCall,
   type JevIntent,
   type JevIntentOption,
   type JevReading,
@@ -112,13 +113,22 @@ export function isContained(final: ClassificationResult): boolean {
     || final.intent === 'request.needs_clarification';
 }
 
-/** Evalúa cada caso con concurrencia acotada; el presupuesto D5 se respeta por llamada. */
+/**
+ * Evalúa cada caso con concurrencia acotada. D5 (DEC-0032, TS-1): con TypeSafe cada caso reserva en el libro global
+ * (clave `evaluation:<ejecución>:<caso>`) antes de enviarse; sin reserva el caso queda `unavailable`. El proveedor
+ * simulado no gasta TypeSafe y no reserva (`budget` puede ser null solo con él).
+ */
 export async function runJevEvaluation(opts: {
   client: JevClient;
   cases: readonly JevEvalCase[];
-  budget: JevBudget;
+  budget: TypeSafeBudget | null;
   concurrency?: number;
 }): Promise<JevCaseResult[]> {
+  const budget = opts.client.isLive ? opts.budget : null;
+  if (opts.client.isLive && !budget) {
+    throw new Error('FAIL-CLOSED: a TypeSafe evaluation reserves every call in the TypeSafe ledger (DEC-0032)');
+  }
+  const run = randomUUID();
   const results: JevCaseResult[] = new Array(opts.cases.length);
   let next = 0;
   const worker = async (): Promise<void> => {
@@ -145,12 +155,18 @@ export async function runJevEvaluation(opts: {
         resolvedModel: null, costUsd: null,
       });
       try {
-        if (!(await opts.budget.allows())) {
-          results[index] = unavailable('budget_exhausted');
-          continue;
+        const send = () => opts.client.systemOne({ message: c.text }, JEV_QUESTIONS);
+        let result: SystemOneResult;
+        if (budget) {
+          const call = await reservedJevCall(budget, { key: `evaluation:${run}:${index}`, source: 'evaluation' }, send);
+          if (!call.ok) {
+            results[index] = unavailable(call.errorCode);
+            continue;
+          }
+          result = call.result;
+        } else {
+          result = await send();
         }
-        const result = await opts.client.systemOne({ message: c.text }, JEV_QUESTIONS);
-        opts.budget.record(result.meta.cost.amount);
         const reading = readJevAnswers(result.answers);
         results[index] = {
           ...base,

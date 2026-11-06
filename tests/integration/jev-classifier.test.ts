@@ -6,12 +6,14 @@
  *  - primary con el gate D4 cerrado: igual que shadow (`primary_gated`).
  *  - primary con el gate abierto: Jev decide; D1 escala, D3 pide aclaración,
  *    D2 vuelve a las reglas; tenants fuera de JEV_SYNTHETIC_TENANTS no salen.
+ *  - D5 (DEC-0032, TS-1): cada llamada reserva y se confirma en el libro de TypeSafe.
  * La credencial jamás aparece en filas, auditoría ni logs.
  */
 
 import { test, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { bootApi, login, authHeaders, api, SEED, type TestApi } from '../helpers/testdb.ts';
+import { TYPESAFE_CALL_MAX_COST_USD } from '../../src/ai/catalog.ts';
 import {
   CAPABILITY_TARGETS, JEV_INTENTS, JEV_POLICY_VERSION, decisionCodeSha256, gateEvalSetSha256, type JevIntentOption,
 } from '../../src/conversation/jev-classifier.ts';
@@ -92,31 +94,49 @@ after(async () => {
   mock.restoreAll();
 });
 
-test('DEC-0032: el ledger legacy incluye AI Core TypeSafe, no generativos ni otros días UTC', async (t) => {
+test('DEC-0032 (TS-1): cada clasificación del pipeline reserva en el libro de TypeSafe y confirma su costo; una caída tras enviar cuenta la reserva; la evidencia no suma aparte', async (t) => {
   const repository = new JevRepository(plain.pool);
-  const day = '2001-02-03';
-  const beforeSpend = await repository.spentOn(day);
+  const day = new Date().toISOString().slice(0, 10);
+  const before = await repository.spentOn(day);
+  const ledger = async (requestId: string) => (await plain.pool.query<{ source: string; status: string; reserved: number; cost: number | null; cost_source: string | null; attempts: number | null; reason: string | null; sent: boolean }>(
+    `SELECT source, status, reserved_usd::float8 AS reserved, cost_usd::float8 AS cost, cost_source, attempts, reason, dispatched_at IS NOT NULL AS sent
+       FROM typesafe_reservation WHERE idempotency_key = $1`, [`pipeline:${requestId}`])).rows;
+
+  const answered = await send(shadow, 'sugiere un eslogan para mi negocio');
+  assert.equal(answered.status, 201);
+  const evidence = await row(shadow, answered.body.request.request_id);
+  const [paid] = await ledger(answered.body.request.request_id);
+  const estimated = 600 * 0.042 / 1_000_000;
+  assert.deepEqual([paid?.source, paid?.status, paid?.reserved, paid?.cost_source, paid?.attempts, paid?.sent],
+    ['pipeline', 'committed', TYPESAFE_CALL_MAX_COST_USD, 'estimated', 1, true], 'reservó el costo máximo por llamada y confirmó la medición');
+  assert.ok(Math.abs((paid?.cost ?? -1) - estimated) < 1e-12 && Math.abs(Number(evidence?.cost_usd) - estimated) < 1e-12, 'misma medición en el libro y en la evidencia');
+
+  // shadow clasifica en segundo plano: TypeSafe sigue caído hasta que la clasificación termina (row() espera).
+  jevDown = true;
+  let outageId = '';
+  let outageRow: JevClassificationRow | undefined;
+  try {
+    outageId = (await send(shadow, 'hola')).body.request.request_id as string;
+    outageRow = await row(shadow, outageId);
+  } finally {
+    jevDown = false;
+  }
+  assert.equal(outageRow?.error_code, 'http_503');
+  assert.deepEqual((await ledger(outageId)).map((r) => [r.status, r.cost, r.cost_source, r.reason, r.sent]),
+    [['committed', null, 'unknown', 'http_503', true]], 'un 503 tras enviar no se supone gratis');
+  assert.ok(Math.abs((await repository.spentOn(day)) - (before + estimated + TYPESAFE_CALL_MAX_COST_USD)) < 1e-9,
+    'el día suma la medición y la reserva del fallo, una vez cada una');
+
+  // La evidencia (ai_invocation, jev_classification) ya no es fuente del tope: insertarla no cambia el gasto del día.
   t.after(async () => {
-    await plain.pool.query(`DELETE FROM ai_invocation WHERE request_id = 'dec0032-regression'`);
+    await plain.pool.query(`DELETE FROM ai_invocation WHERE request_id = 'dec0032-evidence'`);
   });
-  const inserted = await plain.pool.query(
-    `INSERT INTO ai_invocation
-       (invocation_id, request_id, idempotency_key, actor_id, actor_kind, origin, use_case_id,
-        provider_id, policy_version, status, cost_usd, cost_source, trace_id, created_at)
-     SELECT 'dec0032-' || p.provider_id || '-' || sample.suffix,
-            'dec0032-regression', 'dec0032-' || p.provider_id || '-' || sample.suffix,
-            'test', 'system', 'test', (SELECT use_case_id FROM ai_use_case LIMIT 1),
-            p.provider_id, 'test', 'succeeded', sample.cost, 'reported', 'dec0032-regression', sample.at
-       FROM ai_provider p CROSS JOIN
-         (VALUES ('start', 1::numeric, '2001-02-03T00:00:00Z'::timestamptz),
-                 ('next', 25::numeric, '2001-02-04T00:00:00Z'::timestamptz)) sample(suffix, cost, at)
-      WHERE p.kind IN ('typesafe', 'anthropic', 'openai', 'openrouter')
-     RETURNING provider_id`,
-  );
-  const providers = await plain.pool.query<{ provider_id: string }>(`SELECT provider_id FROM ai_provider WHERE kind = 'typesafe'`);
-  assert.ok(providers.rowCount && inserted.rowCount, 'fixtures incluyen TypeSafe');
-  assert.equal(await repository.spentOn(day), beforeSpend + providers.rows.length,
-    'un dólar en AI Core agota el mismo presupuesto que ve el pipeline legacy; generativos y medianoche siguiente no cuentan');
+  await plain.pool.query(
+    `INSERT INTO ai_invocation (invocation_id, request_id, idempotency_key, actor_id, actor_kind, origin, use_case_id, provider_id, policy_version, status, cost_usd, cost_source, trace_id)
+     SELECT 'dec0032-evidence-' || p.provider_id, 'dec0032-evidence', 'dec0032-evidence-' || p.provider_id, 'test', 'system', 'test',
+            (SELECT use_case_id FROM ai_use_case LIMIT 1), p.provider_id, 'test', 'succeeded', 1, 'reported', 'dec0032-evidence'
+       FROM ai_provider p WHERE p.kind = 'typesafe'`);
+  assert.ok(Math.abs((await repository.spentOn(day)) - (before + estimated + TYPESAFE_CALL_MAX_COST_USD)) < 1e-9, 'el libro es la única fuente del tope');
 });
 
 async function send(app: TestApi, text: string, tenant: 'a' | 'b' = 'b') {

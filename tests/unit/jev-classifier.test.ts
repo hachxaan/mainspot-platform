@@ -1,12 +1,14 @@
 /**
  * APR-0002 — Jev como clasificador (MSP-JEV-CLASSIFIER-MODES v1): política D1–D3,
- * presupuesto D5, gate D4, alcance de datos y persistencia.
+ * presupuesto D5 (reserva en el libro de TypeSafe), gate D4, alcance de datos y persistencia.
  * 100 % offline: `fetch` está simulado en cada test (cualquier llamada no
  * simulada falla); nunca se contacta api.typesafe.ai.
  */
 
 import { beforeEach, test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { TYPESAFE_CALL_MAX_COST_USD } from '../../src/ai/catalog.ts';
+import type { TypeSafeBudget } from '../../src/ai/typesafe-ledger.ts';
 import { classifyIntent } from '../../src/conversation/classifier.ts';
 import {
   CAPABILITY_TARGETS,
@@ -15,7 +17,6 @@ import {
   JEV_MAX_MESSAGE_BYTES,
   JEV_POLICY_VERSION,
   JEV_QUESTIONS,
-  JevBudget,
   JevClassifier,
   JevPrimaryGate,
   createJevClassifier,
@@ -85,29 +86,53 @@ function passingRun(overrides: Partial<JevEvaluationRunRow> = {}): JevEvaluation
 
 const GATE_BINDING = { datasetSha256: 'gate-set-sha', decisionCodeSha256: 'code-sha' };
 
-function fakeStore(opts: { spent?: number; run?: JevEvaluationRunRow | null; failInsert?: boolean } = {}) {
+function fakeStore(opts: { run?: JevEvaluationRunRow | null; failInsert?: boolean } = {}) {
   const rows: JevClassificationInsert[] = [];
-  const calls = { spentOn: 0, latestEvaluation: 0 };
   const store: JevClassificationStore = {
     async createClassification(r) {
       if (opts.failInsert) throw Object.assign(new Error('insert failed'), { code: '23503' });
       rows.push(r);
       return {} as JevClassificationRow;
     },
-    async spentOn() { calls.spentOn++; return opts.spent ?? 0; },
-    async latestEvaluation() { calls.latestEvaluation++; return opts.run === undefined ? passingRun() : opts.run; },
+    async latestEvaluation() { return opts.run === undefined ? passingRun() : opts.run; },
   };
-  return { rows, calls, store };
+  return { rows, store };
 }
+
+/**
+ * Libro de TypeSafe en memoria (mismo contrato que src/ai/typesafe-ledger.ts): anota cada paso en orden; concede
+ * `allow` reservas y después el tope está agotado; `lapse` = la reserva vence antes de enviar; `duplicate` = clave en curso.
+ */
+function fakeBudget(opts: { allow?: number; lapse?: boolean; duplicate?: boolean } = {}) {
+  const events: string[] = [];
+  let granted = 0;
+  const budget: TypeSafeBudget = {
+    async reserve(r) {
+      events.push(`reserve ${r.key} ${r.source} ${r.useCaseId} ${r.reserveUsd}`);
+      if (opts.duplicate) return { status: 'in_progress', key: r.key };
+      if (granted >= (opts.allow ?? Number.POSITIVE_INFINITY)) return { status: 'denied', budgetDay: '2026-10-22', spentUsd: 1, limitUsd: 1 };
+      granted += 1;
+      return { status: 'reserved', hold: { reservationId: `tsr_${granted}`, key: r.key, budgetDay: '2026-10-22', reservedUsd: r.reserveUsd } };
+    },
+    async dispatched(h) { events.push(`dispatched ${h.reservationId}`); return !opts.lapse; },
+    async commit(h, m) { events.push(`commit ${h.reservationId} ${m.costUsd} ${m.costSource} ${m.attempts}`); return true; },
+    async failAfterDispatch(h, reason) { events.push(`fail ${h.reservationId} ${reason}`); return true; },
+    async release(h, reason) { events.push(`release ${h.reservationId} ${reason}`); return true; },
+  };
+  return { budget, events };
+}
+
+const RESERVE = `reserve pipeline:req_unit_1 pipeline null ${TYPESAFE_CALL_MAX_COST_USD}`;
 
 function classifier(
   mode: 'shadow' | 'primary',
   store: JevClassificationStore,
   client = createJevClient({ mode, ...ENABLED }),
+  budget: TypeSafeBudget = fakeBudget().budget,
 ): JevClassifier {
   return new JevClassifier({
     client, store, mode, dataScope: 'synthetic', syntheticTenants: ['client_a'],
-    budget: new JevBudget(store, 1), gate: new JevPrimaryGate(store, client.defaultModel, GATE_BINDING),
+    budget, gate: new JevPrimaryGate(store, client.defaultModel, GATE_BINDING),
   });
 }
 
@@ -220,19 +245,37 @@ test('DEC-0029 unit: D2 — no reading falls back to the deterministic classific
 
 // --- presupuesto D5 y gate D4 ------------------------------------------------------
 
-test('DEC-0032 unit: the budget ledger seeds from the store once per UTC day and stops at the limit', async () => {
-  let now = new Date('2026-10-22T23:59:00Z');
-  const calls: string[] = [];
-  const budget = new JevBudget({ async spentOn(day) { calls.push(day); return day === '2026-10-22' ? 0.9 : 0; } }, 1, () => now);
-  assert.equal(await budget.allows(), true);
-  budget.record(0.05);
-  assert.equal(await budget.allows(), true);
-  budget.record(0.05);
-  assert.equal(await budget.allows(), false, 'spent 1.00 of 1.00');
-  budget.record(null);
-  now = new Date('2026-10-23T00:00:01Z');
-  assert.equal(await budget.allows(), true, 'a new UTC day starts a new ledger');
-  assert.deepEqual(calls, ['2026-10-22', '2026-10-23']);
+test('DEC-0032/TS-1 unit: every call reserves the TypeSafe per-call max before the request and settles the reported cost', async (t) => {
+  const { budget, events } = fakeBudget();
+  stubFetch(t, async () => {
+    events.push('fetch');
+    return new Response(jevBody(), { status: 200 });
+  });
+  const { rows, store } = fakeStore();
+  const jev = classifier('shadow', store, undefined, budget);
+  (await jev.decide(input('¿cuál es el horario?'))).commit();
+  await jev.drain();
+  assert.deepEqual(events, [RESERVE, 'dispatched tsr_1', 'fetch', 'commit tsr_1 0.00003 reported 1'],
+    'reserved and marked dispatched before the request leaves; the provider-reported cost settles it');
+  assert.deepEqual([rows[0]?.status, rows[0]?.costUsd, rows[0]?.costSource], ['evaluated', 0.00003, 'reported']);
+});
+
+test('DEC-0032/TS-1 unit: a reservation that lapsed before dispatch or a key already in use sends nothing and falls back', async (t) => {
+  const fetch = stubFetch(t, async () => new Response(jevBody(), { status: 200 }));
+  for (const [opts, code, steps] of [
+    [{ lapse: true }, 'reservation_expired', [RESERVE, 'dispatched tsr_1']],
+    [{ duplicate: true }, 'duplicate_request', [RESERVE]],
+  ] as const) {
+    const { budget, events } = fakeBudget(opts);
+    const { rows, store } = fakeStore();
+    const jev = classifier('primary', store, undefined, budget);
+    const d = await jev.decide(input('¿cuál es el horario?'));
+    d.commit();
+    await jev.drain();
+    assert.deepEqual([d.source, d.audit, rows[0]?.errorCode], ['deterministic_fallback', ';jev=jev_unavailable', code]);
+    assert.deepEqual(events, steps, `${code}: no request and nothing settled`);
+  }
+  assert.equal(fetch.mock.callCount(), 0);
 });
 
 test('DEC-0031/DEC-0033 unit: the gate thresholds are recomputed from stored metrics', () => {
@@ -275,11 +318,13 @@ test('DEC-0031 unit: the gate follows the latest run, caches it and fails closed
 test('DEC-0019 unit: tenants outside JEV_SYNTHETIC_TENANTS never reach TypeSafe', async (t) => {
   const fetch = stubFetch(t, async () => new Response(jevBody(), { status: 200 }));
   const { rows, store } = fakeStore();
-  const jev = classifier('primary', store);
+  const { budget, events } = fakeBudget();
+  const jev = classifier('primary', store, undefined, budget);
   const d = await jev.decide(input('¿cuál es el horario de mi negocio?', 'client_b'));
   d.commit();
   await jev.drain();
   assert.equal(fetch.mock.callCount(), 0);
+  assert.deepEqual(events, [], 'out of scope: nothing reserved');
   assert.deepEqual([d.source, d.audit, d.classification.actionClass], ['deterministic', ';jev_skipped=data_scope', 'read_only']);
   assert.equal(rows.length, 0);
 });
@@ -363,13 +408,15 @@ for (const [name, respond, code] of [
     const logs = captureStdout(t);
     const fetch = stubFetch(t, respond);
     const { rows, store } = fakeStore();
-    const jev = classifier('primary', store);
+    const { budget, events } = fakeBudget();
+    const jev = classifier('primary', store, undefined, budget);
     const d = await jev.decide(input('cambia el teléfono de mi página a 999 888 777'));
     assert.deepEqual([d.source, d.audit, d.classification.actionClass], ['deterministic_fallback', ';jev=jev_unavailable', 'preview_required']);
     d.commit();
     await jev.drain();
     assert.equal(fetch.mock.callCount(), 1, 'one attempt, no retries');
     assert.deepEqual([rows[0]?.status, rows[0]?.errorCode, rows[0]?.jevIntent], ['unavailable', code, null]);
+    assert.deepEqual(events.slice(1), ['dispatched tsr_1', `fail tsr_1 ${code}`], 'sent ⇒ settled with unknown cost, never released as free');
     assert.ok(!logs().includes(FAKE_KEY));
   });
 }
@@ -379,22 +426,26 @@ test('DEC-0029 unit: a call past its deadline falls back (timeout)', async (t) =
     init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
   }));
   const { rows, store } = fakeStore();
-  const jev = classifier('primary', store, new JevClient({ provider: 'typesafe', apiKey: FAKE_KEY, timeoutMs: 20, maxAttempts: 1 }));
+  const { budget, events } = fakeBudget();
+  const jev = classifier('primary', store, new JevClient({ provider: 'typesafe', apiKey: FAKE_KEY, timeoutMs: 20, maxAttempts: 1 }), budget);
   const d = await jev.decide(input('¿cuál es el horario?'));
   d.commit();
   await jev.drain();
   assert.equal(d.source, 'deterministic_fallback');
   assert.equal(rows[0]?.errorCode, 'timeout');
+  assert.deepEqual(events, [RESERVE, 'dispatched tsr_1', 'fail tsr_1 timeout'], 'a timed-out request still counts its reservation');
 });
 
 test('DEC-0032 unit: an exhausted budget sends nothing and falls back', async (t) => {
   const fetch = stubFetch(t, async () => new Response(jevBody(), { status: 200 }));
-  const { rows, store } = fakeStore({ spent: 1 });
-  const jev = classifier('primary', store);
+  const { rows, store } = fakeStore();
+  const { budget, events } = fakeBudget({ allow: 0 });
+  const jev = classifier('primary', store, undefined, budget);
   const d = await jev.decide(input('¿cuál es el horario?'));
   d.commit();
   await jev.drain();
   assert.equal(fetch.mock.callCount(), 0);
+  assert.deepEqual(events, [RESERVE], 'denied reservation: no dispatch, nothing to settle');
   assert.equal(d.source, 'deterministic_fallback');
   assert.equal(rows[0]?.errorCode, 'budget_exhausted');
 });
@@ -402,14 +453,17 @@ test('DEC-0032 unit: an exhausted budget sends nothing and falls back', async (t
 test('APR-0002 unit: abandoned requests persist nothing; oversized messages never leave the process', async (t) => {
   const fetch = stubFetch(t, async () => new Response(jevBody(), { status: 200 }));
   const { rows, store } = fakeStore();
-  const jev = classifier('shadow', store);
+  const { budget, events } = fakeBudget();
+  const jev = classifier('shadow', store, undefined, budget);
   (await jev.decide(input('¿cuál es el horario?'))).abandon();
   await jev.drain();
   assert.equal(rows.length, 0);
+  assert.deepEqual(events, [RESERVE, 'dispatched tsr_1', 'commit tsr_1 0.00003 reported 1'], 'the abandoned call was paid: its cost still counts');
 
   (await jev.decide(input(`¿cuál es el horario? ${'x'.repeat(JEV_MAX_MESSAGE_BYTES)}`))).commit();
   await jev.drain();
   assert.equal(fetch.mock.callCount(), 1, 'only the abandoned (normal-size) message was sent');
+  assert.equal(events.length, 3, 'the oversized message reserved nothing');
   assert.equal(rows[0]?.errorCode, 'message_too_large');
 });
 
@@ -422,5 +476,7 @@ test('APR-0002 unit: persistence failures are contained (drain resolves, nothing
 });
 
 test('APR-0002 unit: disabled config builds no classifier (no client, no calls)', () => {
-  assert.equal(createJevClassifier({ mode: 'disabled' }, fakeStore().store), undefined);
+  const { budget, events } = fakeBudget();
+  assert.equal(createJevClassifier({ mode: 'disabled' }, fakeStore().store, budget), undefined);
+  assert.deepEqual(events, []);
 });

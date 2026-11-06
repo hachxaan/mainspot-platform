@@ -84,6 +84,7 @@ import { passwordResetRouter } from './password-reset-routes.ts';
 // capacidades de negocio, atención con Jev y consolas de plataforma (Administration + Engineering).
 import { AiDispatcher } from '../ai/dispatcher.ts';
 import { AiRegistry } from '../ai/registry.ts';
+import { TypeSafeLedger, typesafeDailyLimitUsd } from '../ai/typesafe-ledger.ts';
 import { AiLab } from '../ai/lab.ts';
 import { AiJobs } from '../ai/jobs.ts';
 import { AiBusinessService } from '../ai/business.ts';
@@ -127,6 +128,8 @@ export interface AppHandle {
   google: GoogleIntegration;
   /** AI Core: despacho versionado, jobs durables, marca, biblioteca y servicios generativos. */
   dispatcher: AiDispatcher;
+  /** DEC-0032 (TS-1): libro global de TypeSafe (AI Core y pipeline; reconciliación periódica en main). */
+  typesafe: TypeSafeLedger;
   aiLab: AiLab;
   aiJobs: AiJobs;
   brand: BrandService;
@@ -222,7 +225,9 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   // AI Core: un despachador por proceso (ruta fijada por invocación, presupuesto y trazas).
   const registry = new AiRegistry(pool);
   const aiLab = new AiLab({ pool, registry, environment: config.aiEnvironment, appEnv: config.appEnv });
-  const dispatcher = new AiDispatcher({ pool, config, registry, lab: aiLab });
+  // DEC-0032 (TS-1): un libro de TypeSafe para el AI Core y el pipeline del chat, con el mismo límite diario.
+  const typesafe = new TypeSafeLedger({ pool, dailyLimitUsd: () => typesafeDailyLimitUsd(config.jev) });
+  const dispatcher = new AiDispatcher({ pool, config, registry, lab: aiLab, typesafe });
   const aiJobs = new AiJobs({ pool, registry, environment: config.aiEnvironment, lab: aiLab });
   const brand = new BrandService({ pool, sink });
   // DEC-0076: la redacción con IA de respuestas a reseñas consume `ai_review_replies` del ciclo mensual; su reserva
@@ -247,7 +252,7 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
   };
   // APR-0002: Jev como clasificador — UN cliente por proceso, solo con
   // JEV_MODE=shadow|primary y solo para tenants sintéticos (DEC-0019).
-  const jev = createJevClassifier(config.jev, new JevRepository(pool));
+  const jev = createJevClassifier(config.jev, new JevRepository(pool), typesafe);
   const aiSite = new AiSiteService({ pool, dispatcher, jobs: aiJobs, brand, media, site: { pool, sink, repo: conversationRepo, machine, websiteRepo, phones } });
   const pipeline = new ConversationPipeline({ pool, config, sink, hooks, repo: conversationRepo, websiteRepo, quota, jev, phones, aiEdit: aiSite });
   const aiBusiness = new AiBusinessService({ pool, sink, dispatcher, jobs: aiJobs, brand, media, social: socialService });
@@ -389,22 +394,25 @@ export function createApp(overrides: { config?: AppConfig; pool?: Pool; mailer?:
     }
   });
 
-  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones, engagement, engagementWorker, telegram, channel, connections, socialScheduler, mailer, passwordReset, google, dispatcher, aiLab, aiJobs, brand, media, aiSite, aiBusiness, platformAuth };
+  return { app, pool, config, sink, identityRepo, conversationRepo, conversationRoutesDeps: conversationDeps, jev, quota, retention, phones, engagement, engagementWorker, telegram, channel, connections, socialScheduler, mailer, passwordReset, google, dispatcher, typesafe, aiLab, aiJobs, brand, media, aiSite, aiBusiness, platformAuth };
 }
 
-/** DEC-0005: cada cuánto se cierran las reservas de cuota vencidas (caídas a mitad). */
+/** DEC-0005 y DEC-0032 (TS-1): cada cuánto se cierran las reservas vencidas de cuota y de TypeSafe (caídas a mitad). */
 export const QUOTA_RECONCILE_INTERVAL_MS = 60_000;
 /** DEC-0025: cada cuánto se comprueba si toca la ejecución diaria de retención. */
 export const RETENTION_CHECK_INTERVAL_MS = 15 * 60_000;
 
 async function main(): Promise<void> {
-  const { app, config, jev, quota, retention, engagementWorker, socialScheduler, google, aiJobs } = createApp();
+  const { app, config, jev, quota, typesafe, retention, engagementWorker, socialScheduler, google, aiJobs } = createApp();
   app.listen(config.port, () => {
     log.info('server.started', `mainspot-platform listening on :${config.port}`, { port: config.port });
   });
   const reconcile = () => {
     quota.reconcile().catch((err: unknown) => {
       log.error('quota.reconcile.failed', 'quota reconciliation failed', { error_name: err instanceof Error ? err.name : 'unknown' });
+    });
+    typesafe.reconcile().catch((err: unknown) => {
+      log.error('typesafe.reconcile.failed', 'TypeSafe reservation reconciliation failed', { error_name: err instanceof Error ? err.name : 'unknown' });
     });
   };
   reconcile();

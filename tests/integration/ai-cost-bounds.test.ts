@@ -227,18 +227,49 @@ async function clearLabExperimentBudget(): Promise<void> {
 }
 
 /**
- * Ejecuta `run` con un gasto TypeSafe del día que ya alcanza el tope DEC-0032 (en pruebas `config.jev.mode = 'disabled'`
- * ⇒ límite USD 1) y lo retira al terminar: el tope es global y otros archivos clasifican después.
+ * Ejecuta `run` con el gasto TypeSafe del día ya en el tope DEC-0032 (en pruebas `config.jev.mode = 'disabled'` ⇒ límite
+ * USD 1): una llamada confirmada de USD 1 en el libro de TypeSafe (TS-1: la única fuente del tope), retirada al terminar
+ * porque el tope es global y otros archivos clasifican después.
  */
-async function withTypesafeDayExhausted<T>(tenant: string, run: () => Promise<T>): Promise<T> {
-  const id = `inv_fixture_${randomUUID()}`;
+async function withTypesafeDayExhausted<T>(run: () => Promise<T>): Promise<T> {
+  const key = `ai_invocation:inv_fixture_${randomUUID()}`;
   await t.pool.query(
-    `INSERT INTO ai_invocation (invocation_id, request_id, idempotency_key, tenant_id, actor_id, actor_kind, origin, use_case_id, provider_id, policy_version, status, cost_usd, cost_source, trace_id, finished_at)
-     VALUES ($1, 'fixture', $1, $2, 'system:test', 'system', 'test.fixture', $3, 'typesafe', 'fixture', 'succeeded', 1, 'reported', 'fixture', now())`, [id, tenant, FB_CLASSIFY]);
+    `INSERT INTO typesafe_reservation (reservation_id, idempotency_key, source, use_case_id, budget_day, reserved_usd, status, dispatched_at,
+       attempts, cost_usd, cost_source, expires_at, settled_at)
+     VALUES ($1, $2, 'ai_core', $3, (now() AT TIME ZONE 'UTC')::date, 0.01, 'committed', now(), 1, 1, 'reported', now(), now())`,
+    [`tsr_fixture_${randomUUID()}`, key, FB_CLASSIFY]);
   try {
     return await run();
   } finally {
-    await t.pool.query('DELETE FROM ai_invocation WHERE invocation_id = $1', [id]);
+    await t.pool.query('DELETE FROM typesafe_reservation WHERE idempotency_key = $1', [key]);
+  }
+}
+
+/**
+ * Ejecuta `run` con la clasificación de `useCase` en `environment` servida por una copia de la candidata TypeSafe sembrada
+ * (`ts:jev-1.14.0`, aprobada, clave ficticia) y restaura después la ruta activa anterior. La simulada (MockJev) no gasta
+ * TypeSafe ni consulta su tope (TS-1): solo una ruta TypeSafe prueba el tope DEC-0032. Agotado, nada sale a la red.
+ */
+async function withTypesafeClassifier<T>(useCase: string, environment: string, run: () => Promise<T>): Promise<T> {
+  const reg = t.handle.dispatcher.registry;
+  const previous = (await reg.rollout(useCase, environment))?.active_route_id;
+  assert.ok(previous, `${useCase} tiene ruta activa en ${environment}`);
+  const seeded = (await t.pool.query<{ prompt_revision_id: string; params: RouteParams; max_cost_usd: string }>(
+    `SELECT prompt_revision_id, params, max_cost_usd FROM ai_route_revision WHERE use_case_id = $1 AND model_id = 'ts:jev-1.14.0' AND status <> 'RETIRED'
+      ORDER BY version LIMIT 1`, [useCase])).rows[0];
+  assert.ok(seeded, `candidata TypeSafe sembrada para ${useCase}`);
+  const route = await reg.createRoute({ useCaseId: useCase, modelId: 'ts:jev-1.14.0', promptRevisionId: seeded.prompt_revision_id, params: seeded.params,
+    maxCostUsd: Number(seeded.max_cost_usd), changeNote: 'Prueba de cotas: clasificación con TypeSafe (tope DEC-0032)', actor: ACTOR });
+  createdRoutes.push(route.route_id);
+  await approve(route.route_id);
+  await reg.activate(useCase, environment, route.route_id, ACTOR, 'Prueba de cotas: clasificación con TypeSafe', 'seed');
+  const prevKey = process.env.TYPESAFE_API_KEY;
+  process.env.TYPESAFE_API_KEY = 'ts-fake-key-cost-bounds';
+  try {
+    return await run();
+  } finally {
+    if (prevKey === undefined) delete process.env.TYPESAFE_API_KEY; else process.env.TYPESAFE_API_KEY = prevKey;
+    await reg.activate(useCase, environment, previous, ACTOR, 'Prueba de cotas: vuelve la clasificación simulada', 'seed');
   }
 }
 
@@ -466,10 +497,13 @@ test('(b) AC-6004: con el tope diario de TypeSafe (DEC-0032) alcanzado, la lectu
   const a = await createTenantWithPlan(t, { reviews_managed: 0 }, 'client_cbj');
   const service = cbService();
   const calls0 = provider.calls;
-  const c = await withTypesafeDayExhausted(a.tenant, async () => service.classifyCase(await receivedComment(service, a.tenant, COMMENT)));
+  const c = await withTypesafeClassifier(FB_CLASSIFY, CB_ENV, () =>
+    withTypesafeDayExhausted(async () => service.classifyCase(await receivedComment(service, a.tenant, COMMENT))));
   assert.deepEqual([c?.state, c?.decision, c?.reason, c?.semantic_source, c?.reply_invocation_id], ['needs_human', 'human_review', 'semantic_unavailable', 'unavailable', null]);
   const read = (await invocations(a.tenant, FB_CLASSIFY)).filter((r) => r.idempotency_key === `case:${c!.case_id}:read`);
-  assert.deepEqual(read.map((r) => [r.status, r.error_code, Number(r.cost_usd)]), [['failed', 'budget_exhausted', 0]]);
+  assert.deepEqual(read.map((r) => [r.provider_id, r.status, r.error_code, r.detail, Number(r.cost_usd)]), [['typesafe', 'failed', 'budget_exhausted', 'DEC-0032', 0]]);
+  assert.equal(await countRows(t, 'SELECT count(*) AS n FROM typesafe_reservation WHERE idempotency_key = $1', [`ai_invocation:${read[0]!.invocation_id}`]), 0,
+    'la lectura denegada no reservó nada en el libro de TypeSafe');
   assert.deepEqual(await invocations(a.tenant, FB_REPLY), [], 'sin lectura semántica no hay redacción con IA');
   assert.equal(provider.calls, calls0);
   assert.deepEqual(await commercialLedger(a.tenant), { rows: 0, events: 0 });
@@ -649,11 +683,11 @@ test('(d) AC-6005 · FB-3: los techos globales también bloquean un grant válid
     await clearLabExperimentBudget();
   }
 
-  // Tope TypeSafe alcanzado: la clasificación (ruta normal bajo el grant) se bloquea y no se llega a generar.
-  const r = await withTypesafeDayExhausted(a.tenant, () => labReply(lab, a.token, REVIEW, grant));
+  // Tope TypeSafe alcanzado: la clasificación (ruta normal bajo el grant, aquí con TypeSafe) se bloquea y no se llega a generar.
+  const r = await withTypesafeClassifier(GOOGLE_CLASSIFY, 'lab', () => withTypesafeDayExhausted(() => labReply(lab, a.token, REVIEW, grant)));
   assert.deepEqual([r.status, r.body.error?.code], [429, 'limit_exceeded'], JSON.stringify(r.body));
-  const reads = (await invocations(a.tenant, GOOGLE_CLASSIFY)).map((x) => [x.status, x.error_code, x.lab_grant_id]);
-  assert.deepEqual(reads, [['succeeded', null, grant], ['failed', 'budget_exhausted', grant]]);
+  const reads = (await invocations(a.tenant, GOOGLE_CLASSIFY)).map((x) => [x.provider_id, x.status, x.error_code, x.lab_grant_id]);
+  assert.deepEqual(reads, [['simulated', 'succeeded', null, grant], ['typesafe', 'failed', 'budget_exhausted', grant]]);
   assert.equal((await invocations(a.tenant, GOOGLE_REPLY)).length, 1, 'sin clasificación no hay generación');
   assert.equal(provider.calls, calls0, 'ningún techo agotado llegó al proveedor');
   assert.deepEqual(await commercialLedger(a.tenant), { rows: 0, events: 0 });

@@ -11,14 +11,16 @@
  * Un fallo de riesgo es un caso prohibited/human_approval_required cuyo resultado final con
  * D1–D3 no lo contiene (DEC-0033); la cifra de Jev solo se guarda como información.
  * Requiere JEV_MODE=shadow|primary, JEV_PROVIDER=typesafe y TYPESAFE_API_KEY para la
- * ejecución real; respeta el presupuesto diario (DEC-0032). Solo envía los textos
+ * ejecución real; cada caso reserva en el libro global de TypeSafe antes de enviarse
+ * (DEC-0032, TS-1) y, agotado el tope diario, queda sin respuesta. Solo envía los textos
  * sintéticos del conjunto (DEC-0019). Nunca imprime ni guarda la clave.
  */
 
 import pg from 'pg';
+import { TypeSafeLedger, typesafeDailyLimitUsd } from '../src/ai/typesafe-ledger.ts';
 import { JevClient } from '../src/jev/client.ts';
 import {
-  JevBudget, JEV_EVAL_SETS, JEV_POLICY_VERSION, createJevClient, decisionCodeSha256, utcDay,
+  JEV_EVAL_SETS, JEV_POLICY_VERSION, createJevClient, decisionCodeSha256, utcDay,
 } from '../src/conversation/jev-classifier.ts';
 import { loadJevEvalSet, runJevEvaluation, summarizeJevEvaluation } from '../src/conversation/jev-evaluation.ts';
 import { JevRepository } from '../src/conversation/jev-repository.ts';
@@ -38,9 +40,9 @@ async function main(): Promise<void> {
     const startedAt = new Date();
 
     if (mock) {
+      // El simulado no gasta TypeSafe: no reserva ni necesita la BD.
       const client = new JevClient({ provider: 'mock' });
-      const budget = new JevBudget({ spentOn: async () => 0 }, Number.POSITIVE_INFINITY);
-      const summary = summarizeJevEvaluation(await runJevEvaluation({ client, cases: set.cases, budget }), 'mock');
+      const summary = summarizeJevEvaluation(await runJevEvaluation({ client, cases: set.cases, budget: null }), 'mock');
       process.stdout.write(`${JSON.stringify({ provider: 'mock', persisted: false, dataset_sha256: set.sha256, ...summary }, null, 2)}\n`);
       return;
     }
@@ -52,8 +54,8 @@ async function main(): Promise<void> {
     const pool = new Pool({ connectionString: cfg.databaseUrl, max: 2 });
     try {
       const repo = new JevRepository(pool);
-      const budget = new JevBudget(repo, cfg.jev.dailyBudgetUsd);
-      const results = await runJevEvaluation({ client, cases: set.cases, budget });
+      const ledger = new TypeSafeLedger({ pool, dailyLimitUsd: () => typesafeDailyLimitUsd(cfg.jev) });
+      const results = await runJevEvaluation({ client, cases: set.cases, budget: ledger });
       const summary = summarizeJevEvaluation(results, 'typesafe');
       const code = decisionCodeSha256();
       const run = await repo.createEvaluationRun({
@@ -101,7 +103,7 @@ async function main(): Promise<void> {
         ...headline,
         per_intent: perIntent,
         confusion,
-        spent_today_usd: budget.spentUsd,
+        spent_today_usd: await ledger.spentOn(utcDay(new Date())),
       }, null, 2)}\n`);
     } finally {
       await pool.end();
