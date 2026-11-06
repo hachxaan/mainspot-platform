@@ -68,6 +68,7 @@ items:
 # FR-0010: delta 0.6.0 por DEC-0075/SRC-0013 (catálogo de planes versionado), junto con BR-0007, FR-0018 y FR-0019.
 # FR-0010: delta 0.7.0 por DEC-0076/SRC-0015 (cuota mensual de respuestas a reseñas con IA; recepción sin cuota), junto con FR-0008 y FR-0016.
 # FR-0010: delta 0.8.0 por DEC-0077/SRC-0017 (confirma la semántica G-SEM de DEC-0076; C14 → FR-0021 y C10/C12 → FR-0020).
+# FR-0010: delta 0.9.0 por DEC-0078/SRC-0018 y SRC-0019 (parámetro periódico quota.ai_facebook_suggestions.max, separado de ai_review_replies; ausente ⇒ deny; activación comercial BLOCKED).
 - id: FR-0010
   title: Suscripciones configurables sin cobro + límites en creación
   state: DECIDED
@@ -173,6 +174,7 @@ items:
   source: issue #9 + APR-0003
 # FR-0016: delta 0.7.0 por DEC-0076/SRC-0015 (redacción con IA de respuestas a reseñas medida).
 # FR-0016: delta 0.8.0 por DEC-0077/SRC-0017 (SEC-CONSENT-01, SEC-TG-APPROVAL-01; Facebook fuera de la cuota con presupuesto técnico).
+# FR-0016: delta 0.9.0 por DEC-0078/SRC-0018 y SRC-0019 (modos de sugerencias de Facebook off/on_demand/auto_suggest, FB-2, créditos propios y aprobación por Telegram ligada al aviso, también con botones).
 - id: FR-0016
   title: 'Comentarios y reseñas: clasificación Jev, respuestas generadas y ledger único'
   state: DECIDED
@@ -198,6 +200,7 @@ items:
   path: items/FR-0019.md
   source: issue #9 + APR-0003
 # NFR-0006: delta 0.8.0 por DEC-0077/SRC-0017 (Facebook y laboratorio fuera de la cuota comercial, acotados por presupuestos técnicos).
+# NFR-0006: delta 0.9.0 por DEC-0078/SRC-0018 y SRC-0019 (lab_total techo global, tenant_day solo operativo, lab_experiment sin valor ⇒ deny, atribución por canal sin particiones, reservas atómicas de TypeSafe).
 - id: NFR-0006
   title: 'Costo de IA: medición, presupuestos y techo duro'
   state: DECIDED
@@ -217,6 +220,7 @@ items:
   path: items/NFR-0008.md
   source: issue #9 + APR-0003
 # BR-0007: delta 0.8.0 por DEC-0077/SRC-0017 (reconsentimiento versionado antes de gastar unidades con IA).
+# BR-0007: delta 0.9.0 por DEC-0078/SRC-0018 y SRC-0019 (opt-in informado de auto_suggest y consentimiento auto_reply.facebook_comment.v3; AC-7101 y AC-7102).
 - id: BR-0007
   title: Datos hacia proveedores de IA, consentimiento, dinero y roles
   state: DECIDED

@@ -29,4 +29,11 @@ note: >-
   SEC-TG-APPROVAL-01 (/aprobar ligado a la instantánea del aviso); C14 → demostración pública FR-0021 (parámetros OPEN;
   DEC-0018 rige el Trial administrativo); C10/C12 → FR-0020 (60 días solo en cancelación y suspensión por impago;
   SUPERSEDES parcial de DEC-0024/DEC-0027, BLOCKED por G-LEGAL y G-PAY).
+  Delta 0.9.0: FR-0016, BR-0007, NFR-0006 y FR-0010 cambian por DEC-0078/SRC-0018 y SRC-0019 (aprobación del propietario
+  SRC-007 copiada byte a byte y directiva de la sesión; no nueva sesión HDC): modos de sugerencias de Facebook off,
+  on_demand (predeterminado) y auto_suggest (opt-in informado con consentimiento versionado) que nunca autorizan
+  publicar; FB-2 (sin redacción con IA para publicar lo que no podrá publicarse); créditos ai_facebook_suggestions
+  (periódicos, separados de ai_review_replies, ausente ⇒ deny; activación comercial BLOCKED); lab_experiment segregado
+  bajo lab_total (valor OPEN), tenant_day solo operativo y atribución por canal sin particiones (OPEN); reservas
+  atómicas de TypeSafe; consentimiento auto_reply.facebook_comment.v3; SUPERSEDES parcial de DEC-0077 (efecto de R4).
   Esta aprobación acotada no declara terminado el canon global.

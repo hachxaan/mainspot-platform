@@ -105,3 +105,15 @@ links:
   - {from: "DEC-0077", to: "DEC-0076", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T00:56:36Z"}
   - {from: "DEC-0077", to: "DEC-0024", type: "SUPERSEDES", by: "Carlos Pinacho", at: "2026-11-06T00:56:36Z"}
   - {from: "DEC-0077", to: "DEC-0027", type: "SUPERSEDES", by: "Carlos Pinacho", at: "2026-11-06T00:56:36Z"}
+  - {from: "DEC-0078", to: "SRC-0018", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}
+  - {from: "DEC-0078", to: "SRC-0019", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}
+  - {from: "DEC-0078", to: "DEC-0077", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}
+  - {from: "DEC-0078", to: "DEC-0076", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}
+  - {from: "DEC-0078", to: "DEC-0068", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}
+  - {from: "DEC-0078", to: "DEC-0074", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}
+  - {from: "DEC-0078", to: "DEC-0032", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}
+  - {from: "DEC-0078", to: "DEC-0077", type: "SUPERSEDES", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}
+  - {from: "FR-0016", to: "DEC-0078", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}
+  - {from: "BR-0007", to: "DEC-0078", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}
+  - {from: "NFR-0006", to: "DEC-0078", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}
+  - {from: "FR-0010", to: "DEC-0078", type: "DERIVES_FROM", by: "Carlos Pinacho", at: "2026-11-06T09:01:02Z"}

@@ -180,3 +180,36 @@ sources:
     y la implementación de SEC-CONSENT-01 y SEC-TG-APPROVAL-01. No autoriza producción, bases reales, proveedores
     de pago, cobros, DNS ni infraestructura, migraciones reales, fusiones de PR ni firmas de gates humanos
     (G-MIG/G-SEC); no fija cuotas, precios, fórmulas de prorrateo, proveedores ni umbrales.
+- id: SRC-0018
+  title: Aprobación del propietario de la política de IA de Facebook, presupuestos y TypeSafe (FB-1, FB-2, FB-3 y TS-1, 2026-11-06; SRC-007 del repositorio documental)
+  kind: document
+  location: .canonflow/sources/SRC-0018-facebook-ai-owner-approval-2026-11-06.md
+  fingerprint: sha256:5588d43622aee1b4340e0dd8d61cd651886383119cbfa040f6bbd49bc2aaf7ad
+  reliability: informative
+  registered_at: '2026-11-06'
+  notes: >-
+    Copia byte a byte de hachxaan/mainspot-documentation@docs/facebook-ai-approval-20261106 (añadido en 1a587ea,
+    registrado en su source-register en f99cbfb), sources/normalized/SRC-007-facebook-ai-owner-approval-2026-11-06.md;
+    bytes obtenidos con gh api en f99cbfb, con el mismo sha256 en la punta de la rama y en 1a587ea y el mismo blob git
+    (f4f46e4e0322a146df9fa5f39185f9087a9e7a1d). Registra dos mensajes literales del propietario: «Ok para 2, 3, 4…»
+    (FB-2, FB-3 y TS-1) con su duda sobre la 1 (FB-1) y «Adelante.», su respuesta a la propuesta de tres modalidades
+    para FB-1 y a la pregunta de si se cerraban las cuatro; la «Interpretación contextual aprobada» no es cita literal.
+    Sin audio ni firma verificable (original_audio_verified: false). No fija cuotas de créditos, cantidades por plan,
+    precios, unidad de cobro, montos de presupuesto ni umbrales. No confundir con SRC-0007 de esta plataforma. La
+    formaliza DEC-0078 junto con la directiva SRC-0019.
+- id: SRC-0019
+  title: Directiva literal de la sesión — ciclo local FB AI POLICY 2026-11-06 (FB-1, FB-2, FB-3 y TS-1)
+  kind: document
+  location: .canonflow/sources/SRC-0019-fb-ai-policy-cycle-directive.md
+  fingerprint: sha256:f03d412b95c4f76de7b9e3b2f01533be3897f1619fb40b798ae2bede3e6b95a5
+  reliability: authoritative
+  registered_at: '2026-11-06'
+  notes: >-
+    Fuente humana literal externa al HDC; registrada como DEC-0078 sin inventar QS/ANS. Copia byte a byte del texto
+    entregado al agente al inicio de la sesión OMP del 2026-11-06, idéntico en contenido al bloque citado de
+    docs/handoffs/facebook-ai-policy-2026-11-06/START-PROMPT.md en 122e74d (rama docs/facebook-ai-policy-20261106):
+    mismas líneas de texto en el mismo orden; solo cambia el formato Markdown (sin marcadores de cita, sin viñetas en
+    las cuatro lecturas y con una línea en blanco antes de ellas). Ordena la decisión canónica posterior a DEC-0077 con
+    precedencia explícita y la ejecución local de FB-1, FB-2, FB-3 y TS-1. No autoriza producción, proveedores reales,
+    pagos, migraciones en bases reales ni despliegues; no fija cifras ni créditos comerciales y bloquea solo la
+    activación del cobro que dependa de una decisión económica.
