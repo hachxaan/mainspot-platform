@@ -78,15 +78,18 @@ const SCHEME_OR_WWW = /https?:\/\/[\p{L}\p{N}]|(?<![\p{L}\p{N}])www\.[\p{L}\p{N}
  */
 const COMMON_TLDS = ['com', 'net', 'org', 'info', 'biz', 'io', 'co', 'me', 'ly', 'gl', 'gle', 'gd', 'gg', 'be', 'ee', 'to', 'at',
   'in', 'it', 'fr', 'uk', 'eu', 'ca', 'br', 'ru', 'cn', 'ai', 'tv', 'cc', 'fm', 'am', 'sh', 'so', 'ws', 'tk', 'app', 'dev', 'site',
-  'online', 'shop', 'store', 'link', 'xyz', 'top', 'club', 'live', 'website', 'page', 'mx', 'es', 'ar', 'cl', 'pe', 'us'];
+  'online', 'shop', 'store', 'link', 'xyz', 'top', 'club', 'live', 'website', 'page', 'lat', 'mx', 'es', 'ar', 'cl', 'pe', 'us'];
 /**
  * Dominio sin esquema: etiquetas sin letras pegadas delante (ni el dominio de un correo) y un dominio de primer nivel
- * habitual todo en minúsculas o todo en mayúsculas, sin letras pegadas detrás; puede seguir una ruta. Así cuentan
- * «ganafacil.com», «GANAFACIL.COM», «wa.me» o «youtu.be/x», pero no un punto sin espacio entre frases con mayúscula
- * («servicio.Calidad/precio», «atención.Me encantó»), «servicio.calidad/precio», números («3.50») ni un correo.
+ * habitual en minúsculas, en mayúsculas o, si tiene tres letras o más, con inicial mayúscula; sin letras pegadas
+ * detrás y con o sin ruta. Así cuentan «ganafacil.com», «GANAFACIL.COM», «Ganafacil.Com», «wa.me» o «youtu.be/x», pero
+ * no un punto sin espacio entre frases con mayúscula («servicio.Calidad/precio», «atención.Me encantó»),
+ * «servicio.calidad/precio», números («3.50») ni un correo.
  */
+const TLD_FORMS = [...COMMON_TLDS, ...COMMON_TLDS.map((tld) => tld.toUpperCase()),
+  ...COMMON_TLDS.filter((tld) => tld.length >= 3).map((tld) => tld[0]!.toUpperCase() + tld.slice(1))];
 const BARE_DOMAIN = new RegExp(String.raw`(?<![\p{L}\p{N}_@.-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+(?:`
-  + [...COMMON_TLDS, ...COMMON_TLDS.map((tld) => tld.toUpperCase())].join('|') + String.raw`)(?![\p{L}\p{N}_-])`, 'u');
+  + TLD_FORMS.join('|') + String.raw`)(?![\p{L}\p{N}_-])`, 'u');
 
 /**
  * Filtros deterministas previos al gasto automático (FB-2): un comentario sin letras ni números (solo emojis o signos),

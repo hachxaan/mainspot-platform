@@ -17,7 +17,8 @@ test('sin texto propio, solo menciones/etiquetas o con enlaces ⇒ no amerita ga
     ['Promo!!!www.spam.example', 'link'], ['mira bit.ly/abc123', 'link'], ['Gana dinero en …ganafacil.com', 'link'],
     ['Info en wa.me', 'link'], ['Únete: t.me/canal', 'link'], ['compra en tienda.com.mx hoy', 'link'], ['😍ganafacil.com', 'link'],
     ['mira youtu.be/abc123', 'link'], ['todo en linktr.ee/tienda', 'link'], ['amzn.to/3xYz', 'link'], ['llena forms.gle/AbC', 'link'],
-    ['shorturl.at/abc', 'link'], ['lnkd.in/xyz', 'link'], ['VISITA GANAFACIL.COM', 'link'],
+    ['shorturl.at/abc', 'link'], ['lnkd.in/xyz', 'link'], ['VISITA GANAFACIL.COM', 'link'], ['Visita Ganafacil.Com', 'link'],
+    ['promo en tienda.lat', 'link'],
   ] as const) {
     assert.equal(textRelevance(body), reason, body);
   }
