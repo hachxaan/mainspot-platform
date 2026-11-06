@@ -25,7 +25,7 @@ import { loadPinnedPolicy } from '../plans/policy.ts';
 import type { QuotaLedger, QuotaReservationRow } from '../subscriptions/quota.ts';
 import { autoReplyText, classify, decide, humanDrafts, type Classification, type Decision, type EngagementCategory, type EngagementOrigin, type InfoTopic, type PolicySnapshot } from './classifier.ts';
 import type { EngagementSemantics } from './ai-semantics.ts';
-import { AUTO_REPLY_CONSENT, REVIEW_REQUIRED_CONSENT, consentCoversAiSpend, reconsentRequired } from './consent.ts';
+import { AUTO_REPLY_CONSENT, REVIEW_REQUIRED_CONSENT, consentCoversAiSpend, consentIsCurrent, reconsentRequired } from './consent.ts';
 import { newNoticeCode, optionsSha256, type ApprovalOfferRow } from './notice-offer.ts';
 import { consumeSimFault, type EngagementReplier, type ReplyResult } from './providers.ts';
 
@@ -96,11 +96,15 @@ export type PolicyView = (PolicyRow | (Omit<PolicyRow, 'policy_id' | 'decided_by
   reconsent_required: boolean;
 };
 
-/** Resultado de `/aprobar <código> <N>` (SEC-TG-APPROVAL-01). `invalid` no distingue inexistente de ajeno. */
+/**
+ * Resultado de `/aprobar <código> <N>` (SEC-TG-APPROVAL-01). `invalid` no distingue inexistente de ajeno. `stale`:
+ * `changed` = las propuestas cambiaron (o el aviso fue sustituido); `used` = ese aviso ya aprobó el caso y la
+ * publicación falló, así que se decide con el aviso vigente.
+ */
 export type NoticeApproval =
   | { kind: 'approved'; case: CaseRow }
   | { kind: 'already'; case: CaseRow }
-  | { kind: 'stale'; case: CaseRow }
+  | { kind: 'stale'; case: CaseRow; reason: 'changed' | 'used' }
   | { kind: 'invalid' };
 
 /** El caso salió de la política que lo clasificó mientras se redactaba (revocación o reconsentimiento). */
@@ -111,6 +115,7 @@ interface PolicyInForce extends PolicySnapshot {
   origin: EngagementOrigin;
   category: PolicyCategory;
   consent_version: string | null;
+  consent_sha256: string | null;
 }
 
 export interface CaseRow {
@@ -233,7 +238,7 @@ export class EngagementService {
           });
           continue;
         }
-        const current = row.mode === 'review_required' || row.consent_version === AUTO_REPLY_CONSENT[row.origin].version;
+        const current = row.mode === 'review_required' || consentIsCurrent(row);
         out.push({ ...row, consent_current: current, reconsent_required: reconsentRequired(row) });
       }
     }
@@ -248,7 +253,7 @@ export class EngagementService {
     const p = res.rows[0];
     return p ? {
       policy_id: p.policy_id, version: p.version, mode: p.mode, max_auto_replies_per_hour: p.max_auto_replies_per_hour,
-      origin: p.origin, category: p.category, consent_version: p.consent_version,
+      origin: p.origin, category: p.category, consent_version: p.consent_version, consent_sha256: p.consent_sha256,
     } : null;
   }
 
@@ -448,7 +453,17 @@ export class EngagementService {
         }
       }
     }
-    if (decision.decision === 'auto_reply' && generated?.needsHuman) decision = { decision: 'human_review', reason: 'reply_needs_human' };
+    if (decision.decision === 'auto_reply' && generated?.needsHuman) {
+      decision = { decision: 'human_review', reason: 'reply_needs_human' };
+      if (reservation) {
+        // DEC-0077 R2/R3: la redacción para la respuesta automática pidió revisión humana, así que no hubo respuesta
+        // automática con IA. La reseña pasa a esperar decisión SIN propuesta de IA entre las numeradas y sin gastar la
+        // unidad; la IA a pedido («Redactar con IA») sigue disponible y es la que consume.
+        await this.deps.quota.release(reservation, null, 'ai_reply_needs_human');
+        reservation = null;
+        generated = null;
+      }
+    }
     const persist = (gen: typeof generated, held: QuotaReservationRow | null) => runAtomic(this.deps.pool, async (client) => {
       let res;
       if (decision.decision === 'auto_reply') {
@@ -711,10 +726,12 @@ export class EngagementService {
   }
 
   /**
-   * Aprueba desde el panel la respuesta (texto visible o borrador elegido). Idempotente: no responde dos veces.
-   * Telegram no pasa por aquí: aprueba la opción de un aviso concreto con `approveFromNotice` (SEC-TG-APPROVAL-01).
+   * Aprueba desde el panel la respuesta: el texto visible (lo que envía el panel) o una propuesta numerada de la
+   * revisión que la persona vio (`draft_index` + `drafts_revision`, comparada en el UPDATE). Nunca «la opción vigente»
+   * sin más. Idempotente: no responde dos veces. Telegram no pasa por aquí: aprueba la opción de un aviso concreto con
+   * `approveFromNotice` (SEC-TG-APPROVAL-01).
    */
-  async approve(actor: Actor, caseId: string, body: { draft_index?: unknown; text?: unknown }, channel: 'panel'): Promise<{ case: CaseRow; already: boolean }> {
+  async approve(actor: Actor, caseId: string, body: { draft_index?: unknown; drafts_revision?: unknown; text?: unknown }, channel: 'panel'): Promise<{ case: CaseRow; already: boolean }> {
     const found = await this.getCase(actor.tenantId, caseId);
     if (!found) throw this.notFound();
     if (['approved', 'responding', 'responded', 'retry_pending'].includes(found.state)) return { case: found, already: true };
@@ -722,19 +739,28 @@ export class EngagementService {
       throw new AppError(409, 'validation_error', 'Este caso ya fue resuelto y no puede aprobarse.');
     }
     let text: string;
+    let seenRevision: number | null = null;
     if (typeof body.text === 'string' && body.text.trim()) {
       text = body.text.trim();
     } else {
-      const idx = body.draft_index === undefined ? 0 : Number(body.draft_index);
-      text = Number.isInteger(idx) ? (found.drafts[idx] ?? '').trim() : '';
+      const idx = Number(body.draft_index);
+      const revision = Number(body.drafts_revision);
+      if (body.draft_index === undefined || !Number.isInteger(idx) || idx < 0 || idx > 2 || body.drafts_revision === undefined || !Number.isInteger(revision)) {
+        throw new AppError(400, 'validation_error', 'Envía el texto que vas a publicar, o el número de la propuesta junto con la revisión de las propuestas que viste.');
+      }
+      if (revision !== found.drafts_revision) {
+        throw new AppError(409, 'validation_error', 'Las propuestas cambiaron después de que las viste. Recarga y vuelve a elegir.');
+      }
+      text = (found.drafts[idx] ?? '').trim();
+      seenRevision = revision;
     }
     if (!text || text.length > MAX_TEXT) throw new AppError(400, 'validation_error', 'Elige una respuesta sugerida o escribe una antes de aprobar.');
     return runAtomic(this.deps.pool, async (client) => {
       const res = await client.query<CaseRow>(
         `UPDATE engagement_case SET state = 'approved', response_text = $2, resolved_by = $3, resolution_channel = $4,
            resolved_at = now(), attempts = 0, next_attempt_at = now(), last_error = NULL, updated_at = now()
-         WHERE case_id = $1 AND tenant_id = $5 AND state IN ('needs_human','failed') RETURNING *`,
-        [caseId, text, actor.userId, channel, actor.tenantId]);
+         WHERE case_id = $1 AND tenant_id = $5 AND state IN ('needs_human','failed') AND ($6::int IS NULL OR drafts_revision = $6) RETURNING *`,
+        [caseId, text, actor.userId, channel, actor.tenantId, seenRevision]);
       const row = res.rows[0];
       if (!row) {
         const now = await this.getCase(actor.tenantId, caseId, client);
@@ -831,7 +857,7 @@ export class EngagementService {
           action: 'engagement.approval.stale', resource: `engagement_case/${c.case_id}`, request_id: actor.requestId,
           decision: 'deny', result: `notice_r${o.drafts_revision}:case_r${c.drafts_revision}:${o.status}`, evidence_ref: o.offer_id,
         }, client);
-        return { kind: 'stale', case: c };
+        return { kind: 'stale', case: c, reason: o.status === 'used' ? 'used' : 'changed' };
       }
       const res = await client.query<CaseRow>(
         `UPDATE engagement_case SET state = 'approved', response_text = $2, resolved_by = $3, resolution_channel = 'telegram',
@@ -962,10 +988,14 @@ export class EngagementService {
              WHERE case_id = $1 AND state = 'responding' AND $3::int >= 0 RETURNING *`;
     }
     const res = await this.deps.pool.query<CaseRow>(sql, [row.case_id, fail.error.slice(0, 120), backoffSeconds(row.attempts)]);
-    // Agotado sin publicar: se libera el destino para que otra decisión (humana) pueda responder.
+    // Agotado sin publicar: se libera el destino para que otra decisión (humana) pueda responder, y los chats ya
+    // avisados reciben el aviso vigente («No pudimos publicar…» o el caso escalado), con instantánea nueva.
     if (exhausted) {
       await this.deps.pool.query('DELETE FROM response_ledger WHERE tenant_id = $1 AND origin = $2 AND target_ref = $3 AND owner_ref = $4 AND state = \'claimed\'',
         [row.tenant_id, row.origin, row.external_ref, owner]).catch(() => undefined);
+      await this.deps.pool.query(
+        `UPDATE engagement_notification SET status = 'pending', attempts = 0, next_attempt_at = NULL, last_error = NULL, updated_at = now()
+          WHERE case_id = $1`, [row.case_id]);
     }
     await this.deps.sink.write({
       tenant_id: row.tenant_id, actor_id: SYSTEM_ACTOR, actor_role: null,
@@ -998,17 +1028,22 @@ export class EngagementService {
     const origin = row.origin === 'google_review'
       ? `Reseña de Google${row.rating ? ` (${row.rating}★)` : ''}`
       : 'Comentario en Facebook';
-    const excerpt = row.body.length > 300 ? `${row.body.slice(0, 297)}…` : row.body;
+    // Texto de terceros en una sola línea y sin comandos: nunca puede parecer una opción numerada ni otro aviso.
+    const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
+    const flat = oneLine(row.body).replace(/\/(aprobar|rechazar)\b/gi, '$1');
+    const excerpt = flat.length > 300 ? `${flat.slice(0, 297)}…` : flat;
+    const header = row.state === 'failed' ? 'MainSpot · No pudimos publicar la respuesta aprobada'
+      : notice.updated ? 'MainSpot · Propuestas actualizadas (el aviso anterior ya no sirve para aprobar)'
+        : 'MainSpot · Caso pendiente de tu decisión';
     const lines = [
-      row.state === 'failed' ? 'MainSpot · No pudimos publicar la respuesta aprobada'
-        : notice.updated ? 'MainSpot · Propuestas actualizadas (el aviso anterior ya no sirve para aprobar)'
-          : 'MainSpot · Caso pendiente de tu decisión',
+      `${header} · aviso ${notice.code}`,
       `Caso: ${row.case_id}`,
-      `${origin} · ${row.author_label}`,
+      `${origin} · ${oneLine(row.author_label)}`,
       `«${excerpt}»`,
       `Motivo: ${row.reason ?? 'revisión'}`,
     ];
-    notice.options.forEach((d, i) => lines.push(`${i + 1}) ${d}`));
+    // Solo las opciones reales empiezan una línea con «N) »: las líneas siguientes de cada opción van sangradas.
+    notice.options.forEach((d, i) => lines.push(`${i + 1}) ${d.replace(/\r?\n/g, '\n   ')}`));
     const n = notice.options.length;
     if (n > 0) {
       lines.push(`Para publicar: /aprobar ${notice.code} 1${n === 3 ? ' (o 2, 3)' : n === 2 ? ' (o 2)' : ''} · Para no responder: /rechazar ${notice.code}`);
@@ -1027,7 +1062,9 @@ export class EngagementService {
   private async issueNotice(c: CaseRow, notificationId: string, chatId: string, userId: string): Promise<{ code: string; options: string[]; updated: boolean } | null> {
     const options = c.drafts.slice(0, 3);
     const sha = optionsSha256(options);
-    const prior = await this.deps.pool.query('SELECT 1 FROM engagement_approval_offer WHERE case_id = $1 AND chat_id = $2 LIMIT 1', [c.case_id, chatId]);
+    // «Actualizadas» solo si este chat ya recibió un aviso de una revisión anterior (no en reenvíos ni reintentos).
+    const prior = await this.deps.pool.query('SELECT 1 FROM engagement_approval_offer WHERE case_id = $1 AND chat_id = $2 AND drafts_revision < $3 LIMIT 1',
+      [c.case_id, chatId, c.drafts_revision]);
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const code = newNoticeCode();
       const res = await this.deps.pool.query(
@@ -1112,10 +1149,15 @@ export class EngagementService {
     const injected = this.deps.channel.name === 'simulated' && await consumeSimFault(this.deps.pool, c.tenant_id, 'telegram', 'error');
     const sent = injected ? { ok: false, error: 'simulated_telegram_error' } : await this.deps.channel.sendMessage(n.chat_id, this.notificationText(c, notice));
     if (sent.ok) {
-      await this.deps.pool.query(
-        `UPDATE engagement_notification SET status = 'sent', sent_at = now(), attempts = attempts + 1, last_error = NULL, updated_at = now()
-          WHERE notification_id = $1 AND EXISTS (SELECT 1 FROM engagement_case WHERE case_id = $2 AND drafts_revision = $3)`,
-        [n.notification_id, c.case_id, c.drafts_revision]);
+      // Bajo candado compartido del caso (una edición en curso confirma antes): solo queda «enviada» si la revisión
+      // enviada sigue siendo la vigente; si no, la fila sigue pendiente y el siguiente ciclo manda la nueva.
+      await runAtomic(this.deps.pool, async (client) => {
+        const now = await client.query<{ drafts_revision: number }>('SELECT drafts_revision FROM engagement_case WHERE case_id = $1 FOR SHARE', [c.case_id]);
+        if (now.rows[0]?.drafts_revision !== c.drafts_revision) return;
+        await client.query(
+          `UPDATE engagement_notification SET status = 'sent', sent_at = now(), attempts = attempts + 1, last_error = NULL, updated_at = now()
+            WHERE notification_id = $1`, [n.notification_id]);
+      });
       return 'sent';
     }
     await this.deps.pool.query(

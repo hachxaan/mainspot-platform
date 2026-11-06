@@ -390,6 +390,8 @@ export class RetentionService {
           WHERE tenant_id = $1`, [tenantId, anonymousId]);
       // La misma variable autoriza borrar subscription_history de ESTE negocio (append-only salvo aquí).
       const deleted: Record<string, number> = {};
+      // Mismo orden de candados que `/aprobar` (caso → aviso): se bloquean los casos antes de borrar sus avisos.
+      await client.query('SELECT 1 FROM engagement_case WHERE tenant_id = $1 FOR UPDATE', [tenantId]);
       for (const { table, key } of TENANT_TABLES) {
         const res = await client.query(`DELETE FROM ${table} WHERE ${key} = $1`, [tenantId]);
         deleted[table] = res.rowCount ?? 0;

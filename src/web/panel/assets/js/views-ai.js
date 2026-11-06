@@ -174,8 +174,9 @@
       ['#/ia/campanas', 'flask-conical', 'Campañas propuestas', 'Planes sin gastar dinero hasta que tú lo autorices.', MS.can('insights.read')],
       ['#/ia/marca', 'palette', 'Mi marca', 'Los datos que MainSpot usa para hablar como tú.', MS.can('brand.read')],
       ['#/ia/biblioteca', 'image', 'Biblioteca de imágenes', 'Tus fotos e ilustraciones para la página y redes.', MS.can('media.read')],
-      // Solo en el entorno de laboratorio: pruebas supervisadas con una autorización explícita del equipo de MainSpot.
-      ['#/ia/laboratorio', 'flask-conical', 'Laboratorio de IA', 'Prueba rutas nuevas con una autorización temporal; todo queda como borrador.', labAllowed() && !!(m.status && (m.status.environment === 'lab' || A.lab()))]
+      // Solo con el laboratorio habilitado (entorno `lab`, nunca producción): pruebas supervisadas con una autorización
+      // explícita del equipo de MainSpot.
+      ['#/ia/laboratorio', 'flask-conical', 'Laboratorio de IA', 'Prueba rutas nuevas con una autorización temporal; todo queda como borrador.', labAllowed() && !!(m.status && m.status.lab_enabled)]
     ];
     html += '<section aria-labelledby="ia-tools"><h2 id="ia-tools" class="sr-only">Herramientas</h2><ul class="list card card-flush">' + tiles.filter(function (t) { return t[4]; }).map(function (t) {
       return '<li><a class="list-row" href="' + t[0] + '">' + icon(t[1]) + '<span class="grow"><span class="title" style="display:block">' + esc(t[2]) + '</span><span class="sub" style="display:block">' + esc(t[3]) + '</span></span>' + icon('chevron-right', 'chev') + '</a></li>';

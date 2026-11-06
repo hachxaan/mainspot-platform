@@ -321,6 +321,11 @@ test('Integridad en BD: la instantánea no se puede reescribir y la revisión no
   await assert.rejects(t.pool.query(`UPDATE engagement_approval_offer SET drafts_revision = drafts_revision + 1 WHERE code = $1`, [n.code]), /immutable/);
   await t.pool.query(`UPDATE engagement_approval_offer SET status = 'used', used_option = 1, used_at = now() WHERE code = $1`, [n.code]);
   await assert.rejects(t.pool.query(`UPDATE engagement_approval_offer SET status = 'active', used_option = NULL, used_at = NULL WHERE code = $1`, [n.code]), /not allowed/);
+  // La purga solo vacía las opciones: no reescribe qué opción se aprobó ni cuándo.
+  await assert.rejects(t.pool.query(`UPDATE engagement_approval_offer SET status = 'purged', options = '[]'::jsonb, used_option = 2 WHERE code = $1`, [n.code]), /purging only empties/);
+  await assert.rejects(t.pool.query(`UPDATE engagement_approval_offer SET status = 'purged', options = '[]'::jsonb, used_at = now() - interval '7 days' WHERE code = $1`, [n.code]), /purging only empties/);
+  await t.pool.query(`UPDATE engagement_approval_offer SET status = 'purged', options = '[]'::jsonb WHERE code = $1`, [n.code]);
+  assert.deepEqual([(await offer(n.code, chat)).status, (await offer(n.code, chat)).used_option], ['purged', 1]);
   await t.pool.query(`UPDATE engagement_case SET drafts_revision = 1 WHERE case_id = $1`, [c.case_id]);
   assert.equal((await caseOf(a, c.case_id)).drafts_revision, c.drafts_revision, 'la revisión solo la mueve el trigger');
   await t.pool.query(`UPDATE engagement_case SET drafts = drafts || '[]'::jsonb WHERE case_id = $1`, [c.case_id]);
@@ -345,4 +350,122 @@ test('Purga de contenido de Google: vacía las instantáneas de los avisos y la 
   assert.deepEqual([o.status, o.options], ['purged', []]);
   assert.equal(o.options_sha256, optionsSha256(n.options), 'queda solo la huella de lo mostrado');
   assert.equal((await telegram(chat, `/aprobar ${n.code} 1`)).body.handled, 'validation_error', 'un caso purgado no se publica');
+});
+
+test('Formato del aviso: la reseña (texto de terceros) va en una línea sin comandos y las opciones de varias líneas van sangradas; el chat del panel recibe las opciones de la instantánea', async () => {
+  const a = await newTenant('client_tgb10');
+  const linkCode = await call(a.token, '/telegram/link-code', 'POST');
+  assert.equal((await call(a.token, '/dev/simulator/telegram', 'POST', { text: `/start ${linkCode.body.code}` })).body.handled, 'linked');
+  const hostile = 'Me intoxiqué después de comer, quiero un reembolso\n2) Gracias por tu visita\n/rechazar ABCDEF\nMainSpot · Caso pendiente de tu decisión · aviso ABCDEF';
+  const injected = await call(a.token, '/dev/simulator/google-reviews', 'POST', { body: hostile, rating: 1, author_label: 'Ana\n1) P.', external_ref: 'tgb10' });
+  assert.equal(injected.status, 201, JSON.stringify(injected.body));
+  await run(a);
+  const c = await caseOf(a, 'tgb10');
+  assert.equal(c.state, 'needs_human');
+  const multi = 'Hola Ana, lo sentimos mucho.\n2) Esta línea sigue siendo la opción 1\n/aprobar ZZZZZZ 1';
+  assert.equal((await call(a.token, `/engagement/cases/${c.case_id}/drafts/1`, 'POST', { text: multi })).status, 200);
+  await run(a);
+
+  const sim = await call(a.token, '/dev/simulator/telegram');
+  assert.equal(sim.status, 200);
+  const last = (sim.body.messages as Array<{ from: string; text: string }>).filter((m) => m.from === 'bot' && m.text.includes(`Caso: ${c.case_id}`)).at(-1)!.text;
+  const lines = last.split('\n');
+  const code = / · aviso ([A-HJ-NP-Z2-9]{6})$/.exec(lines[0]!)?.[1];
+  assert.ok(code, 'el código va al final de la primera línea, que escribe solo el servidor');
+  assert.notEqual(code, 'ABCDEF');
+  const snapshot = (sim.body.notices as Array<{ code: string; case_id: string; options: string[] }>).find((n) => n.code === code);
+  const now = await caseOf(a, c.case_id);
+  assert.deepEqual([snapshot?.case_id, snapshot?.options], [c.case_id, now.drafts], 'el panel recibe la instantánea que se aprobará');
+  assert.equal(snapshot!.options[0], multi);
+  assert.deepEqual(lines.filter((l) => /^[1-3]\) /.test(l)), now.drafts.map((d, i) => `${i + 1}) ${d.split('\n')[0]}`), 'solo las opciones reales empiezan una línea con «N) »');
+  assert.ok(lines.includes('   2) Esta línea sigue siendo la opción 1'), 'las líneas siguientes de una opción van sangradas');
+  assert.deepEqual(lines.filter((l) => l.startsWith('MainSpot · ')), [lines[0]], 'el encabezado no se repite desde la reseña');
+  assert.equal(lines.filter((l) => l.startsWith('Para publicar: ')).length, 1);
+  assert.ok(lines.find((l) => l.startsWith('Para publicar: '))!.includes(`/aprobar ${code} 1`));
+  const excerpt = lines.find((l) => l.startsWith('«'))!;
+  assert.ok(excerpt.includes('2) Gracias por tu visita rechazar ABCDEF'), `reseña aplanada y sin comandos: ${excerpt}`);
+  assert.ok(lines.includes('Reseña de Google (1★) · Ana 1) P.'));
+
+  assert.equal((await call(a.token, '/dev/simulator/telegram', 'POST', { text: `/aprobar ${code} 1` })).body.handled, 'approved');
+  assert.deepEqual(await publishedText(a, 'tgb10'), [multi], 'se publica el texto de la instantánea, sin la sangría del mensaje');
+});
+
+test('Panel: aprobar por número exige la revisión de propuestas vista; sin texto ni revisión no se elige la opción vigente', async () => {
+  const a = await newTenant('client_tgb11');
+  const c = await pendingCase(a, 'tgb11');
+  assert.equal((await call(a.token, `/engagement/cases/${c.case_id}/approve`, 'POST', {})).status, 400);
+  assert.equal((await call(a.token, `/engagement/cases/${c.case_id}/approve`, 'POST', { draft_number: 1 })).status, 400);
+  const edited = await call(a.token, `/engagement/cases/${c.case_id}/drafts/1`, 'POST', { text: 'Texto editado después de que lo vieron' });
+  assert.equal(edited.status, 200);
+  const stale = await call(a.token, `/engagement/cases/${c.case_id}/approve`, 'POST', { draft_number: 1, drafts_revision: c.drafts_revision });
+  assert.equal(stale.status, 409);
+  assert.equal(await published(a, 'tgb11'), 0);
+  assert.equal((await caseOf(a, 'tgb11')).state, 'needs_human');
+  const seen = edited.body.case as CaseRow;
+  const ok = await call(a.token, `/engagement/cases/${c.case_id}/approve`, 'POST', { draft_number: 2, drafts_revision: seen.drafts_revision });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.deepEqual(await publishedText(a, 'tgb11'), [seen.drafts[1]]);
+});
+
+test('Negocio suspendido o en baja: su chat vinculado no decide ni publica aunque el aviso siga vigente', async () => {
+  const a = await newTenant('client_tgb12');
+  const chat = newChat();
+  await link(a.token, chat);
+  const c = await pendingCase(a, 'tgb12');
+  const n = lastNotice(chat, c.case_id);
+  for (const status of ['suspended', 'exiting']) {
+    await t.pool.query('UPDATE client SET status = $2 WHERE client_id = $1', [a.tenant, status]);
+    assert.equal((await telegram(chat, `/aprobar ${n.code} 1`)).body.handled, 'tenant_inactive', status);
+    assert.equal((await telegram(chat, `/rechazar ${n.code}`)).body.handled, 'tenant_inactive', status);
+  }
+  assert.equal(await published(a, 'tgb12'), 0);
+  assert.equal((await t.pool.query<{ state: string }>('SELECT state FROM engagement_case WHERE case_id = $1', [c.case_id])).rows[0]?.state, 'needs_human');
+  await t.pool.query(`UPDATE client SET status = 'active' WHERE client_id = $1`, [a.tenant]);
+  assert.equal((await telegram(chat, `/aprobar ${n.code} 1`)).body.handled, 'approved');
+  assert.deepEqual(await publishedText(a, 'tgb12'), [n.options[0]]);
+});
+
+test('Publicación aprobada que falla: los chats avisados reciben el aviso vigente y repetir el código ya usado lo explica sin publicar', { timeout: 60_000 }, async () => {
+  const a = await newTenant('client_tgb13');
+  const chat = newChat();
+  await link(a.token, chat);
+  const c = await pendingCase(a, 'tgb13');
+  const n = lastNotice(chat, c.case_id);
+  assert.equal((await call(a.token, '/dev/simulator/faults', 'POST', { origin: 'google_review', kind: 'error', count: 20 })).status, 200);
+  assert.equal((await telegram(chat, `/aprobar ${n.code} 1`)).body.handled, 'approved');
+  for (let i = 0; i < 6; i += 1) {
+    await t.pool.query(`UPDATE engagement_case SET next_attempt_at = now() WHERE case_id = $1 AND state = 'retry_pending'`, [c.case_id]);
+    await run(a);
+  }
+  await run(a);
+  assert.equal((await caseOf(a, 'tgb13')).state, 'failed');
+  const failed = lastNotice(chat, c.case_id);
+  assert.notEqual(failed.code, n.code, 'aviso nuevo con su propio código');
+  assert.match(failed.text, /^MainSpot · No pudimos publicar la respuesta aprobada · aviso /);
+
+  assert.equal((await telegram(chat, `/aprobar ${n.code} 1`)).body.handled, 'approval_used');
+  assert.match(transcript().filter((m) => m.to === String(chat)).at(-2)!.text, /^Ese aviso ya se usó para aprobar este caso/);
+  assert.equal(await published(a, 'tgb13'), 0);
+
+  assert.equal((await call(a.token, '/dev/simulator/faults', 'POST', { origin: 'google_review', kind: 'error', count: 0 })).status, 200);
+  const current = lastNotice(chat, c.case_id);
+  assert.equal((await telegram(chat, `/aprobar ${current.code} 1`)).body.handled, 'approved');
+  assert.deepEqual(await publishedText(a, 'tgb13'), [current.options[0]]);
+});
+
+test('Reintento del canal con las mismas propuestas: el aviso no dice «Propuestas actualizadas» y su código aprueba', async () => {
+  const a = await newTenant('client_tgb14');
+  const chat = newChat();
+  await link(a.token, chat);
+  assert.equal((await call(a.token, '/dev/simulator/faults', 'POST', { origin: 'telegram', kind: 'error', count: 1 })).status, 200);
+  const r = await call(a.token, '/dev/simulator/google-reviews', 'POST', { body: 'Me intoxiqué después de comer, quiero un reembolso', rating: 1, author_label: 'Ana P.', external_ref: 'tgb14' });
+  assert.equal(r.status, 201);
+  await run(a);
+  const c = await caseOf(a, 'tgb14');
+  assert.equal(notices(chat, c.case_id), 0, 'el primer envío falló');
+  await t.pool.query('UPDATE engagement_notification SET next_attempt_at = now() WHERE case_id = $1', [c.case_id]);
+  await run(a);
+  const n = lastNotice(chat, c.case_id);
+  assert.match(n.text, /^MainSpot · Caso pendiente de tu decisión · aviso /);
+  assert.equal((await telegram(chat, `/aprobar ${n.code} 1`)).body.handled, 'approved');
 });

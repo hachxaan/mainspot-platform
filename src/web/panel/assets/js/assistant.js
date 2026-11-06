@@ -260,35 +260,32 @@
       });
     },
     /**
-     * Opciones numeradas tal como las muestra el aviso (texto del mensaje, no el estado actual del caso) y su código
-     * (SEC-TG-APPROVAL-01): confirmar envía /aprobar CÓDIGO N, que solo publica si el aviso sigue vigente.
+     * Código del aviso (SEC-TG-APPROVAL-01): va al final de la primera línea, que escribe solo el servidor; el texto de
+     * terceros va más abajo y aplanado, así que nunca puede hacerse pasar por él.
      */
-    notice: function (text) {
-      var lines = String(text || '').split('\n');
-      var code = /\/rechazar ([A-HJ-NP-Z2-9]{6})/.exec(text || '');
-      var options = [], cur = null;
-      lines.forEach(function (line) {
-        var mo = /^([1-3])\) ([\s\S]*)$/.exec(line);
-        if (mo) { cur = { n: Number(mo[1]), text: mo[2] }; options.push(cur); return; }
-        if (/^(Para publicar|Sin propuestas|Panel:)/.test(line)) { cur = null; return; }
-        if (cur) cur.text += '\n' + line;
-      });
-      return { code: code ? code[1] : null, options: options };
+    noticeCode: function (text) {
+      var m = / · aviso ([A-HJ-NP-Z2-9]{6})$/.exec(String(text || '').split('\n')[0]);
+      return m ? m[1] : null;
     },
-    /** Mensajes del chat simulado; los avisos de casos abiertos llevan botones con el código de ESE aviso. */
-    build: function (messages) {
+    /**
+     * Mensajes del chat simulado. Los avisos de casos abiertos llevan botones con las opciones de la instantánea de ESE
+     * aviso que guarda el servidor (no el texto del mensaje ni el estado actual del caso): confirmar envía
+     * /aprobar CÓDIGO N, que solo publica si el aviso sigue vigente.
+     */
+    build: function (messages, notices) {
+      var byCode = {};
+      (notices || []).forEach(function (n) { byCode[n.code] = n; });
       return (messages || []).map(function (m, i) {
         var out = { id: 'tg-' + i + '-' + m.at, from: m.from, text: m.text, at: MS.ts(m.at), actions: [] };
-        var mc = m.from === 'bot' ? /Caso: (\S+)/.exec(m.text) : null;
-        if (mc) {
-          var id = mc[1];
-          var c = (S().cases || []).filter(function (x) { return x.id === id; })[0];
-          var notice = MS.tg.notice(m.text);
-          if (notice.code && c && (c.status === 'needs_human' || c.status === 'failed') && MS.can('engagement.approve')) {
-            notice.options.forEach(function (o) { out.actions.push({ label: 'Usar opción ' + o.n, act: 'case-pick', arg: notice.code + '|' + o.n, shown: o.text, source: c.source }); });
-            out.actions.push({ label: 'No responder', act: 'case-reject', arg: notice.code });
+        var code = m.from === 'bot' ? MS.tg.noticeCode(m.text) : null;
+        var n = code ? byCode[code] : null;
+        if (n) {
+          var c = (S().cases || []).filter(function (x) { return x.id === n.case_id; })[0];
+          if (c && (c.status === 'needs_human' || c.status === 'failed') && MS.can('engagement.approve')) {
+            (n.options || []).forEach(function (text, k) { out.actions.push({ label: 'Usar opción ' + (k + 1), act: 'case-pick', arg: code + '|' + (k + 1), shown: text, source: c.source }); });
+            out.actions.push({ label: 'No responder', act: 'case-reject', arg: code });
           }
-          out.actions.push({ label: 'Ver en el panel', act: 'open', arg: '#/caso/' + id });
+          out.actions.push({ label: 'Ver en el panel', act: 'open', arg: '#/caso/' + n.case_id });
         }
         return out;
       });

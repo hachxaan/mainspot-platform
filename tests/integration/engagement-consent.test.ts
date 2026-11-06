@@ -77,7 +77,7 @@ async function ledger(a: Tenant): Promise<{ committed: number; reserved: number;
 }
 
 /** Lectura fija (gratitud sin riesgos) y redacción determinista contada; `during` corre mientras «redacta». */
-function stubSemantics(during?: () => Promise<void>): EngagementSemantics & { replies: number } {
+function stubSemantics(during?: () => Promise<void>, needsHuman = false): EngagementSemantics & { replies: number } {
   const stub = {
     replies: 0,
     async read() {
@@ -88,7 +88,7 @@ function stubSemantics(during?: () => Promise<void>): EngagementSemantics & { re
     async reply(row: CaseRow) {
       stub.replies += 1;
       if (during) await during();
-      return { text: `¡Gracias, ${row.author_label}! Te esperamos pronto.`, needsHuman: false, invocationId: `inv_stub_${randomUUID()}` };
+      return { text: `¡Gracias, ${row.author_label}! Te esperamos pronto.`, needsHuman, invocationId: `inv_stub_${randomUUID()}` };
     },
   };
   return stub;
@@ -248,6 +248,46 @@ test('Revocación durante la redacción: ni la respuesta automática ni la unida
   const again = await normal.classifyCase(still!);
   assert.deepEqual([again?.state, again?.decision, again?.reason], ['needs_human', 'human_review', 'policy_review_required']);
   assert.deepEqual((await ledger(a)).committed, 0);
+});
+
+test('R2: si la redacción para la respuesta automática pide revisión humana, el caso espera decisión sin propuesta de IA entre las numeradas y sin gastar la unidad', async () => {
+  const a = await newTenant('client_cs9');
+  assert.equal((await call(a.token, '/engagement/policies', 'PUT', { origin: 'google_review', category: 'gratitude', mode: 'safe_auto_reply', consent: true, consent_version: GOOGLE.version })).status, 200);
+  const stub = stubSemantics(undefined, true);
+  const service = new EngagementService({ ...t.handle.engagement.deps, semantics: stub });
+  const c = await service.classifyCase(await receivedCase(service, a.tenant));
+  assert.deepEqual([c?.state, c?.decision, c?.reason, c?.reply_invocation_id, c?.ai_draft ?? null], ['needs_human', 'human_review', 'reply_needs_human', null, null]);
+  assert.equal(stub.replies, 1);
+  assert.ok(c!.drafts.length >= 1 && !c!.drafts.includes('¡Gracias, Ana! Te esperamos pronto.'), `el texto de IA no entra en las opciones numeradas: ${JSON.stringify(c!.drafts)}`);
+  assert.deepEqual(await ledger(a), { committed: 0, reserved: 0, rows: 1 }, 'la unidad reservada se liberó');
+  assert.equal(await countRows(t, `SELECT count(*) AS n FROM quota_reservation WHERE tenant_id = $1 AND state = 'released'`, [a.tenant]), 1);
+});
+
+test('R2: revocar la regla mientras la IA redacta y la redacción pide revisión humana tampoco gasta la unidad', async () => {
+  const a = await newTenant('client_cs10');
+  assert.equal((await call(a.token, '/engagement/policies', 'PUT', { origin: 'google_review', category: 'gratitude', mode: 'safe_auto_reply', consent: true, consent_version: GOOGLE.version })).status, 200);
+  const revoke = async () => {
+    assert.equal((await call(a.token, '/engagement/policies', 'PUT', { origin: 'google_review', category: 'gratitude', mode: 'review_required' })).status, 200);
+  };
+  const service = new EngagementService({ ...t.handle.engagement.deps, semantics: stubSemantics(revoke, true) });
+  const c = await service.classifyCase(await receivedCase(service, a.tenant));
+  assert.deepEqual([c?.state, c?.reply_invocation_id], ['needs_human', null]);
+  assert.deepEqual(await ledger(a), { committed: 0, reserved: 0, rows: 1 });
+});
+
+test('SEC-CONSENT-01: una política con la versión vigente pero OTRO texto (y su huella) no cubre el gasto: ni IA ni unidad', async () => {
+  const a = await newTenant('client_cs11');
+  const text = 'Autorizo respuestas automáticas.';
+  await t.pool.query(
+    `INSERT INTO engagement_policy (policy_id, tenant_id, origin, category, mode, version, max_auto_replies_per_hour, consent_text, consent_version, consent_sha256, decided_by)
+     VALUES ($1,$2,'google_review','gratitude','safe_auto_reply',1,10,$3,$4,$5,$6)`, [`pol_${randomUUID()}`, a.tenant, text, GOOGLE.version, consentSha256(text), a.userId]);
+  const stub = stubSemantics();
+  const service = new EngagementService({ ...t.handle.engagement.deps, semantics: stub });
+  const c = await service.classifyCase(await receivedCase(service, a.tenant));
+  assert.deepEqual([c?.decision, c?.reply_invocation_id, stub.replies], ['auto_reply', null, 0], 'texto seguro sin IA');
+  assert.deepEqual(await ledger(a), { committed: 0, reserved: 0, rows: 0 });
+  const view = await call(a.token, '/engagement/policies');
+  assert.equal(view.body.reconsent_required, true);
 });
 
 test('Facebook: el consentimiento previo sigue cubriendo sus respuestas automáticas, fuera de la cuota de reseñas', async () => {

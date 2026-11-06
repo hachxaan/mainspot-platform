@@ -122,6 +122,8 @@ export function aiRouter(deps: AiRouteDeps): Router {
               (SELECT COALESCE(SUM(COALESCE(cost_usd, reserved_usd)), 0) FROM ai_invocation WHERE tenant_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS spent`, [a.tenantId]);
     res.json({
       environment: deps.environment,
+      // Falso fuera del entorno `lab` y siempre en producción (DEC-0077 R5): el panel no ofrece el laboratorio.
+      lab_enabled: deps.lab.enabled,
       capabilities: USE_CASES.map((uc) => {
         const r = byUc.get(uc);
         return { use_case: uc, active: Boolean(r?.active_route_id), simulated: r?.kind === 'simulated' };

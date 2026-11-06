@@ -45,12 +45,21 @@ export interface ConsentedPolicy {
   origin: EngagementOrigin;
   mode: 'review_required' | 'safe_auto_reply';
   consent_version: string | null;
+  consent_sha256: string | null;
 }
 
-/** ¿El consentimiento de esta política cubre gastar respuestas con IA de la cuota de reseñas? Solo la versión vigente. */
+/** ¿La política guarda EXACTAMENTE los términos vigentes de su origen (versión y huella del texto)? */
+export function consentIsCurrent(policy: ConsentedPolicy): boolean {
+  const terms = AUTO_REPLY_CONSENT[policy.origin];
+  return policy.consent_version === terms.version && policy.consent_sha256 === terms.sha256;
+}
+
+/**
+ * ¿El consentimiento de esta política cubre gastar respuestas con IA de la cuota de reseñas? Solo los términos
+ * vigentes, por versión Y huella: una fila con la versión vigente pero otro texto no cubre nada.
+ */
 export function consentCoversAiSpend(policy: ConsentedPolicy): boolean {
-  return policy.origin === 'google_review' && policy.mode === 'safe_auto_reply'
-    && policy.consent_version === AUTO_REPLY_CONSENT.google_review.version;
+  return policy.origin === 'google_review' && policy.mode === 'safe_auto_reply' && consentIsCurrent(policy);
 }
 
 /**

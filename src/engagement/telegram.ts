@@ -172,14 +172,20 @@ export class TelegramLinkService {
 
     if (command === '/start' && args[0]) return this.linkChat(chatId, args[0], requestId);
 
-    const link = await this.pool.query<{ tenant_id: string; user_id: string }>(
-      `SELECT l.tenant_id, l.user_id FROM telegram_link l
+    const link = await this.pool.query<{ tenant_id: string; user_id: string; tenant_status: string }>(
+      `SELECT l.tenant_id, l.user_id, c.status AS tenant_status FROM telegram_link l
          JOIN internal_user u ON u.user_id = l.user_id AND u.status = 'active'
+         JOIN client c ON c.client_id = l.tenant_id
         WHERE l.chat_id = $1 AND l.status = 'active'`, [chatId]);
     const linked = link.rows[0];
     if (!linked) {
       await this.reply(chatId, 'Este chat no está vinculado a MainSpot. En tu panel elige «Conectar Telegram» y envía aquí /start con el código.');
       return { handled: 'unlinked_chat' };
+    }
+    // Un negocio suspendido o en baja no entra al panel; tampoco decide ni publica por Telegram.
+    if (linked.tenant_status !== 'active') {
+      await this.reply(chatId, 'Tu negocio no está activo en MainSpot, así que no se pueden decidir casos desde aquí.');
+      return { handled: 'tenant_inactive' };
     }
     if (command !== '/aprobar' && command !== '/rechazar') {
       await this.reply(chatId, 'Comandos disponibles: /aprobar <código> <1-3> · /rechazar <código> (el código viene en cada aviso). También puedes resolver los casos en tu panel.');
@@ -236,9 +242,11 @@ export class TelegramLinkService {
         return { handled: 'approve_repeat' };
       }
       if (r.kind === 'stale') {
-        await this.reply(chatId, `Las propuestas de ese aviso cambiaron después de enviártelo, así que no publicamos la opción ${option}. Te enviamos el aviso actualizado: revisa las opciones y confirma con su código nuevo.`);
+        await this.reply(chatId, r.reason === 'used'
+          ? 'Ese aviso ya se usó para aprobar este caso y la publicación no salió. Te enviamos el aviso vigente: confirma con su código nuevo.'
+          : `Las propuestas de ese aviso cambiaron después de enviártelo, así que no publicamos la opción ${option}. Te enviamos el aviso actualizado: revisa las opciones y confirma con su código nuevo.`);
         await this.engagement.sendNoticeTo(actor, chatId, r.case.case_id);
-        return { handled: 'approval_stale' };
+        return { handled: r.reason === 'used' ? 'approval_used' : 'approval_stale' };
       }
       const done = await this.engagement.respondCase(r.case.case_id);
       await this.reply(chatId, done?.state === 'responded'

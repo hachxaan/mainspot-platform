@@ -23,13 +23,15 @@
 ALTER TABLE engagement_policy ADD COLUMN IF NOT EXISTS consent_version TEXT;
 ALTER TABLE engagement_policy ADD COLUMN IF NOT EXISTS consent_sha256 TEXT;
 
+-- Restricciones NOT VALID (como 0036): no recorren las tablas con el candado exclusivo; las filas previas las cumplen
+-- por construcción (columnas nuevas nulas o con su valor por defecto) y las nuevas o modificadas se comprueban.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'engagement_policy_consent_shape') THEN
     ALTER TABLE engagement_policy ADD CONSTRAINT engagement_policy_consent_shape CHECK (
       (consent_version IS NULL) = (consent_sha256 IS NULL)
       AND (consent_version IS NULL OR consent_version ~ '^[a-z_]+(\.[a-z_]+)*\.v[0-9]+$')
-      AND (consent_sha256 IS NULL OR consent_sha256 ~ '^[0-9a-f]{64}$'));
+      AND (consent_sha256 IS NULL OR consent_sha256 ~ '^[0-9a-f]{64}$')) NOT VALID;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'engagement_policy_auto_reply_consent') THEN
     ALTER TABLE engagement_policy ADD CONSTRAINT engagement_policy_auto_reply_consent
@@ -58,7 +60,7 @@ ALTER TABLE engagement_case ADD COLUMN IF NOT EXISTS drafts_revision INT NOT NUL
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'engagement_case_drafts_revision_check') THEN
-    ALTER TABLE engagement_case ADD CONSTRAINT engagement_case_drafts_revision_check CHECK (drafts_revision >= 1);
+    ALTER TABLE engagement_case ADD CONSTRAINT engagement_case_drafts_revision_check CHECK (drafts_revision >= 1) NOT VALID;
   END IF;
 END $$;
 
@@ -109,6 +111,12 @@ BEGIN
       USING ERRCODE = 'check_violation';
   END IF;
   IF NEW.status = 'purged' THEN
+    -- La purga solo vacía las opciones: qué se aprobó y cuándo (o cuándo se sustituyó) no se reescribe.
+    IF NEW.used_option IS DISTINCT FROM OLD.used_option OR NEW.used_at IS DISTINCT FROM OLD.used_at
+       OR NEW.superseded_at IS DISTINCT FROM OLD.superseded_at THEN
+      RAISE EXCEPTION 'engagement_approval_offer %: purging only empties the options', OLD.offer_id
+        USING ERRCODE = 'check_violation';
+    END IF;
     RETURN NEW;
   END IF;
   IF NEW.options IS DISTINCT FROM OLD.options OR OLD.status = 'purged' THEN

@@ -410,7 +410,7 @@
     } else {
       S.telegram = { status: 'unlinked', code: null, codeState: null, codeExpiresAt: null, linkedAt: null, chatName: '', mode: S.telegram.mode };
     }
-    S.convo.tg = MS.tg && MS.tg.build ? MS.tg.build(R.tgChat || []) : [];
+    S.convo.tg = MS.tg && MS.tg.build ? MS.tg.build(R.tgChat || [], R.tgNotices || []) : [];
     S.dev = { simulator: !!R.devsim, telegram: !!R.devTelegram };
     S.team = R.users || [];
 
@@ -452,7 +452,7 @@
       if (!MS.can('telegram.link')) return Promise.resolve({ ok: true });
       return API.get('/dev/simulator/telegram').then(function (r) {
         MS.R.devTelegram = r.ok;
-        if (r.ok) MS.R.tgChat = r.data.messages;
+        if (r.ok) { MS.R.tgChat = r.data.messages; MS.R.tgNotices = r.data.notices || []; }
         return r;
       });
     },

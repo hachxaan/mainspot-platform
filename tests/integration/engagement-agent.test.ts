@@ -363,7 +363,8 @@ test('AG-04: timeout y error del proveedor → reintentos con backoff; agotados 
   assert.equal(escalated.state, 'needs_human');
   assert.equal(escalated.reason, 'provider_failed');
   assert.ok(escalated.drafts.length >= 1);
-  await api(t.baseUrl, `/api/backoffice/engagement/cases/${escalated.case_id}/approve`, { method: 'POST', headers: authHeaders(a.token), body: '{}' });
+  const approved = await api(t.baseUrl, `/api/backoffice/engagement/cases/${escalated.case_id}/approve`, { method: 'POST', headers: authHeaders(a.token), body: JSON.stringify({ draft_number: 1, drafts_revision: escalated.drafts_revision }) });
+  assert.equal(approved.status, 200, JSON.stringify(approved.body));
   for (let i = 0; i < 6; i += 1) {
     await t.pool.query(`UPDATE engagement_case SET next_attempt_at = now() WHERE tenant_id = $1 AND state = 'retry_pending'`, [a.tenant]);
     await run(a.token);
