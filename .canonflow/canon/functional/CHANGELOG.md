@@ -4,9 +4,10 @@
 - FR-0016, BR-0007, NFR-0006 y FR-0010 cambian por DEC-0078 (aprobación del propietario SRC-0018, copia byte a byte de
   SRC-007 del repositorio documental cuyas expresiones literales son «Ok para 2, 3, 4…» y «Adelante.», y directiva
   literal de la sesión SRC-0019; no nueva respuesta HDC). Registro P1 sin QS/ANS ni APR, con el contador `dec` y su
-  instantánea, como DEC-0073…DEC-0077. Estado: implementación local en la rama feat/facebook-ai-policy-20261106
-  (pendiente de verificación final); activación comercial de los créditos de Facebook BLOCKED; valor de
-  `lab_experiment` OPEN; particiones por canal OPEN.
+  instantánea, como DEC-0073…DEC-0077. Estado: implementado y verificado localmente con proveedores y canales simulados
+  en la rama feat/facebook-ai-policy-20261106 (evidencia en `evidence/facebook-ai-policy/`); activación comercial de los
+  créditos de Facebook BLOCKED; valor de `lab_experiment` OPEN; particiones por canal OPEN; reapertura del modo
+  `primary` de Jev tras TS-1 OPEN (DEC-0033 sin cambio; requiere una evaluación de pago que autorice el propietario).
 - Precedencias: DEC-0077 R4 (Facebook fuera de `ai_review_replies`) se confirma; su efecto en el canon —el presupuesto
   técnico como único control del gasto de Facebook, «el máximo por hora limita la publicación, no la redacción» y la
   política del canal «para el futuro»— queda sustituido por R5 (créditos propios), R2 (FB-2, solo en la vía de

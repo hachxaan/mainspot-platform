@@ -48,9 +48,10 @@ increments:
     Facebook off/on_demand/auto_suggest (migración 0038, engagement_suggestion_setting), créditos ai_facebook_suggestions
     (parámetro quota.ai_facebook_suggestions.max, ausente ⇒ deny), FB-2 y filtros de relevancia en src/engagement/,
     consentimientos ai_suggestions.facebook_comment.v1 y auto_reply.facebook_comment.v3, «Sugerir con IA» y panel, y
-    aprobación por Telegram ligada al aviso también en los botones de 0cf90bf/2f91053. Implementación local en la rama
-    feat/facebook-ai-policy-20261106 (pendiente de verificación final); activación comercial de los créditos BLOCKED.
-    Estado y evidencia de la base sin cambio.
+    aprobación por Telegram ligada al aviso también en los botones de 0cf90bf/2f91053. Implementado y verificado
+    localmente con proveedores y canales simulados en la rama feat/facebook-ai-policy-20261106 (evidencia en
+    evidence/facebook-ai-policy/; revisión adversarial independiente en dos pasadas); activación comercial de los
+    créditos BLOCKED; botones ligados al aviso sin pulsar en Telegram real. Estado y evidencia de la base sin cambio.
 - increment_id: INC-0007
   state: IMPLEMENTED
   risk_tier: 2
@@ -73,9 +74,13 @@ increments:
     Evolución por DEC-0078/SRC-0018 y SRC-0019 (canon 0.9.0 de NFR-0006): ámbitos de presupuesto con lab_total como
     techo global, tenant_day solo operativo y lab_experiment sin valor (deny; valor OPEN), atribución por canal y
     propósito sin particiones (migración 0039, src/ai/governance.ts, consola de plataforma) y reservas atómicas de
-    TypeSafe/Jev (migración 0040, src/ai/typesafe-ledger.ts). Implementación local en la rama
-    feat/facebook-ai-policy-20261106 (pendiente de verificación final). Valores de DEC-0032, DEC-0068 y OPS-0001 sin
-    cambio; estado y evidencia de la base sin cambio.
+    TypeSafe/Jev (migración 0040, src/ai/typesafe-ledger.ts; clave opaca en el pipeline, sin identificadores de
+    negocios); las evaluaciones de rutas de pago cuentan como gasto experimental (lab_experiment). Implementado y
+    verificado localmente con proveedores simulados en la rama feat/facebook-ai-policy-20261106 (evidencia en
+    evidence/facebook-ai-policy/). Consecuencia: el cambio de src/conversation/jev-classifier.ts altera la huella del
+    código decisorio de Jev, la evaluación aprobada de DEC-0033 deja de corresponder y JEV_MODE=primary queda cerrado
+    (decide el clasificador determinista, TypeSafe en sombra) hasta una evaluación de pago que autorice el
+    propietario (OPEN). Valores de DEC-0032, DEC-0068 y OPS-0001 sin cambio; estado y evidencia de la base sin cambio.
 note: 'Implementado antes del onboarding canonflow (SRC-0007). Estado IMPLEMENTED
   (no DONE): auditoría independiente formal del método pendiente; remediación PR-01..06
   registrada como revisión interna.'
