@@ -748,11 +748,11 @@ export class EngagementService {
     // Unidad ya confirmada para este caso sin que el caso la refleje: no se redacta otra sin medir (fail-closed).
     if (claim.kind === 'replay') return { generated: null, reservation: null };
     const generated = await semantics.reply(row, classification, facts);
-    if (!generated) {
+    if (!generated.ok) {
       await this.deps.quota.release(claim.reservation, who.actorRole, 'ai_reply_failed');
       return { generated: null, reservation: null };
     }
-    return { generated, reservation: claim.reservation };
+    return { generated: { text: generated.text, needsHuman: generated.needsHuman, invocationId: generated.invocationId }, reservation: claim.reservation };
   }
 
   /** Clasificación guardada en el caso (para redactar a pedido); null si no hubo lectura semántica. */
@@ -815,7 +815,13 @@ export class EngagementService {
     let consumed = false;
     try {
       const generated = await semantics.reply(found, classification, { name: business, verified_answer: verified }, { requestId: actor.requestId, actorId: actor.userId });
-      if (!generated) {
+      if (!generated.ok) {
+        // AC-FB04: un presupuesto técnico agotado se explica como tal (no como un fallo genérico del proveedor).
+        if (generated.code === 'budget_exhausted') {
+          throw new AppError(429, DENY_CODES.LIMIT_EXCEEDED, generated.reason === 'tenant_day'
+            ? 'Tu negocio alcanzó su presupuesto diario de IA (se renueva cada día, hora UTC). No se descontó de tu plan; puedes elegir una propuesta o escribir tu respuesta.'
+            : 'MainSpot alcanzó su presupuesto de IA por ahora. No se descontó de tu plan; puedes elegir una propuesta o escribir tu respuesta.');
+        }
         throw new AppError(502, 'validation_error', 'No se pudo redactar con IA en este momento. No se descontó de tu plan; puedes elegir una propuesta o escribir tu respuesta.');
       }
       const updated = await runAtomic(this.deps.pool, async (client) => {

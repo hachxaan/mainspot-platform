@@ -29,6 +29,14 @@ export interface ReplyRequest {
   actorId: string;
 }
 
+/**
+ * Resultado de una redacción: el borrador o, si no lo hubo, el código del despachador y su motivo (p. ej.
+ * `budget_exhausted` con el ámbito agotado), para que quien la pidió reciba una explicación concreta.
+ */
+export type ReplyOutcome =
+  | { ok: true; text: string; needsHuman: boolean; invocationId: string }
+  | { ok: false; code: string; reason: string | null };
+
 export interface EngagementSemantics {
   read(row: CaseRow): Promise<SemanticRead>;
   /** ¿Hay ruta activa de redacción para este origen en este entorno? (sin invocar al proveedor) */
@@ -38,7 +46,7 @@ export interface EngagementSemantics {
    * veces). Con `request`, cada petición usa su propia clave: un intento fallido no bloquea el siguiente; el libro
    * de cuotas es quien garantiza como máximo una unidad por caso.
    */
-  reply(row: CaseRow, c: Classification, facts: Record<string, unknown>, request?: ReplyRequest): Promise<{ text: string; needsHuman: boolean; invocationId: string } | null>;
+  reply(row: CaseRow, c: Classification, facts: Record<string, unknown>, request?: ReplyRequest): Promise<ReplyOutcome>;
 }
 
 const choiceOf = (a: Answer | undefined): ChoiceAnswer | null => (a && a.type === 'choice' ? (a as ChoiceAnswer) : null);
@@ -97,16 +105,16 @@ export class AiEngagementSemantics implements EngagementSemantics {
     return this.active(origin === 'google_review' ? 'engagement.google.review.reply' : 'engagement.facebook.comment.reply');
   }
 
-  async reply(row: CaseRow, c: Classification, facts: Record<string, unknown>, request?: ReplyRequest): Promise<{ text: string; needsHuman: boolean; invocationId: string } | null> {
+  async reply(row: CaseRow, c: Classification, facts: Record<string, unknown>, request?: ReplyRequest): Promise<ReplyOutcome> {
     const uc = row.origin === 'google_review' ? 'engagement.google.review.reply' : 'engagement.facebook.comment.reply';
-    if (!(await this.active(uc))) return null;
+    if (!(await this.active(uc))) return { ok: false, code: 'no_active_route', reason: null };
     const res = await this.dispatcher.invokeStructured<ReplyOutput>(uc, request
       ? { requestId: request.requestId, idempotencyKey: `case:${row.case_id}:reply:${request.requestId}`, tenantId: row.tenant_id, actorId: request.actorId, actorKind: 'tenant_user', origin: 'engagement.case.ai_draft' }
       : { requestId: `eng_${row.case_id}`, idempotencyKey: `case:${row.case_id}:reply`, tenantId: row.tenant_id, actorId: 'system:engagement-agent', actorKind: 'system', origin: 'engagement.case' }, {
       facts, reading: { sentiment: c.sentiment, category: c.category, risks: c.risk_flags },
       author: row.author_label || 'cliente', rating: row.rating ? String(row.rating) : 'n/a', message: redactContactData(row.body),
     }, { domainCheck: (out) => replyViolations(out) });
-    if (!res.ok) return null;
-    return { text: res.output.reply, needsHuman: res.output.needs_human, invocationId: res.invocationId };
+    if (!res.ok) return { ok: false, code: res.code, reason: res.reason };
+    return { ok: true, text: res.output.reply, needsHuman: res.output.needs_human, invocationId: res.invocationId };
   }
 }

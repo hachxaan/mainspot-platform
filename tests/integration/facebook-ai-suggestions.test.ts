@@ -17,7 +17,7 @@ import { bootApi, authHeaders, api, login, type TestApi } from '../helpers/testd
 import { createTenantWithPlan, countRows, type TestTenant as Tenant } from '../helpers/tenants.ts';
 import { setTenantPlan } from '../helpers/plans.ts';
 import { AI_REPLY_DISCLOSURE, EngagementService, type Actor, type CaseRow } from '../../src/engagement/service.ts';
-import type { EngagementSemantics } from '../../src/engagement/ai-semantics.ts';
+import type { EngagementSemantics, ReplyOutcome } from '../../src/engagement/ai-semantics.ts';
 import type { Classification } from '../../src/engagement/classifier.ts';
 import { AUTO_REPLY_CONSENT, AUTO_SUGGEST_CONSENT, consentSha256 } from '../../src/engagement/consent.ts';
 import { AppError } from '../../src/shared/errors.ts';
@@ -55,10 +55,10 @@ function stubSemantics(opts: { during?: () => Promise<void>; needsHuman?: boolea
       return { ok: true as const, invocationId: `inv_stub_${randomUUID()}`, reading: {}, classification: opts.classification ?? GRATITUDE };
     },
     async replyAvailable() { return true; },
-    async reply(row: CaseRow) {
+    async reply(row: CaseRow): Promise<ReplyOutcome> {
       stub.replies += 1;
       if (opts.during) await opts.during();
-      return { text: `¡Gracias, ${row.author_label}! Te esperamos pronto en el café.`, needsHuman: opts.needsHuman ?? false, invocationId: `inv_stub_${randomUUID()}` };
+      return { ok: true, text: `¡Gracias, ${row.author_label}! Te esperamos pronto en el café.`, needsHuman: opts.needsHuman ?? false, invocationId: `inv_stub_${randomUUID()}` };
     },
   };
   return stub;

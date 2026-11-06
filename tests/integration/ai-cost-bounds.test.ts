@@ -464,10 +464,12 @@ test('(b) AC-16011/AC-6004: con el presupuesto diario del negocio agotado por su
   const second = await service.classifyCase(await receivedComment(service, a.tenant, COMMENT));
   assert.deepEqual([second?.state, second?.decision, second?.reply_invocation_id], ['needs_human', 'human_review', null]);
   assert.ok(second && second.drafts.length === 3 && !second.drafts.includes(AI_TEXT), 'solo borradores sin IA');
-  // Tampoco por la vía a pedido (DEC-0078 R1): el presupuesto la bloquea antes del proveedor y no descuenta nada.
+  // Tampoco por la vía a pedido (DEC-0078 R1): el presupuesto la bloquea antes del proveedor y no descuenta nada; la
+  // denegación dice que es el presupuesto (AC-FB04; revisión 1, F-05), no un fallo pasajero.
   const onDemand = await service.requestAiDraft({ tenantId: a.tenant, userId: a.userId, role: 'administration', requestId: `req_${randomUUID()}` }, second!.case_id)
-    .then(() => null, (err: unknown) => err as { status?: number });
-  assert.equal(onDemand?.status, 502, 'sin margen no hay propuesta a pedido');
+    .then(() => null, (err: unknown) => err as { status?: number; code?: string; userMessage?: string });
+  assert.deepEqual([onDemand?.status, onDemand?.code], [429, 'limit_exceeded'], 'sin margen no hay propuesta a pedido');
+  assert.match(onDemand?.userMessage ?? '', /presupuesto diario de IA.*No se descontó de tu plan/);
   // Respuesta automática autorizada: sin margen, sale el texto seguro sin IA (sin el aviso de IA) y se publica.
   assert.equal((await facebookAutoPolicy(a)).status, 200);
   const auto = cbService('gratitude');

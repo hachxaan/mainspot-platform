@@ -16,7 +16,7 @@ import { bootApi, authHeaders, api, type TestApi } from '../helpers/testdb.ts';
 import { createTenantWithPlan, countRows, failAuditFor, type TestTenant as Tenant } from '../helpers/tenants.ts';
 import { createPublishedPlan, setTenantPlan } from '../helpers/plans.ts';
 import { EngagementService, aiReplyQuotaKey, type CaseRow } from '../../src/engagement/service.ts';
-import type { EngagementSemantics } from '../../src/engagement/ai-semantics.ts';
+import type { EngagementSemantics, ReplyOutcome } from '../../src/engagement/ai-semantics.ts';
 import { AUTO_REPLY_CONSENT } from '../../src/engagement/consent.ts';
 import type { SimulatedChannel } from '../../src/channels/simulated.ts';
 
@@ -367,9 +367,10 @@ function stubSemantics(fail = false): EngagementSemantics & { replies: number } 
         classification: { category: 'gratitude' as const, risk_flags: [], confidence: 0.95, sentiment: 'positive' as const, info_topic: null } };
     },
     async replyAvailable() { return true; },
-    async reply(row: CaseRow) {
+    async reply(row: CaseRow): Promise<ReplyOutcome> {
       stub.replies += 1;
-      return fail ? null : { text: `¡Gracias, ${row.author_label}! Te esperamos pronto.`, needsHuman: false, invocationId: `inv_stub_${randomUUID()}` };
+      return fail ? { ok: false, code: 'provider_unavailable', reason: null }
+        : { ok: true, text: `¡Gracias, ${row.author_label}! Te esperamos pronto.`, needsHuman: false, invocationId: `inv_stub_${randomUUID()}` };
     },
   };
   return stub;

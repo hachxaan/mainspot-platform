@@ -17,7 +17,7 @@ import { randomUUID } from 'node:crypto';
 import { bootApi, authHeaders, api, login, type TestApi } from '../helpers/testdb.ts';
 import { createTenantWithPlan, countRows, type TestTenant as Tenant } from '../helpers/tenants.ts';
 import { EngagementService, type CaseRow, type PolicyRow } from '../../src/engagement/service.ts';
-import type { EngagementSemantics } from '../../src/engagement/ai-semantics.ts';
+import type { EngagementSemantics, ReplyOutcome } from '../../src/engagement/ai-semantics.ts';
 import { AUTO_REPLY_CONSENT, REVIEW_REQUIRED_CONSENT, consentSha256 } from '../../src/engagement/consent.ts';
 
 let t: TestApi;
@@ -85,10 +85,10 @@ function stubSemantics(during?: () => Promise<void>, needsHuman = false): Engage
         classification: { category: 'gratitude' as const, risk_flags: [], confidence: 0.95, sentiment: 'positive' as const, info_topic: null } };
     },
     async replyAvailable() { return true; },
-    async reply(row: CaseRow) {
+    async reply(row: CaseRow): Promise<ReplyOutcome> {
       stub.replies += 1;
       if (during) await during();
-      return { text: `¡Gracias, ${row.author_label}! Te esperamos pronto.`, needsHuman, invocationId: `inv_stub_${randomUUID()}` };
+      return { ok: true, text: `¡Gracias, ${row.author_label}! Te esperamos pronto.`, needsHuman, invocationId: `inv_stub_${randomUUID()}` };
     },
   };
   return stub;
