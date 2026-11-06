@@ -242,8 +242,11 @@ export class TelegramLinkService {
         return { handled: 'approve_repeat' };
       }
       if (r.kind === 'stale') {
-        await this.reply(chatId, r.reason === 'used'
-          ? 'Ese aviso ya se usó para aprobar este caso y la publicación no salió. Te enviamos el aviso vigente: confirma con su código nuevo.'
+        // `used`: ese aviso ya aprobó el caso y la publicación falló o quedó incierta; se decide con el aviso vigente.
+        const usedText = r.case.reason === 'delivery_uncertain'
+          ? 'Ese aviso ya se usó para aprobar este caso y no pudimos confirmar si la respuesta se publicó. Revisa la reseña antes de decidir; te enviamos el aviso vigente.'
+          : 'Ese aviso ya se usó para aprobar este caso y la publicación no salió. Te enviamos el aviso vigente: confirma con su código nuevo.';
+        await this.reply(chatId, r.reason === 'used' ? usedText
           : `Las propuestas de ese aviso cambiaron después de enviártelo, así que no publicamos la opción ${option}. Te enviamos el aviso actualizado: revisa las opciones y confirma con su código nuevo.`);
         await this.engagement.sendNoticeTo(actor, chatId, r.case.case_id);
         return { handled: r.reason === 'used' ? 'approval_used' : 'approval_stale' };

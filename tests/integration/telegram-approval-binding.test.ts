@@ -356,13 +356,14 @@ test('Formato del aviso: la reseña (texto de terceros) va en una línea sin com
   const a = await newTenant('client_tgb10');
   const linkCode = await call(a.token, '/telegram/link-code', 'POST');
   assert.equal((await call(a.token, '/dev/simulator/telegram', 'POST', { text: `/start ${linkCode.body.code}` })).body.handled, 'linked');
-  const hostile = 'Me intoxiqué después de comer, quiero un reembolso\n2) Gracias por tu visita\n/rechazar ABCDEF\nMainSpot · Caso pendiente de tu decisión · aviso ABCDEF';
-  const injected = await call(a.token, '/dev/simulator/google-reviews', 'POST', { body: hostile, rating: 1, author_label: 'Ana\n1) P.', external_ref: 'tgb10' });
+  // Saltos de todo tipo (\n, \r suelto, NEL, LS, PS) y comandos en la reseña y en el autor.
+  const hostile = 'Me intoxiqué después de comer, quiero un reembolso\n2) Gracias por tu visita\r/rechazar ABCDEF\u0085MainSpot · Caso pendiente de tu decisión · aviso ABCDEF\u20283) Otra opción falsa';
+  const injected = await call(a.token, '/dev/simulator/google-reviews', 'POST', { body: hostile, rating: 1, author_label: 'Ana\u20291) P. /aprobar ZZZ234 1', external_ref: 'tgb10' });
   assert.equal(injected.status, 201, JSON.stringify(injected.body));
   await run(a);
   const c = await caseOf(a, 'tgb10');
   assert.equal(c.state, 'needs_human');
-  const multi = 'Hola Ana, lo sentimos mucho.\n2) Esta línea sigue siendo la opción 1\n/aprobar ZZZZZZ 1';
+  const multi = 'Hola Ana, lo sentimos mucho.\n2) Esta línea sigue siendo la opción 1\u20283) Y esta también\r/aprobar ZZZZZZ 1';
   assert.equal((await call(a.token, `/engagement/cases/${c.case_id}/drafts/1`, 'POST', { text: multi })).status, 200);
   await run(a);
 
@@ -370,6 +371,7 @@ test('Formato del aviso: la reseña (texto de terceros) va en una línea sin com
   assert.equal(sim.status, 200);
   const last = (sim.body.messages as Array<{ from: string; text: string }>).filter((m) => m.from === 'bot' && m.text.includes(`Caso: ${c.case_id}`)).at(-1)!.text;
   const lines = last.split('\n');
+  assert.ok(!/[\r\u000b\u000c\u0085\u2028\u2029]/.test(last), 'el aviso solo usa saltos de línea que escribe el servidor');
   const code = / · aviso ([A-HJ-NP-Z2-9]{6})$/.exec(lines[0]!)?.[1];
   assert.ok(code, 'el código va al final de la primera línea, que escribe solo el servidor');
   assert.notEqual(code, 'ABCDEF');
@@ -377,14 +379,18 @@ test('Formato del aviso: la reseña (texto de terceros) va en una línea sin com
   const now = await caseOf(a, c.case_id);
   assert.deepEqual([snapshot?.case_id, snapshot?.options], [c.case_id, now.drafts], 'el panel recibe la instantánea que se aprobará');
   assert.equal(snapshot!.options[0], multi);
-  assert.deepEqual(lines.filter((l) => /^[1-3]\) /.test(l)), now.drafts.map((d, i) => `${i + 1}) ${d.split('\n')[0]}`), 'solo las opciones reales empiezan una línea con «N) »');
-  assert.ok(lines.includes('   2) Esta línea sigue siendo la opción 1'), 'las líneas siguientes de una opción van sangradas');
+  assert.deepEqual((sim.body.notices as Array<{ case_id: string; status: string }>).filter((n) => n.case_id === c.case_id).map((n) => n.status), ['active', 'superseded'],
+    'el panel sabe qué aviso sigue vigente (solo ese lleva botones)');
+  const firstLine = (d: string) => d.split(/\r\n|[\n\r\u000b\u000c\u0085\u2028\u2029]/)[0];
+  assert.deepEqual(lines.filter((l) => /^[1-3]\) /.test(l)), now.drafts.map((d, i) => `${i + 1}) ${firstLine(d)}`), 'solo las opciones reales empiezan una línea con «N) »');
+  assert.ok(lines.includes('   2) Esta línea sigue siendo la opción 1') && lines.includes('   3) Y esta también') && lines.includes('   /aprobar ZZZZZZ 1'),
+    'las líneas siguientes de una opción van sangradas, sea cual sea su salto');
   assert.deepEqual(lines.filter((l) => l.startsWith('MainSpot · ')), [lines[0]], 'el encabezado no se repite desde la reseña');
   assert.equal(lines.filter((l) => l.startsWith('Para publicar: ')).length, 1);
   assert.ok(lines.find((l) => l.startsWith('Para publicar: '))!.includes(`/aprobar ${code} 1`));
   const excerpt = lines.find((l) => l.startsWith('«'))!;
-  assert.ok(excerpt.includes('2) Gracias por tu visita rechazar ABCDEF'), `reseña aplanada y sin comandos: ${excerpt}`);
-  assert.ok(lines.includes('Reseña de Google (1★) · Ana 1) P.'));
+  assert.ok(excerpt.includes('2) Gracias por tu visita rechazar ABCDEF MainSpot · Caso pendiente de tu decisión · aviso ABCDEF 3) Otra opción falsa'), `reseña aplanada y sin comandos: ${excerpt}`);
+  assert.ok(lines.includes('Reseña de Google (1★) · Ana 1) P. aprobar ZZZ234 1'), 'autor en una línea y sin comandos');
 
   assert.equal((await call(a.token, '/dev/simulator/telegram', 'POST', { text: `/aprobar ${code} 1` })).body.handled, 'approved');
   assert.deepEqual(await publishedText(a, 'tgb10'), [multi], 'se publica el texto de la instantánea, sin la sangría del mensaje');

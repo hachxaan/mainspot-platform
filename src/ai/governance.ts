@@ -56,9 +56,12 @@ export const SPENT_SQL = `SELECT COALESCE(SUM(CASE WHEN i.status = 'running' THE
  */
 export async function reserveBudget(client: PoolClient, tenantId: string | null, reserveUsd: number): Promise<BudgetDecision> {
   await client.query(`SELECT pg_advisory_xact_lock(hashtext('ai_budget_reservation'))`);
+  // Los techos globales solo cuentan con su fila global (`tenant_id` nulo): una fila de un negocio nunca hace de techo
+  // acumulado o mensual de toda la plataforma. El diario prefiere la del negocio y, si no hay, la por defecto.
   const budgets = await client.query<{ scope: BudgetLimit['scope']; tenant_id: string | null; limit_usd: string }>(
     `SELECT scope, tenant_id, limit_usd FROM ai_budget
-      WHERE scope IN ('lab_total','platform_month') OR (scope = 'tenant_day' AND (tenant_id = $1 OR tenant_id IS NULL))`, [tenantId]);
+      WHERE (scope IN ('lab_total','platform_month') AND tenant_id IS NULL)
+         OR (scope = 'tenant_day' AND (tenant_id = $1 OR tenant_id IS NULL))`, [tenantId]);
   const limits: BudgetLimit[] = [];
   const pick = (scope: BudgetLimit['scope']) => {
     const rows = budgets.rows.filter((b) => b.scope === scope);

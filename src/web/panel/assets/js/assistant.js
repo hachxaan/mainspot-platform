@@ -268,9 +268,10 @@
       return m ? m[1] : null;
     },
     /**
-     * Mensajes del chat simulado. Los avisos de casos abiertos llevan botones con las opciones de la instantánea de ESE
-     * aviso que guarda el servidor (no el texto del mensaje ni el estado actual del caso): confirmar envía
-     * /aprobar CÓDIGO N, que solo publica si el aviso sigue vigente.
+     * Mensajes del chat simulado. Solo los avisos vigentes (`active`) de casos abiertos llevan botones, con las opciones
+     * de la instantánea de ESE aviso que guarda el servidor (no el texto del mensaje ni el estado actual del caso):
+     * confirmar envía /aprobar CÓDIGO N, que solo publica si el aviso sigue vigente. Un aviso sustituido o ya usado
+     * queda como en Telegram: se puede escribir su comando, pero el servidor no publica nada y envía el vigente.
      */
     build: function (messages, notices) {
       var byCode = {};
@@ -281,7 +282,7 @@
         var n = code ? byCode[code] : null;
         if (n) {
           var c = (S().cases || []).filter(function (x) { return x.id === n.case_id; })[0];
-          if (c && (c.status === 'needs_human' || c.status === 'failed') && MS.can('engagement.approve')) {
+          if (n.status === 'active' && c && (c.status === 'needs_human' || c.status === 'failed') && MS.can('engagement.approve')) {
             (n.options || []).forEach(function (text, k) { out.actions.push({ label: 'Usar opción ' + (k + 1), act: 'case-pick', arg: code + '|' + (k + 1), shown: text, source: c.source }); });
             out.actions.push({ label: 'No responder', act: 'case-reject', arg: code });
           }

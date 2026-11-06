@@ -264,15 +264,15 @@ test('E2E DEC-0077: reconsentimiento informado y versionado; /aprobar de un avis
   check(afterEdit?.drafts[0] === edited && afterEdit.drafts_revision === c!.drafts_revision + 1, 'las propuestas cambian de revisión');
   check((await one<{ status: string }>('SELECT status FROM engagement_approval_offer WHERE code = $1', [oldCode]))?.status === 'superseded', 'el aviso ya enviado queda invalidado');
 
-  // La dueña usa el botón del mensaje ANTIGUO: ve el texto que le mostró ese aviso y, al confirmar, no se publica nada.
+  // El mensaje ANTIGUO ya no ofrece botones (su aviso quedó sustituido); la dueña escribe su comando, como haría en
+  // Telegram con un mensaje viejo, y no se publica nada.
   await page.reload();
   await go(page, '#/chat');
   const oldMsg = page.locator('.tg-msg', { hasText: oldCode! }).first();
-  await oldMsg.getByRole('button', { name: 'Usar opción 1' }).click();
-  const confirm = page.locator('.tg-msg', { hasText: '¿Publico esta respuesta' }).last();
-  await confirm.waitFor();
-  check((await confirm.innerText()).includes(c!.drafts[0]!) && !(await confirm.innerText()).includes(edited), 'la confirmación muestra el texto que vio en ese aviso (no el editado)');
-  await confirm.getByRole('button', { name: 'Sí, publicar' }).click();
+  await oldMsg.waitFor();
+  check(await oldMsg.getByRole('button', { name: 'Usar opción 1' }).count() === 0, 'el mensaje del aviso sustituido ya no ofrece botones para aprobar');
+  await page.getByLabel('Mensaje para MainSpot').first().fill(`/aprobar ${oldCode} 1`);
+  await page.getByRole('button', { name: 'Enviar mensaje' }).first().click();
   await page.getByText('Las propuestas de ese aviso cambiaron después de enviártelo').waitFor();
   const stillOpen = await one<{ state: string; response_text: string | null }>('SELECT state, response_text FROM engagement_case WHERE case_id = $1', [c!.case_id]);
   const replies0 = Number((await one<{ n: string }>('SELECT count(*) AS n FROM sim_provider_reply WHERE tenant_id = $1', [tenant]))?.n);

@@ -42,6 +42,8 @@ export const MAX_RESPOND_ATTEMPTS = 5;
 export const RESPOND_LEASE_SECONDS = 120;
 export const PROVIDER_TIMEOUT_MS = 10_000;
 const MAX_TEXT = 1000;
+/** Cualquier terminador de línea que un cliente puede pintar como salto (también `\r` suelto, NEL, LS y PS). */
+const LINE_BREAK = /\r\n|[\n\r\u000b\u000c\u0085\u2028\u2029]/g;
 
 /**
  * Aviso obligatorio en respuestas públicas automáticas redactadas por IA (política de uso de Anthropic:
@@ -1028,22 +1030,24 @@ export class EngagementService {
     const origin = row.origin === 'google_review'
       ? `Reseña de Google${row.rating ? ` (${row.rating}★)` : ''}`
       : 'Comentario en Facebook';
-    // Texto de terceros en una sola línea y sin comandos: nunca puede parecer una opción numerada ni otro aviso.
-    const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
-    const flat = oneLine(row.body).replace(/\/(aprobar|rechazar)\b/gi, '$1');
+    // Texto de terceros (reseña y autor) en una sola línea y sin comandos: nunca parece una opción, otro aviso ni un
+    // comando. Cuenta como salto cualquier terminador de línea, no solo `\n`.
+    const thirdParty = (s: string) => s.replace(LINE_BREAK, ' ').replace(/\s+/g, ' ').trim().replace(/\/(aprobar|rechazar)\b/gi, '$1');
+    const flat = thirdParty(row.body);
     const excerpt = flat.length > 300 ? `${flat.slice(0, 297)}…` : flat;
     const header = row.state === 'failed' ? 'MainSpot · No pudimos publicar la respuesta aprobada'
-      : notice.updated ? 'MainSpot · Propuestas actualizadas (el aviso anterior ya no sirve para aprobar)'
-        : 'MainSpot · Caso pendiente de tu decisión';
+      : row.reason === 'delivery_uncertain' ? 'MainSpot · No sabemos si se publicó la respuesta aprobada: revisa la reseña antes de decidir'
+        : notice.updated ? 'MainSpot · Propuestas actualizadas (el aviso anterior ya no sirve para aprobar)'
+          : 'MainSpot · Caso pendiente de tu decisión';
     const lines = [
       `${header} · aviso ${notice.code}`,
       `Caso: ${row.case_id}`,
-      `${origin} · ${oneLine(row.author_label)}`,
+      `${origin} · ${thirdParty(row.author_label)}`,
       `«${excerpt}»`,
       `Motivo: ${row.reason ?? 'revisión'}`,
     ];
     // Solo las opciones reales empiezan una línea con «N) »: las líneas siguientes de cada opción van sangradas.
-    notice.options.forEach((d, i) => lines.push(`${i + 1}) ${d.replace(/\r?\n/g, '\n   ')}`));
+    notice.options.forEach((d, i) => lines.push(`${i + 1}) ${d.replace(LINE_BREAK, '\n   ')}`));
     const n = notice.options.length;
     if (n > 0) {
       lines.push(`Para publicar: /aprobar ${notice.code} 1${n === 3 ? ' (o 2, 3)' : n === 2 ? ' (o 2)' : ''} · Para no responder: /rechazar ${notice.code}`);
@@ -1124,9 +1128,12 @@ export class EngagementService {
         if (outcome === 'sent') out.sent += 1;
         else if (outcome === 'failed') out.failed += 1;
       }
-      const pending = await this.deps.pool.query<{ n: string }>(
-        `SELECT count(*) AS n FROM engagement_notification WHERE case_id = $1 AND chat_id = ANY($2::text[]) AND status <> 'sent'`, [c.case_id, active]);
-      const status = Number(pending.rows[0]?.n ?? 0) === 0 ? 'sent' : 'failed';
+      // `failed` solo si algún envío falló; una fila que quedó pendiente (su aviso se quedó viejo mientras salía) se
+      // envía en el siguiente ciclo con la revisión vigente.
+      const rows = await this.deps.pool.query<{ status: string }>(
+        'SELECT status FROM engagement_notification WHERE case_id = $1 AND chat_id = ANY($2::text[])', [c.case_id, active]);
+      const statuses = rows.rows.map((r) => r.status);
+      const status = statuses.includes('failed') ? 'failed' : statuses.includes('pending') ? 'pending' : 'sent';
       await this.deps.pool.query(`UPDATE engagement_case SET notify_status = $2, updated_at = now() WHERE case_id = $1`, [c.case_id, status]);
       if (status === 'sent') {
         await this.deps.sink.write({
@@ -1151,14 +1158,15 @@ export class EngagementService {
     if (sent.ok) {
       // Bajo candado compartido del caso (una edición en curso confirma antes): solo queda «enviada» si la revisión
       // enviada sigue siendo la vigente; si no, la fila sigue pendiente y el siguiente ciclo manda la nueva.
-      await runAtomic(this.deps.pool, async (client) => {
+      const marked = await runAtomic(this.deps.pool, async (client) => {
         const now = await client.query<{ drafts_revision: number }>('SELECT drafts_revision FROM engagement_case WHERE case_id = $1 FOR SHARE', [c.case_id]);
-        if (now.rows[0]?.drafts_revision !== c.drafts_revision) return;
+        if (now.rows[0]?.drafts_revision !== c.drafts_revision) return false;
         await client.query(
           `UPDATE engagement_notification SET status = 'sent', sent_at = now(), attempts = attempts + 1, last_error = NULL, updated_at = now()
             WHERE notification_id = $1`, [n.notification_id]);
+        return true;
       });
-      return 'sent';
+      return marked ? 'sent' : 'skipped';
     }
     await this.deps.pool.query(
       `UPDATE engagement_notification SET status = 'failed', attempts = attempts + 1, last_error = $2,

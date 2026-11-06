@@ -602,6 +602,10 @@ test('(e) NFR-0006 · AC-6004/AC-6005: sin techo no hay gasto — si falta el te
     await client.query(`DELETE FROM ai_budget WHERE scope = 'lab_total'`);
     assert.deepEqual(await decision(null), { allowed: false, exceeded: 'lab_total' }, 'sin techo acumulado no hay gasto de pago');
     assert.deepEqual(await decision(a.tenant), { allowed: false, exceeded: 'lab_total' });
+    // Una fila de techo global asociada a un negocio (solo posible por SQL directo) nunca hace de techo de la plataforma.
+    await client.query(`INSERT INTO ai_budget (budget_id, scope, tenant_id, limit_usd, source, updated_by) VALUES ('bud_lab_total_tenant', 'lab_total', $1, 1000, 'prueba', 'prueba')`, [a.tenant]);
+    assert.deepEqual(await decision(a.tenant), { allowed: false, exceeded: 'lab_total' }, 'una fila de negocio no sustituye al techo global');
+    assert.deepEqual(await decision(null), { allowed: false, exceeded: 'lab_total' });
   } finally {
     await client.query('ROLLBACK');
     client.release();

@@ -287,9 +287,10 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
       .filter((m) => m.to === chatId).map((m) => ({ from: 'bot' as const, text: m.text, at: m.at }));
     const inbox = (simInbox.get(chatId) ?? []).map((m) => ({ from: 'me' as const, text: m.text, at: m.at }));
     const messages = [...inbox, ...outbox].sort((a, b) => a.at.localeCompare(b.at) || (a.from === 'me' ? -1 : 1));
-    // Instantáneas de los avisos de ESTE chat: el panel arma los botones con ellas, nunca leyendo el texto del mensaje.
-    const notices = await deps.pool.query<{ code: string; case_id: string; options: string[] }>(
-      `SELECT code, case_id, options FROM engagement_approval_offer WHERE tenant_id = $1 AND chat_id = $2
+    // Instantáneas de los avisos de ESTE chat: el panel arma los botones con ellas (solo las vigentes), nunca leyendo
+    // el texto del mensaje.
+    const notices = await deps.pool.query<{ code: string; case_id: string; options: string[]; status: string }>(
+      `SELECT code, case_id, options, status FROM engagement_approval_offer WHERE tenant_id = $1 AND chat_id = $2
         ORDER BY created_at DESC LIMIT 200`, [actor.tenantId, chatId]);
     return res.json({ channel_mode: 'simulated', chat_hint: `…${chatId.slice(-3)}`, messages, notices: notices.rows });
   }));
