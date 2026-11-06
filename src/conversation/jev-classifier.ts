@@ -28,7 +28,7 @@
  * (hyper-jev).
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { TYPESAFE_CALL_MAX_COST_USD } from '../ai/catalog.ts';
 import { measuredCost, type TypeSafeBudget, type TypeSafeSource } from '../ai/typesafe-ledger.ts';
@@ -539,8 +539,9 @@ export class JevClassifier {
     if (this.inFlight >= JEV_MAX_IN_FLIGHT) return { status: 'unavailable', errorCode: 'saturated', latencyMs: 0, budgetDay };
     this.inFlight++;
     try {
-      // Estado mínimo: solo el texto del mensaje (sin tenant/actor/nombres).
-      const call = await reservedJevCall(this.budget, { key: `pipeline:${input.requestId}`, source: 'pipeline' },
+      // Estado mínimo: solo el texto del mensaje (sin tenant/actor/nombres). La clave del libro es opaca y de un solo
+      // uso: el libro no tiene negocio y la anonimización (DEC-0027) exige que no quede ningún identificador suyo.
+      const call = await reservedJevCall(this.budget, { key: `pipeline:${randomUUID()}`, source: 'pipeline' },
         () => this.client.systemOne({ message: input.text }, JEV_QUESTIONS));
       if (!call.ok) return { status: 'unavailable', errorCode: call.errorCode, latencyMs: Math.round(performance.now() - started), budgetDay };
       const reading = readJevAnswers(call.result.answers);

@@ -98,31 +98,40 @@ test('DEC-0032 (TS-1): cada clasificación del pipeline reserva en el libro de T
   const repository = new JevRepository(plain.pool);
   const day = new Date().toISOString().slice(0, 10);
   const before = await repository.spentOn(day);
-  const ledger = async (requestId: string) => (await plain.pool.query<{ source: string; status: string; reserved: number; cost: number | null; cost_source: string | null; attempts: number | null; reason: string | null; sent: boolean }>(
-    `SELECT source, status, reserved_usd::float8 AS reserved, cost_usd::float8 AS cost, cost_source, attempts, reason, dispatched_at IS NOT NULL AS sent
-       FROM typesafe_reservation WHERE idempotency_key = $1`, [`pipeline:${requestId}`])).rows;
+  // La clave del pipeline es opaca (DEC-0027): las filas de un mensaje son las que aparecen al clasificarlo.
+  const pipelineRows = async () => (await plain.pool.query<{ reservation_id: string; idempotency_key: string; source: string; status: string; reserved: number; cost: number | null; cost_source: string | null; attempts: number | null; reason: string | null; sent: boolean }>(
+    `SELECT reservation_id, idempotency_key, source, status, reserved_usd::float8 AS reserved, cost_usd::float8 AS cost, cost_source, attempts, reason, dispatched_at IS NOT NULL AS sent
+       FROM typesafe_reservation WHERE source = 'pipeline'`)).rows;
+  const classified = async (text: string) => {
+    const known = new Set((await pipelineRows()).map((r) => r.reservation_id));
+    const sent = await send(shadow, text);
+    assert.equal(sent.status, 201);
+    const requestId = sent.body.request.request_id as string;
+    const evidence = await row(shadow, requestId);
+    const rows = (await pipelineRows()).filter((r) => !known.has(r.reservation_id));
+    assert.ok(rows.every((r) => /^pipeline:[0-9a-f-]{36}$/.test(r.idempotency_key) && !r.idempotency_key.includes(requestId)),
+      'clave opaca, sin el request id del negocio');
+    return { evidence, rows };
+  };
 
-  const answered = await send(shadow, 'sugiere un eslogan para mi negocio');
-  assert.equal(answered.status, 201);
-  const evidence = await row(shadow, answered.body.request.request_id);
-  const [paid] = await ledger(answered.body.request.request_id);
+  const answered = await classified('sugiere un eslogan para mi negocio');
+  const [paid, ...extra] = answered.rows;
+  assert.equal(extra.length, 0, 'una reserva por clasificación');
   const estimated = 600 * 0.042 / 1_000_000;
   assert.deepEqual([paid?.source, paid?.status, paid?.reserved, paid?.cost_source, paid?.attempts, paid?.sent],
     ['pipeline', 'committed', TYPESAFE_CALL_MAX_COST_USD, 'estimated', 1, true], 'reservó el costo máximo por llamada y confirmó la medición');
-  assert.ok(Math.abs((paid?.cost ?? -1) - estimated) < 1e-12 && Math.abs(Number(evidence?.cost_usd) - estimated) < 1e-12, 'misma medición en el libro y en la evidencia');
+  assert.ok(Math.abs((paid?.cost ?? -1) - estimated) < 1e-12 && Math.abs(Number(answered.evidence?.cost_usd) - estimated) < 1e-12, 'misma medición en el libro y en la evidencia');
 
   // shadow clasifica en segundo plano: TypeSafe sigue caído hasta que la clasificación termina (row() espera).
   jevDown = true;
-  let outageId = '';
-  let outageRow: JevClassificationRow | undefined;
+  let outage: Awaited<ReturnType<typeof classified>>;
   try {
-    outageId = (await send(shadow, 'hola')).body.request.request_id as string;
-    outageRow = await row(shadow, outageId);
+    outage = await classified('hola');
   } finally {
     jevDown = false;
   }
-  assert.equal(outageRow?.error_code, 'http_503');
-  assert.deepEqual((await ledger(outageId)).map((r) => [r.status, r.cost, r.cost_source, r.reason, r.sent]),
+  assert.equal(outage.evidence?.error_code, 'http_503');
+  assert.deepEqual(outage.rows.map((r) => [r.status, r.cost, r.cost_source, r.reason, r.sent]),
     [['committed', null, 'unknown', 'http_503', true]], 'un 503 tras enviar no se supone gratis');
   assert.ok(Math.abs((await repository.spentOn(day)) - (before + estimated + TYPESAFE_CALL_MAX_COST_USD)) < 1e-9,
     'el día suma la medición y la reserva del fallo, una vez cada una');

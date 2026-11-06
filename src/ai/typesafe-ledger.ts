@@ -48,7 +48,7 @@ const SPENT_SQL = `SELECT COALESCE(SUM(CASE
 export type TypeSafeSource = 'ai_core' | 'pipeline' | 'evaluation';
 
 export interface TypeSafeReserveInput {
-  /** `ai_invocation:<id>` | `pipeline:<request_id>` | `evaluation:<run>:<caso>`. */
+  /** `ai_invocation:<id>` | `pipeline:<uuid opaco>` (nunca un id del negocio: DEC-0027) | `evaluation:<run>:<caso>`. */
   key: string;
   source: TypeSafeSource;
   /** Caso de uso del AI Core; null fuera del AI Core. */

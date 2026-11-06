@@ -61,7 +61,7 @@ export type JevConfig =
       dataScope: JevDataScope;
       /** With `synthetic`: tenants whose messages may be sent to TypeSafe (JEV_SYNTHETIC_TENANTS). */
       syntheticTenants: readonly string[];
-      /** DEC-0032: daily TypeSafe budget (USD, UTC day, per process). */
+      /** DEC-0032: daily TypeSafe budget (USD, UTC day), global across processes: enforced by the reservation ledger (TS-1). */
       dailyBudgetUsd: number;
     };
 

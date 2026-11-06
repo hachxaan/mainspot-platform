@@ -102,13 +102,15 @@ function fakeStore(opts: { run?: JevEvaluationRunRow | null; failInsert?: boolea
 /**
  * Libro de TypeSafe en memoria (mismo contrato que src/ai/typesafe-ledger.ts): anota cada paso en orden; concede
  * `allow` reservas y después el tope está agotado; `lapse` = la reserva vence antes de enviar; `duplicate` = clave en curso.
+ * Una clave del pipeline opaca (`pipeline:<uuid>`, sin el request id del negocio: DEC-0027) se anota como `pipeline:<uuid>`;
+ * cualquier otra se anota tal cual y no coincide con lo esperado.
  */
 function fakeBudget(opts: { allow?: number; lapse?: boolean; duplicate?: boolean } = {}) {
   const events: string[] = [];
   let granted = 0;
   const budget: TypeSafeBudget = {
     async reserve(r) {
-      events.push(`reserve ${r.key} ${r.source} ${r.useCaseId} ${r.reserveUsd}`);
+      events.push(`reserve ${r.key.replace(/^pipeline:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, 'pipeline:<uuid>')} ${r.source} ${r.useCaseId} ${r.reserveUsd}`);
       if (opts.duplicate) return { status: 'in_progress', key: r.key };
       if (granted >= (opts.allow ?? Number.POSITIVE_INFINITY)) return { status: 'denied', budgetDay: '2026-10-22', spentUsd: 1, limitUsd: 1 };
       granted += 1;
@@ -122,7 +124,7 @@ function fakeBudget(opts: { allow?: number; lapse?: boolean; duplicate?: boolean
   return { budget, events };
 }
 
-const RESERVE = `reserve pipeline:req_unit_1 pipeline null ${TYPESAFE_CALL_MAX_COST_USD}`;
+const RESERVE = `reserve pipeline:<uuid> pipeline null ${TYPESAFE_CALL_MAX_COST_USD}`;
 
 function classifier(
   mode: 'shadow' | 'primary',

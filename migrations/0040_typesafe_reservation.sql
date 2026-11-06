@@ -11,8 +11,8 @@
 --                    reintentos (attempts > 1) cuenta el mayor de los dos: un error del proveedor no se supone gratis;
 --        released  → nunca se envió: no cuenta;
 --        expired   → enviada y nunca confirmada (proceso caído a mitad): cuenta reserved_usd hasta que llegue la medición.
---      Sin tenant_id: el tope es global (DEC-0032) y la tabla no guarda datos de negocios ni de personas (no la tocan
---      la retención ni la anonimización).
+--      Sin tenant_id: el tope es global (DEC-0032) y la tabla no guarda datos ni identificadores de negocios o personas
+--      (la clave del pipeline es opaca, no su request id), así que no la tocan la retención ni la anonimización.
 --   2. Gasto anterior: lo que sumaba el presupuesto previo (cost_usd de jev_classification, de jev_evaluation_run y de
 --      ai_invocation de proveedores TypeSafe, por día UTC) queda como UNA fila `legacy` confirmada por día. Solo se
 --      calcula con la tabla vacía: volver a ejecutar el archivo nunca cuenta otra vez ese gasto ni el de las llamadas
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS typesafe_reservation (
   expires_at       TIMESTAMPTZ NOT NULL,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   settled_at       TIMESTAMPTZ,
-  -- Una clave por llamada y su origen: ai_invocation:<id> | pipeline:<request_id> | evaluation:<run>:<caso> | legacy:<día>.
+  -- Una clave por llamada y su origen: ai_invocation:<id> | pipeline:<uuid opaco> | evaluation:<run>:<caso> | legacy:<día>.
   CHECK (idempotency_key ~ '^[A-Za-z0-9._:-]{1,200}$'
          AND split_part(idempotency_key, ':', 1) = CASE source WHEN 'ai_core' THEN 'ai_invocation' ELSE source END),
   CHECK ((source = 'ai_core') = (use_case_id IS NOT NULL)),
