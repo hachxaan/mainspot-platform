@@ -14,6 +14,7 @@ import type { AuditSink } from '../audit/sink.ts';
 import { requirePermission } from '../boundary/middleware.ts';
 import type { AppConfig } from '../shared/config.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
+import { consentTermsView } from '../engagement/consent.ts';
 import type { EngagementService } from '../engagement/service.ts';
 import type { TelegramLinkService } from '../engagement/telegram.ts';
 import type { EngagementWorker } from '../engagement/worker.ts';
@@ -139,16 +140,30 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
     }
   }));
 
-  // ---- políticas
+  // ---- políticas (SEC-CONSENT-01: términos versionados que el panel muestra literalmente antes de aceptar)
   router.get('/engagement/policies', read, ah(async (req, res) => {
     const actor = actorOf(req);
-    return res.json({ tenant_id: actor.tenantId, policies: await deps.engagement.currentPolicies(actor.tenantId) });
+    const policies = await deps.engagement.currentPolicies(actor.tenantId);
+    return res.json({
+      tenant_id: actor.tenantId, policies, consent_terms: consentTermsView(),
+      reconsent_required: policies.some((p) => p.reconsent_required),
+    });
   }));
 
   router.put('/engagement/policies', requirePermission('engagement.policy.manage', deps.sink, deps.pool), ah(async (req, res) => {
     const actor = actorOf(req);
     const policy = await deps.engagement.setPolicy(actor, req.body);
     return res.json({ policy });
+  }));
+
+  // SEC-CONSENT-01: aceptar los términos vigentes para las respuestas automáticas autorizadas antes de la cuota compartida.
+  router.post('/engagement/policies/consent', requirePermission('engagement.policy.manage', deps.sink, deps.pool), ah(async (req, res) => {
+    const actor = actorOf(req);
+    const out = await deps.engagement.reconsent(actor, req.body);
+    return res.json({
+      tenant_id: actor.tenantId, updated: out.updated.length, policies: out.policies, consent_terms: consentTermsView(),
+      reconsent_required: out.policies.some((p) => p.reconsent_required),
+    });
   }));
 
   // ---- «Procesar ahora»: solo el tenant de la sesión

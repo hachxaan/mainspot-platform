@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { bootApi, authHeaders, api, login, type TestApi } from '../helpers/testdb.ts';
 import { createTenantWithPlan } from '../helpers/tenants.ts';
 import type { SimulatedChannel } from '../../src/channels/simulated.ts';
+import { AUTO_REPLY_CONSENT } from '../../src/engagement/consent.ts';
 import type { CaseRow } from '../../src/engagement/service.ts';
 import { UPDATE_LEASE_SECONDS } from '../../src/engagement/telegram.ts';
 
@@ -43,10 +44,20 @@ function transcript(): Array<{ to: string; text: string }> {
 async function newTenant(prefix: string) {
   return createTenantWithPlan(t, LIMITS, prefix);
 }
+/** Activar con `consent: true` acepta los términos vigentes del origen (la versión que el panel mostraría). */
 async function setPolicy(token: string, origin: string, category: string, mode: string, extra: Record<string, unknown> = {}) {
+  const accepted = extra['consent'] === true && !('consent_version' in extra)
+    ? { consent_version: AUTO_REPLY_CONSENT[origin as keyof typeof AUTO_REPLY_CONSENT].version } : {};
   return api(t.baseUrl, '/api/backoffice/engagement/policies', {
-    method: 'PUT', headers: authHeaders(token), body: JSON.stringify({ origin, category, mode, ...extra }),
+    method: 'PUT', headers: authHeaders(token), body: JSON.stringify({ origin, category, mode, ...accepted, ...extra }),
   });
+}
+/** Código del último aviso de Telegram que recibió ese chat para el caso (lo que la persona ve en el mensaje). */
+function noticeCode(chatId: number, caseId: string): string {
+  const sent = transcript().filter((m) => m.to === String(chatId) && m.text.includes(`Caso: ${caseId}`));
+  const code = /\/rechazar ([A-HJ-NP-Z2-9]{6})/.exec(sent.at(-1)?.text ?? '')?.[1];
+  assert.ok(code, `el chat ${chatId} recibió un aviso con código para ${caseId}`);
+  return code;
 }
 async function injectReview(token: string, body: string, rating: number, externalRef?: string) {
   return api(t.baseUrl, '/api/backoffice/dev/simulator/google-reviews', {
@@ -187,8 +198,17 @@ test('AG-02: reseña delicada → caso humano con 3 alternativas, aviso Telegram
   assert.equal((await api(t.baseUrl, `/api/backoffice/engagement/cases/${c.case_id}/approve`, { method: 'POST', headers: authHeaders(ops), body: '{}' })).status, 403);
   assert.equal((await api(t.baseUrl, `/api/backoffice/engagement/cases/${c.case_id}/drafts/1`, { method: 'POST', headers: authHeaders(reader), body: JSON.stringify({ text: 'x' }) })).status, 403);
 
-  // Aprobación desde Telegram (mismo caso que el panel).
-  const tg = await telegram(chat, `/aprobar ${c.case_id} 2`);
+  // La edición invalida el aviso que ya salió: su código no publica nada y el chat recibe el aviso vigente.
+  const first = noticeCode(chat, c.case_id);
+  const stale = await telegram(chat, `/aprobar ${first} 2`);
+  assert.equal(stale.body.handled, 'approval_stale');
+  assert.equal((await replies(a.token)).length, 0, 'el aviso anterior a la edición no publica');
+  const fresh = noticeCode(chat, c.case_id);
+  assert.notEqual(fresh, first);
+  assert.ok(transcript().filter((m) => m.to === String(chat)).at(-1)!.text.includes('2) Hola Ana, lamentamos lo ocurrido. Escríbenos por mensaje privado para revisarlo.'));
+
+  // Aprobación desde Telegram con el aviso vigente (mismo caso que el panel).
+  const tg = await telegram(chat, `/aprobar ${fresh} 2`);
   assert.equal(tg.body.handled, 'approved');
   const after = (await api(t.baseUrl, `/api/backoffice/engagement/cases/${c.case_id}`, { headers: authHeaders(a.token) })).body.case;
   assert.equal(after.state, 'responded');
@@ -197,7 +217,7 @@ test('AG-02: reseña delicada → caso humano con 3 alternativas, aviso Telegram
 
   const again = await api(t.baseUrl, `/api/backoffice/engagement/cases/${c.case_id}/approve`, { method: 'POST', headers: authHeaders(a.token), body: '{}' });
   assert.equal(again.body.already_approved, true);
-  assert.equal((await telegram(chat, `/aprobar ${c.case_id} 1`)).body.handled, 'approve_repeat');
+  assert.equal((await telegram(chat, `/aprobar ${fresh} 1`)).body.handled, 'approve_repeat');
   assert.equal((await replies(a.token)).length, 1, 'una sola respuesta pública');
   console.log('TEST_PASS AG-02 aprobación (panel+Telegram) [simulated]');
 });
@@ -215,15 +235,20 @@ test('AG-02: rechazo en panel, Telegram ve el mismo estado; chat sin permiso o a
   await run(a.token);
   const c = one(await cases(a.token));
 
-  assert.equal((await telegram(chatOps, `/aprobar ${c.case_id} 1`)).body.handled, 'permission_denied');
-  assert.equal((await telegram(chatB, `/aprobar ${c.case_id} 1`)).body.handled, 'not_found', 'tenant ajeno: mismo 404');
-  assert.equal((await telegram(999999, `/aprobar ${c.case_id} 1`)).body.handled, 'unlinked_chat');
+  const code = noticeCode(chatA, c.case_id);
+  assert.equal((await telegram(chatOps, `/aprobar ${noticeCode(chatOps, c.case_id)} 1`)).body.handled, 'permission_denied');
+  assert.equal((await telegram(chatB, `/aprobar ${code} 1`)).body.handled, 'approval_ref_invalid', 'código de otro chat y negocio: mismo trato que uno inexistente');
+  const toB = transcript().filter((m) => m.to === String(chatB)).length;
+  assert.equal((await telegram(chatB, `/aprobar ${c.case_id} 1`)).body.handled, 'approval_ref_invalid');
+  assert.equal(transcript().filter((m) => m.to === String(chatB) && m.text.includes(c.case_id)).length, 0, 'el caso ajeno no se reenvía al otro negocio');
+  assert.equal(transcript().filter((m) => m.to === String(chatB)).length, toB + 1, 'solo la respuesta genérica');
+  assert.equal((await telegram(999999, `/aprobar ${code} 1`)).body.handled, 'unlinked_chat');
   assert.equal((await api(t.baseUrl, `/api/backoffice/engagement/cases/${c.case_id}`, { headers: authHeaders(b.token) })).status, 404);
 
   const rej = await api(t.baseUrl, `/api/backoffice/engagement/cases/${c.case_id}/reject`, { method: 'POST', headers: authHeaders(a.token), body: '{}' });
   assert.equal(rej.body.case.state, 'rejected');
-  assert.equal((await telegram(chatA, `/rechazar ${c.case_id}`)).body.handled, 'reject_repeat');
-  assert.equal((await telegram(chatA, `/aprobar ${c.case_id} 1`)).body.handled, 'validation_error', 'un caso rechazado no se publica');
+  assert.equal((await telegram(chatA, `/rechazar ${code}`)).body.handled, 'reject_repeat');
+  assert.equal((await telegram(chatA, `/aprobar ${code} 1`)).body.handled, 'validation_error', 'un caso rechazado no se publica');
   assert.equal((await replies(a.token)).length, 0);
   // Ningún teléfono se usó como destino de Telegram.
   assert.ok(transcript().every((m) => !m.to.startsWith('+')));
@@ -481,14 +506,15 @@ test('Webhook Telegram: entregas repetidas/concurrentes del mismo update no dupl
   await run(a.token);
   const c = one(await cases(a.token), 'wh2');
   assert.equal(c.state, 'needs_human');
-  const approvals = await Promise.all(Array.from({ length: 5 }, () => telegram(chat, `/aprobar ${c.case_id} 1`, base + 3)));
+  const notice = noticeCode(chat, c.case_id);
+  const approvals = await Promise.all(Array.from({ length: 5 }, () => telegram(chat, `/aprobar ${notice} 1`, base + 3)));
   assert.equal(approvals.filter((r) => r.status === 200 && r.body.handled === 'approved').length, 1, outcomes(approvals));
   assert.ok(approvals.every((r) => (r.status === 200 && (r.body.handled === 'approved' || r.body.handled === 'duplicate')) || (r.status === 409 && r.body.handled === 'in_progress')), outcomes(approvals));
   assert.equal((await replies(a.token)).filter((r) => r.target_ref === 'wh2').length, 1, 'una sola respuesta pública');
   assert.equal(sent('Respuesta publicada'), 1, 'una sola confirmación al chat');
   const audit = await t.pool.query(`SELECT count(*)::int AS n FROM audit_event WHERE tenant_id = $1 AND action = 'engagement.approved'`, [a.tenant]);
   assert.equal(audit.rows[0].n, 1, 'una sola decisión auditada');
-  assert.equal((await telegram(chat, `/aprobar ${c.case_id} 1`, base + 3)).body.handled, 'duplicate', 'reentrega tardía');
+  assert.equal((await telegram(chat, `/aprobar ${notice} 1`, base + 3)).body.handled, 'duplicate', 'reentrega tardía');
   assert.equal(sent('Respuesta publicada'), 1);
   const ledger = await t.pool.query('SELECT status, handled FROM telegram_update WHERE update_id = $1', [base + 3]);
   assert.deepEqual(ledger.rows, [{ status: 'done', handled: 'approved' }]);
@@ -496,7 +522,7 @@ test('Webhook Telegram: entregas repetidas/concurrentes del mismo update no dupl
   // Dedupe durable: una instancia nueva del servidor (reinicio) ve el update como ya procesado y no responde.
   const t2 = await bootApi({ telegramWebhookSecret: WEBHOOK_SECRET });
   try {
-    const r = await webhook({ update_id: base + 3, message: { chat: { id: chat }, text: `/aprobar ${c.case_id} 1` } }, WEBHOOK_HEADERS, t2.baseUrl);
+    const r = await webhook({ update_id: base + 3, message: { chat: { id: chat }, text: `/aprobar ${notice} 1` } }, WEBHOOK_HEADERS, t2.baseUrl);
     assert.equal(r.body.handled, 'duplicate');
     assert.equal((t2.handle.channel as SimulatedChannel).transcript().length, 0, 'la instancia nueva no responde nada');
   } finally {
@@ -512,15 +538,15 @@ test('Webhook Telegram: entregas repetidas/concurrentes del mismo update no dupl
   const realReject = engagement.reject;
   engagement.reject = async () => { throw new Error('simulated infrastructure failure'); };
   try {
-    const failed = await telegram(chat, `/rechazar ${c2.case_id}`, base + 4);
+    const failed = await telegram(chat, `/rechazar ${noticeCode(chat, c2.case_id)}`, base + 4);
     assert.equal(failed.status, 500);
     assert.equal(failed.body.error.code, 'internal_error');
   } finally {
     engagement.reject = realReject;
   }
   assert.equal((await t.pool.query('SELECT count(*)::int AS n FROM telegram_update WHERE update_id = $1', [base + 4])).rows[0].n, 0, 'el intento fallido no deja el update bloqueado');
-  assert.equal((await telegram(chat, `/rechazar ${c2.case_id}`, base + 4)).body.handled, 'rejected');
-  assert.equal((await telegram(chat, `/rechazar ${c2.case_id}`, base + 4)).body.handled, 'duplicate');
+  assert.equal((await telegram(chat, `/rechazar ${noticeCode(chat, c2.case_id)}`, base + 4)).body.handled, 'rejected');
+  assert.equal((await telegram(chat, `/rechazar ${noticeCode(chat, c2.case_id)}`, base + 4)).body.handled, 'duplicate');
   assert.equal(sent('Listo: descartamos'), 1);
   assert.equal(one(await cases(a.token), 'wh2b').state, 'rejected');
 
@@ -543,10 +569,11 @@ test('Webhook Telegram: entregas repetidas/concurrentes del mismo update no dupl
   await injectReview(a.token, 'Comida en mal estado, exijo que me devuelvan el dinero', 1, 'wh2c');
   await run(a.token);
   const c3 = one(await cases(a.token), 'wh2c');
+  const code3 = noticeCode(chat, c3.case_id);
   const tiny = await bootApi({ telegramWebhookSecret: WEBHOOK_SECRET }, 1);
   try {
     const burst = await Promise.all([
-      ...Array.from({ length: 5 }, () => webhook({ update_id: base + 6, message: { chat: { id: chat }, text: `/aprobar ${c3.case_id} 2` } }, WEBHOOK_HEADERS, tiny.baseUrl)),
+      ...Array.from({ length: 5 }, () => webhook({ update_id: base + 6, message: { chat: { id: chat }, text: `/aprobar ${code3} 2` } }, WEBHOOK_HEADERS, tiny.baseUrl)),
       ...Array.from({ length: 3 }, () => webhook({ update_id: base + 7, message: { chat: { id: chat }, text: 'gracias' } }, WEBHOOK_HEADERS, tiny.baseUrl)),
     ]);
     assert.equal(burst.filter((r) => r.status === 200 && r.body.handled === 'approved').length, 1, outcomes(burst));

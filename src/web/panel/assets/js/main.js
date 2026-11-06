@@ -480,13 +480,22 @@
       }
       var grants = changes.filter(function (c) { return c.mode === 'safe_auto_reply'; });
       if (!grants.length) { save(); return; }
+      // SEC-CONSENT-01: se muestra el texto literal de los términos que se aceptan (el servidor guarda ese texto, su
+      // versión y su huella, y rechaza una versión distinta de la vigente).
+      var terms = MS.S.agent.consentTerms || {};
+      var origins = grants.map(function (g) { return g.origin; }).filter(function (o, i, all) { return all.indexOf(o) === i; });
+      if (origins.some(function (o) { return !terms[o]; })) { toast('No pudimos cargar las condiciones de la autorización. Recarga la página.', 'info'); return; }
       UI.sheet({
         title: '¿Autorizas a MainSpot a responder por ti?',
         html: '<p>MainSpot responderá <strong>públicamente y sin preguntarte</strong>, solo en casos seguros, a:</p><ul>' + grants.map(function (g) {
           return '<li>' + MS.esc((g.origin === 'google_review' ? 'Reseñas de Google' : 'Comentarios de Facebook') + ': ' + (g.category === 'gratitude' ? 'agradecimientos y comentarios positivos' : 'preguntas sobre tu negocio con datos que confirmaste')) + '</li>';
         }).join('') + '</ul>' +
           '<p>Nunca responderá quejas, descuentos, acusaciones ni temas delicados sin ti. Puedes apagarlo cuando quieras y verás cada respuesta en tu historial.</p>' +
-          '<label class="check" style="margin-top:12px"><input type="checkbox" id="pol-consent"><span>Lo autorizo para ' + MS.esc(MS.DATA.business) + '</span></label>' +
+          origins.map(function (o) {
+            return '<p class="small" style="margin-top:10px"><strong>Condiciones · ' + (o === 'google_review' ? 'Reseñas de Google' : 'Comentarios de Facebook') + '</strong></p>' +
+              '<blockquote class="consent-terms" data-consent-version="' + MS.esc(terms[o].version) + '">' + MS.esc(terms[o].text) + '</blockquote>';
+          }).join('') +
+          '<label class="check" style="margin-top:12px"><input type="checkbox" id="pol-consent"><span>Acepto estas condiciones y lo autorizo para ' + MS.esc(MS.DATA.business) + '</span></label>' +
           '<p class="field-error" id="pol-consent-err" hidden>' + MS.icon('circle-alert') + '<span>Marca la casilla para autorizarlo.</span></p>' + UI.note('En los canales conectados, las respuestas autorizadas serán públicas. Los canales en modo simulado no publican fuera de MainSpot.'),
         actions: [
           { label: 'Autorizar y guardar', style: 'primary', keepOpen: true, fn: function () {
@@ -495,6 +504,31 @@
             UI.closeSheet(true); save();
           } },
           { label: 'Cancelar', style: 'secondary' }]
+      });
+    },
+    /* SEC-CONSENT-01: aceptar las condiciones vigentes para respuestas automáticas autorizadas antes de la cuota compartida. */
+    'pol-reconsent': function () {
+      var t = (MS.S.agent.consentTerms || {}).google_review;
+      if (!t) { toast('No pudimos cargar las condiciones. Recarga la página.', 'info'); return; }
+      UI.sheet({
+        title: 'Actualiza tu autorización de respuestas automáticas',
+        html: '<p>Las respuestas automáticas a reseñas de Google que redacta la IA ahora usan las <strong>respuestas con IA de tu plan</strong>, la misma bolsa que «Redactar con IA», y pueden agotarla antes de que se renueve.</p>' +
+          '<p>Mientras no aceptes, MainSpot sigue respondiendo esas reseñas con un texto seguro <strong>sin IA</strong> y no usa tus respuestas con IA.</p>' +
+          '<p class="small" style="margin-top:10px"><strong>Condiciones · Reseñas de Google</strong></p>' +
+          '<blockquote class="consent-terms" id="reconsent-terms" data-consent-version="' + MS.esc(t.version) + '">' + MS.esc(t.text) + '</blockquote>' +
+          '<label class="check" style="margin-top:12px"><input type="checkbox" id="reconsent-check"><span>Acepto estas condiciones para ' + MS.esc(MS.DATA.business) + '</span></label>' +
+          '<p class="field-error" id="reconsent-err" hidden>' + MS.icon('circle-alert') + '<span>Marca la casilla para aceptarlas.</span></p>' +
+          UI.note('Si prefieres revisar cada respuesta, apaga las respuestas automáticas en «Qué puede responder MainSpot por mí».'),
+        actions: [
+          { label: 'Aceptar condiciones', style: 'primary', keepOpen: true, fn: function () {
+            var cb = document.getElementById('reconsent-check');
+            if (!cb || !cb.checked) { document.getElementById('reconsent-err').hidden = false; if (cb) cb.focus(); return; }
+            UI.closeSheet(true);
+            MS.agent.reconsent(t.version).then(function (r) {
+              toast(r.ok ? 'Guardamos tu autorización con las condiciones vigentes' : r.message, r.ok ? 'circle-check' : 'info');
+            });
+          } },
+          { label: 'Ahora no', style: 'secondary' }]
       });
     }
   });

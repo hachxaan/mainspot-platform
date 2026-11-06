@@ -88,12 +88,20 @@ export class GoogleContentRetention {
                 published_text = CASE WHEN reply_origin = 'mainspot' THEN published_text ELSE NULL END,
                 content_purged_at = now(), updated_at = now()
           WHERE tenant_id = $1 AND content_purged_at IS NULL AND source_review_id LIKE $3 AND created_at < now() - $2::interval`, params);
-      const cases = await client.query(
-        `UPDATE engagement_case SET body = $4, author_label = $5, drafts = '[]'::jsonb,
+      // `ai_draft` y las instantáneas de los avisos de Telegram (0037) son copias de propuestas con el nombre del
+      // reseñante: se vacían con el caso (la huella de las opciones mostradas se conserva).
+      const cases = await client.query<{ case_id: string }>(
+        `UPDATE engagement_case SET body = $4, author_label = $5, drafts = '[]'::jsonb, ai_draft = NULL,
                 response_text = CASE WHEN state = 'responded' THEN response_text ELSE NULL END,
                 state = CASE WHEN state IN ('responded','rejected','closed_elsewhere') THEN state ELSE 'closed_elsewhere' END,
                 content_purged_at = now(), updated_at = now()
-          WHERE tenant_id = $1 AND content_purged_at IS NULL AND origin = 'google_review' AND external_ref LIKE $3 AND created_at < now() - $2::interval`, params);
+          WHERE tenant_id = $1 AND content_purged_at IS NULL AND origin = 'google_review' AND external_ref LIKE $3 AND created_at < now() - $2::interval
+          RETURNING case_id`, params);
+      if (cases.rowCount) {
+        await client.query(
+          `UPDATE engagement_approval_offer SET options = '[]'::jsonb, status = 'purged'
+            WHERE tenant_id = $1 AND case_id = ANY($2::text[]) AND status <> 'purged'`, [tenantId, cases.rows.map((r) => r.case_id)]);
+      }
       // Borrar también los nombres y borradores copiados a propuestas y conversaciones.
       const expired = `SELECT proposal_id FROM review WHERE tenant_id = $1 AND source_review_id LIKE $3 AND created_at < now() - $2::interval`;
       await client.query(

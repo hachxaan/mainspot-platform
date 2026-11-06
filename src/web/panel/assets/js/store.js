@@ -393,7 +393,7 @@
     // Agente
     if (MS.agent) {
       S.cases = (R.cases || []).map(MS.agent.adapt);
-      MS.agent.derivePolicy(R.policies || []);
+      MS.agent.derivePolicy(R.policies || [], R.consentTerms || null);
       S.agent.lastCheck = MS.mem.lastPoll || Date.now();
     }
     S.aiReplies = R.aiReplies || null;
@@ -429,7 +429,8 @@
     gbp: function () { return API.get('/google/profile').then(function (r) { if (r.ok) MS.R.gbp = r.data; return r; }); },
     posts: function () { return API.get('/social/posts').then(function (r) { if (r.ok) MS.R.posts = r.data.posts; return r; }); },
     cases: function () { return API.get('/engagement/cases').then(function (r) { if (r.ok) MS.R.cases = r.data.cases; return r; }); },
-    policies: function () { return API.get('/engagement/policies').then(function (r) { if (r.ok) MS.R.policies = r.data.policies; return r; }); },
+    // SEC-CONSENT-01: los términos vigentes llegan con las políticas para mostrarlos literalmente antes de aceptar.
+    policies: function () { return API.get('/engagement/policies').then(function (r) { if (r.ok) { MS.R.policies = r.data.policies; MS.R.consentTerms = r.data.consent_terms; } return r; }); },
     aiReplies: function () {
       if (!MS.can('engagement.read')) return Promise.resolve({ ok: true });
       return API.get('/engagement/ai-replies').then(function (r) { if (r.ok) MS.R.aiReplies = r.data.ai_replies; return r; });

@@ -259,7 +259,23 @@
         });
       });
     },
-    /** Mensajes del chat simulado; los avisos de casos abiertos llevan botones (mismo case_id). */
+    /**
+     * Opciones numeradas tal como las muestra el aviso (texto del mensaje, no el estado actual del caso) y su código
+     * (SEC-TG-APPROVAL-01): confirmar envía /aprobar CÓDIGO N, que solo publica si el aviso sigue vigente.
+     */
+    notice: function (text) {
+      var lines = String(text || '').split('\n');
+      var code = /\/rechazar ([A-HJ-NP-Z2-9]{6})/.exec(text || '');
+      var options = [], cur = null;
+      lines.forEach(function (line) {
+        var mo = /^([1-3])\) ([\s\S]*)$/.exec(line);
+        if (mo) { cur = { n: Number(mo[1]), text: mo[2] }; options.push(cur); return; }
+        if (/^(Para publicar|Sin propuestas|Panel:)/.test(line)) { cur = null; return; }
+        if (cur) cur.text += '\n' + line;
+      });
+      return { code: code ? code[1] : null, options: options };
+    },
+    /** Mensajes del chat simulado; los avisos de casos abiertos llevan botones con el código de ESE aviso. */
     build: function (messages) {
       return (messages || []).map(function (m, i) {
         var out = { id: 'tg-' + i + '-' + m.at, from: m.from, text: m.text, at: MS.ts(m.at), actions: [] };
@@ -267,10 +283,10 @@
         if (mc) {
           var id = mc[1];
           var c = (S().cases || []).filter(function (x) { return x.id === id; })[0];
-          var n = (m.text.match(/^\d\) /gm) || []).length;
-          if (c && (c.status === 'needs_human' || c.status === 'failed') && MS.can('engagement.approve')) {
-            for (var k = 1; k <= n; k += 1) out.actions.push({ label: 'Usar opción ' + k, act: 'case-pick', arg: id + '|' + k });
-            out.actions.push({ label: 'No responder', act: 'case-reject', arg: id });
+          var notice = MS.tg.notice(m.text);
+          if (notice.code && c && (c.status === 'needs_human' || c.status === 'failed') && MS.can('engagement.approve')) {
+            notice.options.forEach(function (o) { out.actions.push({ label: 'Usar opción ' + o.n, act: 'case-pick', arg: notice.code + '|' + o.n, shown: o.text, source: c.source }); });
+            out.actions.push({ label: 'No responder', act: 'case-reject', arg: notice.code });
           }
           out.actions.push({ label: 'Ver en el panel', act: 'open', arg: '#/caso/' + id });
         }
@@ -284,10 +300,8 @@
       if (a.act === 'open') { location.hash = a.arg; return; }
       var parts = String(a.arg || '').split('|');
       if (a.act === 'case-pick') {
-        var c = MS.agent.get(parts[0]);
-        var d = c && c.drafts[Number(parts[1]) - 1];
-        // Segundo toque en Telegram antes de publicar (la decisión es de la persona).
-        MS.mem.local.tg = [{ id: localId('tgq'), from: 'bot', at: Date.now(), text: '¿Publico esta respuesta' + (c ? ' en ' + MS.agent.SRC[c.source].short : '') + '?\n«' + (d ? d.text : '') + '»', actions: [{ label: 'Sí, publicar', act: 'case-yes', arg: a.arg }, { label: 'Todavía no', act: 'case-no' }] }];
+        // Segundo toque en Telegram antes de publicar (la decisión es de la persona), con el texto que mostró el aviso.
+        MS.mem.local.tg = [{ id: localId('tgq'), from: 'bot', at: Date.now(), text: '¿Publico esta respuesta' + (a.source ? ' en ' + MS.agent.SRC[a.source].short : '') + '?\n«' + (a.shown || '') + '»', actions: [{ label: 'Sí, publicar', act: 'case-yes', arg: a.arg }, { label: 'Todavía no', act: 'case-no' }] }];
         MS.emit();
         return;
       }

@@ -17,6 +17,8 @@ import { createTenantWithPlan, countRows, failAuditFor, type TestTenant as Tenan
 import { createPublishedPlan, setTenantPlan } from '../helpers/plans.ts';
 import { EngagementService, aiReplyQuotaKey, type CaseRow } from '../../src/engagement/service.ts';
 import type { EngagementSemantics } from '../../src/engagement/ai-semantics.ts';
+import { AUTO_REPLY_CONSENT } from '../../src/engagement/consent.ts';
+import type { SimulatedChannel } from '../../src/channels/simulated.ts';
 
 const WEBHOOK_SECRET = 'test-telegram-webhook-secret-commercial-quota';
 const WEBHOOK_HEADERS = { 'Content-Type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': WEBHOOK_SECRET };
@@ -37,13 +39,22 @@ after(async () => {
 type HttpReply = { status: number; body: any };
 
 /** Vincula un chat de Telegram (simulado) a la persona del negocio y devuelve cómo escribir por ese chat. */
-async function linkTelegram(a: { token: string }): Promise<(text: string) => Promise<HttpReply>> {
+async function linkTelegram(a: { token: string }): Promise<((text: string) => Promise<HttpReply>) & { chat: number }> {
   const chat = 710000000 + Math.floor(Math.random() * 1e6);
   const code = await call(a.token, '/telegram/link-code', 'POST');
   assert.equal(code.status, 201);
   const hook = (text: string) => api(t.baseUrl, '/api/telegram/webhook', { method: 'POST', headers: WEBHOOK_HEADERS, body: JSON.stringify({ update_id: nextUpdateId++, message: { chat: { id: chat }, text } }) });
   assert.equal((await hook(`/start ${code.body.code}`)).body.handled, 'linked');
-  return hook;
+  return Object.assign(hook, { chat });
+}
+
+/** Último aviso de Telegram que recibió ese chat para el caso, tal como lo vio la persona, y su código. */
+function lastNotice(chat: number, caseId: string): { text: string; code: string } {
+  const sent = (t.handle.channel as SimulatedChannel).transcript().filter((m) => m.to === String(chat) && m.text.includes(`Caso: ${caseId}`));
+  const text = sent.at(-1)?.text ?? '';
+  const code = /\/rechazar ([A-HJ-NP-Z2-9]{6})/.exec(text)?.[1];
+  assert.ok(code, `el chat recibió un aviso con código para ${caseId}`);
+  return { text, code };
 }
 
 const call = (token: string, path: string, method = 'GET', body?: unknown) =>
@@ -194,7 +205,8 @@ test('AC02/AC03/AC05: «Redactar con IA» consume exactamente 1 por caso; repeti
   const manual = await call(a.token, `/engagement/cases/${c3.case_id}/approve`, 'POST', { text: 'Gracias por tu visita, Ana. Tomamos nota para mejorar la espera.' });
   assert.equal(manual.body.case.state, 'responded');
   const hook = await linkTelegram(a);
-  assert.equal((await hook(`/aprobar ${c4.case_id} 1`)).body.handled, 'approved');
+  await run(a); // el chat recién vinculado recibe el aviso pendiente de c4
+  assert.equal((await hook(`/aprobar ${lastNotice(hook.chat, c4.case_id).code} 1`)).body.handled, 'approved');
   assert.equal((await caseOf(a, c4.external_ref)).state, 'responded');
   assert.deepEqual(await ledger(a), { committed: 2, reserved: 0, rows: 2 }, 'ni aprobar ni responder a mano consumen');
 
@@ -225,22 +237,30 @@ test('AC03: concurrencia — 8 peticiones simultáneas sobre 8 casos con límite
   assert.deepEqual(await ledger(b), { committed: 1, reserved: 0, rows: 1 });
 });
 
-test('La propuesta con IA va aparte: /aprobar N por Telegram publica la opción N del aviso; editar una opción numerada no la borra', async () => {
+test('La propuesta con IA va aparte: el aviso numera solo las 3 opciones; editar una invalida el aviso anterior y /aprobar <código nuevo> 1 publica la opción 1 mostrada, nunca la propuesta de IA', async () => {
   const a = await newTenant(2, 'client_cqg');
   const hook = await linkTelegram(a);
   const [c] = await humanCases(a, 1) as [CaseRow];
   const notified = await countRows(t, `SELECT count(*) AS n FROM engagement_notification WHERE case_id = $1 AND status = 'sent'`, [c.case_id]);
   assert.equal(notified, 1, 'el aviso con las tres opciones numeradas ya salió');
+  const shown = lastNotice(hook.chat, c.case_id);
   const drafted = await aiDraft(a, c.case_id);
   assert.equal(drafted.status, 201);
   const aiText = (drafted.body.case as CaseRow).ai_draft;
   assert.ok(aiText);
+  assert.equal((drafted.body.case as CaseRow).drafts_revision, c.drafts_revision, 'la propuesta de IA no cambia las opciones numeradas del aviso');
   // Una edición de la opción 2 posterior a la redacción no toca la propuesta de IA (ni la cobrada vuelve a cobrarse).
   const edited = await call(a.token, `/engagement/cases/${c.case_id}/drafts/2`, 'POST', { text: 'Gracias por escribirnos; hoy mismo lo revisamos.' });
   assert.equal(edited.status, 200);
   assert.deepEqual([(edited.body.case as CaseRow).ai_draft, (edited.body.case as CaseRow).drafts[0]], [aiText, c.drafts[0]]);
-  // /aprobar 1 publica la opción 1 que mostró el aviso, no la propuesta de IA.
-  assert.equal((await hook(`/aprobar ${c.case_id} 1`)).body.handled, 'approved');
+  // SEC-TG-APPROVAL-01: el aviso anterior a la edición ya no publica nada; llega el aviso vigente con otro código.
+  assert.equal((await hook(`/aprobar ${shown.code} 1`)).body.handled, 'approval_stale');
+  assert.equal((await caseOf(a, c.external_ref)).state, 'needs_human');
+  const fresh = lastNotice(hook.chat, c.case_id);
+  assert.notEqual(fresh.code, shown.code);
+  assert.ok(!fresh.text.includes(aiText), 'la propuesta de IA no aparece en el aviso numerado');
+  // /aprobar <nuevo> 1 publica la opción 1 que mostró el aviso vigente, no la propuesta de IA.
+  assert.equal((await hook(`/aprobar ${fresh.code} 1`)).body.handled, 'approved');
   const after = await caseOf(a, c.external_ref);
   assert.deepEqual([after.state, after.response_text], ['responded', c.drafts[0]]);
   assert.deepEqual(await ledger(a), { committed: 1, reserved: 0, rows: 1 });
@@ -366,7 +386,7 @@ async function receivedCase(service: EngagementService, tenant: string): Promise
 
 test('Respuesta automática autorizada: la redactada con IA consume 1 con el caso; agotada, sale el texto seguro sin IA, sin invocar ni cobrar', async () => {
   const a = await newTenant(1, 'client_cqd');
-  assert.equal((await call(a.token, '/engagement/policies', 'PUT', { origin: 'google_review', category: 'gratitude', mode: 'safe_auto_reply', consent: true })).status, 200);
+  assert.equal((await call(a.token, '/engagement/policies', 'PUT', { origin: 'google_review', category: 'gratitude', mode: 'safe_auto_reply', consent: true, consent_version: AUTO_REPLY_CONSENT.google_review.version })).status, 200);
   const stub = stubSemantics();
   const service = new EngagementService({ ...t.handle.engagement.deps, semantics: stub });
 
@@ -387,7 +407,7 @@ test('Respuesta automática autorizada: la redactada con IA consume 1 con el cas
 
 test('Respuesta automática: dos clasificaciones simultáneas del mismo caso consumen como máximo 1; si la IA falla, se libera y sale el texto seguro', async () => {
   const a = await newTenant(5, 'client_cqf');
-  assert.equal((await call(a.token, '/engagement/policies', 'PUT', { origin: 'google_review', category: 'gratitude', mode: 'safe_auto_reply', consent: true })).status, 200);
+  assert.equal((await call(a.token, '/engagement/policies', 'PUT', { origin: 'google_review', category: 'gratitude', mode: 'safe_auto_reply', consent: true, consent_version: AUTO_REPLY_CONSENT.google_review.version })).status, 200);
   const service = new EngagementService({ ...t.handle.engagement.deps, semantics: stubSemantics() });
   const row = await receivedCase(service, a.tenant);
   const outcomes = await Promise.all([service.classifyCase(row), service.classifyCase(row), service.classifyCase(row)]);

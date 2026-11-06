@@ -4,9 +4,11 @@
  * - Vínculo: la persona genera un código de un solo uso (10 min) en el panel y lo envía al bot
  *   con `/start CÓDIGO`. El chat queda ligado a ESA persona y tenant. Nunca se usa el teléfono
  *   público del negocio como destino.
- * - Decisiones: `/aprobar <case_id> <1-3>` y `/rechazar <case_id>` llaman al MISMO servicio que el
- *   panel (mismo caso, misma resolución, mismos permisos RBAC). Un chat no vinculado no cambia
- *   nada. El webhook acepta la forma de un Update de Telegram (real o simulado).
+ * - Decisiones: `/aprobar <código> <1-3>` y `/rechazar <código>`. El código es el de UN aviso concreto
+ *   (SEC-TG-APPROVAL-01, DEC-0077): aprobar publica exactamente la opción que ese aviso mostró y solo si las
+ *   propuestas no cambiaron desde entonces; si cambiaron, no se publica nada y llega un aviso nuevo con otro código.
+ *   Mismos permisos RBAC que el panel; un código de otro chat, persona o negocio se trata igual que uno inexistente.
+ *   Un chat no vinculado no cambia nada. El webhook acepta la forma de un Update de Telegram (real o simulado).
  * - Reentregas: un Update con `update_id` se reclama en `telegram_update` antes de actuar, así la
  *   misma entrega repetida o concurrente no responde ni decide dos veces (ver handleUpdate).
  */
@@ -18,7 +20,12 @@ import type { ChannelAdapter } from '../channels/types.ts';
 import type { RoleName } from '../identity/entities.ts';
 import { MATRIX, type ActionName } from '../rbac/matrix.ts';
 import { AppError } from '../shared/errors.ts';
+import { parseNoticeCode } from './notice-offer.ts';
 import type { EngagementService } from './service.ts';
+
+/** Identificador de caso de los avisos anteriores a los códigos (`/aprobar <case_id> N`). */
+const CASE_ID_RE = /^case_[0-9a-f]{32}$/;
+const INVALID_NOTICE = 'Ese código no corresponde a un aviso vigente de este chat. Usa el código del aviso más reciente o resuelve el caso en tu panel.';
 
 export const LINK_CODE_TTL_MINUTES = 10;
 /** Segundos tras los que un update «en curso» se da por abandonado (proceso caído) y puede reclamarse de nuevo. */
@@ -175,7 +182,7 @@ export class TelegramLinkService {
       return { handled: 'unlinked_chat' };
     }
     if (command !== '/aprobar' && command !== '/rechazar') {
-      await this.reply(chatId, 'Comandos disponibles: /aprobar <caso> <1-3> · /rechazar <caso>. También puedes resolver los casos en tu panel.');
+      await this.reply(chatId, 'Comandos disponibles: /aprobar <código> <1-3> · /rechazar <código> (el código viene en cada aviso). También puedes resolver los casos en tu panel.');
       return { handled: 'help' };
     }
     const roleRes = await this.pool.query<{ role_id: RoleName }>(
@@ -191,20 +198,49 @@ export class TelegramLinkService {
       return { handled: 'permission_denied' };
     }
     const actor = { tenantId: linked.tenant_id, userId: linked.user_id, role, requestId };
-    const caseId = args[0] ?? '';
+    const ref = args[0] ?? '';
+    const code = parseNoticeCode(ref);
     try {
+      if (!code) {
+        // Mensajes anteriores a los códigos (`<case_id>`) u otra referencia: nunca se publica ni descarta nada. Si es un
+        // caso pendiente de ESTE negocio, se le envía su aviso vigente; la respuesta es la misma en todos los casos.
+        await this.sink.write({
+          tenant_id: actor.tenantId, actor_id: actor.userId, actor_role: role, action: 'engagement.approval.ref_invalid',
+          resource: 'telegram:engagement', request_id: requestId, decision: 'deny', result: 'legacy_or_unknown_reference',
+        }).catch(() => undefined);
+        await this.reply(chatId, 'Usa el código que trae cada aviso: /aprobar CÓDIGO 1 (o 2, 3) · /rechazar CÓDIGO. Si el caso sigue pendiente, te enviamos su aviso vigente; también puedes resolverlo en tu panel.');
+        if (CASE_ID_RE.test(ref)) await this.engagement.sendNoticeTo(actor, chatId, ref);
+        return { handled: 'approval_ref_invalid' };
+      }
       if (command === '/rechazar') {
-        const r = await this.engagement.reject(actor, caseId, 'telegram');
+        const r = await this.engagement.rejectFromNotice(actor, chatId, code);
+        if (!r) {
+          await this.reply(chatId, INVALID_NOTICE);
+          return { handled: 'approval_ref_invalid' };
+        }
         await this.reply(chatId, r.already ? 'Ese caso ya estaba descartado.' : 'Listo: descartamos la respuesta. El caso queda registrado.');
         return { handled: r.already ? 'reject_repeat' : 'rejected' };
       }
-      const index = Number(args[1] ?? '1') - 1;
-      const r = await this.engagement.approve(actor, caseId, { draft_index: index }, 'telegram');
-      if (r.already) {
+      const option = Number(args[1]);
+      if (!Number.isInteger(option) || option < 1 || option > 3) {
+        await this.reply(chatId, `Indica el número de la opción que quieres publicar: /aprobar ${code} 1 (o 2, 3).`);
+        return { handled: 'approval_option_missing' };
+      }
+      const r = await this.engagement.approveFromNotice(actor, chatId, code, option);
+      if (r.kind === 'invalid') {
+        await this.reply(chatId, INVALID_NOTICE);
+        return { handled: 'approval_ref_invalid' };
+      }
+      if (r.kind === 'already') {
         await this.reply(chatId, 'Ya habías aprobado este caso. No se publicará dos veces.');
         return { handled: 'approve_repeat' };
       }
-      const done = await this.engagement.respondCase(caseId);
+      if (r.kind === 'stale') {
+        await this.reply(chatId, `Las propuestas de ese aviso cambiaron después de enviártelo, así que no publicamos la opción ${option}. Te enviamos el aviso actualizado: revisa las opciones y confirma con su código nuevo.`);
+        await this.engagement.sendNoticeTo(actor, chatId, r.case.case_id);
+        return { handled: 'approval_stale' };
+      }
+      const done = await this.engagement.respondCase(r.case.case_id);
       await this.reply(chatId, done?.state === 'responded'
         ? `Respuesta publicada (${done.delivery_mode === 'simulated' ? 'simulación' : 'proveedor'}).`
         : 'Aprobado. Publicaremos la respuesta en cuanto el proveedor responda; te avisamos si falla.');
