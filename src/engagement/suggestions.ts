@@ -72,11 +72,21 @@ const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 const MENTION_OR_TAG = /[@#][\p{L}\p{N}_.]+/gu;
 const SCHEME_OR_WWW = /https?:\/\/[\p{L}\p{N}]|(?<![\p{L}\p{N}])www\.[\p{L}\p{N}]/iu;
 /**
- * Dominio sin esquema: etiquetas y un dominio de primer nivel habitual, en minúsculas y sin letras pegadas antes ni
- * después. Así cuentan «ganafacil.com», «wa.me» o «bit.ly/x», pero no un punto sin espacio entre frases
- * («servicio.Calidad/precio», «atención.Me encantó»), números («3.50») ni el dominio de un correo.
+ * Dominios de primer nivel habituales en comentarios: genéricos, los de acortadores y perfiles («youtu.be», «linktr.ee»,
+ * «amzn.to», «forms.gle», «shorturl.at», «lnkd.in», «wa.me») y los de la región. No incluye `de`, que en español sigue
+ * a un punto sin espacio con frecuencia.
  */
-const BARE_DOMAIN = /(?<![\p{L}\p{N}_@.-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+(?:com|net|org|info|biz|io|co|me|ly|gl|gg|app|dev|site|online|shop|store|link|xyz|top|club|live|website|page|mx|es|ar|cl|pe|us)(?![\p{L}\p{N}_-])/u;
+const COMMON_TLDS = ['com', 'net', 'org', 'info', 'biz', 'io', 'co', 'me', 'ly', 'gl', 'gle', 'gd', 'gg', 'be', 'ee', 'to', 'at',
+  'in', 'it', 'fr', 'uk', 'eu', 'ca', 'br', 'ru', 'cn', 'ai', 'tv', 'cc', 'fm', 'am', 'sh', 'so', 'ws', 'tk', 'app', 'dev', 'site',
+  'online', 'shop', 'store', 'link', 'xyz', 'top', 'club', 'live', 'website', 'page', 'mx', 'es', 'ar', 'cl', 'pe', 'us'];
+/**
+ * Dominio sin esquema: etiquetas sin letras pegadas delante (ni el dominio de un correo) y un dominio de primer nivel
+ * habitual todo en minúsculas o todo en mayúsculas, sin letras pegadas detrás; puede seguir una ruta. Así cuentan
+ * «ganafacil.com», «GANAFACIL.COM», «wa.me» o «youtu.be/x», pero no un punto sin espacio entre frases con mayúscula
+ * («servicio.Calidad/precio», «atención.Me encantó»), «servicio.calidad/precio», números («3.50») ni un correo.
+ */
+const BARE_DOMAIN = new RegExp(String.raw`(?<![\p{L}\p{N}_@.-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+(?:`
+  + [...COMMON_TLDS, ...COMMON_TLDS.map((tld) => tld.toUpperCase())].join('|') + String.raw`)(?![\p{L}\p{N}_-])`, 'u');
 
 /**
  * Filtros deterministas previos al gasto automático (FB-2): un comentario sin letras ni números (solo emojis o signos),
