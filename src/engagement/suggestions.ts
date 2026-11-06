@@ -70,16 +70,23 @@ export type IrrelevanceReason = 'no_text' | 'mention_only' | 'link' | 'duplicate
 
 const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 const MENTION_OR_TAG = /[@#][\p{L}\p{N}_.]+/gu;
-const LINK = /(?:https?:\/\/|www\.)\S+|\b[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.[a-z]{2,}\/\S*/iu;
+const SCHEME_OR_WWW = /https?:\/\/[\p{L}\p{N}]|(?<![\p{L}\p{N}])www\.[\p{L}\p{N}]/iu;
+/**
+ * Dominio sin esquema: etiquetas y un dominio de primer nivel habitual, en minúsculas y sin letras pegadas antes ni
+ * después. Así cuentan «ganafacil.com», «wa.me» o «bit.ly/x», pero no un punto sin espacio entre frases
+ * («servicio.Calidad/precio», «atención.Me encantó»), números («3.50») ni el dominio de un correo.
+ */
+const BARE_DOMAIN = /(?<![\p{L}\p{N}_@.-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+(?:com|net|org|info|biz|io|co|me|ly|gl|gg|app|dev|site|online|shop|store|link|xyz|top|club|live|website|page|mx|es|ar|cl|pe|us)(?![\p{L}\p{N}_-])/u;
 
 /**
  * Filtros deterministas previos al gasto automático (FB-2): un comentario sin letras ni números (solo emojis o signos),
  * hecho solo de menciones o etiquetas, o con un enlace (patrón habitual de spam) no se redacta con IA por sí solo.
- * Una persona siempre puede pedir la sugerencia a mano. Los duplicados se comprueban en la BD (`EngagementService`).
+ * Es una heurística: una persona siempre puede pedir la sugerencia a mano. Los duplicados se comprueban en la BD
+ * (`EngagementService`).
  */
 export function textRelevance(body: string): Exclude<IrrelevanceReason, 'duplicate'> | null {
   if (!LETTER_OR_DIGIT.test(body)) return 'no_text';
-  if (LINK.test(body)) return 'link';
+  if (SCHEME_OR_WWW.test(body) || BARE_DOMAIN.test(body)) return 'link';
   if (!LETTER_OR_DIGIT.test(body.replace(MENTION_OR_TAG, ' '))) return 'mention_only';
   return null;
 }
