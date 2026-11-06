@@ -1,16 +1,19 @@
 /**
  * Mensajes de MainSpot en Telegram: tarjetas legibles con botones en línea.
  *
- * La persona solo escribe lenguaje natural; preparar la vista previa, publicar o descartar un cambio de la web, el
- * laboratorio y ver pendientes son botones. Cada botón lleva una acción compacta (`callback_data` ≤ 64 bytes) con el id
- * completo del objeto; quien la recibe vuelve a comprobar chat vinculado, negocio, persona, rol y estado (nunca confía
- * en el botón). Las respuestas públicas a clientes se deciden con el código de un aviso concreto (SEC-TG-APPROVAL-01,
- * `notice-offer.ts`), nunca con el id del caso. Todo dato variable (reseñas, resúmenes, borradores) se escapa: el texto
- * de un cliente nunca es HTML.
+ * La persona solo escribe lenguaje natural; preparar la vista previa, publicar o descartar un cambio de la web, elegir y
+ * publicar la respuesta a un cliente, no responder, el laboratorio y ver pendientes son botones. Cada botón lleva una
+ * acción compacta (`callback_data` ≤ 64 bytes); quien la recibe vuelve a comprobar chat vinculado, negocio, persona, rol
+ * y estado (nunca confía en el botón). Los botones de una respuesta pública llevan el código de UN aviso y el número de
+ * opción que ese aviso mostró (SEC-TG-APPROVAL-01, `notice-offer.ts`), nunca el id del caso; publicar o programar una
+ * publicación de Facebook lleva la huella del contenido que mostró su tarjeta. Todo dato variable (reseñas, resúmenes,
+ * borradores) se escapa: el texto de un cliente nunca es HTML.
  */
 
+import { createHash } from 'node:crypto';
 import { escapeHtml as esc, MAX_ACTION_BYTES, type ChannelButton, type OutgoingMessage } from '../channels/types.ts';
 import type { ActionProposalRow } from '../conversation/repositories.ts';
+import { NOTICE_CODE_RE } from './notice-offer.ts';
 import type { CaseRow } from './service.ts';
 import type { SocialPostRow } from '../social/service.ts';
 
@@ -19,11 +22,20 @@ import type { SocialPostRow } from '../social/service.ts';
 export type TelegramAction =
   | { kind: 'proposal'; op: 'confirm' | 'publish' | 'discard' | 'view'; id: string }
   | { kind: 'case'; op: 'view'; id: string }
+  /** Aviso de un caso: su código y el número de opción (1-3) que mostró; nunca el id del caso. */
+  | { kind: 'notice'; op: 'pick'; code: string; option: number }
+  | { kind: 'notice'; op: 'approve'; code: string; option: number }
+  | { kind: 'notice'; op: 'back'; code: string }
+  | { kind: 'notice'; op: 'reject'; code: string }
   | { kind: 'lab'; on: boolean }
   | { kind: 'pending' }
   /** Publicación de Facebook: ofrecer (id = solicitud del chat), elegir variante (id = job), decidir (id = post). */
   | { kind: 'social'; op: 'offer'; id: string; image: boolean }
-  | { kind: 'social'; op: 'decline' | 'drop' | 'publish' | 'schedule' | 'discard'; id: string }
+  | { kind: 'social'; op: 'decline'; id: string }
+  | { kind: 'social'; op: 'drop'; id: string }
+  | { kind: 'social'; op: 'discard'; id: string }
+  /** `ref`: huella de lo que mostró la tarjeta (`postShownRef`); vacía en botones anteriores, que nunca coincide. */
+  | { kind: 'social'; op: 'publish' | 'schedule'; id: string; ref: string }
   | { kind: 'social'; op: 'pick'; id: string; variant: number }
   | { kind: 'social'; op: 'hint' };
 
@@ -35,8 +47,11 @@ export type TelegramAction =
 export interface LegacyCaseButton { kind: 'legacy_case'; id: string }
 
 const PROPOSAL_OPS = { pc: 'confirm', pp: 'publish', pd: 'discard', pv: 'view' } as const;
+const NOTICE_OPS = { np: 'pick', na: 'approve', nb: 'back', nr: 'reject' } as const;
 const SOCIAL_OPS = { sn: 'decline', sx: 'drop', sp: 'publish', ss: 'schedule', sd: 'discard' } as const;
 const ID = '[A-Za-z0-9_-]{1,56}';
+const CODE = NOTICE_CODE_RE.source.replace(/^\^|\$$/g, '');
+const REF = '[0-9a-f]{12}';
 
 function prefixOf<T extends Record<string, string>>(map: T, op: string): string {
   return Object.keys(map).find((k) => map[k] === op) ?? '';
@@ -46,11 +61,12 @@ export function encodeAction(a: TelegramAction): string {
   let data: string;
   if (a.kind === 'proposal') data = `${prefixOf(PROPOSAL_OPS, a.op)}:${a.id}`;
   else if (a.kind === 'case') data = `cv:${a.id}`;
+  else if (a.kind === 'notice') data = `${prefixOf(NOTICE_OPS, a.op)}:${a.code}${'option' in a ? `:${a.option}` : ''}`;
   else if (a.kind === 'lab') data = a.on ? 'lab:on' : 'lab:off';
   else if (a.kind === 'social' && a.op === 'offer') data = `${a.image ? 'si' : 'so'}:${a.id}`;
   else if (a.kind === 'social' && a.op === 'pick') data = `sv:${a.id}:${a.variant}`;
   else if (a.kind === 'social' && a.op === 'hint') data = 'sh';
-  else if (a.kind === 'social') data = `${prefixOf(SOCIAL_OPS, a.op)}:${a.id}`;
+  else if (a.kind === 'social') data = `${prefixOf(SOCIAL_OPS, a.op)}:${a.id}${'ref' in a ? `:${a.ref}` : ''}`;
   else data = 'pend';
   if (Buffer.byteLength(data) > MAX_ACTION_BYTES) throw new Error(`telegram action too long (${data.length})`);
   return data;
@@ -65,14 +81,20 @@ export function parseAction(data: string): TelegramAction | LegacyCaseButton | n
   if (m) return { kind: 'proposal', op: PROPOSAL_OPS[m[1] as keyof typeof PROPOSAL_OPS], id: m[2]! };
   m = new RegExp(`^cv:(${ID})$`).exec(data);
   if (m) return { kind: 'case', op: 'view', id: m[1]! };
+  m = new RegExp(`^(np|na):(${CODE}):([1-3])$`).exec(data);
+  if (m) return { kind: 'notice', op: m[1] === 'np' ? 'pick' : 'approve', code: m[2]!, option: Number(m[3]) };
+  m = new RegExp(`^(nb|nr):(${CODE})$`).exec(data);
+  if (m) return { kind: 'notice', op: m[1] === 'nb' ? 'back' : 'reject', code: m[2]! };
   m = new RegExp(`^(?:(?:cs|ca):(${ID}):[0-2]|(?:cb|cr):(${ID}))$`).exec(data);
   if (m) return { kind: 'legacy_case', id: (m[1] ?? m[2])! };
   m = new RegExp(`^(so|si):(${ID})$`).exec(data);
   if (m) return { kind: 'social', op: 'offer', id: m[2]!, image: m[1] === 'si' };
   m = new RegExp(`^sv:(${ID}):([0-4])$`).exec(data);
   if (m) return { kind: 'social', op: 'pick', id: m[1]!, variant: Number(m[2]) };
-  m = new RegExp(`^(sn|sx|sp|ss|sd):(${ID})$`).exec(data);
-  if (m) return { kind: 'social', op: SOCIAL_OPS[m[1] as keyof typeof SOCIAL_OPS], id: m[2]! };
+  m = new RegExp(`^(sp|ss):(${ID})(?::(${REF}))?$`).exec(data);
+  if (m) return { kind: 'social', op: m[1] === 'sp' ? 'publish' : 'schedule', id: m[2]!, ref: m[3] ?? '' };
+  m = new RegExp(`^(sn|sx|sd):(${ID})$`).exec(data);
+  if (m) return { kind: 'social', op: SOCIAL_OPS[m[1] as keyof typeof SOCIAL_OPS] as 'decline' | 'drop' | 'discard', id: m[2]! };
   return null;
 }
 
@@ -185,6 +207,12 @@ function stars(rating: number | null): string {
   return `${'★'.repeat(rating)}${'☆'.repeat(5 - rating)} `;
 }
 
+function simulatedNote(c: CaseRow, simulated: boolean): string {
+  if (!simulated) return '';
+  const o = caseOrigin(c);
+  return `\n\n🧪 <i>${o.kind} simulada (desarrollo): responder no publica nada en ${o.provider}.</i>`;
+}
+
 function caseHeader(c: CaseRow): string {
   const o = caseOrigin(c);
   return `${stars(c.rating)}<b>${o.title}</b> · ${esc(clip(c.author_label, 60))}\n<blockquote>${esc(clip(c.body, 300))}</blockquote>`;
@@ -192,6 +220,38 @@ function caseHeader(c: CaseRow): string {
 
 /** Contexto de las tarjetas de casos: si las respuestas son simuladas y dónde está el panel. */
 export interface CaseContext { simulated: boolean; panelUrl: string }
+
+/**
+ * Aviso de un caso (SEC-TG-APPROVAL-01): el texto del aviso (`EngagementService.notificationText`: código al final de
+ * la primera línea, texto de terceros aplanado, las opciones de la instantánea y los comandos con el código) escapado, y
+ * botones con el CÓDIGO de ESE aviso y el número de opción, nunca el id del caso: solo deciden lo que este aviso mostró.
+ */
+export function noticeMessage(c: CaseRow, text: string, notice: { code: string; options: readonly string[] }, ctx: CaseContext): OutgoingMessage {
+  const [first = '', ...rest] = text.split('\n');
+  const usable = notice.options.flatMap((o, i) => (o.trim() ? [i + 1] : []));
+  return {
+    html: `<b>${esc(first)}</b>\n${esc(rest.join('\n'))}${simulatedNote(c, ctx.simulated)}`,
+    buttons: [
+      ...usable.map((option) => [button(usable.length === 1 ? '✍️ Usar esta respuesta' : `✍️ Usar la respuesta ${option}`, { kind: 'notice', op: 'pick', code: notice.code, option })]),
+      [button('🙅 No responder', { kind: 'notice', op: 'reject', code: notice.code })],
+    ],
+  };
+}
+
+/**
+ * Segundo toque antes de una respuesta pública: la opción N de ESE aviso, completa y tal como la guarda su instantánea
+ * (es lo que se publicará), con publicarla o volver al aviso.
+ */
+export function noticeConfirmMessage(c: CaseRow, notice: { code: string; option: number; text: string }, ctx: CaseContext): OutgoingMessage {
+  const o = caseOrigin(c);
+  return {
+    html: `${caseHeader(c)}\n✍️ <b>Vas a responder públicamente en ${o.provider}</b> (opción ${notice.option} del aviso ${notice.code}):\n<blockquote>${esc(notice.text)}</blockquote>${simulatedNote(c, ctx.simulated)}`,
+    buttons: [
+      [button('✅ Publicar esta respuesta', { kind: 'notice', op: 'approve', code: notice.code, option: notice.option })],
+      [button('↩️ Elegir otra', { kind: 'notice', op: 'back', code: notice.code })],
+    ],
+  };
+}
 
 /** Caso ya decidido: qué pasó (sin botones). */
 export function caseResolvedMessage(c: CaseRow, ctx: CaseContext): OutgoingMessage {
@@ -323,19 +383,29 @@ function postUrl(externalRef: string | null): string | null {
   return m ? `https://www.facebook.com/${m[1]}/posts/${m[2]}` : null;
 }
 
+/**
+ * Huella de lo que muestra la tarjeta de una publicación en borrador (texto completo, imagen, Página y, para programar,
+ * la hora sugerida mostrada): los botones de publicar y programar la llevan y la pulsación solo actúa si todo eso sigue
+ * siendo exactamente igual.
+ */
+export function postShownRef(post: Pick<SocialPostRow, 'text' | 'media_asset_id' | 'image_url'>, pageName: string | null, slotLocal: string | null = null): string {
+  return createHash('sha256').update(JSON.stringify([post.text, post.media_asset_id ?? null, post.image_url ?? null, pageName, slotLocal]), 'utf8').digest('hex').slice(0, 12);
+}
+
 /** Tarjeta de una publicación según su estado: qué puede decidir la persona ahora o qué pasó. */
-export function socialPostMessage(post: SocialPostRow, ctx: SocialContext & { slotLabel: string | null; scheduledLabel: string | null }): OutgoingMessage {
+export function socialPostMessage(post: SocialPostRow, ctx: SocialContext & { slot: { local: string; label: string } | null; scheduledLabel: string | null }): OutgoingMessage {
   const text = `<blockquote>${esc(clip(post.text, 1500))}</blockquote>`;
   const image = post.media_asset_id ? '\n🖼 Con imagen.' : '';
   switch (post.status) {
     case 'draft': {
+      // Lo que se decide se muestra completo: los botones llevan la huella de este texto, imagen y hora.
       const rows: ChannelButton[][] = [];
       if (ctx.pageName) {
-        rows.push([button('🚀 Publicar ahora', { kind: 'social', op: 'publish', id: post.post_id })]);
-        if (ctx.slotLabel) rows.push([button(`🕘 Programar: ${ctx.slotLabel}`, { kind: 'social', op: 'schedule', id: post.post_id })]);
+        rows.push([button('🚀 Publicar ahora', { kind: 'social', op: 'publish', id: post.post_id, ref: postShownRef(post, ctx.pageName) })]);
+        if (ctx.slot) rows.push([button(`🕘 Programar: ${ctx.slot.label}`, { kind: 'social', op: 'schedule', id: post.post_id, ref: postShownRef(post, ctx.pageName, ctx.slot.local) })]);
       }
       rows.push([button('🗑 Descartar', { kind: 'social', op: 'discard', id: post.post_id })]);
-      return { html: `📣 <b>Así se publicará en Facebook</b>\n${text}${image}\n${pageNote(ctx)}`, buttons: rows };
+      return { html: `📣 <b>Así se publicará en Facebook</b>\n<blockquote>${esc(post.text)}</blockquote>${image}\n${pageNote(ctx)}`, buttons: rows };
     }
     case 'awaiting_approval':
     case 'scheduled':

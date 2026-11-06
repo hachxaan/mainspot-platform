@@ -142,8 +142,12 @@ export class AiBusinessService {
     };
   }
 
-  /** El dueño elige una variante: se crea un BORRADOR normal (cuota + aprobación social existentes). */
-  async draftFromCompose(a: BizActor, jobId: string, variantIndex: unknown, editedText: unknown, useImage: unknown): Promise<{ post: SocialPostRow; replayed: boolean }> {
+  /**
+   * El dueño elige una variante: se crea un BORRADOR normal (cuota + aprobación social existentes). La clave de cuota
+   * es por variante (`compose:<job>:<i>`) salvo que el canal fije otra: Telegram usa una por job, así una tarjeta de
+   * propuestas crea como mucho un borrador aunque se pulse otra variante o se repita la pulsación.
+   */
+  async draftFromCompose(a: BizActor, jobId: string, variantIndex: unknown, editedText: unknown, useImage: unknown, idempotencyKey?: string): Promise<{ post: SocialPostRow; replayed: boolean }> {
     const job = await this.deps.jobs.get(a.tenantId, jobId);
     if (!job || job.kind !== 'social.compose') throw new AppError(404, DENY_CODES.NOT_FOUND, 'No encontramos esa propuesta de publicación.');
     if (job.status !== 'succeeded' || !job.result) throw new AppError(409, 'validation_error', 'La propuesta todavía no está lista.');
@@ -162,7 +166,7 @@ export class AiBusinessService {
     // Política de publicación de OpenAI: una imagen generada se publica indicando que es de IA.
     const postText = assetId ? `${text}\n\n${AI_IMAGE_LABEL}` : text;
     if (postText.length > 2000) throw new AppError(400, 'validation_error', 'La publicación admite hasta 2000 caracteres (incluido el aviso de imagen generada con IA).');
-    const out = await this.deps.social.createDraft(a.tenantId, a.userId, a.requestId, { text: postText, idempotencyKey: `compose:${jobId}:${i}`, actorRole: a.role });
+    const out = await this.deps.social.createDraft(a.tenantId, a.userId, a.requestId, { text: postText, idempotencyKey: idempotencyKey ?? `compose:${jobId}:${i}`, actorRole: a.role });
     if (!out.replayed) {
       await this.deps.pool.query(
         'UPDATE social_post SET media_asset_id = $3, generation = $4, brand_version = $5, updated_at = now() WHERE post_id = $1 AND tenant_id = $2',

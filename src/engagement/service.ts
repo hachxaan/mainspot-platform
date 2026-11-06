@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Pool, PoolClient } from 'pg';
 import type { AuditSink } from '../audit/sink.ts';
-import { plainMessage, type ChannelAdapter } from '../channels/types.ts';
+import type { ChannelAdapter } from '../channels/types.ts';
 import { formatInternational, type ContactPhoneService, type PhoneChannel } from '../contact/phones.ts';
 import { runAtomic } from '../conversation/state-machine.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
@@ -28,6 +28,7 @@ import type { EngagementSemantics } from './ai-semantics.ts';
 import { AUTO_REPLY_CONSENT, REVIEW_REQUIRED_CONSENT, consentCoversAiSpend, consentIsCurrent, reconsentRequired } from './consent.ts';
 import { newNoticeCode, optionsSha256, type ApprovalOfferRow } from './notice-offer.ts';
 import { consumeSimFault, type EngagementReplier, type ReplyResult } from './providers.ts';
+import { noticeMessage } from './telegram-ui.ts';
 
 export const ENGAGEMENT_ORIGINS = ['google_review', 'facebook_comment'] as const;
 export const POLICY_CATEGORIES = ['gratitude', 'basic_info'] as const;
@@ -890,6 +891,18 @@ export class EngagementService {
     return notice ? this.reject(actor, notice.case_id, 'telegram') : null;
   }
 
+  /**
+   * Aviso de ESTE chat y persona con su caso, para mostrar un paso de sus botones (elegir una opción o volver al aviso)
+   * sin decidir nada; `updated`: sustituyó en este chat a un aviso de una revisión anterior. null si no existe o es
+   * ajeno, con el mismo trato y auditoría que `/aprobar` con un código ajeno.
+   */
+  async noticeFor(actor: Actor, chatId: string, code: string): Promise<{ offer: ApprovalOfferRow; case: CaseRow; updated: boolean } | null> {
+    const offer = await this.findNotice(actor, chatId, code);
+    const c = offer ? await this.getCase(actor.tenantId, offer.case_id) : null;
+    if (!offer || !c) return null;
+    return { offer, case: c, updated: await this.earlierNoticeSent(c.case_id, chatId, offer.drafts_revision) };
+  }
+
   // ---------------------------------------------------------------- respuesta pública
 
   /**
@@ -1064,6 +1077,13 @@ export class EngagementService {
     return lines.join('\n');
   }
 
+  /** «Propuestas actualizadas»: este chat ya recibió un aviso del caso con una revisión anterior (no en reenvíos ni reintentos). */
+  private async earlierNoticeSent(caseId: string, chatId: string, revision: number): Promise<boolean> {
+    const prior = await this.deps.pool.query('SELECT 1 FROM engagement_approval_offer WHERE case_id = $1 AND chat_id = $2 AND drafts_revision < $3 LIMIT 1',
+      [caseId, chatId, revision]);
+    return (prior.rowCount ?? 0) > 0;
+  }
+
   /**
    * Registra la instantánea inmutable del aviso que se va a enviar (código único en el chat). Si las propuestas del
    * caso ya cambiaron desde que se leyó, no registra nada (null): el caso se avisará con la revisión nueva.
@@ -1071,9 +1091,7 @@ export class EngagementService {
   private async issueNotice(c: CaseRow, notificationId: string, chatId: string, userId: string): Promise<{ code: string; options: string[]; updated: boolean } | null> {
     const options = c.drafts.slice(0, 3);
     const sha = optionsSha256(options);
-    // «Actualizadas» solo si este chat ya recibió un aviso de una revisión anterior (no en reenvíos ni reintentos).
-    const prior = await this.deps.pool.query('SELECT 1 FROM engagement_approval_offer WHERE case_id = $1 AND chat_id = $2 AND drafts_revision < $3 LIMIT 1',
-      [c.case_id, chatId, c.drafts_revision]);
+    const updated = await this.earlierNoticeSent(c.case_id, chatId, c.drafts_revision);
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const code = newNoticeCode();
       const res = await this.deps.pool.query(
@@ -1082,7 +1100,7 @@ export class EngagementService {
           WHERE EXISTS (SELECT 1 FROM engagement_case WHERE case_id = $3 AND drafts_revision = $8)
          ON CONFLICT (chat_id, code) DO NOTHING`,
         [`ofr_${randomUUID()}`, c.tenant_id, c.case_id, notificationId, chatId, userId, code, c.drafts_revision, JSON.stringify(options), sha]);
-      if (res.rowCount) return { code, options, updated: (prior.rowCount ?? 0) > 0 };
+      if (res.rowCount) return { code, options, updated };
       const still = await this.deps.pool.query('SELECT 1 FROM engagement_case WHERE case_id = $1 AND drafts_revision = $2', [c.case_id, c.drafts_revision]);
       if (!still.rowCount) return null;
     }
@@ -1152,14 +1170,16 @@ export class EngagementService {
   }
 
   /**
-   * Envía UN aviso (instantánea nueva + mensaje) por su fila de entrega. La fila solo queda enviada si las propuestas
-   * no cambiaron mientras tanto; un fallo del canal la reintenta con espera creciente.
+   * Envía UN aviso por su fila de entrega: primero registra su instantánea (código nuevo) y después manda la tarjeta, cuyos
+   * botones llevan ese código (SEC-TG-APPROVAL-01). La fila solo queda enviada si las propuestas no cambiaron mientras
+   * tanto; un fallo del canal la reintenta con espera creciente.
    */
   private async deliverNotice(c: CaseRow, n: { notification_id: string; chat_id: string; attempts: number }, userId: string): Promise<'sent' | 'failed' | 'skipped'> {
     const notice = await this.issueNotice(c, n.notification_id, n.chat_id, userId);
     if (!notice) return 'skipped';
     const injected = this.deps.channel.name === 'simulated' && await consumeSimFault(this.deps.pool, c.tenant_id, 'telegram', 'error');
-    const sent = injected ? { ok: false, error: 'simulated_telegram_error' } : await this.deps.channel.send(n.chat_id, plainMessage(this.notificationText(c, notice)));
+    const card = noticeMessage(c, this.notificationText(c, notice), notice, { simulated: this.replyMode === 'simulated', panelUrl: this.deps.panelUrl });
+    const sent = injected ? { ok: false, error: 'simulated_telegram_error' } : await this.deps.channel.send(n.chat_id, card);
     if (sent.ok) {
       // Bajo candado compartido del caso (una edición en curso confirma antes): solo queda «enviada» si la revisión
       // enviada sigue siendo la vigente; si no, la fila sigue pendiente y el siguiente ciclo manda la nueva.

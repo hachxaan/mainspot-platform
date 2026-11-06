@@ -4,18 +4,22 @@
  * - Vínculo: la persona genera un código de un solo uso (10 min) en el panel y abre el enlace
  *   t.me/<bot>?start=CÓDIGO (Telegram envía `/start CÓDIGO`). El chat queda ligado a ESA persona y tenant.
  *   Nunca se usa el teléfono público del negocio como destino.
- * - Respuestas públicas a clientes: `/aprobar <código> <1-3>` y `/rechazar <código>`. El código es el de UN aviso
- *   concreto (SEC-TG-APPROVAL-01, DEC-0077): aprobar publica exactamente la opción que ese aviso mostró y solo si las
- *   propuestas no cambiaron desde entonces; si cambiaron, no se publica nada y llega un aviso nuevo con otro código.
- *   Mismos permisos RBAC que el panel; un código de otro chat, persona o negocio se trata igual que uno inexistente.
- *   Una referencia al caso (mensaje o botón anteriores a los códigos) nunca decide: el chat recibe el aviso vigente.
+ * - Respuestas públicas a clientes (SEC-TG-APPROVAL-01, DEC-0077): cada aviso de un caso lleva el código de su
+ *   instantánea (`engagement_approval_offer`, registrada ANTES de enviarlo) y sus botones llevan ESE código y el número
+ *   de opción, nunca el id del caso: «Usar la respuesta N» muestra la opción N de la instantánea, «Publicar esta
+ *   respuesta» es `approveFromNotice` y «No responder» es `rejectFromNotice`, igual que `/aprobar <código> <1-3>` y
+ *   `/rechazar <código>` escritos. Publica exactamente lo que el aviso mostró y solo si las propuestas no cambiaron;
+ *   un aviso obsoleto, usado o ajeno nunca publica: se explica el estado real y, si el caso sigue pendiente en este
+ *   negocio, llega el aviso vigente con otro código. Un botón o mensaje con el id del caso (anteriores a los códigos)
+ *   nunca decide. Mismos permisos RBAC que el panel.
  * - Un negocio suspendido o en baja no decide, no publica ni conversa desde el chat.
  * - Fuera de esos comandos la persona escribe lenguaje natural: cada mensaje libre entra al MISMO pipeline del panel
  *   (identidad, rol, cuota, Jev, auditoría) con canal `telegram`. Lo demás son botones en línea (`telegram-ui.ts`):
- *   ver cómo queda / publicar / descartar un cambio de la web, ver pendientes y usar o dejar el laboratorio de IA.
- * - Cada pulsación vuelve a comprobar chat vinculado, negocio, persona, rol (deny auditado) y estado actual:
+ *   ver cómo queda / publicar / descartar un cambio de la web, publicaciones de Facebook, ver pendientes y usar o
+ *   dejar el laboratorio de IA.
+ * - Cada pulsación vuelve a comprobar chat vinculado, negocio activo, persona, rol (deny auditado) y estado actual:
  *   un botón viejo nunca actúa sobre algo que ya cambió; el mensaje se edita con el estado real y pierde sus
- *   botones al decidir.
+ *   botones al decidir. Publicar o programar una publicación solo actúa sobre el contenido que mostró su tarjeta.
  * - Una decisión escrita suelta («publicar», «sí», «opción 2») no adivina a qué se refiere: muestra los
  *   pendientes como botones.
  * - Reentregas: un Update (mensaje o pulsación) con `update_id` se reclama en `telegram_update` antes de
@@ -40,12 +44,12 @@ import type { SocialPostRow, SocialService } from '../social/service.ts';
 import type { SocialOutcome } from '../social/scheduler.ts';
 import { labelInZone, nextWeeklySlot } from '../social/timezone.ts';
 import { parseNoticeCode } from './notice-offer.ts';
-import type { CaseRow, EngagementService } from './service.ts';
+import type { CaseRow, EngagementService, NoticeApproval } from './service.ts';
 import {
   aiEditStartedMessage, answerWithPending, caseResolvedMessage, helpMessage, invalidCodeMessage, labInvalidMessage, labNoneMessage,
-  labOffMessage, labOnMessage, linkedMessage, parseAction, pendingCaseItem, pendingMessage, pendingProposalItem, proposalMessage,
-  socialComposingMessage, socialDeclinedMessage, socialDroppedMessage, socialHintMessage, socialOfferMessage, socialPostMessage,
-  socialVariantsMessage, unlinkedMessage,
+  labOffMessage, labOnMessage, linkedMessage, noticeConfirmMessage, noticeMessage, parseAction, pendingCaseItem, pendingMessage,
+  pendingProposalItem, postShownRef, proposalMessage, socialComposingMessage, socialDeclinedMessage, socialDroppedMessage,
+  socialHintMessage, socialOfferMessage, socialPostMessage, socialVariantsMessage, unlinkedMessage,
   type CaseContext, type ComposeResultView, type LabState, type PendingItem, type SocialContext, type TelegramAction,
 } from './telegram-ui.ts';
 
@@ -383,6 +387,7 @@ export class TelegramLinkService {
       if (action.kind === 'lab') return await this.labToggle(press, linked, action.on, requestId);
       if (action.kind === 'proposal') return await this.proposalAction(press, linked, action, requestId);
       if (action.kind === 'social') return await this.socialAction(press, linked, action, requestId);
+      if (action.kind === 'notice') return await this.noticeAction(press, linked, action, requestId);
       if (action.kind === 'legacy_case') return await this.legacyCaseButton(press, linked, action.id, requestId);
       return await this.caseView(press, linked, action.id, requestId);
     } catch (err) {
@@ -549,6 +554,96 @@ export class TelegramLinkService {
       await this.send(press.chatId, caseResolvedMessage(await this.engagement.getCase(linked.tenant_id, c.case_id) ?? c, this.caseContext()));
     }
     return { handled: 'case_shown' };
+  }
+
+  /**
+   * Botones de un aviso (SEC-TG-APPROVAL-01): llevan el código del aviso y el número de opción, nunca el id del caso.
+   * «Usar la respuesta N» y «Elegir otra» solo muestran la instantánea de ESE aviso mientras siga vigente; «Publicar esta
+   * respuesta» es `approveFromNotice` (misma revisión, uso único y auditoría que `/aprobar <código> N`) y «No responder»
+   * es `rejectFromNotice`. Un aviso ajeno, obsoleto o ya usado nunca publica: la pulsación explica el estado real, el
+   * mensaje pierde sus botones y, si el caso sigue pendiente en este negocio, llega su aviso vigente con otro código.
+   */
+  private async noticeAction(press: Press, linked: LinkedActor, action: Extract<TelegramAction, { kind: 'notice' }>, requestId: string): Promise<TelegramUpdateResult> {
+    if (!await this.permitted(linked, 'engagement.approve', requestId)) {
+      press.notice = 'Tu perfil no permite responder a clientes. Avisamos a quien administra tu negocio.';
+      return { handled: 'permission_denied' };
+    }
+    const actor = { tenantId: linked.tenant_id, userId: linked.user_id, role: linked.role, requestId };
+    const ctx = this.caseContext();
+    const invalid = async (): Promise<TelegramUpdateResult> => {
+      await this.show(press, plainMessage('Este aviso ya no sirve para decidir.'));
+      press.notice = 'Ese botón no corresponde a un aviso vigente de este chat.';
+      return { handled: 'approval_ref_invalid' };
+    };
+    const resolved = async (c: CaseRow): Promise<TelegramUpdateResult> => {
+      await this.show(press, caseResolvedMessage(c, ctx));
+      press.notice = 'Este caso ya no necesita tu decisión.';
+      return { handled: 'stale_action' };
+    };
+    const stale = async (c: CaseRow, reason: 'changed' | 'used'): Promise<TelegramUpdateResult> => {
+      const resent = await this.engagement.sendNoticeTo(actor, press.chatId, c.case_id);
+      const why = reason === 'changed' ? 'Las propuestas de este aviso cambiaron después de enviártelo, así que no publiqué nada.'
+        : c.reason === 'delivery_uncertain' ? 'Este aviso ya se usó para aprobar el caso y no pudimos confirmar si la respuesta se publicó: revisa la reseña antes de decidir.'
+          : 'Este aviso ya se usó para aprobar el caso y la publicación no salió.';
+      await this.show(press, plainMessage(resent ? `${why} Te envié el aviso vigente con su código nuevo.` : why));
+      press.notice = reason === 'changed' ? 'Las propuestas cambiaron: no se publicó nada.' : 'Ese aviso ya se usó: no se publicó nada.';
+      return { handled: reason === 'changed' ? 'approval_stale' : 'approval_used' };
+    };
+    // Un caso resuelto por otro camino rechaza la decisión con 409: se muestra cómo quedó.
+    const closed = async (err: unknown): Promise<TelegramUpdateResult> => {
+      if (!(err instanceof AppError) || err.status !== 409) throw err;
+      const found = await this.engagement.noticeFor(actor, press.chatId, action.code);
+      return found ? resolved(found.case) : invalid();
+    };
+
+    if (action.op === 'approve') {
+      let r: NoticeApproval;
+      try {
+        r = await this.engagement.approveFromNotice(actor, press.chatId, action.code, action.option);
+      } catch (err) {
+        return closed(err);
+      }
+      if (r.kind === 'invalid') return invalid();
+      if (r.kind === 'stale') return stale(r.case, r.reason);
+      if (r.kind === 'already') {
+        await this.show(press, caseResolvedMessage(r.case, ctx));
+        press.notice = 'Ya habías aprobado este caso; no se publica dos veces.';
+        return { handled: 'approve_repeat' };
+      }
+      const done = await this.engagement.respondCase(r.case.case_id);
+      await this.show(press, caseResolvedMessage(done ?? r.case, ctx));
+      press.notice = done?.state === 'responded' ? 'Respuesta publicada.' : 'Aprobada; la publicaremos en cuanto se pueda.';
+      return { handled: 'approved' };
+    }
+    if (action.op === 'reject') {
+      let r: { case: CaseRow; already: boolean } | null;
+      try {
+        r = await this.engagement.rejectFromNotice(actor, press.chatId, action.code);
+      } catch (err) {
+        return closed(err);
+      }
+      if (!r) return invalid();
+      await this.show(press, caseResolvedMessage(r.case, ctx));
+      press.notice = r.already ? 'Ese caso ya estaba cerrado sin respuesta.' : 'Listo: no se responderá.';
+      return { handled: r.already ? 'reject_repeat' : 'rejected' };
+    }
+    // Elegir y volver no deciden: muestran la instantánea de ESTE aviso solo mientras sea la vigente del caso.
+    const found = await this.engagement.noticeFor(actor, press.chatId, action.code);
+    if (!found) return invalid();
+    const { offer, case: c } = found;
+    if (c.state !== 'needs_human' && c.state !== 'failed') return resolved(c);
+    if (offer.status !== 'active' || offer.drafts_revision !== c.drafts_revision) return stale(c, offer.status === 'used' ? 'used' : 'changed');
+    if (action.op === 'back') {
+      await this.show(press, noticeMessage(c, this.engagement.notificationText(c, { code: offer.code, options: offer.options, updated: found.updated }), offer, ctx));
+      return { handled: 'case_shown' };
+    }
+    const shown = offer.options[action.option - 1];
+    if (!shown?.trim()) {
+      press.notice = `Ese aviso no tiene una opción ${action.option}.`;
+      return { handled: 'validation_error' };
+    }
+    await this.show(press, noticeConfirmMessage(c, { code: offer.code, option: action.option, text: shown }, ctx));
+    return { handled: 'draft_selected' };
   }
 
   /**
@@ -762,7 +857,7 @@ export class TelegramLinkService {
     const ctx = await this.socialContext(linked);
     const slot = post.status === 'draft' ? await this.suggestedSlot(social, post) : null;
     const future = post.scheduled_at && new Date(post.scheduled_at).getTime() > Date.now() + 60_000 ? new Date(post.scheduled_at) : null;
-    return socialPostMessage(post, { ...ctx, slotLabel: slot?.label ?? null, scheduledLabel: future ? labelInZone(future, social.timezone) : null });
+    return socialPostMessage(post, { ...ctx, slot, scheduledLabel: future ? labelInZone(future, social.timezone) : null });
   }
 
   /** Publicación de ESTA persona y negocio (las demás no existen para el chat). */
@@ -774,7 +869,10 @@ export class TelegramLinkService {
   /**
    * Botones de una publicación: ofrecer → redactar con IA (job) → elegir variante (borrador con cuota) → publicar ahora,
    * programar en la franja sugerida o descartar. Publicar sigue la misma aprobación del panel (aprobar la publicación,
-   * confirmar y aprobar la propuesta) con los permisos del rol; la salida a Facebook la hace el programador.
+   * confirmar y aprobar la propuesta) con los permisos del rol; la salida a Facebook la hace el programador. Elegir una
+   * variante crea como mucho UN borrador por tarjeta de propuestas (clave de cuota por job: repetir o pulsar otra
+   * variante devuelve el mismo borrador sin consumir otra vez); publicar o programar solo actúa si la publicación sigue
+   * siendo exactamente la que mostró la tarjeta (`postShownRef`).
    */
   private async socialAction(press: Press, linked: LinkedActor, action: Extract<TelegramAction, { kind: 'social' }>, requestId: string): Promise<TelegramUpdateResult> {
     const social = this.conversation?.social;
@@ -810,8 +908,9 @@ export class TelegramLinkService {
         press.notice = 'No encontré esas propuestas.';
         return { handled: 'not_found' };
       }
-      const out = await social.business.draftFromCompose(actor, job.job_id, action.variant, null, true);
-      await this.show(press, await this.postCard(social, linked, out.post));
+      const out = await social.business.draftFromCompose(actor, job.job_id, action.variant, null, true, `compose:${job.job_id}:telegram`);
+      // La tarjeta se arma con la fila guardada (incluida la imagen que se adjunta tras crear el borrador).
+      await this.show(press, await this.postCard(social, linked, await this.ownPost(linked, out.post.post_id) ?? out.post));
       return { handled: out.replayed ? 'social_draft_repeat' : 'social_draft_created' };
     }
     const post = await this.ownPost(linked, action.id);
@@ -843,14 +942,18 @@ export class TelegramLinkService {
       press.notice = 'Esta publicación ya no está en borrador.';
       return { handled: 'stale_action' };
     }
-    if (action.op === 'schedule') {
-      const slot = await this.suggestedSlot(social, post);
-      if (!slot) {
-        press.notice = 'No hay una hora sugerida para programarla; publícala ahora o prográmala desde tu panel.';
-        return { handled: 'social_no_slot' };
-      }
-      await social.posts.schedule(linked.tenant_id, linked.user_id, requestId, post.post_id, { local: slot.local });
+    const slot = action.op === 'schedule' ? await this.suggestedSlot(social, post) : null;
+    if (action.op === 'schedule' && !slot) {
+      press.notice = 'No hay una hora sugerida para programarla; publícala ahora o prográmala desde tu panel.';
+      return { handled: 'social_no_slot' };
     }
+    // Solo lo que mostró la tarjeta: mismo texto, imagen y Página y, al programar, la misma hora sugerida.
+    if (action.ref !== postShownRef(post, (await this.socialContext(linked)).pageName, slot?.local ?? null)) {
+      await this.show(press, await this.postCard(social, linked, post));
+      press.notice = 'La publicación cambió desde que te la mostré: revisa la tarjeta actualizada antes de decidir.';
+      return { handled: 'social_stale' };
+    }
+    if (slot) await social.posts.schedule(linked.tenant_id, linked.user_id, requestId, post.post_id, { local: slot.local });
     const { proposalId } = await social.posts.approvePost(linked.tenant_id, linked.user_id, requestId, post.post_id);
     const ref = { tenantId: linked.tenant_id, proposalId, actorId: linked.user_id, requestId };
     await confirmAndPreparePreview(this.conv().machine, ref);
