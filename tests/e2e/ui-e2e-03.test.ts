@@ -260,7 +260,9 @@ test('E2E DEV-E2E-03: interfaz de Claude Design en navegador contra servidor, wo
   await page.locator('[data-action="tg-start"]').click();
   await page.getByText('Listo: este chat recibirá los avisos de MainSpot').waitFor();
   const link = await one<{ chat_id: string }>(`SELECT chat_id FROM telegram_link WHERE tenant_id = $1 AND status = 'active'`, [tenant]);
-  check(Boolean(link) && !/\d{10}/.test(link!.chat_id), 'chat vinculado con código de un solo uso (el chat no es el teléfono público)');
+  // El chat simulado tiene un id opaco `sim-<12 hex>`, nunca un número de teléfono (antes se buscaban 10 dígitos
+  // seguidos, que un id hexadecimal también puede contener: fallaba en ~1,6 % de las ejecuciones).
+  check(Boolean(link) && /^sim-[0-9a-f]{12}$/.test(link!.chat_id), 'chat vinculado con código de un solo uso (el chat no es el teléfono público)');
   await page.locator('[data-action="tg-close"]').click();
 
   // ---------- Primera publicación ----------
