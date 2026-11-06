@@ -204,6 +204,8 @@ test('E2E Planes: catálogo versionado por permisos, confirmación explícita, p
   const sup = await newPage();
   await platformLogin(sup.page, '/ingenieria', support);
   await sup.page.locator('h1', { hasText: 'Planes' }).waitFor();
+  // El encabezado se pinta antes de que llegue el catálogo: se espera a que aparezcan sus enlaces antes de contarlos.
+  await sup.page.locator('a[href^="#/plan/"]').nth(2).waitFor().catch(() => undefined);
   check(await sup.page.locator('a[href^="#/plan/"]').count() >= 3, 'soporte llega a Planes y ve el catálogo (plan_piloto_1, plan_basico, plan_completo)');
   check(await sup.page.locator('form[data-form="plan-create"]').count() === 0, 'soporte no ve el formulario de crear plan');
   check((await sup.page.locator('nav.pc-tabs a').allTextContents()).join(',') === 'Planes', 'soporte solo ve la pestaña Planes en Engineering Console (las de IA no son de su rol)');
