@@ -49,13 +49,15 @@ export function isBudgetScope(value: unknown): value is BudgetScope {
 }
 
 /**
- * Propósito de una invocación (FB-3): `lab` si y solo si va bajo un grant del laboratorio (la traza guarda ese mismo
- * `lab_grant_id`); si no, `operational`. Decide qué presupuesto, además de los techos globales, la limita.
+ * Propósito de una invocación (FB-3): `lab` si va bajo un grant del laboratorio o dentro de una evaluación de ruta
+ * (`ai_eval_run`: ejecutar borradores es experimentación de ingeniería, no operación comercial); si no, `operational`.
+ * La traza guarda los mismos `lab_grant_id` y `eval_run_id`. Decide qué presupuesto, además de los techos globales, la
+ * limita.
  */
 export type BudgetPurpose = 'operational' | 'lab';
 
-export function budgetPurpose(labGrantId: string | null | undefined): BudgetPurpose {
-  return labGrantId ? 'lab' : 'operational';
+export function budgetPurpose(ctx: { labGrantId?: string | null; evalRunId?: string | null }): BudgetPurpose {
+  return ctx.labGrantId || ctx.evalRunId ? 'lab' : 'operational';
 }
 
 /**
@@ -93,8 +95,8 @@ export const SPENT_SQL = `SELECT COALESCE(SUM(${EFFECTIVE_COST_SQL}), 0) AS spen
 export const UTC_DAY_START_SQL = `(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
 export const UTC_MONTH_START_SQL = `(date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
 /** Propósito sobre `ai_invocation i`: la misma regla que `budgetPurpose`. */
-export const LAB_PURPOSE_SQL = 'i.lab_grant_id IS NOT NULL';
-const OPERATIONAL_PURPOSE_SQL = 'i.lab_grant_id IS NULL';
+export const LAB_PURPOSE_SQL = '(i.lab_grant_id IS NOT NULL OR i.eval_run_id IS NOT NULL)';
+const OPERATIONAL_PURPOSE_SQL = '(i.lab_grant_id IS NULL AND i.eval_run_id IS NULL)';
 
 function scopeFilters(tenantSql: string): Readonly<Record<BudgetScope, string>> {
   return {

@@ -5,7 +5,7 @@
  * despachador; cualquier otro destino falla y queda registrado). SIMULATED_REGRESSION: no acredita proveedor,
  * facturación ni calidad reales.
  *
- * Cubre: con grant, la reserva usa `lab_experiment` (más `lab_total`) y nunca `tenant_day`; sin fila `lab_experiment`
+ * Cubre: con grant o dentro de una evaluación de ruta, la reserva usa `lab_experiment` (más `lab_total`) y nunca `tenant_day`; sin fila `lab_experiment`
  * (no hay valor sembrado) o agotada, se deniega con ese ámbito; la operación se deniega sin `tenant_day` o con él
  * agotado aunque el laboratorio tenga margen; `lab_total` deniega a ambas; N reservas paralelas de los dos propósitos
  * nunca superan `lab_total`; el informe de plataforma cuadra con el libro por propósito, canal y caso de uso, y
@@ -19,7 +19,8 @@ import { api, authHeaders, bootApi, type TestApi } from '../helpers/testdb.ts';
 import { createTenantWithPlan, countRows, type TestTenant } from '../helpers/tenants.ts';
 import { USE_CASE_SEEDS } from '../../src/ai/catalog.ts';
 import { AiDispatcher, type InvokeContext, type InvokeResult } from '../../src/ai/dispatcher.ts';
-import { SCOPE_SPENT_FILTER, SPENT_SQL } from '../../src/ai/governance.ts';
+import { runEvalSuite } from '../../src/ai/evals.ts';
+import { SCOPE_SPENT_FILTER, SPENT_SQL, UTC_DAY_START_SQL } from '../../src/ai/governance.ts';
 import { currentStep, totpAt } from '../../src/platform/auth.ts';
 
 const INSIGHTS = 'business.insights.generate';
@@ -275,6 +276,47 @@ test('FB-3: la operación se deniega sin tenant_day (propio ni por defecto) o co
     await restoreGlobal('tenant_day', fallback);
   }
   assert.equal(provider.calls, calls0 + 2, 'solo el laboratorio llegó al proveedor');
+});
+
+test('FB-3 evaluaciones (revisión 1, F-03): evaluar una ruta de pago es gasto experimental: sin lab_experiment se deniega con ese ámbito sin llamar al proveedor; con margen reserva de lab_experiment y el informe la atribuye a laboratorio', async () => {
+  const reg = t.handle.dispatcher.registry;
+  const seeded = (await t.pool.query<{ prompt_revision_id: string; params: Record<string, unknown> }>(
+    'SELECT prompt_revision_id, params FROM ai_route_revision WHERE route_id = $1', [labRoute])).rows[0];
+  assert.ok(seeded);
+  const route = await reg.createRoute({ useCaseId: INSIGHTS, modelId: HAIKU, promptRevisionId: seeded.prompt_revision_id, params: seeded.params, maxCostUsd: maxCost,
+    changeNote: 'FB-3 prueba: candidata evaluada (DRAFT)', actor: ACTOR });
+  createdRoutes.push(route.route_id);
+  const suite = (await t.pool.query<{ suite_id: string; n: number }>('SELECT suite_id, jsonb_array_length(cases) AS n FROM ai_eval_suite WHERE use_case_id = $1 ORDER BY suite_id LIMIT 1', [INSIGHTS])).rows[0];
+  assert.ok(suite && suite.n > 0, 'suite de insights sembrada');
+  const evalRows = (runId: string) => t.pool.query<{ status: string; error_code: string | null; detail: string | null; tenant_id: string | null; lab_grant_id: string | null; assignment: string }>(
+    `SELECT status, error_code, validation->>'detail' AS detail, tenant_id, lab_grant_id, assignment FROM ai_invocation WHERE eval_run_id = $1 ORDER BY created_at, invocation_id`, [runId]);
+
+  await t.pool.query(`DELETE FROM ai_budget WHERE scope = 'lab_experiment'`);
+  const calls0 = provider.calls;
+  const blocked = await runEvalSuite(t.pool, dispatcher, suite.suite_id, route.route_id, ACTOR);
+  assert.equal(blocked.status, 'failed');
+  const blockedRows = (await evalRows(blocked.run_id)).rows;
+  assert.equal(blockedRows.length, suite.n);
+  assert.ok(blockedRows.every((r) => r.status === 'blocked' && r.error_code === 'budget_exhausted' && r.detail === 'lab_experiment' && r.assignment === 'eval' && r.tenant_id === null && r.lab_grant_id === null),
+    JSON.stringify(blockedRows));
+  assert.equal(provider.calls, calls0, 'sin presupuesto experimental ninguna evaluación de pago llega al proveedor');
+
+  const operationalToday = `i.lab_grant_id IS NULL AND i.eval_run_id IS NULL AND i.created_at >= ${UTC_DAY_START_SQL}`;
+  const labBefore = await spent(SCOPE_SPENT_FILTER.lab_experiment);
+  const opBefore = await spent(operationalToday);
+  await putBudgetOk('lab_experiment', ceil4(labBefore + suite.n * maxCost));
+  const paid = await runEvalSuite(t.pool, dispatcher, suite.suite_id, route.route_id, ACTOR);
+  const paidRows = (await evalRows(paid.run_id)).rows;
+  assert.ok(paidRows.length === suite.n && paidRows.every((r) => r.status === 'succeeded'), JSON.stringify(paidRows));
+  assert.equal(provider.calls, calls0 + suite.n);
+  assert.ok(Math.abs(await spent(SCOPE_SPENT_FILTER.lab_experiment) - (labBefore + suite.n * FAKE_COST)) < 1e-9, 'el gasto de la evaluación cuenta en lab_experiment');
+  assert.ok(Math.abs(await spent(operationalToday) - opBefore) < 1e-9, 'y nada en la operación comercial');
+
+  const spend = await platform(adminToken, '/ai/spend');
+  assert.equal(spend.status, 200, JSON.stringify(spend.body));
+  const lines = (spend.body.spend.by_use_case as Array<{ purpose: string; use_case_id: string; calls_total: number }>).filter((l) => l.use_case_id === INSIGHTS);
+  const labLine = lines.find((l) => l.purpose === 'lab');
+  assert.ok(labLine && labLine.calls_total >= suite.n, `el informe atribuye la evaluación a laboratorio: ${JSON.stringify(lines)}`);
 });
 
 test('FB-3: el techo global lab_total cuenta operación y laboratorio: rebajado al gasto acumulado deniega a ambos aunque tengan margen propio', async () => {

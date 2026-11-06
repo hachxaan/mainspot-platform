@@ -267,7 +267,7 @@ export class AiDispatcher {
     const reserve = AiDispatcher.paid(bundle) ? Number(bundle.route.max_cost_usd) : 0;
     const budgetOk = await runAtomic(this.pool, async (client) => {
       if (reserve > 0) {
-        const b = await reserveBudget(client, { tenantId: ctx.tenantId, purpose: budgetPurpose(ctx.labGrantId), reserveUsd: reserve });
+        const b = await reserveBudget(client, { tenantId: ctx.tenantId, purpose: budgetPurpose(ctx), reserveUsd: reserve });
         if (!b.allowed) return b;
       }
       await client.query(
