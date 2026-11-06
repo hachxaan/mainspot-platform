@@ -26,6 +26,7 @@ import sharp from 'sharp';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { SPENT_SQL } from '../src/ai/governance.ts';
 import { JevRepository } from '../src/conversation/jev-repository.ts';
+import { AUTO_REPLY_CONSENT } from '../src/engagement/consent.ts';
 
 // Node confía en la misma CA local que el navegador (almacén del sistema), sin desactivar TLS.
 tls.setDefaultCACertificates([...tls.getCACertificates('default'), ...tls.getCACertificates('system')]);
@@ -506,7 +507,7 @@ async function main(): Promise<void> {
     say('\n-- E09: comentarios — Jev real lee sentimiento e ironía; respuesta con hechos verificados --');
     const token = await page.evaluate(() => (globalThis as unknown as { sessionStorage: { getItem: (k: string) => string | null } }).sessionStorage.getItem('mainspot.token'));
     const inject = async (body: string, ref: string) => fetch(`${BASE}/api/backoffice/dev/simulator/facebook-comments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ post_id: post!.post_id, body, author_label: 'Cliente', external_ref: ref }) });
-    await fetch(`${BASE}/api/backoffice/engagement/policies`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ origin: 'facebook_comment', category: 'gratitude', mode: 'safe_auto_reply', consent: true }) });
+    await fetch(`${BASE}/api/backoffice/engagement/policies`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ origin: 'facebook_comment', category: 'gratitude', mode: 'safe_auto_reply', consent: true, consent_version: AUTO_REPLY_CONSENT.facebook_comment.version }) });
     const refA = `lab-a-${RUN}`;
     const refB = `lab-b-${RUN}`;
     await inject('¡Qué rico estuvo el pan de muerto! Muchas gracias, volveremos pronto.', refA);

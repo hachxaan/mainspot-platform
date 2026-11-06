@@ -25,6 +25,8 @@ import { loadPinnedPolicy } from '../plans/policy.ts';
 import type { QuotaLedger, QuotaReservationRow } from '../subscriptions/quota.ts';
 import { autoReplyText, classify, decide, humanDrafts, type Classification, type Decision, type EngagementCategory, type EngagementOrigin, type InfoTopic, type PolicySnapshot } from './classifier.ts';
 import type { EngagementSemantics } from './ai-semantics.ts';
+import { AUTO_REPLY_CONSENT, REVIEW_REQUIRED_CONSENT, consentCoversAiSpend, consentIsCurrent, reconsentRequired } from './consent.ts';
+import { newNoticeCode, optionsSha256, type ApprovalOfferRow } from './notice-offer.ts';
 import { consumeSimFault, type EngagementReplier, type ReplyResult } from './providers.ts';
 
 export const ENGAGEMENT_ORIGINS = ['google_review', 'facebook_comment'] as const;
@@ -40,6 +42,8 @@ export const MAX_RESPOND_ATTEMPTS = 5;
 export const RESPOND_LEASE_SECONDS = 120;
 export const PROVIDER_TIMEOUT_MS = 10_000;
 const MAX_TEXT = 1000;
+/** Cualquier terminador de línea que un cliente puede pintar como salto (también `\r` suelto, NEL, LS y PS). */
+const LINE_BREAK = /\r\n|[\n\r\u000b\u000c\u0085\u2028\u2029]/g;
 
 /**
  * Aviso obligatorio en respuestas públicas automáticas redactadas por IA (política de uso de Anthropic:
@@ -85,11 +89,36 @@ interface AiReplyActor {
   requestId: string;
 }
 
-export const CONSENT_TEXT: Record<PolicyMode, string> = {
-  safe_auto_reply:
-    'Autorizo a MainSpot a responder públicamente en mi nombre solo los casos de esta categoría que pasen todas las comprobaciones de seguridad (sin riesgos, sin quejas, con datos verificados). Cuando la respuesta la redacta la IA de MainSpot, se publica indicando que es una respuesta automática generada con IA. En reseñas de Google, cada respuesta redactada con IA usa 1 de las respuestas con IA de mi plan en el ciclo; si no quedan, MainSpot responde con un texto seguro sin IA. Las demás interacciones quedan para mi revisión. Puedo revocarlo en cualquier momento.',
-  review_required: 'Todas las respuestas públicas de esta categoría quedan pendientes de mi revisión.',
+/** Política vigente con el estado de su consentimiento (SEC-CONSENT-01) para el panel y la API. */
+export type PolicyView = (PolicyRow | (Omit<PolicyRow, 'policy_id' | 'decided_by' | 'created_at' | 'consent_text' | 'consent_version' | 'consent_sha256'>
+  & { policy_id: null; default: true; consent_version: null })) & {
+  /** La autorización de esta política cubre lo que hace hoy (en Google, gastar respuestas con IA). */
+  consent_current: boolean;
+  /** Respuesta automática a reseñas cuyo consentimiento no cubre la cuota compartida: debe aceptarse de nuevo. */
+  reconsent_required: boolean;
 };
+
+/**
+ * Resultado de `/aprobar <código> <N>` (SEC-TG-APPROVAL-01). `invalid` no distingue inexistente de ajeno. `stale`:
+ * `changed` = las propuestas cambiaron (o el aviso fue sustituido); `used` = ese aviso ya aprobó el caso y la
+ * publicación falló, así que se decide con el aviso vigente.
+ */
+export type NoticeApproval =
+  | { kind: 'approved'; case: CaseRow }
+  | { kind: 'already'; case: CaseRow }
+  | { kind: 'stale'; case: CaseRow; reason: 'changed' | 'used' }
+  | { kind: 'invalid' };
+
+/** El caso salió de la política que lo clasificó mientras se redactaba (revocación o reconsentimiento). */
+class PolicyChangedError extends Error {}
+
+/** Política leída al clasificar, con lo necesario para comprobar su consentimiento al confirmar el caso. */
+interface PolicyInForce extends PolicySnapshot {
+  origin: EngagementOrigin;
+  category: PolicyCategory;
+  consent_version: string | null;
+  consent_sha256: string | null;
+}
 
 export interface CaseRow {
   case_id: string;
@@ -111,6 +140,8 @@ export interface CaseRow {
   classified_at: string | null;
   state: CaseState;
   drafts: string[];
+  /** Sube con cada cambio de `drafts` (trigger de 0037): los avisos de otra revisión no sirven para aprobar. */
+  drafts_revision: number;
   response_text: string | null;
   resolved_by: string | null;
   resolution_channel: 'auto' | 'panel' | 'telegram' | null;
@@ -144,6 +175,9 @@ export interface PolicyRow {
   version: number;
   max_auto_replies_per_hour: number;
   consent_text: string;
+  /** Versión de los términos aceptados (0037); null en políticas anteriores (no cubren la cuota compartida). */
+  consent_version: string | null;
+  consent_sha256: string | null;
   decided_by: string;
   created_at: string;
 }
@@ -190,33 +224,75 @@ export class EngagementService {
 
   // ---------------------------------------------------------------- políticas
 
-  async currentPolicies(tenantId: string, db: Db = this.deps.pool): Promise<Array<PolicyRow | (Omit<PolicyRow, 'policy_id' | 'decided_by' | 'created_at' | 'consent_text'> & { policy_id: null; default: true })>> {
+  async currentPolicies(tenantId: string, db: Db = this.deps.pool): Promise<PolicyView[]> {
     const res = await db.query<PolicyRow>(
       `SELECT DISTINCT ON (origin, category) * FROM engagement_policy
         WHERE tenant_id = $1 ORDER BY origin, category, version DESC`, [tenantId]);
     const byKey = new Map(res.rows.map((r) => [`${r.origin}:${r.category}`, r]));
-    const out: Array<PolicyRow | (Omit<PolicyRow, 'policy_id' | 'decided_by' | 'created_at' | 'consent_text'> & { policy_id: null; default: true })> = [];
+    const out: PolicyView[] = [];
     for (const origin of ENGAGEMENT_ORIGINS) {
       for (const category of POLICY_CATEGORIES) {
-        out.push(byKey.get(`${origin}:${category}`) ?? {
-          policy_id: null, default: true, tenant_id: tenantId, origin, category,
-          mode: 'review_required', version: 0, max_auto_replies_per_hour: 10,
-        });
+        const row = byKey.get(`${origin}:${category}`);
+        if (!row) {
+          out.push({
+            policy_id: null, default: true, tenant_id: tenantId, origin, category, mode: 'review_required', version: 0,
+            max_auto_replies_per_hour: 10, consent_version: null, consent_current: true, reconsent_required: false,
+          });
+          continue;
+        }
+        const current = row.mode === 'review_required' || consentIsCurrent(row);
+        out.push({ ...row, consent_current: current, reconsent_required: reconsentRequired(row) });
       }
     }
     return out;
   }
 
-  private async policyFor(tenantId: string, origin: EngagementOrigin, category: EngagementCategory, db: Db): Promise<PolicySnapshot | null> {
+  private async policyFor(tenantId: string, origin: EngagementOrigin, category: EngagementCategory, db: Db): Promise<PolicyInForce | null> {
     if (category === 'other') return null;
     const res = await db.query<PolicyRow>(
       `SELECT * FROM engagement_policy WHERE tenant_id = $1 AND origin = $2 AND category = $3
         ORDER BY version DESC LIMIT 1`, [tenantId, origin, category]);
     const p = res.rows[0];
-    return p ? { policy_id: p.policy_id, version: p.version, mode: p.mode, max_auto_replies_per_hour: p.max_auto_replies_per_hour } : null;
+    return p ? {
+      policy_id: p.policy_id, version: p.version, mode: p.mode, max_auto_replies_per_hour: p.max_auto_replies_per_hour,
+      origin: p.origin, category: p.category, consent_version: p.consent_version, consent_sha256: p.consent_sha256,
+    } : null;
   }
 
-  /** Nueva versión de política (append-only). safe_auto_reply exige consentimiento explícito. */
+  /** Valida la aceptación explícita de los términos que el panel mostró (su versión debe ser la vigente). */
+  private acceptedTerms(b: Record<string, unknown>, origin: EngagementOrigin, missing: string) {
+    const terms = AUTO_REPLY_CONSENT[origin];
+    if (b['consent'] !== true || typeof b['consent_version'] !== 'string') throw new AppError(400, 'validation_error', missing);
+    if (b['consent_version'] !== terms.version) {
+      throw new AppError(409, 'validation_error', 'Las condiciones de la autorización cambiaron. Revisa el texto actualizado y vuelve a aceptarlo.');
+    }
+    return terms;
+  }
+
+  private async insertPolicy(client: PoolClient, actor: Actor, p: { origin: EngagementOrigin; category: PolicyCategory; mode: PolicyMode; max: number },
+    terms: { version: string; text: string; sha256: string }, result: (version: number) => string): Promise<PolicyRow> {
+    const v = await client.query<{ v: number }>(
+      'SELECT COALESCE(MAX(version), 0) AS v FROM engagement_policy WHERE tenant_id = $1 AND origin = $2 AND category = $3',
+      [actor.tenantId, p.origin, p.category]);
+    const version = Number(v.rows[0]?.v ?? 0) + 1;
+    const res = await client.query<PolicyRow>(
+      `INSERT INTO engagement_policy (policy_id, tenant_id, origin, category, mode, version, max_auto_replies_per_hour, consent_text,
+         consent_version, consent_sha256, decided_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [`pol_${randomUUID()}`, actor.tenantId, p.origin, p.category, p.mode, version, p.max, terms.text, terms.version, terms.sha256, actor.userId]);
+    const row = res.rows[0] as PolicyRow;
+    await this.deps.sink.write({
+      tenant_id: actor.tenantId, actor_id: actor.userId, actor_role: actor.role,
+      action: 'engagement.policy.changed', resource: `engagement_policy/${p.origin}/${p.category}`,
+      request_id: actor.requestId, decision: 'allow', result: result(version), evidence_ref: row.policy_id,
+    }, client, true);
+    return row;
+  }
+
+  /**
+   * Nueva versión de política (append-only). `safe_auto_reply` exige aceptar explícitamente los términos vigentes de
+   * su origen (SEC-CONSENT-01): el cuerpo trae la versión que el panel mostró y se guardan texto, versión y huella.
+   */
   async setPolicy(actor: Actor, body: unknown): Promise<PolicyRow> {
     const b = (body && typeof body === 'object' && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
     const origin = b['origin'];
@@ -231,9 +307,9 @@ export class EngagementService {
     if (mode !== 'review_required' && mode !== 'safe_auto_reply') {
       throw new AppError(400, 'validation_error', 'Elige si MainSpot responde por ti o si cada respuesta espera tu revisión.');
     }
-    if (mode === 'safe_auto_reply' && b['consent'] !== true) {
-      throw new AppError(400, 'validation_error', 'Para activar respuestas automáticas confirma explícitamente la autorización.');
-    }
+    const terms = mode === 'safe_auto_reply'
+      ? this.acceptedTerms(b, origin, 'Para activar respuestas automáticas confirma explícitamente la autorización.')
+      : REVIEW_REQUIRED_CONSENT;
     const maxRaw = b['max_auto_replies_per_hour'];
     const max = maxRaw === undefined ? 10 : Number(maxRaw);
     if (!Number.isInteger(max) || max < 1 || max > 60) {
@@ -241,22 +317,34 @@ export class EngagementService {
     }
     return runAtomic(this.deps.pool, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`engagement_policy:${actor.tenantId}:${origin}:${category}`]);
-      const v = await client.query<{ v: number }>(
-        'SELECT COALESCE(MAX(version), 0) AS v FROM engagement_policy WHERE tenant_id = $1 AND origin = $2 AND category = $3',
-        [actor.tenantId, origin, category]);
-      const version = Number(v.rows[0]?.v ?? 0) + 1;
-      const res = await client.query<PolicyRow>(
-        `INSERT INTO engagement_policy (policy_id, tenant_id, origin, category, mode, version, max_auto_replies_per_hour, consent_text, decided_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-        [`pol_${randomUUID()}`, actor.tenantId, origin, category, mode, version, max, CONSENT_TEXT[mode], actor.userId]);
-      const row = res.rows[0] as PolicyRow;
-      await this.deps.sink.write({
-        tenant_id: actor.tenantId, actor_id: actor.userId, actor_role: actor.role,
-        action: 'engagement.policy.changed', resource: `engagement_policy/${origin}/${category}`,
-        request_id: actor.requestId, decision: 'allow', result: `${mode}:v${version}`, evidence_ref: row.policy_id,
-      }, client, true);
-      return row;
+      return this.insertPolicy(client, actor, { origin, category, mode, max }, terms, (version) => `${mode}:v${version}:consent:${terms.version}`);
     });
+  }
+
+  /**
+   * SEC-CONSENT-01: el negocio acepta los términos vigentes para sus respuestas automáticas a reseñas de Google
+   * autorizadas con un consentimiento anterior. Crea una versión nueva de cada política afectada (mismo modo y límite
+   * por hora) con el texto aceptado, su versión y su huella, auditada en la misma transacción. Sin políticas afectadas
+   * no cambia nada (repetir es inocuo). Hasta aceptarlo, esas respuestas salen con el texto seguro sin IA.
+   */
+  async reconsent(actor: Actor, body: unknown): Promise<{ updated: PolicyRow[]; policies: PolicyView[] }> {
+    const b = (body && typeof body === 'object' && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
+    const terms = this.acceptedTerms(b, 'google_review', 'Para aceptar las nuevas condiciones marca explícitamente la autorización.');
+    const updated = await runAtomic(this.deps.pool, async (client) => {
+      const rows: PolicyRow[] = [];
+      for (const category of POLICY_CATEGORIES) {
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`engagement_policy:${actor.tenantId}:google_review:${category}`]);
+        const cur = await client.query<PolicyRow>(
+          `SELECT * FROM engagement_policy WHERE tenant_id = $1 AND origin = 'google_review' AND category = $2
+            ORDER BY version DESC LIMIT 1`, [actor.tenantId, category]);
+        const row = cur.rows[0];
+        if (!row || !reconsentRequired(row)) continue;
+        rows.push(await this.insertPolicy(client, actor, { origin: 'google_review', category, mode: 'safe_auto_reply', max: row.max_auto_replies_per_hour },
+          terms, (version) => `safe_auto_reply:v${version}:reconsent:${terms.version}`));
+      }
+      return rows;
+    });
+    return { updated, policies: await this.currentPolicies(actor.tenantId) };
   }
 
   // ---------------------------------------------------------------- casos (lectura)
@@ -351,15 +439,45 @@ export class EngagementService {
         // DEC-0076: recibir una reseña no consume cuota. Solo la respuesta automática que el dueño autorizó se
         // redacta con IA al llegar y consume 1 unidad del ciclo; sin cuota disponible sale el texto seguro sin IA.
         // Las reseñas que esperan decisión llevan solo propuestas sin IA; la de IA se pide con «Redactar con IA».
-        const metered = await this.meteredReply(row, classification, facts, { actorId: SYSTEM_ACTOR, actorRole: null, requestId: `eng_${row.case_id}` });
-        generated = metered.generated;
-        reservation = metered.reservation;
+        if (policy && consentCoversAiSpend(policy)) {
+          const metered = await this.meteredReply(row, classification, facts, { actorId: SYSTEM_ACTOR, actorRole: null, requestId: `eng_${row.case_id}` });
+          generated = metered.generated;
+          reservation = metered.reservation;
+        } else if (await this.deps.semantics.replyAvailable(row.origin)) {
+          // SEC-CONSENT-01 (DEC-0077 R8): el consentimiento de esta política es anterior a la cuota compartida (o de
+          // otra versión). Sin aceptar los términos vigentes no se invoca la IA ni se gasta ninguna unidad: sale el
+          // texto seguro sin IA, que ese consentimiento ya autorizaba.
+          await this.deps.sink.write({
+            tenant_id: row.tenant_id, actor_id: SYSTEM_ACTOR, actor_role: null,
+            action: 'engagement.ai_reply', resource: `engagement_case/${row.case_id}`,
+            request_id: `eng_${row.case_id}`, decision: 'deny', result: 'consent_outdated', evidence_ref: policy?.policy_id ?? null,
+          }, this.deps.pool, false).catch(() => undefined);
+        }
       }
     }
-    if (decision.decision === 'auto_reply' && generated?.needsHuman) decision = { decision: 'human_review', reason: 'reply_needs_human' };
+    if (decision.decision === 'auto_reply' && generated?.needsHuman) {
+      decision = { decision: 'human_review', reason: 'reply_needs_human' };
+      if (reservation) {
+        // DEC-0077 R2/R3: la redacción para la respuesta automática pidió revisión humana, así que no hubo respuesta
+        // automática con IA. La reseña pasa a esperar decisión SIN propuesta de IA entre las numeradas y sin gastar la
+        // unidad; la IA a pedido («Redactar con IA») sigue disponible y es la que consume.
+        await this.deps.quota.release(reservation, null, 'ai_reply_needs_human');
+        reservation = null;
+        generated = null;
+      }
+    }
     const persist = (gen: typeof generated, held: QuotaReservationRow | null) => runAtomic(this.deps.pool, async (client) => {
       let res;
       if (decision.decision === 'auto_reply') {
+        // La respuesta automática (y su unidad) solo se confirma si la política que la autorizó sigue vigente: mismo
+        // candado que `setPolicy`/`reconsent`, así una revocación o unos términos nuevos nunca llegan tarde.
+        if (policy) {
+          await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`engagement_policy:${row.tenant_id}:${policy.origin}:${policy.category}`]);
+          const latest = await client.query<{ policy_id: string }>(
+            `SELECT policy_id FROM engagement_policy WHERE tenant_id = $1 AND origin = $2 AND category = $3
+              ORDER BY version DESC LIMIT 1`, [row.tenant_id, policy.origin, policy.category]);
+          if (latest.rows[0]?.policy_id !== policy.policy_id) throw new PolicyChangedError();
+        }
         const text = gen ? `${gen.text}\n\n${AI_REPLY_DISCLOSURE}` : autoReplyText({ category: classification.category, author, business, verifiedAnswer: verified });
         res = await client.query<CaseRow>(
           `UPDATE engagement_case SET state = 'classified', decision = 'auto_reply', reason = $2, category = $3,
@@ -408,6 +526,12 @@ export class EngagementService {
         log.warn('engagement.ai_reply.reservation_expired', 'AI reply outlived its quota reservation; using the safe text', { tenant_id: row.tenant_id, case_id: row.case_id });
         return await persist(null, null);
       }
+    } catch (err) {
+      if (!(err instanceof PolicyChangedError)) throw err;
+      // La política cambió mientras se clasificaba: no se confirma nada (ni respuesta ni unidad) y el caso sigue en
+      // `received`; el siguiente ciclo lo clasifica con la política vigente.
+      log.info('engagement.case.policy_changed', 'policy changed while classifying; the case is retried', { tenant_id: row.tenant_id, case_id: row.case_id });
+      return null;
     } finally {
       if (reservation && !consumed) await this.deps.quota.release(reservation, null, 'ai_reply_not_used');
     }
@@ -567,6 +691,11 @@ export class EngagementService {
 
   // ---------------------------------------------------------------- decisiones humanas
 
+  /**
+   * Edita una propuesta numerada. Compara la revisión leída (sin pisar el cambio simultáneo de otra persona en otra
+   * opción) y, como las propuestas cambian, los avisos de Telegram ya enviados dejan de servir para aprobar (trigger de
+   * 0037) y cada chat recibe uno nuevo con las opciones vigentes (SEC-TG-APPROVAL-01).
+   */
   async editDraft(actor: Actor, caseId: string, index: unknown, text: unknown): Promise<CaseRow> {
     const i = Number(index);
     const clean = typeof text === 'string' ? text.trim() : '';
@@ -582,20 +711,29 @@ export class EngagementService {
     drafts[i] = clean;
     return runAtomic(this.deps.pool, async (client) => {
       const res = await client.query<CaseRow>(
-        `UPDATE engagement_case SET drafts = $2, updated_at = now() WHERE case_id = $1 AND tenant_id = $3 AND state IN ('needs_human','failed') RETURNING *`,
-        [caseId, JSON.stringify(drafts.slice(0, 3)), actor.tenantId]);
+        `UPDATE engagement_case SET drafts = $2, notify_status = 'pending', updated_at = now()
+          WHERE case_id = $1 AND tenant_id = $3 AND state IN ('needs_human','failed') AND drafts_revision = $4 RETURNING *`,
+        [caseId, JSON.stringify(drafts.slice(0, 3)), actor.tenantId, found.drafts_revision]);
       if (!res.rows[0]) throw new AppError(409, 'validation_error', 'El caso cambió mientras se editaba. Recarga e inténtalo de nuevo.');
+      await client.query(
+        `UPDATE engagement_notification SET status = 'pending', attempts = 0, next_attempt_at = NULL, last_error = NULL, updated_at = now()
+          WHERE case_id = $1 AND tenant_id = $2`, [caseId, actor.tenantId]);
       await this.deps.sink.write({
         tenant_id: actor.tenantId, actor_id: actor.userId, actor_role: actor.role,
         action: 'engagement.draft.edited', resource: `engagement_case/${caseId}`,
-        request_id: actor.requestId, decision: 'allow', result: `draft:${i + 1}`,
+        request_id: actor.requestId, decision: 'allow', result: `draft:${i + 1}:r${res.rows[0].drafts_revision}`,
       }, client);
       return res.rows[0];
     });
   }
 
-  /** Aprueba la respuesta (borrador elegido o texto editado). Idempotente: no responde dos veces. */
-  async approve(actor: Actor, caseId: string, body: { draft_index?: unknown; text?: unknown }, channel: 'panel' | 'telegram'): Promise<{ case: CaseRow; already: boolean }> {
+  /**
+   * Aprueba desde el panel la respuesta: el texto visible (lo que envía el panel) o una propuesta numerada de la
+   * revisión que la persona vio (`draft_index` + `drafts_revision`, comparada en el UPDATE). Nunca «la opción vigente»
+   * sin más. Idempotente: no responde dos veces. Telegram no pasa por aquí: aprueba la opción de un aviso concreto con
+   * `approveFromNotice` (SEC-TG-APPROVAL-01).
+   */
+  async approve(actor: Actor, caseId: string, body: { draft_index?: unknown; drafts_revision?: unknown; text?: unknown }, channel: 'panel'): Promise<{ case: CaseRow; already: boolean }> {
     const found = await this.getCase(actor.tenantId, caseId);
     if (!found) throw this.notFound();
     if (['approved', 'responding', 'responded', 'retry_pending'].includes(found.state)) return { case: found, already: true };
@@ -603,19 +741,28 @@ export class EngagementService {
       throw new AppError(409, 'validation_error', 'Este caso ya fue resuelto y no puede aprobarse.');
     }
     let text: string;
+    let seenRevision: number | null = null;
     if (typeof body.text === 'string' && body.text.trim()) {
       text = body.text.trim();
     } else {
-      const idx = body.draft_index === undefined ? 0 : Number(body.draft_index);
-      text = Number.isInteger(idx) ? (found.drafts[idx] ?? '').trim() : '';
+      const idx = Number(body.draft_index);
+      const revision = Number(body.drafts_revision);
+      if (body.draft_index === undefined || !Number.isInteger(idx) || idx < 0 || idx > 2 || body.drafts_revision === undefined || !Number.isInteger(revision)) {
+        throw new AppError(400, 'validation_error', 'Envía el texto que vas a publicar, o el número de la propuesta junto con la revisión de las propuestas que viste.');
+      }
+      if (revision !== found.drafts_revision) {
+        throw new AppError(409, 'validation_error', 'Las propuestas cambiaron después de que las viste. Recarga y vuelve a elegir.');
+      }
+      text = (found.drafts[idx] ?? '').trim();
+      seenRevision = revision;
     }
     if (!text || text.length > MAX_TEXT) throw new AppError(400, 'validation_error', 'Elige una respuesta sugerida o escribe una antes de aprobar.');
     return runAtomic(this.deps.pool, async (client) => {
       const res = await client.query<CaseRow>(
         `UPDATE engagement_case SET state = 'approved', response_text = $2, resolved_by = $3, resolution_channel = $4,
            resolved_at = now(), attempts = 0, next_attempt_at = now(), last_error = NULL, updated_at = now()
-         WHERE case_id = $1 AND tenant_id = $5 AND state IN ('needs_human','failed') RETURNING *`,
-        [caseId, text, actor.userId, channel, actor.tenantId]);
+         WHERE case_id = $1 AND tenant_id = $5 AND state IN ('needs_human','failed') AND ($6::int IS NULL OR drafts_revision = $6) RETURNING *`,
+        [caseId, text, actor.userId, channel, actor.tenantId, seenRevision]);
       const row = res.rows[0];
       if (!row) {
         const now = await this.getCase(actor.tenantId, caseId, client);
@@ -656,6 +803,86 @@ export class EngagementService {
       }, client);
       return { case: row, already: false };
     });
+  }
+
+  // ------------------------------------------------- aprobación por aviso de Telegram (SEC-TG-APPROVAL-01)
+
+  /** Aviso enviado a ESTE chat y a ESTA persona del negocio; null si no existe o es ajeno (mismo trato: anti-oráculo). */
+  private async findNotice(actor: Actor, chatId: string, code: string): Promise<ApprovalOfferRow | null> {
+    const res = await this.deps.pool.query<ApprovalOfferRow>(
+      'SELECT * FROM engagement_approval_offer WHERE chat_id = $1 AND code = $2', [chatId, code]);
+    const offer = res.rows[0];
+    if (offer && offer.tenant_id === actor.tenantId && offer.user_id === actor.userId) return offer;
+    await this.deps.sink.write({
+      tenant_id: actor.tenantId, actor_id: actor.userId, actor_role: actor.role,
+      action: 'engagement.approval.ref_invalid', resource: 'telegram:engagement', request_id: actor.requestId,
+      decision: 'deny', result: 'unknown_or_foreign_notice',
+    }).catch(() => undefined);
+    return null;
+  }
+
+  /**
+   * `/aprobar <código> <N>`: publica EXACTAMENTE la opción N que mostró ese aviso, y solo si el caso sigue abierto y en
+   * la misma revisión de propuestas (candado del caso y comparación en la misma sentencia que aprueba). Si cualquier
+   * propuesta cambió después del aviso (o el aviso ya no está activo), no publica nada: invalida el aviso, lo audita y
+   * programa uno nuevo para ese chat (`stale`). Repetir sobre un caso ya aprobado no publica dos veces (`already`).
+   */
+  async approveFromNotice(actor: Actor, chatId: string, code: string, option: number): Promise<NoticeApproval> {
+    const notice = await this.findNotice(actor, chatId, code);
+    if (!notice) return { kind: 'invalid' };
+    const idx = option - 1;
+    return runAtomic(this.deps.pool, async (client): Promise<NoticeApproval> => {
+      // Mismo orden de candados que una edición (caso → avisos, trigger de 0037): sin interbloqueos.
+      const c = (await client.query<CaseRow>('SELECT * FROM engagement_case WHERE case_id = $1 AND tenant_id = $2 FOR UPDATE',
+        [notice.case_id, actor.tenantId])).rows[0];
+      const o = (await client.query<ApprovalOfferRow>('SELECT * FROM engagement_approval_offer WHERE offer_id = $1 FOR UPDATE',
+        [notice.offer_id])).rows[0];
+      if (!c || !o) return { kind: 'invalid' };
+      if (['approved', 'responding', 'responded', 'retry_pending'].includes(c.state)) return { kind: 'already', case: c };
+      if (c.state !== 'needs_human' && c.state !== 'failed') {
+        throw new AppError(409, 'validation_error', 'Este caso ya fue resuelto y no puede aprobarse.');
+      }
+      const shown = Number.isInteger(idx) && idx >= 0 && idx < o.options.length ? o.options[idx] : undefined;
+      if (o.status === 'active' && !shown?.trim()) {
+        throw new AppError(400, 'validation_error', `Ese aviso no tiene una opción ${option}. Elige uno de los números que muestra.`);
+      }
+      if (o.status !== 'active' || o.drafts_revision !== c.drafts_revision || shown === undefined || c.drafts[idx] !== shown) {
+        if (o.status === 'active') {
+          await client.query(`UPDATE engagement_approval_offer SET status = 'superseded', superseded_at = now() WHERE offer_id = $1`, [o.offer_id]);
+        }
+        await client.query(`UPDATE engagement_case SET notify_status = 'pending', updated_at = now() WHERE case_id = $1`, [c.case_id]);
+        await client.query(
+          `UPDATE engagement_notification SET status = 'pending', attempts = 0, next_attempt_at = NULL, last_error = NULL, updated_at = now()
+            WHERE case_id = $1 AND chat_id = $2`, [c.case_id, chatId]);
+        await this.deps.sink.write({
+          tenant_id: actor.tenantId, actor_id: actor.userId, actor_role: actor.role,
+          action: 'engagement.approval.stale', resource: `engagement_case/${c.case_id}`, request_id: actor.requestId,
+          decision: 'deny', result: `notice_r${o.drafts_revision}:case_r${c.drafts_revision}:${o.status}`, evidence_ref: o.offer_id,
+        }, client);
+        return { kind: 'stale', case: c, reason: o.status === 'used' ? 'used' : 'changed' };
+      }
+      const res = await client.query<CaseRow>(
+        `UPDATE engagement_case SET state = 'approved', response_text = $2, resolved_by = $3, resolution_channel = 'telegram',
+           resolved_at = now(), attempts = 0, next_attempt_at = now(), last_error = NULL, updated_at = now()
+         WHERE case_id = $1 AND tenant_id = $4 AND state IN ('needs_human','failed')
+           AND drafts_revision = $5 AND drafts ->> $6::int = $7 RETURNING *`,
+        [c.case_id, shown.trim(), actor.userId, actor.tenantId, o.drafts_revision, idx, shown]);
+      const row = res.rows[0];
+      if (!row) throw new Error('engagement.approveFromNotice: compare-and-set failed while holding the case lock');
+      await client.query(`UPDATE engagement_approval_offer SET status = 'used', used_option = $2, used_at = now() WHERE offer_id = $1`, [o.offer_id, option]);
+      await this.deps.sink.write({
+        tenant_id: actor.tenantId, actor_id: actor.userId, actor_role: actor.role,
+        action: 'engagement.approved', resource: `engagement_case/${c.case_id}`,
+        request_id: actor.requestId, decision: 'allow', result: `approved:telegram:option_${option}:r${o.drafts_revision}`, evidence_ref: o.offer_id,
+      }, client, true);
+      return { kind: 'approved', case: row };
+    });
+  }
+
+  /** `/rechazar <código>`: descarta el caso del aviso (no publica nada, así que no depende de la revisión). */
+  async rejectFromNotice(actor: Actor, chatId: string, code: string): Promise<{ case: CaseRow; already: boolean } | null> {
+    const notice = await this.findNotice(actor, chatId, code);
+    return notice ? this.reject(actor, notice.case_id, 'telegram') : null;
   }
 
   // ---------------------------------------------------------------- respuesta pública
@@ -763,10 +990,14 @@ export class EngagementService {
              WHERE case_id = $1 AND state = 'responding' AND $3::int >= 0 RETURNING *`;
     }
     const res = await this.deps.pool.query<CaseRow>(sql, [row.case_id, fail.error.slice(0, 120), backoffSeconds(row.attempts)]);
-    // Agotado sin publicar: se libera el destino para que otra decisión (humana) pueda responder.
+    // Agotado sin publicar: se libera el destino para que otra decisión (humana) pueda responder, y los chats ya
+    // avisados reciben el aviso vigente («No pudimos publicar…» o el caso escalado), con instantánea nueva.
     if (exhausted) {
       await this.deps.pool.query('DELETE FROM response_ledger WHERE tenant_id = $1 AND origin = $2 AND target_ref = $3 AND owner_ref = $4 AND state = \'claimed\'',
         [row.tenant_id, row.origin, row.external_ref, owner]).catch(() => undefined);
+      await this.deps.pool.query(
+        `UPDATE engagement_notification SET status = 'pending', attempts = 0, next_attempt_at = NULL, last_error = NULL, updated_at = now()
+          WHERE case_id = $1`, [row.case_id]);
     }
     await this.deps.sink.write({
       tenant_id: row.tenant_id, actor_id: SYSTEM_ACTOR, actor_role: null,
@@ -791,38 +1022,90 @@ export class EngagementService {
 
   // ---------------------------------------------------------------- avisos (Telegram)
 
-  /** Texto del aviso: mismo case_id que el panel; borradores numerados y comandos. */
-  notificationText(row: CaseRow): string {
+  /**
+   * Texto del aviso: mismo case_id que el panel, las opciones numeradas EXACTAS de la instantánea y los comandos con el
+   * código de ESTE aviso (SEC-TG-APPROVAL-01).
+   */
+  notificationText(row: CaseRow, notice: { code: string; options: readonly string[]; updated: boolean }): string {
     const origin = row.origin === 'google_review'
       ? `Reseña de Google${row.rating ? ` (${row.rating}★)` : ''}`
       : 'Comentario en Facebook';
-    const excerpt = row.body.length > 300 ? `${row.body.slice(0, 297)}…` : row.body;
+    // Texto de terceros (reseña y autor) en una sola línea y sin comandos: nunca parece una opción, otro aviso ni un
+    // comando. Cuenta como salto cualquier terminador de línea, no solo `\n`.
+    const thirdParty = (s: string) => s.replace(LINE_BREAK, ' ').replace(/\s+/g, ' ').trim().replace(/\/(aprobar|rechazar)\b/gi, '$1');
+    const flat = thirdParty(row.body);
+    const excerpt = flat.length > 300 ? `${flat.slice(0, 297)}…` : flat;
+    const header = row.state === 'failed' ? 'MainSpot · No pudimos publicar la respuesta aprobada'
+      : row.reason === 'delivery_uncertain' ? 'MainSpot · No sabemos si se publicó la respuesta aprobada: revisa la reseña antes de decidir'
+        : notice.updated ? 'MainSpot · Propuestas actualizadas (el aviso anterior ya no sirve para aprobar)'
+          : 'MainSpot · Caso pendiente de tu decisión';
     const lines = [
-      row.state === 'failed' ? 'MainSpot · No pudimos publicar la respuesta aprobada' : 'MainSpot · Caso pendiente de tu decisión',
+      `${header} · aviso ${notice.code}`,
       `Caso: ${row.case_id}`,
-      `${origin} · ${row.author_label}`,
+      `${origin} · ${thirdParty(row.author_label)}`,
       `«${excerpt}»`,
       `Motivo: ${row.reason ?? 'revisión'}`,
     ];
-    row.drafts.slice(0, 3).forEach((d, i) => lines.push(`${i + 1}) ${d}`));
-    lines.push(`Para aprobar: /aprobar ${row.case_id} 1 (o 2, 3) · Para descartar: /rechazar ${row.case_id}`);
+    // Solo las opciones reales empiezan una línea con «N) »: las líneas siguientes de cada opción van sangradas.
+    notice.options.forEach((d, i) => lines.push(`${i + 1}) ${d.replace(LINE_BREAK, '\n   ')}`));
+    const n = notice.options.length;
+    if (n > 0) {
+      lines.push(`Para publicar: /aprobar ${notice.code} 1${n === 3 ? ' (o 2, 3)' : n === 2 ? ' (o 2)' : ''} · Para no responder: /rechazar ${notice.code}`);
+      lines.push('Este código solo vale para estas opciones: si alguien las cambia, te enviamos un aviso nuevo.');
+    } else {
+      lines.push(`Sin propuestas: escribe la respuesta en tu panel. Para no responder: /rechazar ${notice.code}`);
+    }
     lines.push(`Panel: ${this.deps.panelUrl}#/caso/${row.case_id}`);
     return lines.join('\n');
   }
 
   /**
-   * Envía los avisos pendientes por el chat de Telegram VINCULADO (nunca por el teléfono
-   * público). Una fila por (caso, chat): repetir no duplica. Sin chat → no_destination (el caso
-   * sigue visible en el panel y se reevalúa cuando se vincule un chat).
+   * Registra la instantánea inmutable del aviso que se va a enviar (código único en el chat). Si las propuestas del
+   * caso ya cambiaron desde que se leyó, no registra nada (null): el caso se avisará con la revisión nueva.
+   */
+  private async issueNotice(c: CaseRow, notificationId: string, chatId: string, userId: string): Promise<{ code: string; options: string[]; updated: boolean } | null> {
+    const options = c.drafts.slice(0, 3);
+    const sha = optionsSha256(options);
+    // «Actualizadas» solo si este chat ya recibió un aviso de una revisión anterior (no en reenvíos ni reintentos).
+    const prior = await this.deps.pool.query('SELECT 1 FROM engagement_approval_offer WHERE case_id = $1 AND chat_id = $2 AND drafts_revision < $3 LIMIT 1',
+      [c.case_id, chatId, c.drafts_revision]);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const code = newNoticeCode();
+      const res = await this.deps.pool.query(
+        `INSERT INTO engagement_approval_offer (offer_id, tenant_id, case_id, notification_id, chat_id, user_id, code, drafts_revision, options, options_sha256)
+         SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+          WHERE EXISTS (SELECT 1 FROM engagement_case WHERE case_id = $3 AND drafts_revision = $8)
+         ON CONFLICT (chat_id, code) DO NOTHING`,
+        [`ofr_${randomUUID()}`, c.tenant_id, c.case_id, notificationId, chatId, userId, code, c.drafts_revision, JSON.stringify(options), sha]);
+      if (res.rowCount) return { code, options, updated: (prior.rowCount ?? 0) > 0 };
+      const still = await this.deps.pool.query('SELECT 1 FROM engagement_case WHERE case_id = $1 AND drafts_revision = $2', [c.case_id, c.drafts_revision]);
+      if (!still.rowCount) return null;
+    }
+    throw new Error('engagement.issueNotice: could not allocate a unique notice code');
+  }
+
+  /**
+   * Envía los avisos pendientes por los chats de Telegram VINCULADOS y activos (nunca por el teléfono público). Una fila
+   * de entrega por (caso, chat); cada envío registra antes su instantánea con código propio. Si las propuestas cambian
+   * mientras se envía, la fila no se marca enviada y el siguiente ciclo manda las vigentes. Sin chat → no_destination
+   * (el caso sigue visible en el panel y se reevalúa cuando se vincule un chat).
    */
   async dispatchNotifications(tenantId: string): Promise<{ sent: number; failed: number; no_destination: number }> {
     const out = { sent: 0, failed: 0, no_destination: 0 };
+    // Además del resumen del caso, cuenta toda fila de entrega pendiente de un chat activo: una edición o un `/aprobar`
+    // obsoleto que reprograma el aviso mientras otro ciclo envía nunca queda sin enviar.
     const cases = await this.deps.pool.query<CaseRow>(
-      `SELECT * FROM engagement_case WHERE tenant_id = $1 AND state IN ('needs_human','failed')
-         AND notify_status IN ('pending','no_destination','failed') ORDER BY created_at LIMIT 20`, [tenantId]);
+      `SELECT * FROM engagement_case c WHERE c.tenant_id = $1 AND c.state IN ('needs_human','failed')
+         AND (c.notify_status IN ('pending','no_destination','failed')
+              OR EXISTS (SELECT 1 FROM engagement_notification n
+                          JOIN telegram_link l ON l.chat_id = n.chat_id AND l.tenant_id = c.tenant_id AND l.status = 'active'
+                         WHERE n.case_id = c.case_id AND n.status IN ('pending','failed') AND n.attempts < $2))
+       ORDER BY c.created_at LIMIT 20`, [tenantId, MAX_RESPOND_ATTEMPTS]);
     if (!cases.rows.length) return out;
-    const chats = await this.deps.pool.query<{ chat_id: string }>(
-      `SELECT chat_id FROM telegram_link WHERE tenant_id = $1 AND status = 'active'`, [tenantId]);
+    const chats = await this.deps.pool.query<{ chat_id: string; user_id: string }>(
+      `SELECT chat_id, user_id FROM telegram_link WHERE tenant_id = $1 AND status = 'active'`, [tenantId]);
+    const userOf = new Map(chats.rows.map((r) => [r.chat_id, r.user_id]));
+    const active = chats.rows.map((r) => r.chat_id);
     for (const c of cases.rows) {
       if (!chats.rows.length) {
         if (c.notify_status !== 'no_destination') {
@@ -838,27 +1121,19 @@ export class EngagementService {
       }
       const due = await this.deps.pool.query<{ notification_id: string; chat_id: string; attempts: number }>(
         `SELECT notification_id, chat_id, attempts FROM engagement_notification
-          WHERE case_id = $1 AND status IN ('pending','failed') AND attempts < $2
-            AND (next_attempt_at IS NULL OR next_attempt_at <= now())`, [c.case_id, MAX_RESPOND_ATTEMPTS]);
+          WHERE case_id = $1 AND chat_id = ANY($3::text[]) AND status IN ('pending','failed') AND attempts < $2
+            AND (next_attempt_at IS NULL OR next_attempt_at <= now())`, [c.case_id, MAX_RESPOND_ATTEMPTS, active]);
       for (const n of due.rows) {
-        const injected = this.deps.channel.name === 'simulated' && await consumeSimFault(this.deps.pool, tenantId, 'telegram', 'error');
-        const sent = injected ? { ok: false, error: 'simulated_telegram_error' } : await this.deps.channel.sendMessage(n.chat_id, this.notificationText(c));
-        if (sent.ok) {
-          await this.deps.pool.query(
-            `UPDATE engagement_notification SET status = 'sent', sent_at = now(), attempts = attempts + 1, last_error = NULL, updated_at = now()
-              WHERE notification_id = $1`, [n.notification_id]);
-          out.sent += 1;
-        } else {
-          await this.deps.pool.query(
-            `UPDATE engagement_notification SET status = 'failed', attempts = attempts + 1, last_error = $2,
-               next_attempt_at = now() + make_interval(secs => $3), updated_at = now() WHERE notification_id = $1`,
-            [n.notification_id, (sent.error ?? 'send_failed').slice(0, 120), backoffSeconds(n.attempts + 1)]);
-          out.failed += 1;
-        }
+        const outcome = await this.deliverNotice(c, n, userOf.get(n.chat_id) ?? '');
+        if (outcome === 'sent') out.sent += 1;
+        else if (outcome === 'failed') out.failed += 1;
       }
-      const pending = await this.deps.pool.query<{ n: string }>(
-        `SELECT count(*) AS n FROM engagement_notification WHERE case_id = $1 AND status <> 'sent'`, [c.case_id]);
-      const status = Number(pending.rows[0]?.n ?? 0) === 0 ? 'sent' : 'failed';
+      // `failed` solo si algún envío falló; una fila que quedó pendiente (su aviso se quedó viejo mientras salía) se
+      // envía en el siguiente ciclo con la revisión vigente.
+      const rows = await this.deps.pool.query<{ status: string }>(
+        'SELECT status FROM engagement_notification WHERE case_id = $1 AND chat_id = ANY($2::text[])', [c.case_id, active]);
+      const statuses = rows.rows.map((r) => r.status);
+      const status = statuses.includes('failed') ? 'failed' : statuses.includes('pending') ? 'pending' : 'sent';
       await this.deps.pool.query(`UPDATE engagement_case SET notify_status = $2, updated_at = now() WHERE case_id = $1`, [c.case_id, status]);
       if (status === 'sent') {
         await this.deps.sink.write({
@@ -869,5 +1144,56 @@ export class EngagementService {
       }
     }
     return out;
+  }
+
+  /**
+   * Envía UN aviso (instantánea nueva + mensaje) por su fila de entrega. La fila solo queda enviada si las propuestas
+   * no cambiaron mientras tanto; un fallo del canal la reintenta con espera creciente.
+   */
+  private async deliverNotice(c: CaseRow, n: { notification_id: string; chat_id: string; attempts: number }, userId: string): Promise<'sent' | 'failed' | 'skipped'> {
+    const notice = await this.issueNotice(c, n.notification_id, n.chat_id, userId);
+    if (!notice) return 'skipped';
+    const injected = this.deps.channel.name === 'simulated' && await consumeSimFault(this.deps.pool, c.tenant_id, 'telegram', 'error');
+    const sent = injected ? { ok: false, error: 'simulated_telegram_error' } : await this.deps.channel.sendMessage(n.chat_id, this.notificationText(c, notice));
+    if (sent.ok) {
+      // Bajo candado compartido del caso (una edición en curso confirma antes): solo queda «enviada» si la revisión
+      // enviada sigue siendo la vigente; si no, la fila sigue pendiente y el siguiente ciclo manda la nueva.
+      const marked = await runAtomic(this.deps.pool, async (client) => {
+        const now = await client.query<{ drafts_revision: number }>('SELECT drafts_revision FROM engagement_case WHERE case_id = $1 FOR SHARE', [c.case_id]);
+        if (now.rows[0]?.drafts_revision !== c.drafts_revision) return false;
+        await client.query(
+          `UPDATE engagement_notification SET status = 'sent', sent_at = now(), attempts = attempts + 1, last_error = NULL, updated_at = now()
+            WHERE notification_id = $1`, [n.notification_id]);
+        return true;
+      });
+      return marked ? 'sent' : 'skipped';
+    }
+    await this.deps.pool.query(
+      `UPDATE engagement_notification SET status = 'failed', attempts = attempts + 1, last_error = $2,
+         next_attempt_at = now() + make_interval(secs => $3), updated_at = now() WHERE notification_id = $1`,
+      [n.notification_id, (sent.error ?? 'send_failed').slice(0, 120), backoffSeconds(n.attempts + 1)]);
+    return 'failed';
+  }
+
+  /**
+   * Envía ya a ESTE chat vinculado el aviso vigente de un caso pendiente del negocio, con instantánea y código nuevos
+   * (tras un `/aprobar` obsoleto o un mensaje anterior a los códigos). Caso de otro negocio, resuelto o chat no activo
+   * para esta persona: no hace nada (false). Si el envío falla, la fila queda para el reintento del worker.
+   */
+  async sendNoticeTo(actor: Actor, chatId: string, caseId: string): Promise<boolean> {
+    const c = await this.getCase(actor.tenantId, caseId);
+    if (!c || (c.state !== 'needs_human' && c.state !== 'failed')) return false;
+    const link = await this.deps.pool.query<{ user_id: string }>(
+      `SELECT user_id FROM telegram_link WHERE tenant_id = $1 AND chat_id = $2 AND user_id = $3 AND status = 'active'`,
+      [actor.tenantId, chatId, actor.userId]);
+    if (!link.rows[0]) return false;
+    const row = await this.deps.pool.query<{ notification_id: string; chat_id: string; attempts: number }>(
+      `INSERT INTO engagement_notification (notification_id, tenant_id, case_id, chat_id) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (case_id, chat_id) DO UPDATE SET status = 'pending', attempts = 0, next_attempt_at = NULL, last_error = NULL, updated_at = now()
+       RETURNING notification_id, chat_id, attempts`, [`ntf_${randomUUID()}`, actor.tenantId, caseId, chatId]);
+    await this.deps.pool.query(`UPDATE engagement_case SET notify_status = 'pending', updated_at = now() WHERE case_id = $1`, [caseId]);
+    const n = row.rows[0];
+    if (n) await this.deliverNotice(c, n, actor.userId);
+    return true;
   }
 }

@@ -161,9 +161,14 @@
     var r = rows.filter(function (x) { return x.origin === origin && x.category === category; })[0];
     return r ? r.mode : 'review_required';
   }
-  AG.derivePolicy = function (rows) {
+  AG.derivePolicy = function (rows, terms) {
     var a = S().agent;
     a.rows = rows;
+    // SEC-CONSENT-01: términos vigentes (texto literal y versión) y reglas que deben aceptarse de nuevo.
+    a.consentTerms = terms;
+    a.reconsent = rows.filter(function (r) { return r.reconsent_required; }).map(function (r) {
+      return { origin: r.origin, category: r.category };
+    });
     var on = function (k, ch) { return COMBOS.some(function (c) { return c.key === k && (!ch || c.ch === ch) && modeOf(rows, c.origin, c.category) === 'safe_auto_reply'; }); };
     var enabled = on('thanks') || on('info');
     a.policy = {
@@ -189,18 +194,30 @@
       return { origin: c.origin, category: c.category, ch: c.ch, key: c.key, from: modeOf(rows, c.origin, c.category), mode: want };
     }).filter(function (x) { return x.from !== x.mode; });
   };
-  /** Guarda solo lo que cambió; activar respuestas automáticas exige consentimiento explícito. */
+  /**
+   * Guarda solo lo que cambió; activar respuestas automáticas exige aceptar explícitamente los términos que se
+   * mostraron: se envía su versión y el servidor responde 409 si ya no es la vigente.
+   */
   AG.setPolicy = function (d) {
     var changes = AG.policyChanges(d);
+    var terms = S().agent.consentTerms || {};
     var chain = Promise.resolve({ ok: true });
     changes.forEach(function (c) {
       chain = chain.then(function (prev) {
         if (!prev.ok) return prev;
         var body = { origin: c.origin, category: c.category, mode: c.mode };
-        if (c.mode === 'safe_auto_reply') body.consent = true;
+        if (c.mode === 'safe_auto_reply') { body.consent = true; body.consent_version = terms[c.origin] ? terms[c.origin].version : null; }
         return API.put('/engagement/policies', body).then(function (res) { return res.ok ? { ok: true } : { ok: false, message: res.error.message }; });
       });
     });
     return chain.then(function (out) { return MS.refresh(['policies', 'cases'], true).then(function () { return out; }); });
+  };
+  /** SEC-CONSENT-01: acepta los términos vigentes (versión mostrada) para las respuestas automáticas a reseñas. */
+  AG.reconsent = function (version) {
+    return API.post('/engagement/policies/consent', { consent: true, consent_version: version }).then(function (res) {
+      return MS.refresh(['policies', 'cases'], true).then(function () {
+        return res.ok ? { ok: true, updated: res.data.updated } : { ok: false, message: res.error.message };
+      });
+    });
   };
 })();

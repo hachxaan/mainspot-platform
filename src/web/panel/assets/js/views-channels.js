@@ -326,6 +326,7 @@
     html += '<div class="stack-lg">' + MS.ui.watchLine() + MS.ui.agentSummary();
     var autoOn = pol.enabled && (pol.thanks === 'auto' || pol.info === 'auto');
     html += '<a class="card policy-link" href="#/atencion/reglas"><span class="grow"><span class="title" style="display:block;font-weight:700">Qué puede responder MainSpot por mí</span><span class="sub" style="display:block">' + esc(autoOn ? 'Respuestas automáticas solo en lo que autorizaste. Todo lo demás se revisa.' : 'Todas las respuestas públicas se revisan antes de publicarse.') + '</span></span>' + UI.tag(autoOn ? 'Respuestas automáticas activas' : 'Todo se revisa', autoOn ? 'nopal' : 'neutral') + icon('chevron-right', 'chev') + '</a>';
+    html += MS.ui.reconsentBanner();
     if (S().telegram.status !== 'linked' && MS.can('telegram.link')) html += '<div class="banner banner-ocre">' + icon('message-circle') + '<span><strong>Telegram sin conectar</strong>Los casos siguen aquí, pero no te avisaremos al celular.<br>' + UI.btn('Conectar Telegram', { href: '#/telegram', sm: true, style: 'secondary' }) + '</span></div>';
     function qs(c, e) { return '#/atencion?canal=' + c + '&estado=' + e; }
     html += '<div class="filters"><div class="segmented" role="group" aria-label="Canal">' + [['todos', 'Todos'], ['google', 'Google'], ['facebook', 'Facebook']].map(function (x) { return '<button type="button" aria-pressed="' + (canal === x[0]) + '" data-action="go" data-arg="' + qs(x[0], estado) + '">' + x[1] + '</button>'; }).join('') + '</div>' +
@@ -420,6 +421,17 @@
     return Object.assign({ title: src.label, html: html }, back);
   };
 
+  /* SEC-CONSENT-01: respuestas automáticas a reseñas autorizadas antes de la cuota compartida. Hasta aceptar los
+     términos vigentes salen con el texto seguro sin IA y no gastan respuestas con IA del plan. */
+  MS.ui.reconsentBanner = function () {
+    if (!(S().agent.reconsent || []).length) return '';
+    var canAccept = MS.can('engagement.policy.manage') && !MS.expired();
+    return '<div class="banner banner-ocre" id="reconsent-banner">' + icon('shield-check') + '<span><strong>Actualiza tu autorización de respuestas automáticas</strong>' +
+      'Las respuestas automáticas a reseñas de Google redactadas con IA ahora usan las respuestas con IA de tu plan. Mientras no aceptes las nuevas condiciones, MainSpot responde esas reseñas con un texto seguro sin IA.' +
+      (canAccept ? '<br>' + UI.btn('Revisar y aceptar', { action: 'pol-reconsent', sm: true, style: 'secondary', id: 'reconsent-open' })
+        : '<br>Solo quien administra tu negocio puede aceptarlas.') + '</span></div>';
+  };
+
   /* ---------- Reglas (GET/PUT /engagement/policies, versionadas y con consentimiento) ---------- */
   V.rules = function () {
     var a = S().agent, canEdit = MS.can('engagement.policy.manage') && !MS.expired();
@@ -436,11 +448,12 @@
     }
     var html = head('Qué puede responder MainSpot por mí', 'Tú decides qué responde solo y qué te pregunta antes.');
     html += '<div class="stack-lg">';
+    html += MS.ui.reconsentBanner();
     html += '<div class="banner banner-lila">' + icon('info') + '<span><strong>Autorización por negocio</strong>Los canales reales publican respuestas visibles con las reglas que autorices. Los simulados no publican fuera de MainSpot. Por defecto, todo se revisa antes de publicarse.</span></div>';
     html += '<section class="card stack"><div class="row" style="justify-content:space-between"><div><h2 style="font-size:var(--fs-lg)">Respuestas automáticas</h2><p class="muted small">Si lo apagas, MainSpot te pregunta antes de cada respuesta.</p></div>' +
       '<button type="button" class="switch" id="pol-switch" role="switch" aria-checked="' + !!d.enabled + '" aria-label="Respuestas automáticas" data-action="pol-toggle"' + (canEdit ? '' : ' disabled') + '><span></span></button></div>' +
-      // DEC-0076: la respuesta automática a una reseña redactada con IA consume la misma cuota mensual que «Redactar con IA».
-      '<p class="tiny" id="pol-ai-quota">En reseñas de Google, cada respuesta automática redactada con IA usa 1 de tus respuestas con IA del ciclo; si no quedan, MainSpot responde con un texto seguro sin IA.</p></section>';
+      // DEC-0076/DEC-0077: la respuesta automática a una reseña redactada con IA consume la misma cuota mensual que «Redactar con IA».
+      '<p class="tiny" id="pol-ai-quota">En reseñas de Google, cada respuesta automática redactada con IA usa 1 de tus respuestas con IA del ciclo (la misma bolsa que «Redactar con IA») y puede agotarlas; si no quedan, MainSpot responde con un texto seguro sin IA.</p></section>';
     html += '<section class="card stack" aria-labelledby="rl-t"><h2 id="rl-t" style="font-size:var(--fs-lg)">Por tipo de mensaje</h2>' +
       opt('thanks', 'Agradecimientos y comentarios positivos', 'Sin compromisos ni promesas.') +
       opt('info', 'Preguntas sobre tu negocio', 'Solo con datos que tú confirmaste (por ejemplo, el teléfono de cada canal).') +

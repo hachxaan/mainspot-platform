@@ -4,6 +4,7 @@
 - Autoridad: **DEC-0076** (canon funcional 0.7.0: FR-0008, FR-0010, FR-0016). Fuentes: la directiva literal del propietario **SRC-0015** (mensaje de apertura de la sesión del 2026-11-05), que adopta las decisiones C01–C14 del extracto **SRC-0014** (copia byte a byte de `SRC-005` del repositorio documental; no literal, G-SOURCE abierto).
 - Especificación operativa: `docs/handoffs/commercial-policy-2026-11-05/{START-PROMPT,HANDOFF}.md` (PR #15). Futuro separado: [`FUTURE-BACKLOG.md`](../handoffs/commercial-policy-2026-11-05/FUTURE-BACKLOG.md).
 - No aprueba nombres, precios, paquetes ni cantidades (Q-004, C03). Ningún valor de cuota lo eligió el agente.
+- **Actualización DEC-0077 (2026-11-06, rama `feat/commercial-governance-safeguards-20261105`):** el propietario confirmó las interpretaciones G-SEM (§6.1) y arbitró los conflictos C14↔DEC-0018 y C10/C12↔DEC-0024/0027 (§6.3). Además, ahora se exige el consentimiento versionado vigente antes de que una respuesta automática gaste la cuota (SEC-CONSENT-01), y el aviso de Telegram se aprueba con su propio código, `/aprobar <código> N`, que deja de servir si las propuestas cambian (SEC-TG-APPROVAL-01). Las menciones a `/aprobar N` de este documento describen la versión de DEC-0076. Diseño vigente: [`commercial-governance-safeguards.md`](commercial-governance-safeguards.md).
 
 ## 1. Reconciliación de autoridad
 

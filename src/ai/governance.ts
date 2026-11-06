@@ -48,29 +48,37 @@ export const SPENT_SQL = `SELECT COALESCE(SUM(CASE WHEN i.status = 'running' THE
 /**
  * Comprueba y deja el candado tomado: el llamador inserta la invocación `running` con `reserved_usd`
  * en la MISMA transacción, de modo que dos reservas concurrentes nunca superan el techo.
+ *
+ * Sin techo no hay gasto (NFR-0006; DEC-0077 R4/R5): si falta la fila `lab_total` (techo acumulado de toda la IA de
+ * pago) o, para un negocio, cualquier fila `tenant_day` (la suya o la por defecto), la reserva se deniega con ese
+ * ámbito. Esas filas no las crean las migraciones (`ensureAiCatalog`); una base sin ellas no gasta nada. El techo
+ * mensual de plataforma sigue siendo opcional.
  */
 export async function reserveBudget(client: PoolClient, tenantId: string | null, reserveUsd: number): Promise<BudgetDecision> {
   await client.query(`SELECT pg_advisory_xact_lock(hashtext('ai_budget_reservation'))`);
+  // Los techos globales solo cuentan con su fila global (`tenant_id` nulo): una fila de un negocio nunca hace de techo
+  // acumulado o mensual de toda la plataforma. El diario prefiere la del negocio y, si no hay, la por defecto.
   const budgets = await client.query<{ scope: BudgetLimit['scope']; tenant_id: string | null; limit_usd: string }>(
     `SELECT scope, tenant_id, limit_usd FROM ai_budget
-      WHERE scope IN ('lab_total','platform_month') OR (scope = 'tenant_day' AND (tenant_id = $1 OR tenant_id IS NULL))`, [tenantId]);
+      WHERE (scope IN ('lab_total','platform_month') AND tenant_id IS NULL)
+         OR (scope = 'tenant_day' AND (tenant_id = $1 OR tenant_id IS NULL))`, [tenantId]);
   const limits: BudgetLimit[] = [];
   const pick = (scope: BudgetLimit['scope']) => {
     const rows = budgets.rows.filter((b) => b.scope === scope);
     return rows.find((b) => b.tenant_id !== null) ?? rows[0];
   };
   const lab = pick('lab_total');
-  if (lab) {
-    const s = await client.query<{ spent: string }>(SPENT_SQL);
-    limits.push({ scope: 'lab_total', limitUsd: Number(lab.limit_usd), spentUsd: Number(s.rows[0]?.spent ?? 0) });
-  }
+  if (!lab) return { allowed: false, limits, exceeded: 'lab_total' };
+  const s = await client.query<{ spent: string }>(SPENT_SQL);
+  limits.push({ scope: 'lab_total', limitUsd: Number(lab.limit_usd), spentUsd: Number(s.rows[0]?.spent ?? 0) });
   const month = pick('platform_month');
   if (month) {
     const s = await client.query<{ spent: string }>(`${SPENT_SQL} AND i.created_at >= date_trunc('month', now())`);
     limits.push({ scope: 'platform_month', limitUsd: Number(month.limit_usd), spentUsd: Number(s.rows[0]?.spent ?? 0) });
   }
-  const day = tenantId ? pick('tenant_day') : undefined;
-  if (day && tenantId) {
+  if (tenantId) {
+    const day = pick('tenant_day');
+    if (!day) return { allowed: false, limits, exceeded: 'tenant_day' };
     const s = await client.query<{ spent: string }>(`${SPENT_SQL} AND i.tenant_id = $1 AND i.created_at >= date_trunc('day', now())`, [tenantId]);
     limits.push({ scope: 'tenant_day', limitUsd: Number(day.limit_usd), spentUsd: Number(s.rows[0]?.spent ?? 0) });
   }

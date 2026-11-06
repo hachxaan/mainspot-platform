@@ -21,6 +21,7 @@ import { createTenantWithPlan, countRows } from '../helpers/tenants.ts';
 import { AiDispatcher } from '../../src/ai/dispatcher.ts';
 import { AuditSink } from '../../src/audit/sink.ts';
 import { currentStep, totpAt } from '../../src/platform/auth.ts';
+import { AUTO_REPLY_CONSENT } from '../../src/engagement/consent.ts';
 import { RetentionService } from '../../src/retention/service.ts';
 import { AppError } from '../../src/shared/errors.ts';
 
@@ -420,7 +421,8 @@ test('FR-0016: Jev lee comentarios (sin guardar el texto en la lectura) y el led
 
   // Sin lectura semántica (proveedor caído) => revisión humana, nunca respuesta automática.
   const ref2 = `c-${randomUUID().slice(0, 6)}`;
-  await call(a.token, '/engagement/policies', 'PUT', { origin: 'facebook_comment', category: 'gratitude', mode: 'safe_auto_reply', consent: true });
+  const fbPolicy = await call(a.token, '/engagement/policies', 'PUT', { origin: 'facebook_comment', category: 'gratitude', mode: 'safe_auto_reply', consent: true, consent_version: AUTO_REPLY_CONSENT.facebook_comment.version });
+  assert.equal(fbPolicy.status, 200, JSON.stringify(fbPolicy.body));
   await call(a.token, '/dev/simulator/facebook-comments', 'POST', { post_id: post, body: '¡Gracias, excelente servicio!', author_label: 'Ana', external_ref: ref2 });
   await t.pool.query(`UPDATE ai_provider SET status = 'disabled' WHERE kind = 'simulated'`);
   try {

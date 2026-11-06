@@ -80,6 +80,8 @@ const TENANT_TABLES: ReadonlyArray<{ table: string; key: string; exportSkip?: re
   { table: 'provider_reply_ledger', key: 'tenant_id' },
   // DEV-E2E-02: agente de atención, Telegram, ficha de Google y simulador (antes de review,
   // social_post e internal_user por sus FK).
+  // DEC-0077 (0037): instantáneas de los avisos de Telegram (antes de engagement_notification/case por sus FK).
+  { table: 'engagement_approval_offer', key: 'tenant_id' },
   { table: 'engagement_notification', key: 'tenant_id' },
   { table: 'engagement_case', key: 'tenant_id' },
   { table: 'engagement_policy', key: 'tenant_id' },
@@ -388,6 +390,8 @@ export class RetentionService {
           WHERE tenant_id = $1`, [tenantId, anonymousId]);
       // La misma variable autoriza borrar subscription_history de ESTE negocio (append-only salvo aquí).
       const deleted: Record<string, number> = {};
+      // Mismo orden de candados que `/aprobar` (caso → aviso): se bloquean los casos antes de borrar sus avisos.
+      await client.query('SELECT 1 FROM engagement_case WHERE tenant_id = $1 FOR UPDATE', [tenantId]);
       for (const { table, key } of TENANT_TABLES) {
         const res = await client.query(`DELETE FROM ${table} WHERE ${key} = $1`, [tenantId]);
         deleted[table] = res.rowCount ?? 0;

@@ -19,6 +19,7 @@ import { createServer, type AddressInfo } from 'node:net';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import pg from 'pg';
 import { TEST_URL, SEED, api } from '../helpers/testdb.ts';
+import { AUTO_REPLY_CONSENT } from '../../src/engagement/consent.ts';
 
 const transcript: string[] = [];
 function say(line: string): void {
@@ -201,8 +202,8 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
 
   // ---------- Políticas, Telegram y post publicado ----------
   say('\n-- Agente: políticas opt-in, Telegram y post de Facebook --');
-  const p1 = await call('/api/backoffice/engagement/policies', { method: 'PUT', token, body: { origin: 'google_review', category: 'gratitude', mode: 'safe_auto_reply', consent: true } });
-  const p2 = await call('/api/backoffice/engagement/policies', { method: 'PUT', token, body: { origin: 'facebook_comment', category: 'basic_info', mode: 'safe_auto_reply', consent: true } });
+  const p1 = await call('/api/backoffice/engagement/policies', { method: 'PUT', token, body: { origin: 'google_review', category: 'gratitude', mode: 'safe_auto_reply', consent: true, consent_version: AUTO_REPLY_CONSENT.google_review.version } });
+  const p2 = await call('/api/backoffice/engagement/policies', { method: 'PUT', token, body: { origin: 'facebook_comment', category: 'basic_info', mode: 'safe_auto_reply', consent: true, consent_version: AUTO_REPLY_CONSENT.facebook_comment.version } });
   check(p1.body.policy.version === 1 && p2.body.policy.version === 1, 'opt-in explícito por origen y categoría (versión 1)');
   const code = await call('/api/backoffice/telegram/link-code', { method: 'POST', token });
   const chat = 880000000 + Math.floor(Math.random() * 1e6);
@@ -238,8 +239,10 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   check(JSON.stringify(postAfter) === JSON.stringify(postBefore), 'la publicación previa no cambia');
 
   const gRisk = cs.get('g-risk');
-  const approve = await telegram(upd + 2, chat, `/aprobar ${gRisk?.case_id} 1`);
-  check(approve.body.handled === 'approved', 'aprobación desde Telegram (alternativa 1)');
+  // El código del aviso que salió por el chat (el canal simulado vive en el proceso del servidor: se lee su instantánea).
+  const notice = (await pool.query<{ code: string }>('SELECT code FROM engagement_approval_offer WHERE case_id = $1 AND chat_id = $2 ORDER BY created_at DESC LIMIT 1', [gRisk?.case_id, String(chat)])).rows[0]?.code;
+  const approve = await telegram(upd + 2, chat, `/aprobar ${notice} 1`);
+  check(approve.body.handled === 'approved', 'aprobación desde Telegram con el código del aviso (alternativa 1)');
   const reject = await call(`/api/backoffice/engagement/cases/${cs.get('fb-risk')?.case_id}/reject`, { method: 'POST', token, body: {} });
   check(reject.body.case.state === 'rejected', 'rechazo desde el panel (mismo caso)');
   cs = await casesOf(token);
@@ -267,7 +270,7 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   base = server.base;
   await waitWorkerCycles(cli.tenant_id, 2);
   // Telegram reentrega la MISMA aprobación tras el reinicio (otro proceso): dedupe durable, sin segunda publicación.
-  const redelivered = await telegram(upd + 2, chat, `/aprobar ${gRisk?.case_id} 1`);
+  const redelivered = await telegram(upd + 2, chat, `/aprobar ${notice} 1`);
   check(redelivered.status === 200 && redelivered.body.handled === 'duplicate', 'reentrega del mismo update_id tras reiniciar: duplicate (sin actuar)');
   const replies = (await call('/api/backoffice/dev/simulator/replies', { token })).body.replies as Array<{ target_ref: string }>;
   const refs = replies.map((r) => r.target_ref).sort();
@@ -282,7 +285,7 @@ test('E2E DEV-E2E-02: alta → teléfonos → agente sin navegador → Telegram 
   const foreign = await call(`/api/backoffice/engagement/cases/${gRisk?.case_id}`, { token: String(other.body.token) });
   const ghost = await call('/api/backoffice/engagement/cases/case_inexistente', { token: String(other.body.token) });
   check(foreign.status === 404 && JSON.stringify(foreign.body) === JSON.stringify(ghost.body), 'otro negocio recibe el mismo 404 que un caso inexistente');
-  const foreignTg = await telegram(upd + 3, chat + 1, `/aprobar ${gRisk?.case_id} 1`);
+  const foreignTg = await telegram(upd + 3, chat + 1, `/aprobar ${notice} 1`);
   check(foreignTg.body.handled === 'unlinked_chat', 'chat no vinculado no puede decidir');
   await kill(server.proc, 'SIGTERM');
 });

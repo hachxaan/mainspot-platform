@@ -59,11 +59,11 @@ export class AiJobs {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
 
-  constructor(deps: { pool: Pool; registry: AiRegistry; environment: string; lab?: AiLab }) {
+  constructor(deps: { pool: Pool; registry: AiRegistry; environment: string; lab: AiLab }) {
     this.pool = deps.pool;
     this.registry = deps.registry;
     this.environment = deps.environment;
-    this.lab = deps.lab ?? new AiLab({ pool: deps.pool, registry: deps.registry, environment: deps.environment });
+    this.lab = deps.lab;
   }
 
   private replay(job: AiJobRow, grantId: string | null, userId: string): { job: AiJobRow; created: false } {

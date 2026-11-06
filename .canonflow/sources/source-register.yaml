@@ -152,3 +152,31 @@ sources:
     inventar QS/ANS. Adopta START-PROMPT.md/HANDOFF.md (PR #15, 83619f0) como especificación operativa y las
     decisiones del extracto SRC-0014 sin reabrirlas; prioriza la semántica de cuotas. No autoriza precios, cuotas,
     fórmulas, cobros, migraciones en bases reales, despliegues ni cambios de producción.
+- id: SRC-0016
+  title: Confirmación del propietario de las interpretaciones y arbitrajes comerciales (revisión del PR #16, 2026-11-05; SRC-006 del repositorio documental)
+  kind: document
+  location: .canonflow/sources/SRC-0016-owner-confirmation-2026-11-05.md
+  fingerprint: sha256:113a6344839cd74a125c7e5db215f8a2cedbbffea52b0a9e281b760b662fed8c
+  reliability: informative
+  registered_at: '2026-11-06'
+  notes: >-
+    Copia byte a byte de hachxaan/mainspot-documentation@docs/commercial-governance-20261105 (commit dc969e1,
+    indexado en 54254b5), sources/normalized/SRC-006-owner-confirmation-2026-11-05.md. La única expresión literal
+    del propietario es «Adelante», su respuesta a la propuesta inmediatamente anterior de la revisión del PR #16; el
+    resto es un resumen contextual de esa propuesta, no una cita adicional del propietario. Sin audio ni firma
+    verificable (raw_audio_verified: false). No confundir con SRC-0006 de esta plataforma. La formaliza con palabras
+    del propietario la directiva literal SRC-0017 (DEC-0077).
+- id: SRC-0017
+  title: Instrucción explícita del propietario — ciclo local de gobernanza y seguridad (resolución comercial confirmada, SEC-CONSENT-01 y SEC-TG-APPROVAL-01)
+  kind: document
+  location: .canonflow/sources/SRC-0017-governance-security-cycle-directive.md
+  fingerprint: sha256:6acfea9dd4314fa24553f1c33700804a642251b5cd16e067a548aa627aa6352c
+  reliability: authoritative
+  registered_at: '2026-11-06'
+  notes: >-
+    Fuente humana literal externa al HDC (mensaje de apertura de la sesión OMP del 2026-11-05, hora local);
+    registrada como DEC-0077 sin inventar QS/ANS. Enumera con palabras del propietario las siete decisiones
+    comerciales confirmadas (detalle en SRC-0016) y ordena una decisión canónica nueva con precedencias explícitas
+    y la implementación de SEC-CONSENT-01 y SEC-TG-APPROVAL-01. No autoriza producción, bases reales, proveedores
+    de pago, cobros, DNS ni infraestructura, migraciones reales, fusiones de PR ni firmas de gates humanos
+    (G-MIG/G-SEC); no fija cuotas, precios, fórmulas de prorrateo, proveedores ni umbrales.

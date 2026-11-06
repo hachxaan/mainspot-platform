@@ -259,20 +259,34 @@
         });
       });
     },
-    /** Mensajes del chat simulado; los avisos de casos abiertos llevan botones (mismo case_id). */
-    build: function (messages) {
+    /**
+     * Código del aviso (SEC-TG-APPROVAL-01): va al final de la primera línea, que escribe solo el servidor; el texto de
+     * terceros va más abajo y aplanado, así que nunca puede hacerse pasar por él.
+     */
+    noticeCode: function (text) {
+      var m = / · aviso ([A-HJ-NP-Z2-9]{6})$/.exec(String(text || '').split('\n')[0]);
+      return m ? m[1] : null;
+    },
+    /**
+     * Mensajes del chat simulado. Solo los avisos vigentes (`active`) de casos abiertos llevan botones, con las opciones
+     * de la instantánea de ESE aviso que guarda el servidor (no el texto del mensaje ni el estado actual del caso):
+     * confirmar envía /aprobar CÓDIGO N, que solo publica si el aviso sigue vigente. Un aviso sustituido o ya usado
+     * queda como en Telegram: se puede escribir su comando, pero el servidor no publica nada y envía el vigente.
+     */
+    build: function (messages, notices) {
+      var byCode = {};
+      (notices || []).forEach(function (n) { byCode[n.code] = n; });
       return (messages || []).map(function (m, i) {
         var out = { id: 'tg-' + i + '-' + m.at, from: m.from, text: m.text, at: MS.ts(m.at), actions: [] };
-        var mc = m.from === 'bot' ? /Caso: (\S+)/.exec(m.text) : null;
-        if (mc) {
-          var id = mc[1];
-          var c = (S().cases || []).filter(function (x) { return x.id === id; })[0];
-          var n = (m.text.match(/^\d\) /gm) || []).length;
-          if (c && (c.status === 'needs_human' || c.status === 'failed') && MS.can('engagement.approve')) {
-            for (var k = 1; k <= n; k += 1) out.actions.push({ label: 'Usar opción ' + k, act: 'case-pick', arg: id + '|' + k });
-            out.actions.push({ label: 'No responder', act: 'case-reject', arg: id });
+        var code = m.from === 'bot' ? MS.tg.noticeCode(m.text) : null;
+        var n = code ? byCode[code] : null;
+        if (n) {
+          var c = (S().cases || []).filter(function (x) { return x.id === n.case_id; })[0];
+          if (n.status === 'active' && c && (c.status === 'needs_human' || c.status === 'failed') && MS.can('engagement.approve')) {
+            (n.options || []).forEach(function (text, k) { out.actions.push({ label: 'Usar opción ' + (k + 1), act: 'case-pick', arg: code + '|' + (k + 1), shown: text, source: c.source }); });
+            out.actions.push({ label: 'No responder', act: 'case-reject', arg: code });
           }
-          out.actions.push({ label: 'Ver en el panel', act: 'open', arg: '#/caso/' + id });
+          out.actions.push({ label: 'Ver en el panel', act: 'open', arg: '#/caso/' + n.case_id });
         }
         return out;
       });
@@ -284,10 +298,8 @@
       if (a.act === 'open') { location.hash = a.arg; return; }
       var parts = String(a.arg || '').split('|');
       if (a.act === 'case-pick') {
-        var c = MS.agent.get(parts[0]);
-        var d = c && c.drafts[Number(parts[1]) - 1];
-        // Segundo toque en Telegram antes de publicar (la decisión es de la persona).
-        MS.mem.local.tg = [{ id: localId('tgq'), from: 'bot', at: Date.now(), text: '¿Publico esta respuesta' + (c ? ' en ' + MS.agent.SRC[c.source].short : '') + '?\n«' + (d ? d.text : '') + '»', actions: [{ label: 'Sí, publicar', act: 'case-yes', arg: a.arg }, { label: 'Todavía no', act: 'case-no' }] }];
+        // Segundo toque en Telegram antes de publicar (la decisión es de la persona), con el texto que mostró el aviso.
+        MS.mem.local.tg = [{ id: localId('tgq'), from: 'bot', at: Date.now(), text: '¿Publico esta respuesta' + (a.source ? ' en ' + MS.agent.SRC[a.source].short : '') + '?\n«' + (a.shown || '') + '»', actions: [{ label: 'Sí, publicar', act: 'case-yes', arg: a.arg }, { label: 'Todavía no', act: 'case-no' }] }];
         MS.emit();
         return;
       }

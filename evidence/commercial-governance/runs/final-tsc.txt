@@ -1,0 +1,2 @@
+# tsc --noEmit — código fa7b7ea (= 41d6c24 antes del autosquash)
+tsc_rc=0

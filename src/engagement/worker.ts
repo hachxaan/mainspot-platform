@@ -216,17 +216,25 @@ export class EngagementWorker {
    */
   private async recoverStale(tenantId: string): Promise<number> {
     const idempotent = this.deps.service.deps.replier.idempotent;
-    const res = idempotent
-      ? await this.deps.pool.query(
+    if (idempotent) {
+      const res = await this.deps.pool.query(
         `UPDATE engagement_case SET state = 'retry_pending', next_attempt_at = now(), lease_until = NULL,
            last_error = 'interrupted', updated_at = now()
-         WHERE tenant_id = $1 AND state = 'responding' AND lease_until < now()`, [tenantId])
-      : await this.deps.pool.query(
-        `UPDATE engagement_case SET state = 'needs_human', reason = 'delivery_uncertain', lease_until = NULL,
+         WHERE tenant_id = $1 AND state = 'responding' AND lease_until < now()`, [tenantId]);
+      return res.rowCount ?? 0;
+    }
+    const res = await this.deps.pool.query<{ n: string }>(
+      `WITH stale AS (
+         UPDATE engagement_case SET state = 'needs_human', reason = 'delivery_uncertain', lease_until = NULL,
            drafts = CASE WHEN jsonb_array_length(drafts) = 0 THEN jsonb_build_array(response_text) ELSE drafts END,
            notify_status = 'pending', updated_at = now()
-         WHERE tenant_id = $1 AND state = 'responding' AND lease_until < now()`, [tenantId]);
-    return res.rowCount ?? 0;
+         WHERE tenant_id = $1 AND state = 'responding' AND lease_until < now() RETURNING case_id),
+       -- Los chats ya avisados vuelven a recibir el aviso vigente (instantánea nueva).
+       renotified AS (
+         UPDATE engagement_notification n SET status = 'pending', attempts = 0, next_attempt_at = NULL, last_error = NULL, updated_at = now()
+           FROM stale WHERE n.case_id = stale.case_id RETURNING 1)
+       SELECT count(*) AS n FROM stale`, [tenantId]);
+    return Number(res.rows[0]?.n ?? 0);
   }
 
   /** Reseñas respondidas por la vía de reputación (preview/aprobación) cierran su caso: sin doble respuesta. */

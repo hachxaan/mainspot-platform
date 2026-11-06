@@ -1,5 +1,39 @@
 # Functional Canon changelog
 
+## 0.8.0 — 2026-11-06
+- FR-0008, FR-0010, FR-0016, BR-0007 y NFR-0006 cambian y se crean FR-0020 y FR-0021 por DEC-0077 (directiva humana
+  externa SRC-0017, que enumera con palabras del propietario las siete decisiones que confirmó en SRC-0016, copia byte
+  a byte de SRC-006 del repositorio documental cuya única expresión literal es «Adelante»; no nueva respuesta HDC).
+  Registro P1 sin QS/ANS ni APR, con el contador `dec` y su instantánea, como DEC-0073…DEC-0076.
+- Precedencias: las interpretaciones G-SEM 1–5 de DEC-0076 quedan confirmadas (R1–R5); DEC-0018 prevalece para el
+  Trial administrativo y C14 solo rige la demostración pública (FR-0021); DEC-0077 prevalece sobre DEC-0024/DEC-0027
+  solo en el plazo (de 30 a 60 días) de la cancelación con fin efectivo del servicio y de la suspensión por impago tras
+  la gracia (enlaces `SUPERSEDES` parciales); DEC-0024/DEC-0027 siguen rigiendo la anonimización verificable, la
+  exportación previa, la ejecución auditada, los respaldos y la baja confirmada fuera de esos estados.
+- FR-0016: SEC-CONSENT-01 (AC-16003 exige el consentimiento en la versión vigente; AC-16007, AC-16008),
+  SEC-TG-APPROVAL-01 (AC-16009, AC-16010: `/aprobar <código> N` publica solo la opción del aviso y cualquier cambio
+  posterior lo invalida; sustituye a `/aprobar <caso> N`; el aviso separa lo que escribe MainSpot del texto de terceros
+  y el panel aprueba el texto visible o la propuesta de la revisión vista) y Facebook fuera de la cuota, con el gasto acotado por el
+  presupuesto técnico y la publicación automática por el máximo por hora (AC-16011). AC-16004 aclarado por R2: la
+  propuesta con IA queda aparte de las numeradas, también cuando la redacción de una respuesta automática pide revisión
+  humana (la unidad se libera). La purga de contenido de Google vacía también las opciones de los avisos.
+- BR-0007 (0.6.0 → 0.8.0): reconsentimiento versionado (versión mostrada, huella, actor, auditoría) antes de que una
+  regla automática gaste unidades con IA; sin aceptación, solo la alternativa segura ya autorizada.
+- NFR-0006 (0.5.0 → 0.8.0): Facebook y laboratorio fuera de las cuotas comerciales y nunca ilimitados (AC-6004,
+  AC-6005); salvaguardas derivadas, no decisiones nuevas: sin techo configurado no hay gasto de pago y el laboratorio
+  nunca se habilita con `APP_ENV=production` (AC-6006).
+- FR-0008 y FR-0010: recepción sin límite comercial confirmada (`reviews_managed` solo métrica); C14 y C10/C12
+  arbitrados con remisión a FR-0021 y FR-0020. Sin ACs nuevos: el comportamiento de cuotas de 0.7.0 no cambia.
+- FR-0020 (nuevo): recuperación de 60 días tras cancelación o suspensión por impago; AC-20001…20006, todos BLOCKED por
+  G-LEGAL o G-PAY salvo AC-20003 (baja confirmada fuera de esos estados, vigente). FR-0021 (nuevo): demostración
+  pública separada del Trial administrativo; AC-21001…21003; duración, volumen y antiabuso OPEN.
+- No decide cuotas numéricas, nombres, precios, proveedor de pago, prorrateo, umbrales de aviso, límites de la
+  demostración, cobros, despliegue, firmas G-MIG/G-SEC ni migraciones reales; la voz por Telegram sigue obligatoria
+  para la siguiente ronda de producto. Los registros DEC/APR, QS/ANS y SRC previos se conservan byte a byte. El canon
+  técnico no cambia: no tiene ítem para el modelo del agente de atención (consentimientos, avisos de Telegram), que la
+  migración 0037 amplía como la 0036 en 0.7.0; su diseño se documenta en
+  `docs/architecture/commercial-governance-safeguards.md`. Ningún ítem tocado tenía la sangría YAML defectuosa.
+
 ## 0.7.0 — 2026-11-05
 - FR-0010, FR-0016 y FR-0008 cambian por DEC-0076 (directiva humana externa SRC-0015 que adopta las decisiones
   comerciales C01–C14 del extracto SRC-0014, SRC-005 del repositorio documental; no nueva respuesta HDC ni

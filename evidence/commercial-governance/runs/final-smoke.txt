@@ -1,0 +1,14 @@
+# npm run test:smoke — código fa7b7ea (= 41d6c24)
+✔ AC-009 smoke: health + all three roles can log in and see their context (211.041961ms)
+✔ AC-008 smoke: la interfaz integrada carga completa (shell + recursos) con CSP sin scripts en línea (41.766154ms)
+✔ AC-009 smoke: real evidence path works (API export mirrors DB audit rows) (68.32267ms)
+✔ AC-009 smoke: logout revokes the session (rollback of access path enabled) (56.23873ms)
+✔ IR-04 smoke: UI logout path (/api/auth/logout) revokes the session in DB (57.111199ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 725.670813

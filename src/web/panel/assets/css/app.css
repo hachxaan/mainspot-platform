@@ -245,6 +245,9 @@ button.list-row:hover, a.list-row:hover { background: var(--surface-2); }
 .banner-ink { background: var(--ink); color: #fff; }
 .banner .btn { margin-top: var(--s3); }
 
+/* SEC-CONSENT-01: texto literal de las condiciones que se aceptan */
+.consent-terms { margin: 6px 0 0; padding: 10px 12px; border-left: 3px solid var(--ink-3); background: var(--surface-2); border-radius: 8px; font-size: var(--fs-sm); line-height: 1.5; color: var(--ink); max-height: 220px; overflow-y: auto; }
+
 /* Nota de entorno: simulación/desarrollo (honestidad sobre proveedores no conectados) */
 .proto-note { display: inline-block; margin-top: 6px; padding: 2px 10px; border: 1.5px dashed #9B8BD0; border-radius: 8px; color: #4A3A86; background: rgba(238,232,250,.6); font-size: var(--fs-xs); font-weight: 700; line-height: 1.5; }
 .proto-note::before { content: 'Desarrollo: '; font-weight: 800; }

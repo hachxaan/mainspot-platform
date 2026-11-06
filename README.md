@@ -208,6 +208,8 @@ Catálogo de planes (plataforma, `/api/platform`, permisos explícitos de `src/p
 
 Cuotas comerciales de reseñas (DEC-0076: recibir y responder a mano sin cuota; respuestas con IA por ciclo mensual, migración `0036`): ver [`docs/architecture/commercial-quota.md`](docs/architecture/commercial-quota.md).
 
+Salvaguardas de la cuota de respuestas con IA (DEC-0077, migración `0037`): consentimiento versionado antes de que una respuesta automática gaste la cuota (`GET|PUT /api/backoffice/engagement/policies`, `POST /api/backoffice/engagement/policies/consent`) y aprobación por Telegram con el código de cada aviso (`/aprobar <código> N`, `/rechazar <código>`), que no publica nada si las propuestas cambiaron. Desde el panel, `POST /api/backoffice/engagement/cases/:id/approve` exige `{text}` o `{draft_number, drafts_revision}` (sin ellos 400; revisión vieja 409). Detalle en [`docs/architecture/commercial-governance-safeguards.md`](docs/architecture/commercial-governance-safeguards.md).
+
 Rutas INC-007 base (analítica):
 
 | Ruta | Protegida | Acción |
