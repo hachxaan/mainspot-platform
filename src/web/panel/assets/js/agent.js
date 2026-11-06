@@ -94,11 +94,12 @@
       sentiment: c.sentiment || null, semanticSource: c.semantic_source || null,
       status: status, rawState: c.state, at: at, updatedAt: MS.ts(c.updated_at), reasonCode: c.reason, reason: reasonText(c.reason),
       drafts: (c.drafts || []).map(function (t) { return { tone: '', text: t }; }),
-      /* DEC-0076: la propuesta pedida con «Redactar con IA» va aparte (no cambia la numeración del aviso de Telegram) y
-         consume 1 respuesta con IA del ciclo; en los casos en que la IA redactó al clasificar, su texto es la opción 1. */
-      aiDraft: c.ai_draft || null,
-      aiInDrafts: !!c.reply_invocation_id && !c.ai_draft,
-      aiEligible: c.origin === 'google_review' && c.semantic_source === 'jev' && !c.reply_invocation_id &&
+      /* DEC-0076/DEC-0078: la propuesta pedida con «Redactar con IA» / «Sugerir con IA» va aparte (no cambia la
+         numeración del aviso de Telegram) y consume 1 unidad del medidor de su canal; cuando la IA redactó al clasificar
+         (sugerencia automática de Facebook), su texto es la opción 1 y no se repite aparte. */
+      aiDraft: c.ai_draft && !(c.drafts && c.drafts[0] === c.ai_draft) ? c.ai_draft : null,
+      aiInDrafts: !!c.reply_invocation_id && (!c.ai_draft || !!(c.drafts && c.drafts[0] === c.ai_draft)),
+      aiEligible: (c.origin === 'google_review' || c.origin === 'facebook_comment') && c.semantic_source === 'jev' && !c.reply_invocation_id &&
         !(c.category === 'basic_info' && c.semantic && c.semantic.info_topic === 'phone'),
       response: c.state === 'responded' ? { text: c.response_text, auto: auto, by: auto ? 'MainSpot' : MS.who(c.resolved_by), via: c.resolution_channel === 'telegram' ? 'tg' : 'panel', at: MS.ts(c.responded_at), policyVersion: c.policy_version, delivery: c.delivery_mode } : null,
       attempts: c.attempts, retryAt: MS.ts(c.next_attempt_at), policyVersion: auto ? c.policy_version : null, notify: c.notify_status,
@@ -139,10 +140,13 @@
   AG.saveDraft = function (id, index, text) {
     return API.post('/engagement/cases/' + encodeURIComponent(id) + '/drafts/' + (index + 1), { text: text }).then(after);
   };
-  /** «Redactar con IA» (reseñas de Google): consume 1 respuesta con IA del ciclo; repetir no consume otra vez. */
+  /**
+   * «Redactar con IA» (reseñas de Google) o «Sugerir con IA» (comentarios de Facebook): consume 1 unidad del medidor de
+   * su canal; repetir no consume otra vez.
+   */
   AG.aiDraft = function (id) {
     return API.post('/engagement/cases/' + encodeURIComponent(id) + '/ai-draft').then(function (res) {
-      return MS.refresh(['cases', 'aiReplies'], true).then(function () {
+      return MS.refresh(['cases', 'aiReplies', 'aiSuggestions'], true).then(function () {
         if (!res.ok) return { ok: false, status: res.status, message: res.error.message };
         return { ok: true, already: !!res.data.already_drafted, text: res.data.case && res.data.case.ai_draft ? res.data.case.ai_draft : '' };
       });
@@ -212,11 +216,24 @@
     });
     return chain.then(function (out) { return MS.refresh(['policies', 'cases'], true).then(function () { return out; }); });
   };
-  /** SEC-CONSENT-01: acepta los términos vigentes (versión mostrada) para las respuestas automáticas a reseñas. */
+  /** SEC-CONSENT-01: acepta los términos vigentes (versión mostrada) de un origen para sus respuestas automáticas. */
   AG.reconsent = function (version) {
     return API.post('/engagement/policies/consent', { consent: true, consent_version: version }).then(function (res) {
       return MS.refresh(['policies', 'cases'], true).then(function () {
         return res.ok ? { ok: true, updated: res.data.updated } : { ok: false, message: res.error.message };
+      });
+    });
+  };
+  /**
+   * DEC-0078 (FB-1): modo de sugerencias con IA de comentarios de Facebook. Las automáticas exigen aceptar el texto
+   * literal mostrado (se envía su versión; 409 si ya no es la vigente); desactivar o volver a «bajo demanda» no.
+   */
+  AG.setSuggestionMode = function (mode, version) {
+    var body = { origin: 'facebook_comment', mode: mode };
+    if (mode === 'auto_suggest') { body.consent = true; body.consent_version = version; }
+    return API.put('/engagement/suggestions', body).then(function (res) {
+      return MS.refresh(['aiSuggestions', 'cases'], true).then(function () {
+        return res.ok ? { ok: true } : { ok: false, status: res.status, message: res.error.message };
       });
     });
   };

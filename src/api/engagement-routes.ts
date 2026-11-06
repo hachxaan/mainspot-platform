@@ -14,7 +14,7 @@ import type { AuditSink } from '../audit/sink.ts';
 import { requirePermission } from '../boundary/middleware.ts';
 import type { AppConfig } from '../shared/config.ts';
 import { AppError, DENY_CODES } from '../shared/errors.ts';
-import { consentTermsView } from '../engagement/consent.ts';
+import { consentTermsView, suggestionTermsView } from '../engagement/consent.ts';
 import type { EngagementService } from '../engagement/service.ts';
 import type { TelegramLinkService } from '../engagement/telegram.ts';
 import type { EngagementWorker } from '../engagement/worker.ts';
@@ -91,12 +91,16 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
   }));
 
   // DEC-0076: «Redactar con IA» para una reseña que espera decisión (consume 1 respuesta con IA del ciclo).
+  // DEC-0078: «Sugerir con IA» para un comentario de Facebook (consume 1 de su medidor propio; nunca la de reseñas).
   router.post('/engagement/cases/:id/ai-draft', requirePermission('engagement.respond', deps.sink, deps.pool),
     requirePermission('ai.generate', deps.sink, deps.pool), ah(async (req, res) => {
       const actor = actorOf(req);
       try {
         const r = await deps.engagement.requestAiDraft(actor, String(req.params.id));
-        return res.status(r.already ? 200 : 201).json({ case: r.case, already_drafted: r.already, ai_replies: await deps.engagement.aiReplyStatus(actor.tenantId) });
+        const meter = r.case.origin === 'google_review'
+          ? { ai_replies: await deps.engagement.aiReplyStatus(actor.tenantId) }
+          : { ai_suggestions: await deps.engagement.aiSuggestionStatus(actor.tenantId) };
+        return res.status(r.already ? 200 : 201).json({ case: r.case, already_drafted: r.already, ...meter });
       } catch (err) {
         if (err instanceof AppError && err.code === DENY_CODES.NOT_FOUND) return caseNotFound(res);
         throw err;
@@ -107,6 +111,18 @@ export function engagementRouter(deps: EngagementRouteDeps): Router {
   router.get('/engagement/ai-replies', read, ah(async (req, res) => {
     const actor = actorOf(req);
     return res.json({ tenant_id: actor.tenantId, ai_replies: await deps.engagement.aiReplyStatus(actor.tenantId) });
+  }));
+
+  // DEC-0078 (FB-1): modo de sugerencias con IA de comentarios de Facebook, su medidor y los términos literales que el
+  // panel muestra antes de activar las automáticas. Nunca autoriza publicar (eso son las políticas de abajo).
+  router.get('/engagement/suggestions', read, ah(async (req, res) => {
+    const actor = actorOf(req);
+    return res.json({ tenant_id: actor.tenantId, ai_suggestions: await deps.engagement.aiSuggestionStatus(actor.tenantId), terms: suggestionTermsView() });
+  }));
+
+  router.put('/engagement/suggestions', requirePermission('engagement.policy.manage', deps.sink, deps.pool), ah(async (req, res) => {
+    const actor = actorOf(req);
+    return res.json({ tenant_id: actor.tenantId, ai_suggestions: await deps.engagement.setSuggestionMode(actor, req.body), terms: suggestionTermsView() });
   }));
 
   router.post('/engagement/cases/:id/approve', requirePermission('engagement.approve', deps.sink, deps.pool), ah(async (req, res) => {

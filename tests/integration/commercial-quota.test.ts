@@ -428,8 +428,9 @@ test('Respuesta automática: dos clasificaciones simultáneas del mismo caso con
     l0.rows - used + 1, 'la reserva del intento fallido queda liberada');
 });
 
-test('Fuera de la cuota de reseñas: los comentarios de Facebook conservan su borrador de IA y no consumen ai_review_replies', async () => {
-  const a = await newTenant(0, 'client_cqe');
+test('Fuera de la cuota de reseñas (DEC-0077 R4, DEC-0078 R5): la IA de un comentario de Facebook usa su propio medidor y nunca ai_review_replies', async () => {
+  // Cuota de reseñas en 0 y medidor de Facebook con 1: pedir la sugerencia gasta solo el medidor de Facebook.
+  const a = await newTenant(0, 'client_cqe', { ai_facebook_suggestions: 1 });
   const post = `post_${randomUUID().slice(0, 8)}`;
   await t.pool.query(`INSERT INTO social_post (post_id, tenant_id, network, content_type, text, status, published_at, external_ref, created_by)
     VALUES ($1,$2,'facebook','post','Pan de muerto','published',now(),$3,'fixture')`, [post, a.tenant, `sim:fb:post:${post}`]);
@@ -437,7 +438,10 @@ test('Fuera de la cuota de reseñas: los comentarios de Facebook conservan su bo
   assert.equal((await call(a.token, '/dev/simulator/facebook-comments', 'POST', { post_id: post, body: 'Me encantó, ¿tienen de chocolate?', author_label: 'Luis R.', external_ref: ref })).status, 201);
   await run(a);
   const c = await caseOf(a, ref);
-  assert.ok(c.reply_invocation_id, 'comportamiento previo: el comentario trae su borrador de IA');
-  assert.equal((await aiDraft(a, c.case_id)).status, 200, 'ya tiene su propuesta');
-  assert.deepEqual(await ledger(a), { committed: 0, reserved: 0, rows: 0 });
+  assert.equal(c.reply_invocation_id, null, 'DEC-0078 R1: sin configuración (bajo demanda) llegar no redacta con IA');
+  const drafted = await aiDraft(a, c.case_id);
+  assert.equal(drafted.status, 201, JSON.stringify(drafted.body));
+  assert.ok(drafted.body.case.ai_draft);
+  assert.deepEqual([drafted.body.ai_suggestions.usage, drafted.body.ai_suggestions.limit], [1, 1]);
+  assert.deepEqual(await ledger(a), { committed: 0, reserved: 0, rows: 0 }, 'la cuota de reseñas no se toca');
 });

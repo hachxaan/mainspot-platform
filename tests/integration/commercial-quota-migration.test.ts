@@ -132,11 +132,14 @@ test('0036: añade solo la cuota periódica de IA, retira el enforcement de rese
   const before0036 = await catalogState(db.pool);
   assert.deepEqual(await apply0036(db.url), [MIGRATION_0036]);
 
+  // El espejo que deja 0036 es el registro 2: el medidor de Facebook (registro 3, DEC-0078) llega con 0038 y se
+  // comprueba en facebook-ai-policy-migration.
+  const registry2 = PLAN_PARAMETERS.filter((d) => d.key !== 'quota.ai_facebook_suggestions.max');
   const rows = await definitions(db.pool);
-  assert.deepEqual(rows.map((r) => r.parameter_key), [...PLAN_PARAMETERS].map((d) => d.key).sort(), 'el espejo tiene exactamente las definiciones del registro');
-  for (const def of PLAN_PARAMETERS) {
+  assert.deepEqual(rows.map((r) => r.parameter_key), registry2.map((d) => d.key).sort(), 'el espejo tiene exactamente las definiciones del registro 2');
+  for (const def of registry2) {
     const row = rows.find((r) => r.parameter_key === def.key);
-    for (const [column, expected] of Object.entries(definitionRow(def))) assert.equal(row?.[column] ?? null, expected, `${def.key}.${column}`);
+    for (const [column, expected] of Object.entries({ ...definitionRow(def), registry_version: 2 })) assert.equal(row?.[column] ?? null, expected, `${def.key}.${column}`);
     assert.equal(row?.description, def.description, `${def.key}: descripción`);
   }
   const ai = rows.find((r) => r.parameter_key === AI_KEY);

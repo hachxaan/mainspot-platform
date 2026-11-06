@@ -9,9 +9,12 @@
  * - Solo entran parámetros con punto de enforcement real (o, para `agents`, la decisión canónica que lo
  *   difiere). Techos técnicos, de proveedor, seguridad, retención o evidencia NO se registran aquí.
  * - Alcance de SRC-0013: las seis capacidades existentes con sus valores vigentes. DEC-0076 (SRC-0014, registro 2)
- *   añade la única cuota periódica real, `ai_review_replies` (respuestas a reseñas redactadas con IA por ciclo
- *   mensual), y retira el enforcement de `reviews_managed`: recibir reseñas ya no consume cuota. Las semánticas
- *   `stock`, `rate_window` y `eligibility` siguen siendo mecanismo probado sin parámetros reales.
+ *   añade la cuota periódica `ai_review_replies` (respuestas a reseñas redactadas con IA por ciclo mensual) y retira el
+ *   enforcement de `reviews_managed`: recibir reseñas ya no consume cuota. DEC-0078 (SRC-0018, registro 3) añade
+ *   `ai_facebook_suggestions`, el medidor propio de la IA en comentarios de Facebook (nunca hereda el de Google): sin
+ *   valor en la revisión fijada no hay IA de pago para esos comentarios; su activación comercial (cantidades, precios)
+ *   sigue BLOCKED por decisión económica del propietario. Las semánticas `stock`, `rate_window` y `eligibility` siguen
+ *   siendo mecanismo probado sin parámetros reales.
  * - Agregar un parámetro exige migración que lo refleje y una revisión nueva por plan: las revisiones
  *   publicadas no cambian y un valor ausente siempre deniega (nunca concesión implícita).
  */
@@ -58,7 +61,7 @@ export interface PlanParameterDefinition {
 }
 
 /** Versión del registro: se incrementa con cualquier cambio de definiciones (y su migración). */
-export const PLAN_REGISTRY_VERSION = 2;
+export const PLAN_REGISTRY_VERSION = 3;
 
 /**
  * Límite de validación contra errores de captura en recuentos (no es oferta comercial ni techo de
@@ -124,6 +127,20 @@ export const PLAN_PARAMETERS = [
       note: 'Solo reseñas de Google (engagement.google.review.reply), como máximo 1 unidad por caso. Comentarios de Facebook y el laboratorio no consumen esta cuota.',
     },
     usageSql: null, sortOrder: 45,
+  },
+  {
+    key: 'quota.ai_facebook_suggestions.max', capability: 'ai_facebook_suggestions', category: 'Redes sociales',
+    label: 'Sugerencias con IA para comentarios de Facebook', unit: 'sugerencias',
+    description: 'Comentarios de Facebook para los que MainSpot prepara un texto con IA (sugerencia para revisar o respuesta automática autorizada) en cada ciclo mensual de la suscripción (anclado a su inicio, UTC). Cada comentario consume como máximo 1 al generarse el texto, aunque no se publique; recibir comentarios, responder a mano y las propuestas sin IA no consumen. Lo no usado no se acumula. No usa las respuestas con IA de reseñas de Google.',
+    valueType: 'int', semantics: 'periodic', period: { kind: 'subscription_month' }, min: 0, max: COUNT_SANITY_MAX,
+    ceilingReason: COUNT_CEILING,
+    suggested: 0, suggestedReason: 'Sin cantidad, precio ni unidad comercial aprobados (SRC-0018, DEC-0078): 0 = no incluido hasta que el propietario decida su activación comercial.',
+    enforcement: {
+      state: 'enforced',
+      points: ['src/engagement/service.ts (sugerencia automática, sugerencia a pedido y respuesta automática con IA de un comentario de Facebook: reserva antes de invocar, commit con el caso)'],
+      note: 'Solo comentarios de Facebook (engagement.facebook.comment.reply), como máximo 1 unidad por comentario entre todos los caminos. Reseñas de Google y el laboratorio no consumen esta cuota.',
+    },
+    usageSql: null, sortOrder: 47,
   },
   {
     key: 'quota.conversations.max', capability: 'conversations', category: 'Asistente',

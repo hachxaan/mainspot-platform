@@ -25,8 +25,15 @@ import { loadPinnedPolicy } from '../plans/policy.ts';
 import type { QuotaLedger, QuotaReservationRow } from '../subscriptions/quota.ts';
 import { autoReplyText, classify, decide, humanDrafts, type Classification, type Decision, type EngagementCategory, type EngagementOrigin, type InfoTopic, type PolicySnapshot } from './classifier.ts';
 import type { EngagementSemantics } from './ai-semantics.ts';
-import { AUTO_REPLY_CONSENT, REVIEW_REQUIRED_CONSENT, consentCoversAiSpend, consentIsCurrent, reconsentRequired } from './consent.ts';
+import {
+  AUTO_REPLY_CONSENT, AUTO_SUGGEST_CONSENT, REVIEW_REQUIRED_CONSENT, autoReplyOriginOfVersion, consentCoversAiSpend, consentIsCurrent,
+  reconsentRequired, suggestionConsentIsCurrent,
+} from './consent.ts';
 import { newNoticeCode, optionsSha256, type ApprovalOfferRow } from './notice-offer.ts';
+import {
+  AI_FACEBOOK_SUGGESTION_CAPABILITY, DEFAULT_SUGGESTION_MODE, SUGGESTION_MODES, facebookSuggestionQuotaKey, isSuggestionOrigin, textRelevance,
+  type IrrelevanceReason, type SuggestionMode, type SuggestionOrigin, type SuggestionSetting, type SuggestionSettingRow,
+} from './suggestions.ts';
 import { consumeSimFault, type EngagementReplier, type ReplyResult } from './providers.ts';
 import { noticeMessage } from './telegram-ui.ts';
 
@@ -52,12 +59,25 @@ const LINE_BREAK = /\r\n|[\n\r\u000b\u000c\u0085\u2028\u2029]/g;
  */
 export const AI_REPLY_DISCLOSURE = 'Respuesta automática generada con IA.';
 
+/** DEC-0078 R1: «Sugerir con IA» con el modo `off` del negocio (responder a mano sigue igual). */
+const SUGGESTIONS_OFF_MESSAGE = 'Las sugerencias con IA para comentarios de Facebook están desactivadas en tu negocio. Puedes elegir una propuesta, escribir tu respuesta o cambiar el modo en Reglas.';
+
 /** DEC-0076 (SRC-0014 C01): cuota periódica de respuestas a reseñas redactadas con IA. */
 export const AI_REVIEW_REPLY_CAPABILITY = 'ai_review_replies' as const;
 
 /** Clave del libro de cuotas: un caso consume como máximo una unidad (replay ⇒ sin consumo nuevo). */
 export function aiReplyQuotaKey(caseId: string): string {
   return `ai_reply:${caseId}`;
+}
+
+/**
+ * Medidor de la IA de respuestas por origen: reseñas de Google gastan `ai_review_replies` (DEC-0076); comentarios de
+ * Facebook, su propio `ai_facebook_suggestions` (DEC-0078 R5), nunca el de Google. Como máximo 1 unidad por caso.
+ */
+function replyMeter(origin: EngagementOrigin, caseId: string): { capability: typeof AI_REVIEW_REPLY_CAPABILITY | typeof AI_FACEBOOK_SUGGESTION_CAPABILITY; key: string } {
+  return origin === 'google_review'
+    ? { capability: AI_REVIEW_REPLY_CAPABILITY, key: aiReplyQuotaKey(caseId) }
+    : { capability: AI_FACEBOOK_SUGGESTION_CAPABILITY, key: facebookSuggestionQuotaKey(caseId) };
 }
 
 /**
@@ -77,6 +97,14 @@ export interface AiReplyStatus {
   remaining: number | null;
   /** Ciclo mensual vigente [start, end) en UTC. */
   window: { start: string; end: string } | null;
+}
+
+/** DEC-0078: modo de sugerencias de comentarios de Facebook y su medidor, con la misma cuenta que el enforcement. */
+export interface AiSuggestionStatus extends AiReplyStatus {
+  origin: SuggestionOrigin;
+  setting: SuggestionSetting;
+  /** `limit` null ⇒ el plan no define el medidor: ninguna IA de pago para estos comentarios (activación BLOCKED). */
+  credits_defined: boolean;
 }
 
 type AiReplyClaim =
@@ -328,29 +356,127 @@ export class EngagementService {
   }
 
   /**
-   * SEC-CONSENT-01: el negocio acepta los términos vigentes para sus respuestas automáticas a reseñas de Google
-   * autorizadas con un consentimiento anterior. Crea una versión nueva de cada política afectada (mismo modo y límite
-   * por hora) con el texto aceptado, su versión y su huella, auditada en la misma transacción. Sin políticas afectadas
-   * no cambia nada (repetir es inocuo). Hasta aceptarlo, esas respuestas salen con el texto seguro sin IA.
+   * SEC-CONSENT-01: el negocio acepta los términos vigentes de UN origen para sus respuestas automáticas autorizadas con
+   * un consentimiento anterior (reseñas de Google desde DEC-0077; comentarios de Facebook desde DEC-0078, que les dio
+   * su propio medidor). El origen es el de la versión que el panel mostró (o el indicado, que debe coincidir). Crea una
+   * versión nueva de cada política afectada (mismo modo y límite por hora) con el texto aceptado, su versión y su huella,
+   * auditada en la misma transacción. Sin políticas afectadas no cambia nada (repetir es inocuo). Hasta aceptarlo, esas
+   * respuestas salen con el texto seguro sin IA.
    */
   async reconsent(actor: Actor, body: unknown): Promise<{ updated: PolicyRow[]; policies: PolicyView[] }> {
     const b = (body && typeof body === 'object' && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
-    const terms = this.acceptedTerms(b, 'google_review', 'Para aceptar las nuevas condiciones marca explícitamente la autorización.');
+    const missing = 'Para aceptar las nuevas condiciones marca explícitamente la autorización.';
+    const requested = b['origin'];
+    if (requested !== undefined && requested !== 'google_review' && requested !== 'facebook_comment') {
+      throw new AppError(400, 'validation_error', 'Elige el origen: reseñas de Google o comentarios de Facebook.');
+    }
+    if (b['consent'] !== true || typeof b['consent_version'] !== 'string') throw new AppError(400, 'validation_error', missing);
+    const origin = (requested as EngagementOrigin | undefined) ?? autoReplyOriginOfVersion(b['consent_version']);
+    if (!origin) {
+      throw new AppError(409, 'validation_error', 'Las condiciones de la autorización cambiaron. Revisa el texto actualizado y vuelve a aceptarlo.');
+    }
+    const terms = this.acceptedTerms(b, origin, missing);
     const updated = await runAtomic(this.deps.pool, async (client) => {
       const rows: PolicyRow[] = [];
       for (const category of POLICY_CATEGORIES) {
-        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`engagement_policy:${actor.tenantId}:google_review:${category}`]);
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`engagement_policy:${actor.tenantId}:${origin}:${category}`]);
         const cur = await client.query<PolicyRow>(
-          `SELECT * FROM engagement_policy WHERE tenant_id = $1 AND origin = 'google_review' AND category = $2
-            ORDER BY version DESC LIMIT 1`, [actor.tenantId, category]);
+          `SELECT * FROM engagement_policy WHERE tenant_id = $1 AND origin = $2 AND category = $3
+            ORDER BY version DESC LIMIT 1`, [actor.tenantId, origin, category]);
         const row = cur.rows[0];
         if (!row || !reconsentRequired(row)) continue;
-        rows.push(await this.insertPolicy(client, actor, { origin: 'google_review', category, mode: 'safe_auto_reply', max: row.max_auto_replies_per_hour },
+        rows.push(await this.insertPolicy(client, actor, { origin, category, mode: 'safe_auto_reply', max: row.max_auto_replies_per_hour },
           terms, (version) => `safe_auto_reply:v${version}:reconsent:${terms.version}`));
       }
       return rows;
     });
     return { updated, policies: await this.currentPolicies(actor.tenantId) };
+  }
+
+  // ---------------------------------------------------------------- sugerencias con IA (DEC-0078 R1, FB-1)
+
+  /** Modo efectivo de sugerencias del negocio para el origen (sin fila: `on_demand`, el predeterminado). */
+  async suggestionSetting(tenantId: string, origin: SuggestionOrigin, db: Db = this.deps.pool): Promise<SuggestionSetting> {
+    const res = await db.query<SuggestionSettingRow>(
+      `SELECT * FROM engagement_suggestion_setting WHERE tenant_id = $1 AND origin = $2 ORDER BY version DESC LIMIT 1`, [tenantId, origin]);
+    const row = res.rows[0];
+    if (!row) {
+      return {
+        origin, mode: DEFAULT_SUGGESTION_MODE, setting_id: null, version: 0, default: true, consent_version: null, consent_current: false,
+        decided_by: null, created_at: null,
+      };
+    }
+    return {
+      origin, mode: row.mode, setting_id: row.setting_id, version: row.version, default: false, consent_version: row.consent_version,
+      consent_current: row.mode === 'auto_suggest' && suggestionConsentIsCurrent(row), decided_by: row.decided_by, created_at: row.created_at,
+    };
+  }
+
+  /**
+   * Cambia el modo de sugerencias (versión nueva, append-only, auditada en la misma transacción). `auto_suggest` exige
+   * aceptar explícitamente los términos vigentes que mostró el panel (versión; 409 si cambiaron) y un medidor definido
+   * en el plan: sin valor no hay costo que informar ni límite efectivo, así que no se activa (DEC-0078 R5). `off` y
+   * `on_demand` siempre se pueden elegir (apagar nunca se bloquea). Repetir el modo vigente no crea versión.
+   */
+  async setSuggestionMode(actor: Actor, body: unknown): Promise<AiSuggestionStatus> {
+    const b = (body && typeof body === 'object' && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
+    const origin = b['origin'] ?? 'facebook_comment';
+    if (origin !== 'facebook_comment') throw new AppError(400, 'validation_error', 'Las sugerencias con IA se configuran para comentarios de Facebook.');
+    const mode = b['mode'];
+    if (typeof mode !== 'string' || !(SUGGESTION_MODES as readonly string[]).includes(mode)) {
+      throw new AppError(400, 'validation_error', 'Elige cómo prepara MainSpot las sugerencias: desactivadas, bajo demanda o automáticas.');
+    }
+    const wanted = mode as SuggestionMode;
+    let terms: { version: string; text: string; sha256: string } | null = null;
+    if (wanted === 'auto_suggest') {
+      const current = AUTO_SUGGEST_CONSENT.facebook_comment;
+      if (b['consent'] !== true || typeof b['consent_version'] !== 'string') {
+        throw new AppError(400, 'validation_error', 'Para activar las sugerencias automáticas confirma explícitamente la autorización.');
+      }
+      if (b['consent_version'] !== current.version) {
+        throw new AppError(409, 'validation_error', 'Las condiciones de las sugerencias automáticas cambiaron. Revisa el texto actualizado y vuelve a aceptarlo.');
+      }
+      const credits = await this.aiSuggestionStatus(actor.tenantId);
+      if (!credits.subscription_active || !credits.limit) {
+        throw new AppError(409, 'validation_error', credits.subscription_active
+          ? 'Tu plan todavía no incluye sugerencias con IA para comentarios de Facebook, así que no se pueden activar las automáticas. Puedes seguir respondiendo a mano.'
+          : 'Necesitas una suscripción activa para activar las sugerencias automáticas.');
+      }
+      terms = current;
+    }
+    await runAtomic(this.deps.pool, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`engagement_suggestion:${actor.tenantId}:${origin}`]);
+      const now = await this.suggestionSetting(actor.tenantId, origin, client);
+      if (now.mode === wanted && (wanted !== 'auto_suggest' || now.consent_current) && !now.default) return;
+      const version = now.version + 1;
+      const id = `sgs_${randomUUID()}`;
+      await client.query(
+        `INSERT INTO engagement_suggestion_setting (setting_id, tenant_id, origin, version, mode, consent_text, consent_version, consent_sha256, decided_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [id, actor.tenantId, origin, version, wanted, terms?.text ?? null, terms?.version ?? null, terms?.sha256 ?? null, actor.userId]);
+      await this.deps.sink.write({
+        tenant_id: actor.tenantId, actor_id: actor.userId, actor_role: actor.role,
+        action: 'engagement.suggestions.changed', resource: `engagement_suggestion_setting/${origin}`,
+        request_id: actor.requestId, decision: 'allow', result: `${wanted}:v${version}${terms ? `:consent:${terms.version}` : ''}`, evidence_ref: id,
+      }, client, true);
+    });
+    return this.aiSuggestionStatus(actor.tenantId);
+  }
+
+  /**
+   * FB-2: ¿el comentario repite el texto de otro anterior de la misma publicación? (misma forma normalizada en la BD).
+   * Solo frena el gasto automático; una persona puede pedir la sugerencia igualmente.
+   */
+  private async isDuplicateComment(row: CaseRow): Promise<boolean> {
+    if (!row.post_id) return false;
+    const res = await this.deps.pool.query(
+      `SELECT 1 FROM engagement_case o
+        WHERE o.tenant_id = $1 AND o.origin = 'facebook_comment' AND o.post_id = $2 AND o.case_id <> $3
+          AND (o.created_at, o.case_id) < ($4::timestamptz, $3)
+          AND lower(btrim(regexp_replace(normalize(o.body, NFKC), '\\s+', ' ', 'g')))
+            = lower(btrim(regexp_replace(normalize($5::text, NFKC), '\\s+', ' ', 'g')))
+        LIMIT 1`, [row.tenant_id, row.post_id, row.case_id, row.created_at, row.body]);
+    return (res.rowCount ?? 0) > 0;
   }
 
   // ---------------------------------------------------------------- casos (lectura)
@@ -437,36 +563,44 @@ export class EngagementService {
     const aiEligible = semanticSource === 'jev' && !(classification.category === 'basic_info' && classification.info_topic === 'phone');
     let generated: { text: string; needsHuman: boolean; invocationId: string } | null = null;
     let reservation: QuotaReservationRow | null = null;
+    // DEC-0078 (FB-1): modo de sugerencias del negocio, leído aquí y comprobado de nuevo al confirmar el caso.
+    const suggestion = isSuggestionOrigin(row.origin) ? await this.suggestionSetting(row.tenant_id, row.origin) : null;
+    const autoSuggest = suggestion?.mode === 'auto_suggest' && suggestion.consent_current;
     if (aiEligible && this.deps.semantics) {
-      if (row.origin !== 'google_review') {
-        // Comentarios de Facebook: fuera de la cuota de DEC-0076 (comportamiento sin cambios).
-        generated = await this.deps.semantics.reply(row, classification, facts);
-      } else if (decision.decision === 'auto_reply') {
-        // DEC-0076: recibir una reseña no consume cuota. Solo la respuesta automática que el dueño autorizó se
-        // redacta con IA al llegar y consume 1 unidad del ciclo; sin cuota disponible sale el texto seguro sin IA.
-        // Las reseñas que esperan decisión llevan solo propuestas sin IA; la de IA se pide con «Redactar con IA».
-        if (policy && consentCoversAiSpend(policy)) {
+      // DEC-0076/DEC-0078 (FB-2): recibir no redacta con IA. Para PUBLICAR solo se redacta si la respuesta automática
+      // todavía puede publicarse: `decide` ya exigió política vigente, categoría segura, sin riesgos, confianza, dato
+      // verificado y espacio en el máximo por hora; además, el consentimiento vigente debe cubrir el gasto de su medidor.
+      const forPublication = decision.decision === 'auto_reply' && policy !== null && consentCoversAiSpend(policy);
+      // FB-1: la sugerencia automática para revisión solo con `auto_suggest` y sus términos vigentes; puede prepararse
+      // aunque la publicación automática esté limitada (máximo por hora), y nunca publica por sí sola.
+      const forSuggestion = decision.decision === 'human_review' && row.origin === 'facebook_comment' && autoSuggest;
+      if (decision.decision === 'auto_reply' && !forPublication && await this.deps.semantics.replyAvailable(row.origin)) {
+        // SEC-CONSENT-01 (DEC-0077 R8, DEC-0078 R6): el consentimiento de esta política es anterior a su medidor (o de
+        // otra versión). Sin aceptar los términos vigentes no se redacta con IA ni se gasta ninguna unidad: sale el
+        // texto seguro sin IA, que ese consentimiento ya autorizaba.
+        await this.auditAiReply(row, 'deny', 'consent_outdated', policy?.policy_id ?? null);
+      }
+      if (forPublication || forSuggestion) {
+        // FB-2: un comentario sin texto, solo con menciones, con enlaces o repetido no amerita gasto automático.
+        const irrelevant: IrrelevanceReason | null = row.origin === 'facebook_comment'
+          ? textRelevance(row.body) ?? (await this.isDuplicateComment(row) ? 'duplicate' : null)
+          : null;
+        if (irrelevant) {
+          await this.auditAiReply(row, 'deny', `not_relevant:${irrelevant}`, null);
+        } else {
           const metered = await this.meteredReply(row, classification, facts, { actorId: SYSTEM_ACTOR, actorRole: null, requestId: `eng_${row.case_id}` });
           generated = metered.generated;
           reservation = metered.reservation;
-        } else if (await this.deps.semantics.replyAvailable(row.origin)) {
-          // SEC-CONSENT-01 (DEC-0077 R8): el consentimiento de esta política es anterior a la cuota compartida (o de
-          // otra versión). Sin aceptar los términos vigentes no se invoca la IA ni se gasta ninguna unidad: sale el
-          // texto seguro sin IA, que ese consentimiento ya autorizaba.
-          await this.deps.sink.write({
-            tenant_id: row.tenant_id, actor_id: SYSTEM_ACTOR, actor_role: null,
-            action: 'engagement.ai_reply', resource: `engagement_case/${row.case_id}`,
-            request_id: `eng_${row.case_id}`, decision: 'deny', result: 'consent_outdated', evidence_ref: policy?.policy_id ?? null,
-          }, this.deps.pool, false).catch(() => undefined);
         }
       }
     }
     if (decision.decision === 'auto_reply' && generated?.needsHuman) {
       decision = { decision: 'human_review', reason: 'reply_needs_human' };
-      if (reservation) {
-        // DEC-0077 R2/R3: la redacción para la respuesta automática pidió revisión humana, así que no hubo respuesta
-        // automática con IA. La reseña pasa a esperar decisión SIN propuesta de IA entre las numeradas y sin gastar la
-        // unidad; la IA a pedido («Redactar con IA») sigue disponible y es la que consume.
+      if (reservation && !(row.origin === 'facebook_comment' && autoSuggest)) {
+        // DEC-0077 R2/R3 y DEC-0078 R1: la redacción para la respuesta automática pidió revisión humana, así que no hubo
+        // respuesta automática con IA. El caso pasa a esperar decisión SIN propuesta de IA entre las numeradas y sin
+        // gastar la unidad; la IA a pedido sigue disponible y es la que consume. Con sugerencias automáticas de Facebook
+        // vigentes, ese texto ES la sugerencia para revisar: una sola generación y una sola unidad para ambos fines.
         await this.deps.quota.release(reservation, null, 'ai_reply_needs_human');
         reservation = null;
         generated = null;
@@ -484,6 +618,17 @@ export class EngagementService {
               ORDER BY version DESC LIMIT 1`, [row.tenant_id, policy.origin, policy.category]);
           if (latest.rows[0]?.policy_id !== policy.policy_id) throw new PolicyChangedError();
         }
+      }
+      if (suggestion) {
+        // DEC-0078 (FB-1): el modo de sugerencias con que se clasificó debe seguir vigente al confirmar (mismo candado que
+        // `setSuggestionMode`): apagar o cambiar el modo mientras se redacta no deja una sugerencia ni gasta su unidad.
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`engagement_suggestion:${row.tenant_id}:${suggestion.origin}`]);
+        const latest = await client.query<{ setting_id: string }>(
+          `SELECT setting_id FROM engagement_suggestion_setting WHERE tenant_id = $1 AND origin = $2 ORDER BY version DESC LIMIT 1`,
+          [row.tenant_id, suggestion.origin]);
+        if ((latest.rows[0]?.setting_id ?? null) !== suggestion.setting_id) throw new PolicyChangedError();
+      }
+      if (decision.decision === 'auto_reply') {
         const text = gen ? `${gen.text}\n\n${AI_REPLY_DISCLOSURE}` : autoReplyText({ category: classification.category, author, business, verifiedAnswer: verified });
         res = await client.query<CaseRow>(
           `UPDATE engagement_case SET state = 'classified', decision = 'auto_reply', reason = $2, category = $3,
@@ -497,15 +642,18 @@ export class EngagementService {
       } else {
         const rulesDrafts = humanDrafts({ classification, author, business, verifiedAnswer: verified });
         const drafts = [...(gen ? [gen.text] : []), ...rulesDrafts].slice(0, 3);
+        // Facebook (DEC-0078): la sugerencia de IA es la opción 1 (la que muestra el aviso) y queda también en `ai_draft`
+        // para que el panel la identifique; en reseñas de Google aquí nunca hay texto de IA (DEC-0077 R2).
         res = await client.query<CaseRow>(
           `UPDATE engagement_case SET state = 'needs_human', decision = 'human_review', reason = $2, category = $3,
              risk_flags = $4, confidence = $5, policy_id = $6, policy_version = $7, drafts = $8, response_text = $9,
-             sentiment = $10, semantic = $11, semantic_source = $12, reply_invocation_id = $13,
+             sentiment = $10, semantic = $11, semantic_source = $12, reply_invocation_id = $13, ai_draft = $14,
              classified_at = now(), notify_status = 'pending', updated_at = now()
            WHERE case_id = $1 AND state = 'received' RETURNING *`,
           [row.case_id, decision.reason, classification.category, JSON.stringify(classification.risk_flags),
             classification.confidence, policy?.policy_id ?? null, policy?.version ?? null, JSON.stringify(drafts), drafts[0] ?? null,
-            classification.sentiment, reading ? JSON.stringify(reading) : null, semanticSource, gen?.invocationId ?? null]);
+            classification.sentiment, reading ? JSON.stringify(reading) : null, semanticSource, gen?.invocationId ?? null,
+            gen && row.origin === 'facebook_comment' ? gen.text : null]);
       }
       const updated = res.rows[0] ?? null;
       if (updated) {
@@ -543,18 +691,28 @@ export class EngagementService {
     }
   }
 
-  // ---------------------------------------------------------------- respuestas con IA medidas (DEC-0076)
+  // ------------------------------------------------- respuestas con IA medidas (DEC-0076; Facebook: DEC-0078 R5)
+
+  /** Rastro de una decisión de gasto de IA de un caso (auditoría best-effort, como la denegación de cuota). */
+  private async auditAiReply(row: CaseRow, decision: 'allow' | 'deny', result: string, evidenceRef: string | null): Promise<void> {
+    await this.deps.sink.write({
+      tenant_id: row.tenant_id, actor_id: SYSTEM_ACTOR, actor_role: null,
+      action: 'engagement.ai_reply', resource: `engagement_case/${row.case_id}`,
+      request_id: `eng_${row.case_id}`, decision, result, evidence_ref: evidenceRef,
+    }, this.deps.pool, false).catch(() => undefined);
+  }
 
   /**
-   * Reserva 1 unidad de `ai_review_replies` del ciclo para el caso, ANTES de invocar a la IA (bajo el candado del
-   * libro: dos procesos no superan el límite). La clave es el caso: ya consumida ⇒ `replay` sin consumo nuevo.
-   * Sin cuota, sin suscripción activa o sin valor en la revisión fijada ⇒ `denied` (auditado); en curso en otra
-   * petición ⇒ 409 request_in_progress (lo decide el llamador).
+   * Reserva 1 unidad del medidor del origen del caso (`replyMeter`) ANTES de invocar a la IA (bajo el candado del libro:
+   * dos procesos no superan el límite). La clave es el caso: ya consumida ⇒ `replay` sin consumo nuevo. Sin cuota, sin
+   * suscripción activa o sin valor en la revisión fijada ⇒ `denied` (auditado); en curso en otra petición ⇒ 409
+   * request_in_progress (lo decide el llamador).
    */
   private async claimAiReply(row: CaseRow, who: AiReplyActor): Promise<AiReplyClaim> {
+    const meter = replyMeter(row.origin, row.case_id);
     try {
       const claim = await this.deps.quota.reserve({
-        tenantId: row.tenant_id, capability: AI_REVIEW_REPLY_CAPABILITY, units: 1, idempotencyKey: aiReplyQuotaKey(row.case_id),
+        tenantId: row.tenant_id, capability: meter.capability, units: 1, idempotencyKey: meter.key,
         requestId: who.requestId, actorId: who.actorId, actorRole: who.actorRole,
       });
       return claim.kind === 'replay' ? { kind: 'replay' } : claim;
@@ -563,16 +721,16 @@ export class EngagementService {
       await this.deps.sink.write({
         tenant_id: row.tenant_id, actor_id: who.actorId, actor_role: who.actorRole,
         action: 'engagement.ai_reply', resource: `engagement_case/${row.case_id}`,
-        request_id: who.requestId, decision: 'deny', result: err.code,
+        request_id: who.requestId, decision: 'deny', result: err.code, evidence_ref: meter.capability,
       }, this.deps.pool, false).catch(() => undefined);
       return { kind: 'denied', error: err };
     }
   }
 
   /**
-   * Respuesta automática autorizada (clasificación): reserva y redacta. Sin ruta activa no reserva; si la
-   * redacción falla o la cuota no alcanza, devuelve null y el caso sigue sin IA. La reserva devuelta se confirma
-   * en la transacción que guarda el caso (o se libera).
+   * Redacción automática medida (clasificación): reserva y redacta. Sin ruta activa no reserva; si la redacción falla o
+   * el medidor no alcanza, devuelve null y el caso sigue sin IA. La reserva devuelta se confirma en la transacción que
+   * guarda el caso (o se libera).
    */
   private async meteredReply(row: CaseRow, classification: Classification, facts: Record<string, unknown>, who: AiReplyActor):
     Promise<{ generated: { text: string; needsHuman: boolean; invocationId: string } | null; reservation: QuotaReservationRow | null }> {
@@ -608,28 +766,30 @@ export class EngagementService {
   }
 
   /**
-   * «Redactar con IA» (DEC-0076, SRC-0014 C01): el dueño pide la propuesta de IA para una reseña de Google que
-   * espera su decisión. Consume 1 unidad del ciclo solo si la propuesta se genera y se guarda en el caso (misma
-   * transacción); si la IA falla o el caso cambió, no consume. Repetir no consume otra vez. La propuesta va en
-   * `ai_draft`, aparte de las tres numeradas: lo que muestra el aviso de Telegram y lo que aprueba `/aprobar <caso> N`
-   * no cambia, y una edición de las numeradas no la borra. Agotar la cuota solo bloquea esto: elegir otra propuesta
-   * o escribir la respuesta sigue igual (panel y Telegram).
+   * «Redactar con IA» (reseñas de Google, DEC-0076) y «Sugerir con IA» (comentarios de Facebook, DEC-0078 R1): una
+   * persona pide la propuesta de IA para un caso que espera su decisión. Consume 1 unidad del medidor del origen solo si
+   * la propuesta se genera y se guarda en el caso (misma transacción); si la IA falla o el caso cambió, no consume.
+   * Repetir no consume otra vez, tampoco si el comentario ya trae la sugerencia automática (una unidad por caso). La
+   * propuesta va en `ai_draft`, aparte de las tres numeradas: lo que muestra el aviso de Telegram no cambia y una edición
+   * de las numeradas no la borra. En Facebook exige que el negocio no tenga las sugerencias desactivadas. Agotar el
+   * medidor solo bloquea esto: elegir otra propuesta o escribir la respuesta sigue igual (panel y Telegram).
    */
   async requestAiDraft(actor: Actor, caseId: string): Promise<{ case: CaseRow; already: boolean }> {
     const found = await this.getCase(actor.tenantId, caseId);
     if (!found) throw this.notFound();
     if (found.reply_invocation_id) return { case: found, already: true };
-    if (found.origin !== 'google_review') {
-      throw new AppError(409, 'validation_error', 'Redactar con IA a pedido está disponible para reseñas de Google.');
+    const noun = found.origin === 'google_review' ? 'esta reseña' : 'este comentario';
+    if (found.origin === 'facebook_comment' && (await this.suggestionSetting(actor.tenantId, 'facebook_comment')).mode === 'off') {
+      throw new AppError(409, 'validation_error', SUGGESTIONS_OFF_MESSAGE);
     }
     if (found.state !== 'needs_human' && found.state !== 'failed') {
       throw new AppError(409, 'validation_error', found.state === 'received'
-        ? 'MainSpot todavía está analizando esta reseña. Inténtalo en unos segundos.'
+        ? `MainSpot todavía está analizando ${noun}. Inténtalo en unos segundos.`
         : 'Este caso ya no admite cambios en sus respuestas.');
     }
     const classification = this.storedClassification(found);
     if (!classification || (classification.category === 'basic_info' && classification.info_topic === 'phone')) {
-      throw new AppError(409, 'validation_error', 'Esta reseña no admite redacción con IA. Elige una de las propuestas o escribe tu respuesta.');
+      throw new AppError(409, 'validation_error', `${noun === 'esta reseña' ? 'Esta reseña' : 'Este comentario'} no admite redacción con IA. Elige una de las propuestas o escribe tu respuesta.`);
     }
     const semantics = this.deps.semantics;
     if (!semantics || !(await semantics.replyAvailable(found.origin))) {
@@ -659,6 +819,14 @@ export class EngagementService {
         throw new AppError(502, 'validation_error', 'No se pudo redactar con IA en este momento. No se descontó de tu plan; puedes elegir una propuesta o escribir tu respuesta.');
       }
       const updated = await runAtomic(this.deps.pool, async (client) => {
+        if (found.origin === 'facebook_comment') {
+          // Mismo candado que `setSuggestionMode`: si el negocio apagó las sugerencias mientras se redactaba, no se guarda
+          // ni se descuenta nada.
+          await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`engagement_suggestion:${actor.tenantId}:facebook_comment`]);
+          if ((await this.suggestionSetting(actor.tenantId, 'facebook_comment', client)).mode === 'off') {
+            throw new AppError(409, 'validation_error', `${SUGGESTIONS_OFF_MESSAGE} No se descontó de tu plan.`);
+          }
+        }
         const res = await client.query<CaseRow>(
           `UPDATE engagement_case SET ai_draft = $2, reply_invocation_id = $3, updated_at = now()
            WHERE case_id = $1 AND tenant_id = $4 AND state IN ('needs_human','failed') AND reply_invocation_id IS NULL RETURNING *`,
@@ -681,18 +849,33 @@ export class EngagementService {
     }
   }
 
-  /** Cuota de respuestas con IA del negocio: valor fijado, uso del ciclo vigente y su ventana (solo lectura). */
-  async aiReplyStatus(tenantId: string): Promise<AiReplyStatus> {
-    const available = this.deps.semantics ? await this.deps.semantics.replyAvailable('google_review') : false;
+  /** Medidor de IA de un origen para el negocio: valor fijado, uso del ciclo vigente y su ventana (solo lectura). */
+  private async meterStatus(tenantId: string, origin: EngagementOrigin): Promise<AiReplyStatus> {
+    const available = this.deps.semantics ? await this.deps.semantics.replyAvailable(origin) : false;
     const policy = await loadPinnedPolicy(this.deps.pool, tenantId);
     if (!policy) return { available, subscription_active: false, limit: null, usage: 0, remaining: null, window: null };
-    const status = (await this.deps.quota.capacityStatus(this.deps.pool, policy)).find((s) => s.capability === AI_REVIEW_REPLY_CAPABILITY);
+    const capability = replyMeter(origin, '-').capability;
+    const status = (await this.deps.quota.capacityStatus(this.deps.pool, policy)).find((s) => s.capability === capability);
     const limit = status?.limit ?? null;
     const usage = status?.usage ?? 0;
     return {
       available, subscription_active: policy.subscription.status === 'active', limit, usage,
       remaining: limit === null ? null : Math.max(0, limit - usage), window: status?.window ?? null,
     };
+  }
+
+  /** Cuota de respuestas con IA a reseñas de Google (DEC-0076). */
+  async aiReplyStatus(tenantId: string): Promise<AiReplyStatus> {
+    return this.meterStatus(tenantId, 'google_review');
+  }
+
+  /**
+   * DEC-0078: modo de sugerencias y medidor propio de los comentarios de Facebook. `credits_defined` falso ⇒ la revisión
+   * fijada del plan no define el medidor: no hay IA de pago para esos comentarios (activación comercial BLOCKED).
+   */
+  async aiSuggestionStatus(tenantId: string): Promise<AiSuggestionStatus> {
+    const [setting, meter] = await Promise.all([this.suggestionSetting(tenantId, 'facebook_comment'), this.meterStatus(tenantId, 'facebook_comment')]);
+    return { origin: 'facebook_comment', setting, ...meter, credits_defined: meter.limit !== null };
   }
 
   // ---------------------------------------------------------------- decisiones humanas

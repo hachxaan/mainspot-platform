@@ -85,6 +85,8 @@ const TENANT_TABLES: ReadonlyArray<{ table: string; key: string; exportSkip?: re
   { table: 'engagement_notification', key: 'tenant_id' },
   { table: 'engagement_case', key: 'tenant_id' },
   { table: 'engagement_policy', key: 'tenant_id' },
+  // DEC-0078 (0038): modo de sugerencias con IA de comentarios de Facebook y su consentimiento.
+  { table: 'engagement_suggestion_setting', key: 'tenant_id' },
   { table: 'engagement_cursor', key: 'tenant_id' },
   { table: 'telegram_link_code', key: 'tenant_id', exportSkip: ['code_hash'] },
   { table: 'telegram_link', key: 'tenant_id' },
