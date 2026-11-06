@@ -37,6 +37,13 @@ increments:
     automática autorizada), recepción de reseñas sin cuota y panel con saldo y renovación. Código en la rama
     feat/commercial-quota-semantics-20261105 (apilada sobre PR #15); evidencia local en evidence/commercial-quota/, que
     se registra aquí al integrarlo. Estado y evidencia de la base sin cambio.
+    Evolución por DEC-0077/SRC-0017 (canon 0.8.0 de FR-0008, FR-0010, FR-0016, BR-0007 y NFR-0006; FR-0020 y FR-0021
+    especificados sin implementar): SEC-CONSENT-01 (migración 0037 y su reversión, src/engagement/consent.ts,
+    reconsentimiento en POST /api/backoffice/engagement/policies/consent) y SEC-TG-APPROVAL-01 (instantánea por aviso
+    engagement_approval_offer, /aprobar <código> <N>), más la verificación de los límites técnicos de Facebook y del
+    laboratorio. Código en la rama feat/commercial-governance-safeguards-20261105 (base b809510, apilada sobre PR #17);
+    evidencia local en evidence/commercial-governance/, que se registra aquí al integrarlo. Estado y evidencia de la
+    base sin cambio.
 - increment_id: INC-0007
   state: IMPLEMENTED
   risk_tier: 2
